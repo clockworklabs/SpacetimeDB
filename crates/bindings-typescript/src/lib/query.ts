@@ -1,9 +1,9 @@
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
-import type { UntypedSchemaDef } from './schema';
+import type { TableDefOf, TableNamesOf, UntypedSchemaDef } from './schema';
 import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+import type { UntypedTableDecl } from './table_schema';
 import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
@@ -15,19 +15,15 @@ import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
 import { Uuid } from './uuid';
 
-/**
- * Helper to get the set of table names.
- */
-export type TableNames<SchemaDef extends UntypedSchemaDef> = Values<
-  SchemaDef['tables']
->['accessorName'] &
-  string;
+/** @deprecated Use `TableNamesOf` instead. */
+export type TableNames<SchemaDef extends UntypedSchemaDef> =
+  TableNamesOf<SchemaDef>;
 
-/** helper: pick the table def object from the schema by its name */
+/** @deprecated Use `TableDefOf` instead. */
 export type TableDefByName<
   SchemaDef extends UntypedSchemaDef,
   Name extends TableNames<SchemaDef>,
-> = Extract<Values<SchemaDef['tables']>, { accessorName: Name }>;
+> = TableDefOf<SchemaDef, Name>;
 
 // internal only — NOT exported.
 // This is how we make sure queries are only created with our helpers.
@@ -47,7 +43,7 @@ export interface RowTypedQuery<Row, ST> {
 
 export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
-  TableDef['rowType']
+  TableDef['rowSpacetimeType']
 >;
 
 export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any, any> =>
@@ -63,7 +59,7 @@ export function toSql(q: Query<any>): string {
 // A query builder with a single table.
 type From<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
-  TableDef['rowType']
+  TableDef['rowSpacetimeType']
 > &
   Readonly<{
     toSql(): string;
@@ -91,7 +87,7 @@ type From<TableDef extends TypedTableDef> = RowTypedQuery<
 // A query builder with a semijoin.
 type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
-  TableDef['rowType']
+  TableDef['rowSpacetimeType']
 > &
   Readonly<{
     toSql(): string;
@@ -259,6 +255,7 @@ export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   columns: TableDef['columns'];
   indexes: TableDef['indexes'];
   rowType: TableDef['rowType'];
+  rowSpacetimeType: TableDef['rowSpacetimeType'];
   constraints: any;
 }>;
 
@@ -281,6 +278,9 @@ class TableRefImpl<TableDef extends TypedTableDef>
   }
   get rowType() {
     return this.tableDef.rowType;
+  }
+  get rowSpacetimeType() {
+    return this.tableDef.rowSpacetimeType;
   }
   get constraints() {
     return (this.tableDef as any).constraints;
@@ -349,7 +349,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
   const qb = Object.create(null) as QueryBuilder<SchemaDef>;
   for (const table of Object.values(schema.tables)) {
     const ref = createTableRefFromDef(
-      table as TableDefByName<SchemaDef, TableNames<SchemaDef>>
+      table as TableDefOf<SchemaDef, TableNamesOf<SchemaDef>>
     );
     (qb as Record<string, TableRef<any>>)[table.accessorName] = ref;
   }
@@ -430,7 +430,8 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   return `${sql} WHERE ${whereSql}`;
 }
 
-// TODO: Just use UntypedTableDef if they end up being the same.
+// The table shape the query builder accepts. Both `UntypedTableDef` and
+// `TableRef` satisfy it, so a `TableRef` can be used as a table def.
 export type TypedTableDef<
   Columns extends Record<
     string,
@@ -441,13 +442,15 @@ export type TypedTableDef<
   accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
-  rowType: RowBuilder<Columns>['algebraicType']['value'];
+  rowType: RowBuilder<Columns>;
+  rowSpacetimeType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
-export type TableSchemaAsTableDef<TSchema extends UntypedTableSchema> = {
+/** @deprecated This type is not used by the SDK. */
+export type TableSchemaAsTableDef<TSchema extends UntypedTableDecl> = {
   name: TSchema['tableName'];
   columns: TSchema['rowType']['row'];
-  indexes: TSchema['idxs'];
+  indexes: TSchema['indexes'];
 };
 
 type RowType<TableDef extends TypedTableDef> = {

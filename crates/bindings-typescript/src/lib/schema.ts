@@ -15,7 +15,7 @@ import type {
 } from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+import type { UntypedTableDecl } from './table_schema';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -34,9 +34,22 @@ import {
 } from './type_builders';
 import type { Values } from './type_util';
 
+/**
+ * Helper to get the set of table names.
+ */
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
 >['accessorName'];
+
+/**
+ * Helper to get the table definition with the given name.
+ */
+export type TableDefOf<
+  S extends UntypedSchemaDef,
+  N extends TableNamesOf<S>,
+> = [S] extends [UntypedSchemaDef]
+  ? Values<S['tables']> & { accessorName: N }
+  : UntypedTableDef & { accessorName: N };
 
 /**
  * An untyped representation of the database schema.
@@ -47,36 +60,51 @@ export type UntypedSchemaDef = {
 };
 
 /**
- * Helper type to convert an array of TableSchema into a schema definition
+ * Helper type to convert a record of table declarations into a schema definition
  */
-export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
+export interface SchemaDef<T extends Record<string, UntypedTableDecl>>
   extends UntypedSchemaDef {
   tables: {
-    readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
+    readonly [AccName in keyof T & string]: TableDef<AccName, T[AccName]>;
   };
 }
 
-export interface TableToSchema<
-  AccName extends string,
-  T extends UntypedTableSchema,
-> extends UntypedTableDef {
+/**
+ * A table definition: the table declaration `T` plus the fields that placing
+ * it in `schema({...})` under the accessor `AccName` adds.
+ */
+export type TableDef<AccName extends string, T extends UntypedTableDecl> = T & {
+  sourceName: string;
   accessorName: AccName;
-  columns: T['rowType']['row'];
-  rowType: T['rowSpacetimeType'];
-  // Declarative user-provided table-level indexes.
-  indexes: T['idxs'];
   // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
   resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
-  constraints: T['constraints'];
-}
+  rawDef: RawTableDefV10;
+  isEvent?: boolean;
+};
+
+/**
+ * @deprecated Use `TableDef` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type TableToSchema<
+  AccName extends string,
+  T extends UntypedTableDecl,
+> = TableDef<AccName, T>;
+
+/**
+ * @deprecated Use `SchemaDef` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type TablesToSchema<T extends Record<string, UntypedTableDecl>> =
+  SchemaDef<T>;
 
 export function tablesToSchema<
-  const T extends Record<string, UntypedTableSchema>,
->(ctx: ModuleContext, tables: T): TablesToSchema<T> {
-  // `TablesToSchema<T>['tables']` is intentionally readonly in the public type,
+  const T extends Record<string, UntypedTableDecl>,
+>(ctx: ModuleContext, tables: T): SchemaDef<T> {
+  // `SchemaDef<T>['tables']` is intentionally readonly in the public type,
   // but we need a mutable builder while materializing it from entries.
   type MutableTableDefs = {
-    -readonly [AccName in keyof TablesToSchema<T>['tables']]: TablesToSchema<T>['tables'][AccName];
+    -readonly [AccName in keyof SchemaDef<T>['tables']]: SchemaDef<T>['tables'][AccName];
   };
   const tableDefs = Object.create(null) as MutableTableDefs;
   for (const [accName, schema] of Object.entries(tables) as [
@@ -86,29 +114,25 @@ export function tablesToSchema<
     tableDefs[accName] = tableToSchema(
       accName,
       schema,
-      schema.tableDef(ctx, accName)
-    ) as TablesToSchema<T>['tables'][typeof accName];
+      schema.buildRawDef(ctx, accName)
+    ) as SchemaDef<T>['tables'][typeof accName];
   }
 
   return {
-    tables: tableDefs as TablesToSchema<T>['tables'],
+    tables: tableDefs as SchemaDef<T>['tables'],
   };
 }
 
 export function tableToSchema<
   AccName extends string,
-  const T extends UntypedTableSchema,
->(
-  accName: AccName,
-  schema: T,
-  tableDef: RawTableDefV10
-): TableToSchema<AccName, T> {
+  const T extends UntypedTableDecl,
+>(accName: AccName, schema: T, tableDef: RawTableDefV10): TableDef<AccName, T> {
   const getColName = (i: number) =>
     schema.rowType.algebraicType.value.elements[i].name;
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   // Build fully-resolved runtime index metadata from the host-facing RawTableDef.
-  // This is intentionally separate from `schema.idxs`, which keeps the original
+  // This is intentionally separate from `schema.indexes`, which keeps the original
   // user-declared `IndexOpts` shape for type-level inference.
   const resolvedIndexes: UntypedIndex<AllowedCol>[] = tableDef.indexes.map(
     idx => {
@@ -148,24 +172,16 @@ export function tableToSchema<
   );
 
   return {
+    ...schema,
     // For client,`schama.tableName` will always be there as canonical name.
     // For module, if explicit name is not provided via `name`, accessor name will
     // be used, it is stored as alias in database, hence works in query builder.
     sourceName: schema.tableName || accName,
     accessorName: accName,
-    columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
-    rowType: schema.rowSpacetimeType,
-    // Keep declarative indexes in their original shape for type-level consumers.
-    indexes: schema.idxs,
-    constraints: tableDef.constraints.map(c => ({
-      name: c.sourceName,
-      constraint: 'unique',
-      columns: c.data.value.columns.map(getColName) as [string],
-    })),
     // Expose resolved runtime indexes separately so runtime users don't have to
     // reinterpret `indexes` with unsafe casts.
     resolvedIndexes,
-    tableDef,
+    rawDef: tableDef,
     ...(tableDef.isEvent ? { isEvent: true } : {}),
   };
 }
@@ -175,7 +191,7 @@ type CompoundTypeCache = Map<
   RefBuilder<any, any>
 >;
 
-export type ModuleDef = {
+export type RawModuleDefSections = {
   [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
 };
 
@@ -187,7 +203,7 @@ export class ModuleContext {
   /**
    * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
    */
-  #moduleDef: ModuleDef = {
+  #moduleDef: RawModuleDefSections = {
     typespace: { types: [] },
     tables: [],
     reducers: [],
@@ -208,7 +224,7 @@ export class ModuleContext {
     environment: [],
   };
 
-  get moduleDef(): ModuleDef {
+  get moduleDef(): RawModuleDefSections {
     return this.#moduleDef;
   }
 

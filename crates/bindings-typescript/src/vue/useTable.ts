@@ -10,7 +10,7 @@ import {
 import { useSpacetimeDB } from './useSpacetimeDB';
 
 import type { EventContextInterface } from '../sdk/db_connection_impl';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
+import type { UntypedModuleDef } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
@@ -109,7 +109,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!table) return;
 
     const onInsert = (
-      eventCtx: EventContextInterface<UntypedRemoteModule>,
+      eventCtx: EventContextInterface<UntypedModuleDef>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
@@ -125,7 +125,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     };
 
     const onDelete = (
-      eventCtx: EventContextInterface<UntypedRemoteModule>,
+      eventCtx: EventContextInterface<UntypedModuleDef>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
@@ -141,7 +141,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     };
 
     const onUpdate = (
-      eventCtx: EventContextInterface<UntypedRemoteModule>,
+      eventCtx: EventContextInterface<UntypedModuleDef>,
       oldRow: any,
       newRow: any
     ) => {

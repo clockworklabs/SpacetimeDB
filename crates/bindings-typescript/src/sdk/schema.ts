@@ -1,10 +1,10 @@
 import {
   ModuleContext,
   tablesToSchema,
-  type TablesToSchema,
+  type SchemaDef,
   type UntypedSchemaDef,
 } from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
+import type { UntypedTableDecl } from '../lib/table_schema';
 
 class Tables<S extends UntypedSchemaDef> {
   constructor(readonly schemaType: S) {}
@@ -22,9 +22,9 @@ class Tables<S extends UntypedSchemaDef> {
  * });
  * ```
  */
-export function schema<const H extends Record<string, UntypedTableSchema>>(
+export function schema<const H extends Record<string, UntypedTableDecl>>(
   tables: H
-): Tables<TablesToSchema<H>> {
+): Tables<SchemaDef<H>> {
   const ctx = new ModuleContext();
 
   return new Tables(tablesToSchema(ctx, tables));

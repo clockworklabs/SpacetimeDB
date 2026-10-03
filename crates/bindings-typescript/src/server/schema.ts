@@ -19,10 +19,10 @@ import {
 import {
   ModuleContext,
   tableToSchema,
-  type TablesToSchema,
+  type SchemaDef,
   type UntypedSchemaDef,
 } from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
+import type { UntypedTableDecl } from '../lib/table_schema';
 import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
 import { hasOwn } from '../lib/util';
 import {
@@ -108,7 +108,7 @@ export class SchemaInner<
    * Used for resolving scheduled table targets.
    */
   functionExports: Map<UntypedScheduledFunctionExport, string> = new Map();
-  tableSourceNames: Map<UntypedTableSchema, string[]> = new Map();
+  tableSourceNames: Map<UntypedTableDecl, string[]> = new Map();
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
@@ -223,7 +223,7 @@ export class SchemaInner<
 }
 
 type PendingSchedule = {
-  table: UntypedTableSchema;
+  table: UntypedTableDecl;
   tableName?: string;
   scheduleAtCol?: number;
   reducer?: () => UntypedScheduledFunctionExport;
@@ -273,7 +273,6 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
-    // TODO: TableSchema and TableDef should really be unified
     this.#ctx = ctx;
   }
 
@@ -340,7 +339,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         typespace: this.#ctx.moduleDef.typespace,
         tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
           accessorName: t.accessorName,
-          tableDef: t.tableDef,
+          tableDef: t.rawDef,
         })),
         schemaTables: this.#ctx.schemaType.tables,
         subDispatches: [...this.#ctx.submoduleDispatchInfos],
@@ -793,12 +792,12 @@ export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
     module: M;
   };
 
-type SchemaEntry = UntypedTableSchema | SubmoduleNamespace | SubmoduleMount;
+type SchemaEntry = UntypedTableDecl | SubmoduleNamespace | SubmoduleMount;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
+  [K in keyof H as H[K] extends UntypedTableDecl ? K : never]: Extract<
     H[K],
-    UntypedTableSchema
+    UntypedTableDecl
   >;
 };
 
@@ -819,13 +818,14 @@ type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
     : never;
 };
 
-type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
-  TablesToSchema<ExtractTableEntries<H>> & {
-    namespaces: ExtractSubmoduleSchemas<H>;
-  };
+type SchemaDefForEntries<H extends Record<string, SchemaEntry>> = SchemaDef<
+  ExtractTableEntries<H>
+> & {
+  namespaces: ExtractSubmoduleSchemas<H>;
+};
 
-function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
-  return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
+function isUntypedTableSchema(x: unknown): x is UntypedTableDecl {
+  return typeof x === 'object' && x !== null && hasOwn(x, 'buildRawDef');
 }
 
 function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
@@ -846,7 +846,7 @@ function isSubmoduleMount(x: unknown): x is SubmoduleMount {
     x !== null &&
     hasOwn(x, 'module') &&
     !hasOwn(x, 'default') &&
-    !hasOwn(x, 'tableDef')
+    !hasOwn(x, 'buildRawDef')
   );
 }
 
@@ -956,7 +956,7 @@ export function schema<
       }
 
       const table = entry;
-      const tableDef = table.tableDef(ctx, accName);
+      const tableDef = table.buildRawDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
       const tableSourceNames = ctx.tableSourceNames.get(table);
       if (tableSourceNames === undefined) {
