@@ -13,7 +13,7 @@ You need a module and a client connected to it. If you don't have them yet, foll
 
 In this guide, you'll build a leaderboard that shows the 100 best scores in your game and updates live on every client. You'll use an [index](../../00200-core-concepts/00300-tables/00300-indexes.md) to read scores, an anonymous [view](../../00200-core-concepts/00200-functions/00500-views.md) to pick the top 100, and a [subscription](../../00200-core-concepts/00400-subscriptions.md) to keep each client up to date.
 
-Here's how the pieces fit together:
+## How it works
 
 - A private `player_score` table stores each player's best score, with an index on the score.
 - A `submit_score` reducer records a new score.

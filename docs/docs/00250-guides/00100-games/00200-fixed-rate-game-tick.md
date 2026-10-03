@@ -13,7 +13,7 @@ You need a module you can publish. If you don't have one yet, follow the [quicks
 
 In this guide, you'll run your game's server logic at a fixed rate: a reducer that SpacetimeDB calls 20 times per second, which moves every entity in the world. You'll use a [schedule table](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) to call the reducer and the `init` [lifecycle reducer](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) to start it.
 
-Here's how the pieces fit together:
+## How it works
 
 - A `tick_timer` schedule table holds one row that tells SpacetimeDB to call the `tick` reducer every 50 milliseconds.
 - The `init` reducer inserts that row when the database is created.
