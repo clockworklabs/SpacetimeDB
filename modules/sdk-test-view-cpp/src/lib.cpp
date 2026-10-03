@@ -50,7 +50,7 @@ struct PlayerLocation {
     int32_t y;
 };
 SPACETIMEDB_STRUCT(PlayerLocation, entity_id, active, x, y)
-SPACETIMEDB_TABLE(PlayerLocation, player_location, Public)
+SPACETIMEDB_TABLE(PlayerLocation, player_location, Private)
 FIELD_Unique(player_location, entity_id);
 FIELD_Index(player_location, active);
 
