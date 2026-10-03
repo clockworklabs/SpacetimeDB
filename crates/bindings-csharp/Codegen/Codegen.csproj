@@ -36,7 +36,8 @@
 
   <ItemGroup>
     <!-- reuse attribute and adjacent types from the runtime -->
-    <Compile Include="../Runtime/Attrs.cs" />
+    <!-- (the attributes shared with client bindings come from BSATN.Codegen) -->
+    <Compile Include="../Runtime/ServerAttrs.cs" />
   </ItemGroup>
 
   <!-- Local project references (used by SpacetimeDB/modules/*-cs) don't use NuGet resolution. -->

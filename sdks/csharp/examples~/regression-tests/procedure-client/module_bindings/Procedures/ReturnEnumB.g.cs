@@ -4,75 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void ReturnEnumB(string b, ProcedureCallback<SpacetimeDB.Types.ReturnEnum> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalReturnEnumB(b, (ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnEnum>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnEnum>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalReturnEnumB(string b, ProcedureCallback<Procedure.ReturnEnumB> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.ReturnEnumBArgs(b), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReturnEnumB
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Types.ReturnEnum Value;
-
-            public ReturnEnumB(SpacetimeDB.Types.ReturnEnum Value)
-            {
-                this.Value = Value;
-            }
-
-            public ReturnEnumB()
-            {
-                this.Value = null!;
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReturnEnumBArgs : Procedure, IProcedureArgs
-        {
-            [DataMember(Name = "b")]
-            public string B;
-
-            public ReturnEnumBArgs(string B)
-            {
-                this.B = B;
-            }
-
-            public ReturnEnumBArgs()
-            {
-                this.B = "";
-            }
-
-            string IProcedureArgs.ProcedureName => "return_enum_b";
-        }
-
+        [SpacetimeDB.Procedure(Name = "return_enum_b")]
+        public static partial SpacetimeDB.Types.ReturnEnum ReturnEnumB(SpacetimeDB.ProcedureContext ctx, string b);
     }
 }

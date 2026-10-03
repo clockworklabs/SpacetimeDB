@@ -9,11 +9,12 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "Config", Name = "config", Public = true)]
     [DataContract]
     public sealed partial class Config
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public int Id;
         [DataMember(Name = "world_size")]
         public long WorldSize;

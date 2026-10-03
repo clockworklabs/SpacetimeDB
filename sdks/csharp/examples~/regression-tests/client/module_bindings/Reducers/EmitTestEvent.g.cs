@@ -4,71 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void EmitTestEventHandler(ReducerEventContext ctx, string name, ulong value);
-        public event EmitTestEventHandler? OnEmitTestEvent;
-
-        public void EmitTestEvent(string name, ulong value)
-        {
-            conn.InternalCallReducer(new Reducer.EmitTestEvent(name, value));
-        }
-
-        public bool InvokeEmitTestEvent(ReducerEventContext ctx, Reducer.EmitTestEvent args)
-        {
-            if (OnEmitTestEvent == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnEmitTestEvent(
-                ctx,
-                args.Name,
-                args.Value
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class EmitTestEvent : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "name")]
-            public string Name;
-            [DataMember(Name = "value")]
-            public ulong Value;
-
-            public EmitTestEvent(
-                string Name,
-                ulong Value
-            )
-            {
-                this.Name = Name;
-                this.Value = Value;
-            }
-
-            public EmitTestEvent()
-            {
-                this.Name = "";
-            }
-
-            string IReducerArgs.ReducerName => "emit_test_event";
-        }
+        [SpacetimeDB.Reducer(Name = "emit_test_event")]
+        public static partial void EmitTestEvent(SpacetimeDB.ReducerContext ctx, string name, ulong value);
     }
 }

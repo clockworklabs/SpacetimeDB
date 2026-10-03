@@ -29,4 +29,9 @@
     <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- reuse the attributes that both modules and client bindings declare -->
+    <Compile Include="../BSATN.Runtime/ModuleAttrs.cs" />
+  </ItemGroup>
+
 </Project>

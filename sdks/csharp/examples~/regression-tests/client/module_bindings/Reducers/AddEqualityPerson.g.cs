@@ -4,71 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void AddEqualityPersonHandler(ReducerEventContext ctx, uint id, string name);
-        public event AddEqualityPersonHandler? OnAddEqualityPerson;
-
-        public void AddEqualityPerson(uint id, string name)
-        {
-            conn.InternalCallReducer(new Reducer.AddEqualityPerson(id, name));
-        }
-
-        public bool InvokeAddEqualityPerson(ReducerEventContext ctx, Reducer.AddEqualityPerson args)
-        {
-            if (OnAddEqualityPerson == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnAddEqualityPerson(
-                ctx,
-                args.Id,
-                args.Name
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class AddEqualityPerson : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "id")]
-            public uint Id;
-            [DataMember(Name = "name")]
-            public string Name;
-
-            public AddEqualityPerson(
-                uint Id,
-                string Name
-            )
-            {
-                this.Id = Id;
-                this.Name = Name;
-            }
-
-            public AddEqualityPerson()
-            {
-                this.Name = "";
-            }
-
-            string IReducerArgs.ReducerName => "add_equality_person";
-        }
+        [SpacetimeDB.Reducer(Name = "add_equality_person")]
+        public static partial void AddEqualityPerson(SpacetimeDB.ReducerContext ctx, uint id, string name);
     }
 }

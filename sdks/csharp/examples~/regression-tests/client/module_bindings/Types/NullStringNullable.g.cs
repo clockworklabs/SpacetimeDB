@@ -9,11 +9,13 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "NullStringNullable", Name = "null_string_nullable", Public = true)]
     [DataContract]
     public sealed partial class NullStringNullable
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
         public ulong Id;
         [DataMember(Name = "name")]
         public string? Name;

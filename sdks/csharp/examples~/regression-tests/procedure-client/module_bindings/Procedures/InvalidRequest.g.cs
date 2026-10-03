@@ -4,62 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void InvalidRequest(ProcedureCallback<string> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalInvalidRequest((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<string>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<string>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalInvalidRequest(ProcedureCallback<Procedure.InvalidRequest> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.InvalidRequestArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InvalidRequest
-        {
-            [DataMember(Name = "Value")]
-            public string Value;
-
-            public InvalidRequest(string Value)
-            {
-                this.Value = Value;
-            }
-
-            public InvalidRequest()
-            {
-                this.Value = "";
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InvalidRequestArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "invalid_request";
-        }
-
+        [SpacetimeDB.Procedure(Name = "invalid_request")]
+        public static partial string InvalidRequest(SpacetimeDB.ProcedureContext ctx);
     }
 }

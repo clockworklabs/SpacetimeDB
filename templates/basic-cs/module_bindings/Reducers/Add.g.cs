@@ -4,64 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void AddHandler(ReducerEventContext ctx, string name);
-        public event AddHandler? OnAdd;
-
-        public void Add(string name)
-        {
-            conn.InternalCallReducer(new Reducer.Add(name));
-        }
-
-        public bool InvokeAdd(ReducerEventContext ctx, Reducer.Add args)
-        {
-            if (OnAdd == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnAdd(
-                ctx,
-                args.Name
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class Add : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "name")]
-            public string Name;
-
-            public Add(string Name)
-            {
-                this.Name = Name;
-            }
-
-            public Add()
-            {
-                this.Name = "";
-            }
-
-            string IReducerArgs.ReducerName => "Add";
-        }
+        [SpacetimeDB.Reducer(Name = "add")]
+        public static partial void Add(SpacetimeDB.ReducerContext ctx, string name);
     }
 }

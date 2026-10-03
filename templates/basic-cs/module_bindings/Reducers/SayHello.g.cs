@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void SayHelloHandler(ReducerEventContext ctx);
-        public event SayHelloHandler? OnSayHello;
-
-        public void SayHello()
-        {
-            conn.InternalCallReducer(new Reducer.SayHello());
-        }
-
-        public bool InvokeSayHello(ReducerEventContext ctx, Reducer.SayHello args)
-        {
-            if (OnSayHello == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnSayHello(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SayHello : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "SayHello";
-        }
+        [SpacetimeDB.Reducer(Name = "say_hello")]
+        public static partial void SayHello(SpacetimeDB.ReducerContext ctx);
     }
 }

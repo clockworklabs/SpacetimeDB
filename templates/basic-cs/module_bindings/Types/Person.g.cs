@@ -9,11 +9,11 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "Person", Name = "person", Public = true)]
     [DataContract]
     public sealed partial class Person
     {
-        [DataMember(Name = "Name")]
+        [DataMember(Name = "name")]
         public string Name;
 
         public Person(string Name)

@@ -4,62 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void TxContextCapabilities(ProcedureCallback<SpacetimeDB.Types.ReturnStruct> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalTxContextCapabilities((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalTxContextCapabilities(ProcedureCallback<Procedure.TxContextCapabilities> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.TxContextCapabilitiesArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class TxContextCapabilities
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Types.ReturnStruct Value;
-
-            public TxContextCapabilities(SpacetimeDB.Types.ReturnStruct Value)
-            {
-                this.Value = Value;
-            }
-
-            public TxContextCapabilities()
-            {
-                this.Value = new();
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class TxContextCapabilitiesArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "tx_context_capabilities";
-        }
-
+        [SpacetimeDB.Procedure(Name = "tx_context_capabilities")]
+        public static partial SpacetimeDB.Types.ReturnStruct TxContextCapabilities(SpacetimeDB.ProcedureContext ctx);
     }
 }

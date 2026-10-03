@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void RespawnHandler(ReducerEventContext ctx);
-        public event RespawnHandler? OnRespawn;
-
-        public void Respawn()
-        {
-            conn.InternalCallReducer(new Reducer.Respawn());
-        }
-
-        public bool InvokeRespawn(ReducerEventContext ctx, Reducer.Respawn args)
-        {
-            if (OnRespawn == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnRespawn(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class Respawn : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "respawn";
-        }
+        [SpacetimeDB.Reducer(Name = "respawn")]
+        public static partial void Respawn(SpacetimeDB.ReducerContext ctx);
     }
 }

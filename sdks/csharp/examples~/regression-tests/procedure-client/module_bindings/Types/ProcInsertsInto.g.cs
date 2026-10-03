@@ -9,7 +9,7 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "ProcInsertsInto", Name = "proc_inserts_into", Public = true)]
     [DataContract]
     public sealed partial class ProcInsertsInto
     {

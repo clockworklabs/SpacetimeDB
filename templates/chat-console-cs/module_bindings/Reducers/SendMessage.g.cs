@@ -4,64 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void SendMessageHandler(ReducerEventContext ctx, string text);
-        public event SendMessageHandler? OnSendMessage;
-
-        public void SendMessage(string text)
-        {
-            conn.InternalCallReducer(new Reducer.SendMessage(text));
-        }
-
-        public bool InvokeSendMessage(ReducerEventContext ctx, Reducer.SendMessage args)
-        {
-            if (OnSendMessage == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnSendMessage(
-                ctx,
-                args.Text
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SendMessage : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "text")]
-            public string Text;
-
-            public SendMessage(string Text)
-            {
-                this.Text = Text;
-            }
-
-            public SendMessage()
-            {
-                this.Text = "";
-            }
-
-            string IReducerArgs.ReducerName => "send_message";
-        }
+        [SpacetimeDB.Reducer(Name = "send_message")]
+        public static partial void SendMessage(SpacetimeDB.ReducerContext ctx, string text);
     }
 }

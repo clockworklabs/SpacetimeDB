@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void RunComplexEqualityTestsHandler(ReducerEventContext ctx);
-        public event RunComplexEqualityTestsHandler? OnRunComplexEqualityTests;
-
-        public void RunComplexEqualityTests()
-        {
-            conn.InternalCallReducer(new Reducer.RunComplexEqualityTests());
-        }
-
-        public bool InvokeRunComplexEqualityTests(ReducerEventContext ctx, Reducer.RunComplexEqualityTests args)
-        {
-            if (OnRunComplexEqualityTests == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnRunComplexEqualityTests(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class RunComplexEqualityTests : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "run_complex_equality_tests";
-        }
+        [SpacetimeDB.Reducer(Name = "run_complex_equality_tests")]
+        public static partial void RunComplexEqualityTests(SpacetimeDB.ReducerContext ctx);
     }
 }

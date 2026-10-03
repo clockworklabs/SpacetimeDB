@@ -4,81 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void ReturnStructProcedure(uint a, string b, ProcedureCallback<SpacetimeDB.Types.ReturnStruct> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalReturnStructProcedure(a, b, (ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalReturnStructProcedure(uint a, string b, ProcedureCallback<Procedure.ReturnStructProcedure> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.ReturnStructProcedureArgs(a, b), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReturnStructProcedure
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Types.ReturnStruct Value;
-
-            public ReturnStructProcedure(SpacetimeDB.Types.ReturnStruct Value)
-            {
-                this.Value = Value;
-            }
-
-            public ReturnStructProcedure()
-            {
-                this.Value = new();
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReturnStructProcedureArgs : Procedure, IProcedureArgs
-        {
-            [DataMember(Name = "a")]
-            public uint A;
-            [DataMember(Name = "b")]
-            public string B;
-
-            public ReturnStructProcedureArgs(
-                uint A,
-                string B
-            )
-            {
-                this.A = A;
-                this.B = B;
-            }
-
-            public ReturnStructProcedureArgs()
-            {
-                this.B = "";
-            }
-
-            string IProcedureArgs.ProcedureName => "return_struct_procedure";
-        }
-
+        [SpacetimeDB.Procedure(Name = "return_struct_procedure")]
+        public static partial SpacetimeDB.Types.ReturnStruct ReturnStructProcedure(SpacetimeDB.ProcedureContext ctx, uint a, string b);
     }
 }
