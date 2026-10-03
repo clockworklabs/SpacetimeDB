@@ -196,6 +196,10 @@ export type InferModule<M extends ModuleExports> = ModuleDef<
   { procedures: readonly ProcedureDefs<M>[] }
 >;
 
+// TODO: A client could import module source as types only, as Convex's
+// generated `api` does, and fetch the module's schema from the host when it
+// connects. That would need no export condition and put no module code in the
+// client's bundle.
 /**
  * Builds a client's {@link ModuleDef} from a module's exports: the default
  * export is the module's schema, and the named exports are its reducers,
@@ -216,7 +220,10 @@ export function moduleDefFromExports<const M extends ModuleExports>(
   const spacetimedb = module.default;
   if (!(spacetimedb instanceof Schema)) {
     throw new TypeError(
-      "moduleDefFromExports expects a module whose default export is the schema() from 'spacetimedb'. A module's own source, which uses the schema() from 'spacetimedb/server', is not supported yet."
+      "moduleDefFromExports expects a module whose default export is a schema() from this copy of 'spacetimedb'. If it is a schema(), the client loaded a second copy of the SDK. The usual causes are:\n" +
+        "- The client was built without the 'spacetimedb-client' export condition, so 'spacetimedb/server' is the host build. Add it with Vite's resolve.conditions, esbuild's conditions, webpack's resolve.conditionNames, or node --conditions=spacetimedb-client.\n" +
+        "- A second installation of the package, such as the module folder's own node_modules/spacetimedb. Install it once, for example in a workspace, or dedupe it with the bundler (Vite's resolve.dedupe).\n" +
+        '- The module folder\'s package.json lacks "type": "module", so the module loaded as CommonJS. Add it.'
     );
   }
   if (spacetimedb.submoduleDispatchInfos.length > 0) {
