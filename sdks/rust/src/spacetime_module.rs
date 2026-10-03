@@ -17,6 +17,10 @@ use std::fmt::Debug;
 
 /// Marker trait for any item defined in a module,
 /// to conveniently get the types of various per-module things.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not linked to a module",
+    note = "list each table, view, reducer and procedure, and each type used as a view's row, in the module's `spacetimedb::client_module!` invocation"
+)]
 pub trait InModule {
     /// Unit type which represents the module itself.
     type Module: SpacetimeModule;
@@ -322,4 +326,68 @@ pub fn transaction_update_iter_table_updates(
 ) -> impl Iterator<Item = ws::v2::TableUpdate> {
     Box::<[_]>::into_iter(tx_update.query_sets)
         .flat_map(|query_set_update| Box::<[_]>::into_iter(query_set_update.tables))
+}
+
+// Interfaces between the client expansions of the module macros (proposal 0040).
+//
+// The client expansions of `#[table]`, `#[view]`, `#[reducer]` and `#[procedure]` run at the declaration's location,
+// which may be any module. They cannot name the module-wide types (`RemoteModule`, `RemoteTables`, `Reducer`, ...),
+// so they reach them through `<Anchor as InModule>::Module` projections.
+// `client_module!` generates the module-wide types and links each item to them:
+// it implements `InModule` for each table's `{Table}TableAccessor` marker and each function's `__{Function}Args` type,
+// and reaches the per-item helpers below through those conventionally named types.
+// Every impl of these traits, and of `InModule`, has a concrete self type: an impl of a widely implemented trait
+// for a projection cannot be fast-rejected, and made type checking several times slower.
+// Only the extension traits of a single table, reducer or procedure are implemented for a projection,
+// such as `<<{Table}TableAccessor as InModule>::Module as SpacetimeModule>::DbView`, and each has a single impl.
+
+/// Implemented by the client expansions of `#[spacetimedb::table]` and `#[spacetimedb::view]`
+/// for the table's `{Table}TableAccessor` marker.
+///
+/// `client_module!` implements `InModule` for the marker, and the row's `InModule` impl delegates to the marker's.
+pub trait ClientTableDef {
+    /// The table's row type.
+    type Row;
+    /// The table's canonical name.
+    const NAME: &'static str;
+
+    /// Register the table and its unique constraints in a new client cache.
+    fn register_table<M: SpacetimeModule>(client_cache: &mut ClientCache<M>)
+    where
+        Self::Row: InModule<Module = M> + Send + Sync + 'static;
+
+    /// Parse the rows for this table out of a `TableUpdate`.
+    fn parse_table_update(raw_updates: ws::v2::TableUpdate) -> crate::Result<TableUpdate<Self::Row>>;
+
+    /// Apply `update` to the client cache, or, for an event table, turn it directly into an applied diff.
+    fn apply_diff<'r, M: SpacetimeModule>(
+        cache: &mut ClientCache<M>,
+        update: &'r TableUpdate<Self::Row>,
+    ) -> crate::client_cache::TableAppliedDiff<'r, Self::Row>
+    where
+        Self::Row: InModule<Module = M> + Clone + Debug + Send + Sync + 'static;
+}
+
+/// Implemented by the client expansion of `#[spacetimedb::reducer]` for the reducer's `__{Reducer}Args` struct.
+pub trait ClientReducerDef: InModule + Sized {
+    /// The reducer's canonical name.
+    const NAME: &'static str;
+
+    /// If `reducer` is this reducer's variant of the module's `Reducer` enum, extract its arguments.
+    fn from_reducer(reducer: &<Self::Module as SpacetimeModule>::Reducer) -> Option<Self>;
+}
+
+/// Implemented by `client_module!` for `RemoteTables`, `RemoteReducers` and `RemoteProcedures`,
+/// so per-item expansions, which may live in another module, can reach the private `imp` field.
+pub trait HasDbContextImpl: InModule {
+    fn db_context_impl(&self) -> &DbContextImpl<Self::Module>;
+}
+
+/// The type of the field whose name hashes to `KEY`.
+///
+/// Implemented by the client expansions of `#[spacetimedb::table]` and `#[derive(SpacetimeType)]`
+/// for each field of a struct, so that the client expansion of `#[spacetimedb::view(primary_key = col)]`,
+/// whose declaration does not contain the row's field types, can name the type of `col`.
+pub trait FieldType<const KEY: u128> {
+    type Ty;
 }
