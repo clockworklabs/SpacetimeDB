@@ -1478,27 +1478,25 @@ export class ResultBuilder<
     this.err = err;
   }
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    value: ResultValue<Ok, Err>
   ): ResultColumnBuilder<
     Ok,
     Err,
-    SetField<
-      DefaultMetadata,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
+    SetField<DefaultMetadata, 'defaultValue', any>
   > {
     return new ResultColumnBuilder<
       Ok,
       Err,
-      SetField<
-        DefaultMetadata,
-        'defaultValue',
-        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-      >
+      SetField<DefaultMetadata, 'defaultValue', any>
     >(this, set(defaultMetadata, { defaultValue: value }));
   }
 }
+
+/** A result's value as it is serialized, which is the form a default takes. */
+type ResultValue<
+  Ok extends TypeBuilder<any, any>,
+  Err extends TypeBuilder<any, any>,
+> = { ok: InferTypeOfTypeBuilder<Ok> } | { err: InferTypeOfTypeBuilder<Err> };
 
 class UnitBuilder extends TypeBuilder<
   {},
@@ -3242,20 +3240,12 @@ export class ResultColumnBuilder<
   }
 
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-  ): ResultColumnBuilder<
-    Ok,
-    Err,
-    SetField<
-      M,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
-  > {
+    value: ResultValue<Ok, Err>
+  ): ResultColumnBuilder<Ok, Err, SetField<M, 'defaultValue', any>> {
     return new ResultColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, {
-        defaultValue: value,
+        defaultValue: value as any,
       })
     );
   }
