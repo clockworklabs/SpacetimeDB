@@ -1,0 +1,16 @@
+# `event-table-client`'s handlers, compiled against the module's source instead of generated bindings
+# (proposal 0040). The module source is `modules/sdk-test-event-table/src/lib.rs`, unmodified.
+[package]
+name = "module-source-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+spacetimedb-sdk = { path = "../.." }
+test-counter = { path = "../test-counter" }
+anyhow.workspace = true
+env_logger.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -443,6 +443,41 @@ mod event_table_tests {
     }
 }
 
+/// The event table tests again, with <./module-source-client>, which compiles the same handlers
+/// against the module's own source instead of generated bindings (proposal 0040).
+#[cfg(not(feature = "browser"))]
+mod event_table_module_source_tests {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-event-table";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/module-source-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        super::platform_test_builder(CLIENT, Some(subcommand))
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_language("rust")
+            // The client does not use generated bindings. The harness generates them anyway, so put them in `target`.
+            .with_bindings_dir("target/unused_module_bindings")
+            .build()
+    }
+
+    #[test]
+    fn event_table() {
+        make_test("event-table").run();
+    }
+
+    #[test]
+    fn multiple_events() {
+        make_test("multiple-events").run();
+    }
+
+    #[test]
+    fn events_dont_persist() {
+        make_test("events-dont-persist").run();
+    }
+}
+
 macro_rules! procedure_tests {
     ($mod_name:ident, $suffix:literal) => {
         mod $mod_name {
