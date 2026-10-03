@@ -4,63 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void DeleteHandler(ReducerEventContext ctx, uint id);
-        public event DeleteHandler? OnDelete;
-
-        public void Delete(uint id)
-        {
-            conn.InternalCallReducer(new Reducer.Delete(id));
-        }
-
-        public bool InvokeDelete(ReducerEventContext ctx, Reducer.Delete args)
-        {
-            if (OnDelete == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnDelete(
-                ctx,
-                args.Id
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class Delete : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "id")]
-            public uint Id;
-
-            public Delete(uint Id)
-            {
-                this.Id = Id;
-            }
-
-            public Delete()
-            {
-            }
-
-            string IReducerArgs.ReducerName => "delete";
-        }
+        [SpacetimeDB.Reducer(Name = "delete")]
+        public static partial void Delete(SpacetimeDB.ReducerContext ctx, uint id);
     }
 }

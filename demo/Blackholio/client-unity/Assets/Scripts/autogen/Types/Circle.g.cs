@@ -9,13 +9,15 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "Circle", Name = "circle", Public = true)]
     [DataContract]
     public sealed partial class Circle
     {
         [DataMember(Name = "entity_id")]
+        [SpacetimeDB.PrimaryKey]
         public int EntityId;
         [DataMember(Name = "player_id")]
+        [SpacetimeDB.Index.BTree(Name = "circle_player_id_idx_btree")]
         public int PlayerId;
         [DataMember(Name = "direction")]
         public DbVector2 Direction;

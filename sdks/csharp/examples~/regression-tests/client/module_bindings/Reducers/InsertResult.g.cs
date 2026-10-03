@@ -4,64 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void InsertResultHandler(ReducerEventContext ctx, SpacetimeDB.Result<SpacetimeDB.Types.MyTable, string> msg);
-        public event InsertResultHandler? OnInsertResult;
-
-        public void InsertResult(SpacetimeDB.Result<SpacetimeDB.Types.MyTable, string> msg)
-        {
-            conn.InternalCallReducer(new Reducer.InsertResult(msg));
-        }
-
-        public bool InvokeInsertResult(ReducerEventContext ctx, Reducer.InsertResult args)
-        {
-            if (OnInsertResult == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnInsertResult(
-                ctx,
-                args.Msg
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertResult : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "msg")]
-            public SpacetimeDB.Result<MyTable, string> Msg;
-
-            public InsertResult(SpacetimeDB.Result<MyTable, string> Msg)
-            {
-                this.Msg = Msg;
-            }
-
-            public InsertResult()
-            {
-                this.Msg = default!;
-            }
-
-            string IReducerArgs.ReducerName => "insert_result";
-        }
+        [SpacetimeDB.Reducer(Name = "insert_result")]
+        public static partial void InsertResult(SpacetimeDB.ReducerContext ctx, SpacetimeDB.Result<SpacetimeDB.Types.MyTable, string> msg);
     }
 }

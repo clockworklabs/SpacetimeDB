@@ -9,13 +9,15 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "PlayerLevel", Name = "player_level", Public = true)]
     [DataContract]
     public sealed partial class PlayerLevel
     {
         [DataMember(Name = "player_id")]
+        [SpacetimeDB.Unique]
         public ulong PlayerId;
         [DataMember(Name = "level")]
+        [SpacetimeDB.Index.BTree(Name = "player_level_level_idx_btree")]
         public ulong Level;
 
         public PlayerLevel(

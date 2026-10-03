@@ -4,64 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void ThrowErrorHandler(ReducerEventContext ctx, string error);
-        public event ThrowErrorHandler? OnThrowError;
-
-        public void ThrowError(string error)
-        {
-            conn.InternalCallReducer(new Reducer.ThrowError(error));
-        }
-
-        public bool InvokeThrowError(ReducerEventContext ctx, Reducer.ThrowError args)
-        {
-            if (OnThrowError == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnThrowError(
-                ctx,
-                args.Error
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ThrowError : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "error")]
-            public string Error;
-
-            public ThrowError(string Error)
-            {
-                this.Error = Error;
-            }
-
-            public ThrowError()
-            {
-                this.Error = "";
-            }
-
-            string IReducerArgs.ReducerName => "throw_error";
-        }
+        [SpacetimeDB.Reducer(Name = "throw_error")]
+        public static partial void ThrowError(SpacetimeDB.ReducerContext ctx, string error);
     }
 }

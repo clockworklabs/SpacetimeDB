@@ -4,62 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void InsertWithTxRollbackResult(ProcedureCallback<SpacetimeDB.Result<SpacetimeDB.Types.ReturnStruct, string>> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalInsertWithTxRollbackResult((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Result<SpacetimeDB.Types.ReturnStruct, string>>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Result<SpacetimeDB.Types.ReturnStruct, string>>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalInsertWithTxRollbackResult(ProcedureCallback<Procedure.InsertWithTxRollbackResult> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.InsertWithTxRollbackResultArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxRollbackResult
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Result<SpacetimeDB.Types.ReturnStruct, string> Value;
-
-            public InsertWithTxRollbackResult(SpacetimeDB.Result<SpacetimeDB.Types.ReturnStruct, string> Value)
-            {
-                this.Value = Value;
-            }
-
-            public InsertWithTxRollbackResult()
-            {
-                this.Value = default!;
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxRollbackResultArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "insert_with_tx_rollback_result";
-        }
-
+        [SpacetimeDB.Procedure(Name = "insert_with_tx_rollback_result")]
+        public static partial SpacetimeDB.Result<SpacetimeDB.Types.ReturnStruct, string> InsertWithTxRollbackResult(SpacetimeDB.ProcedureContext ctx);
     }
 }

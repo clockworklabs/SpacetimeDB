@@ -4,61 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void InsertWithTxCommit(ProcedureCallback<SpacetimeDB.Unit> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalInsertWithTxCommit((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalInsertWithTxCommit(ProcedureCallback<Procedure.InsertWithTxCommit> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.InsertWithTxCommitArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxCommit
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Unit Value;
-
-            public InsertWithTxCommit(SpacetimeDB.Unit Value)
-            {
-                this.Value = Value;
-            }
-
-            public InsertWithTxCommit()
-            {
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxCommitArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "insert_with_tx_commit";
-        }
-
+        [SpacetimeDB.Procedure(Name = "insert_with_tx_commit")]
+        public static partial SpacetimeDB.Unit InsertWithTxCommit(SpacetimeDB.ProcedureContext ctx);
     }
 }

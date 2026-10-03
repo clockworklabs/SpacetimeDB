@@ -9,7 +9,8 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "Score", Name = "score", Public = true)]
+    [SpacetimeDB.Index.BTree(Accessor = "ByPlayerAndLevel", Name = "score_player_id_level_idx_btree", Columns = new[] { "PlayerId", "Level" })]
     [DataContract]
     public sealed partial class Score
     {

@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void InsertNullStringIntoNullableHandler(ReducerEventContext ctx);
-        public event InsertNullStringIntoNullableHandler? OnInsertNullStringIntoNullable;
-
-        public void InsertNullStringIntoNullable()
-        {
-            conn.InternalCallReducer(new Reducer.InsertNullStringIntoNullable());
-        }
-
-        public bool InvokeInsertNullStringIntoNullable(ReducerEventContext ctx, Reducer.InsertNullStringIntoNullable args)
-        {
-            if (OnInsertNullStringIntoNullable == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnInsertNullStringIntoNullable(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertNullStringIntoNullable : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "insert_null_string_into_nullable";
-        }
+        [SpacetimeDB.Reducer(Name = "insert_null_string_into_nullable")]
+        public static partial void InsertNullStringIntoNullable(SpacetimeDB.ReducerContext ctx);
     }
 }

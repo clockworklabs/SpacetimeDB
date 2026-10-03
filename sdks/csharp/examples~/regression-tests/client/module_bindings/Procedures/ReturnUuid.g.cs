@@ -4,73 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void ReturnUuid(SpacetimeDB.Uuid u, ProcedureCallback<SpacetimeDB.Uuid> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalReturnUuid(u, (ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Uuid>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Uuid>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalReturnUuid(SpacetimeDB.Uuid u, ProcedureCallback<Procedure.ReturnUuid> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.ReturnUuidArgs(u), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReturnUuid
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Uuid Value;
-
-            public ReturnUuid(SpacetimeDB.Uuid Value)
-            {
-                this.Value = Value;
-            }
-
-            public ReturnUuid()
-            {
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReturnUuidArgs : Procedure, IProcedureArgs
-        {
-            [DataMember(Name = "u")]
-            public SpacetimeDB.Uuid U;
-
-            public ReturnUuidArgs(SpacetimeDB.Uuid U)
-            {
-                this.U = U;
-            }
-
-            public ReturnUuidArgs()
-            {
-            }
-
-            string IProcedureArgs.ProcedureName => "return_uuid";
-        }
-
+        [SpacetimeDB.Procedure(Name = "return_uuid")]
+        public static partial SpacetimeDB.Uuid ReturnUuid(SpacetimeDB.ProcedureContext ctx, SpacetimeDB.Uuid u);
     }
 }

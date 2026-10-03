@@ -9,45 +9,62 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "ExampleData", Name = "example_data", Public = true)]
     [DataContract]
     public sealed partial class ExampleData
     {
         [DataMember(Name = "primary")]
+        [SpacetimeDB.PrimaryKey]
         public uint Primary;
         [DataMember(Name = "test_pass")]
         public uint TestPass;
         [DataMember(Name = "default_string")]
+        [SpacetimeDB.Default("This is a default string")]
         public string DefaultString;
         [DataMember(Name = "default_bool")]
+        [SpacetimeDB.Default(true)]
         public bool DefaultBool;
         [DataMember(Name = "default_i_8")]
+        [SpacetimeDB.Default((sbyte)2)]
         public sbyte DefaultI8;
         [DataMember(Name = "default_u_8")]
+        [SpacetimeDB.Default((byte)2)]
         public byte DefaultU8;
         [DataMember(Name = "default_i_16")]
+        [SpacetimeDB.Default((short)2)]
         public short DefaultI16;
         [DataMember(Name = "default_u_16")]
+        [SpacetimeDB.Default((ushort)2)]
         public ushort DefaultU16;
         [DataMember(Name = "default_i_32")]
+        [SpacetimeDB.Default(2)]
         public int DefaultI32;
         [DataMember(Name = "default_u_32")]
+        [SpacetimeDB.Default(2U)]
         public uint DefaultU32;
         [DataMember(Name = "default_i_64")]
+        [SpacetimeDB.Default(2L)]
         public long DefaultI64;
         [DataMember(Name = "default_u_64")]
+        [SpacetimeDB.Default(2UL)]
         public ulong DefaultU64;
         [DataMember(Name = "default_hex")]
+        [SpacetimeDB.Default(2)]
         public int DefaultHex;
         [DataMember(Name = "default_bin")]
+        [SpacetimeDB.Default(2)]
         public int DefaultBin;
         [DataMember(Name = "default_f_32")]
+        [SpacetimeDB.Default(2F)]
         public float DefaultF32;
         [DataMember(Name = "default_f_64")]
+        [SpacetimeDB.Default(2D)]
         public double DefaultF64;
         [DataMember(Name = "default_enum")]
+        [SpacetimeDB.Default(MyEnum.SetByAttribute)]
         public MyEnum DefaultEnum;
         [DataMember(Name = "default_null")]
+        [SpacetimeDB.Default(null!)]
         public MyStruct? DefaultNull;
 
         public ExampleData(
