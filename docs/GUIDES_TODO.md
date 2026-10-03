@@ -12,7 +12,8 @@ Each guide will also get a short-format video (done later, once the written guid
 
 - [x] How to make a top 100 leaderboard
 - [x] Run a fixed-rate game tick
-- [ ] Build a matchmaking queue
+- [x] Build a matchmaking queue
+- [ ] Skill-based matchmaking with OpenSkill
 - [ ] Make a turn-based game with turn timeouts
 - [ ] Only sync what's near the player
 - [ ] Hide information from players
@@ -33,4 +34,5 @@ Each guide will also get a short-format video (done later, once the written guid
 - [ ] Admin and moderator roles with SpacetimeAuth
 - [ ] Send an email from your module
 - [ ] Call an external API from your module
+- [ ] Generate text with an LLM from your module
 - [ ] Seed initial data on first publish
