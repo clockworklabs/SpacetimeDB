@@ -286,7 +286,7 @@ export function remoteModuleDeclFromExports<const M extends ModuleExports>(
     // No CLI generated this remote module declaration. This SDK built it, so
     // it meets the SDK's minimum by construction.
     versionInfo: { cliVersion: _MINIMUM_CLI_VERSION.toString() },
-    tables: withCanonicalNames(
+    tables: clientTables(
       {
         ...spacetimedb.schemaType.tables,
         ...tablesToSchema(new ModuleContext(), views).tables,
@@ -316,8 +316,11 @@ function viewRow(ret: ViewReturnTypeBuilder): RowObj | RowBuilder<RowObj> {
  * Gives each table, and each column, the canonical name that the host gives
  * it, so that the client's queries and table updates use the host's names.
  * Generated bindings state every canonical name; module source need not.
+ * Also makes each index a btree, as generated bindings declare it, since the
+ * client's cache supports only btree indexes, which serve any lookup that a
+ * hash or direct index does.
  */
-function withCanonicalNames(
+function clientTables(
   tables: Record<string, UntypedTableDecl>,
   canonicalName: (accessorName: string, name?: string) => string
 ): Record<string, UntypedTableDecl> {
@@ -327,6 +330,10 @@ function withCanonicalNames(
       {
         ...table,
         sourceName: canonicalName(accessorName, table.tableName),
+        resolvedIndexes: table.resolvedIndexes.map(index => ({
+          ...index,
+          algorithm: 'btree' as const,
+        })),
         columns: Object.fromEntries(
           Object.entries(table.columns).map(([key, column]) => {
             const name = canonicalName(key, column.columnMetadata.name);

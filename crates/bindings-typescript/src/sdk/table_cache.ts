@@ -4,12 +4,14 @@ import { stdbLogger } from './logger.ts';
 import { deepEqual, type ComparablePrimitive } from '../';
 import type { EventContextInterface } from './index.ts';
 import type { RowType, TableIndexes, UntypedTableDecl } from '../lib/table.ts';
-import type { ClientTableCoreImplementable } from './client_table.ts';
+import type {
+  ClientIndexes,
+  ClientTableCoreImplementable,
+} from './client_table.ts';
 import type { UntypedRemoteModuleDecl } from './spacetime_module.ts';
 import type { TableDeclOf, TableNamesOf } from '../lib/schema.ts';
 import type {
   ReadonlyIndex,
-  ReadonlyIndexes,
   ReadonlyRangedIndex,
   ReadonlyUniqueIndex,
 } from '../lib/indexes.ts';
@@ -47,7 +49,7 @@ const scalarCompare = (x: any, y: any): number => {
 export type TableIndexView<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
   TableName extends TableNamesOf<RemoteModuleDecl>,
-> = ReadonlyIndexes<
+> = ClientIndexes<
   TableDeclOf<RemoteModuleDecl, TableName>,
   TableIndexes<TableDeclOf<RemoteModuleDecl, TableName>>
 >;
