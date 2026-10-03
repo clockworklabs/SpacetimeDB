@@ -7,9 +7,11 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
-In this guide, you'll build a leaderboard that shows the 100 best scores in your game and updates live on every client. You'll use an [index](../../00200-core-concepts/00300-tables/00300-indexes.md) to read scores, an anonymous [view](../../00200-core-concepts/00200-functions/00500-views.md) to pick the top 100, and a [subscription](../../00200-core-concepts/00400-subscriptions.md) to keep each client up to date.
+:::note Prerequisites
+You need a module and a client connected to it. If you don't have them yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+:::
 
-Before starting, make sure you have a module and a client connected to it. If you don't, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+In this guide, you'll build a leaderboard that shows the 100 best scores in your game and updates live on every client. You'll use an [index](../../00200-core-concepts/00300-tables/00300-indexes.md) to read scores, an anonymous [view](../../00200-core-concepts/00200-functions/00500-views.md) to pick the top 100, and a [subscription](../../00200-core-concepts/00400-subscriptions.md) to keep each client up to date.
 
 Here's how the pieces fit together:
 
