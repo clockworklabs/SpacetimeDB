@@ -234,14 +234,16 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed,
       faultAtMs, faultEndMs, interruptionAtMs, interruptionEndMs, outstandingAtFault,
       ...(unmeasuredVerdicts ? { unmeasuredVerdicts } : {}) };
-    const unmeasured = prepared.state.reservations.length && evidenceNowMs() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
+    // Where the fault landed is timing, so another fault can measure it; an unfinished checkout is how
+    // the app is built.
+    const mistimed = prepared.state.reservations.length && evidenceNowMs() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
-        : !outstandingAtFault ? 'fault missed the outstanding-request window'
-          : unsettled && !appRecoveryFailed ? queued ? 'asynchronous checkout has no verified completion receipt'
-            : 'a disconnected checkout may still be running in the database' : null;
+        : !outstandingAtFault ? 'fault missed the outstanding-request window' : null;
+    const unmeasured = mistimed ?? (unsettled && !appRecoveryFailed ? queued ? 'asynchronous checkout has no verified completion receipt'
+      : 'a disconnected checkout may still be running in the database' : null);
     if (unmeasured) {
       const value = finding('invalid-input', { detail: unmeasured });
-      throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence });
+      throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence, retryable: mistimed !== null });
     }
     if (appRecoveryFailed) {
       const value = finding('app-control-failed', { mode: 'start', target: 'app-server', detail: observation.recoveryError! });
@@ -258,7 +260,8 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     }
     if (unmeasuredVerdicts) {
       const value = finding('invalid-input', { detail: unmeasuredVerdicts.durability });
-      throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence });
+      // An acknowledgement that lands inside the kill window is timing too.
+      throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence, retryable: true });
     }
     return evidence;
   } finally {
@@ -286,7 +289,7 @@ export const expectCrashCheckout = actionImplementation(({ input, capabilities }
   }
   if (input.verdict === 'durability' && observation.unmeasuredVerdicts?.durability) {
     const value = finding('invalid-input', { detail: observation.unmeasuredVerdicts.durability });
-    throw new ActionInconclusive(renderFinding(value), { finding: value, observation });
+    throw new ActionInconclusive(renderFinding(value), { finding: value, observation, retryable: true });
   }
   return observation;
 });

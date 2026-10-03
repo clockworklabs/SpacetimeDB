@@ -267,6 +267,8 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       : ['partial', 'lost-acknowledged', 'empty-stock', 'orders-scoped-wrong-total', 'orders-scoped-lost-acknowledged'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed';
     const capturedFailure = record && ['partial', 'lost-acknowledged', 'empty-stock', 'orders-scoped-wrong-total', 'orders-scoped-lost-acknowledged'].includes(mode);
     assert.equal(result.status, capturedFailure ? 'passed' : expected, mode);
+    // An unfinished checkout is how the app is built; running the suite again would only repeat it.
+    if (result.status === 'inconclusive' && !mode.startsWith('cancelled-')) assert.equal(result.retryable, false, mode);
     if (record && result.status === 'passed') {
       const results = [];
       for (const verdict of ['atomicity', 'durability']) {
@@ -486,6 +488,8 @@ test('a recovered replacement cannot stand in for a checkout acknowledged before
     assert.equal(atomicity.status, mode === 'partial' ? 'failed' : 'passed', mode);
     assert.equal(durability.status, ['masked', 'idempotent', 'clock-drift', 'partial', 'application-ack-after-service-cut'].includes(mode) ? 'inconclusive'
       : mode === 'lost-prior' ? 'failed' : 'passed', mode);
+    // An acknowledgement that cannot be linked is a timing outcome, so its suite may run once more.
+    if (durability.status === 'inconclusive') assert.equal(durability.retryable, true, mode);
   }
 });
 
@@ -505,6 +509,7 @@ test('combined crash reuse keeps an inconclusive durability verdict', async () =
     do: 'expectCrashCheckout', from: 'application', verdict: 'durability',
   }, { capabilities: { 'browser-observation': { recorded } } });
   assert.equal(verdict.status, 'inconclusive');
+  assert.equal(verdict.retryable, true);
 });
 
 test('a correlated native refusal after the cut cannot replace a pre-cut acknowledgement', async t => {
