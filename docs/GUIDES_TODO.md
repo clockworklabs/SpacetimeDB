@@ -34,5 +34,5 @@ Each guide will also get a short-format video (done later, once the written guid
 - [ ] Admin and moderator roles with SpacetimeAuth
 - [ ] Send an email from your module
 - [ ] Call an external API from your module
-- [ ] Generate text with an LLM from your module
+- [x] Generate text with an LLM from your module
 - [ ] Seed initial data on first publish
