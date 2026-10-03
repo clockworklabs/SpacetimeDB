@@ -105,8 +105,12 @@ type _Reducers = Assert<
 >;
 type _Procedures = Assert<
   Equals<
-    Module['procedures'][number],
-    (typeof proceduresSchema.procedures)[number]
+    Omit<Module['procedures'][number], 'name'>,
+    Omit<(typeof proceduresSchema.procedures)[number], 'name'>
   >
+>;
+// The host converts a procedure's explicit name, so its name is a string.
+type _ProcedureName = Assert<
+  Equals<Module['procedures'][number]['name'], string>
 >;
 type _ModuleDef = Assert<Extends<Module, UntypedModuleDef>>;

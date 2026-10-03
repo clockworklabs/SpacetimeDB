@@ -131,17 +131,16 @@ export class SchemaInner<
   }
 
   /**
-   * Set while exports are registered only for their declarations, as a client
-   * does. Reducers, procedures, and views may then lack a function body.
+   * Why the host cannot run these exports: the first reducer, procedure, or
+   * view registered without a function body. Only a client registers exports
+   * for their declarations alone, so it may lack one.
    */
-  declarationsOnly = false;
+  missingBody: string | undefined;
 
-  /** Throws if a reducer, procedure, or view that the host will run has no body. */
-  requireBody(kind: string, name: string, fn: unknown) {
-    if (fn === undefined && !this.declarationsOnly) {
-      throw new TypeError(
-        `The ${kind} '${name}' has no function body. Only client bindings may declare a ${kind} without one.`
-      );
+  /** Records the first reducer, procedure, or view that has no body. */
+  recordMissingBody(kind: string, name: string, fn: unknown) {
+    if (fn === undefined) {
+      this.missingBody ??= `The ${kind} '${name}' has no function body. Only client bindings may declare a ${kind} without one.`;
     }
   }
 
@@ -326,10 +325,14 @@ export class Schema<S extends UntypedSchemaDef> {
     exports: object,
     opts?: { ignoreNonModuleExports?: boolean; declarationsOnly?: boolean }
   ): RawModuleDefV10 {
-    this.#ctx.declarationsOnly = opts?.declarationsOnly ?? false;
     registerModuleExports(this.#ctx, exports, {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
+    // Exports register only once, so check for bodies on every call rather than
+    // during registration, which a client's call may have done first.
+    if (!opts?.declarationsOnly && this.#ctx.missingBody !== undefined) {
+      throw new TypeError(this.#ctx.missingBody);
+    }
     this.#ctx.resolveSchedules();
     return this.#ctx.rawModuleDefV10();
   }
