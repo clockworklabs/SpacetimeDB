@@ -1,6 +1,6 @@
 ---
-title: Generate text with AI
-slug: /guides/app-patterns/generate-text-with-ai
+title: Call an AI model
+slug: /guides/app-patterns/call-ai-model
 ---
 
 import Tabs from '@theme/Tabs';
