@@ -411,6 +411,23 @@ pub use spacetimedb_bindings_macro::settings;
 /// ctx.db.cities().latitude()
 /// ```
 ///
+/// ### `table = ...`
+///
+/// On a struct with several `#[table]` attributes, `#[primary_key]`, `#[unique]`, `#[auto_inc]` and `#[index(...)]`
+/// apply to every table. To apply one to only some of the tables, name their accessors with
+/// `table = accessor` or `table = [accessor, ...]`:
+///
+/// ```ignore
+/// #[table(accessor = player)]
+/// #[table(accessor = logged_out_player)]
+/// pub struct Player {
+///     #[primary_key(table = player)]
+///     identity: Identity,
+///     #[index(btree, table = logged_out_player)]
+///     name: String,
+/// }
+/// ```
+///
 /// # Generated code
 ///
 /// For each `[table(accessor = {name})]` annotation on a type `{T}`, generates a struct

@@ -26,10 +26,10 @@
 //! so that client code can read the same fields with either (see `make_fields_pub`).
 //!
 //! The arguments of each attribute are parsed by the same code as the server expansion,
-//! so both accept the same syntax. The client also accepts two forms that the server does not yet accept,
-//! which generated bindings use where the module declares something that module syntax cannot otherwise express:
-//! proposal 0022's `table = ...` modifier on column attributes (see `select_table_attrs`),
-//! and proposal 0032's `#[name("...")]` on a field (see `column_name`).
+//! so both accept the same syntax, including proposal 0022's `table = ...` modifier on column attributes
+//! (see `table::select_table_attrs`). The client also accepts proposal 0032's `#[name("...")]` on a field
+//! (see `column_name`), which the server does not yet accept, and which generated bindings use
+//! where the module declares something that module syntax cannot otherwise express.
 //!
 //! The templates are string templates, ported from codegen's former Rust backend and parsed into tokens at the end.
 //! They write `__sdk::`, `__lib::`, `__sats::` and `__ws::`, which `qualify` spells out as
@@ -39,7 +39,7 @@
 use crate::procedure::ProcedureArgs;
 use crate::reducer::ReducerArgs;
 use crate::sats::{self, SatsTypeData};
-use crate::table::{analyze_columns, TableArgs, TableColumns};
+use crate::table::{analyze_columns, select_table_attrs, TableArgs, TableColumns};
 use crate::view::{extract_view_return_row_type, ViewArgs};
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
@@ -284,68 +284,6 @@ struct TableModel {
     unique: Vec<(String, String)>,
 }
 
-/// `item`, with the column attributes that apply to the table `accessor`.
-///
-/// Tables that share a row type may differ in their column constraints, which C# and C++ modules can declare
-/// per table. Codegen then writes the constraints that apply to only some of the tables with proposal 0022's
-/// `table = ...` modifier: `#[primary_key(table = player)]`, `#[unique(table = [player, npc])]`,
-/// `#[auto_inc(table = player)]` or `#[index(btree, table = player)]`.
-/// This drops the attributes that do not apply to `accessor`, and removes the modifier from the others,
-/// so the rest of the expansion sees the server's syntax. The server's `#[table]` does not accept the modifier yet.
-fn select_table_attrs(item: &syn::DeriveInput, accessor: &Ident) -> syn::Result<syn::DeriveInput> {
-    let mut item = item.clone();
-    let syn::Data::Struct(data) = &mut item.data else {
-        return Ok(item);
-    };
-    for field in data.fields.iter_mut() {
-        let mut attrs = Vec::with_capacity(field.attrs.len());
-        for attr in std::mem::take(&mut field.attrs) {
-            let is_column_attr = ["primary_key", "unique", "auto_inc", "index"]
-                .iter()
-                .any(|name| attr.path().is_ident(name));
-            if !is_column_attr || !matches!(attr.meta, syn::Meta::List(_)) {
-                attrs.push(attr);
-                continue;
-            }
-            let mut tables = None;
-            let mut rest = Punctuated::<syn::Meta, Token![,]>::new();
-            for meta in attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated)? {
-                match meta {
-                    syn::Meta::NameValue(nv) if nv.path.is_ident("table") => tables = Some(active_tables(&nv.value)?),
-                    meta => rest.push(meta),
-                }
-            }
-            let Some(tables) = tables else {
-                attrs.push(attr);
-                continue;
-            };
-            if tables.iter().any(|table| table.unraw() == accessor.unraw()) {
-                let path = attr.path();
-                attrs.push(if rest.is_empty() {
-                    syn::parse_quote!(#[#path])
-                } else {
-                    syn::parse_quote!(#[#path(#rest)])
-                });
-            }
-        }
-        field.attrs = attrs;
-    }
-    Ok(item)
-}
-
-/// The tables of `table = ident` or `table = [ident, ...]`.
-fn active_tables(value: &syn::Expr) -> syn::Result<Vec<Ident>> {
-    let ident = |expr: &syn::Expr| match expr {
-        syn::Expr::Path(path) => path.path.get_ident().cloned(),
-        _ => None,
-    };
-    let error = || syn::Error::new_spanned(value, "expected `table = ident` or `table = [ident, ...]`");
-    match value {
-        syn::Expr::Array(array) => array.elems.iter().map(|e| ident(e).ok_or_else(error)).collect(),
-        value => Ok(vec![ident(value).ok_or_else(error)?]),
-    }
-}
-
 /// The derive the first `#[table]` on a struct adds, after every other attribute.
 /// Later `#[table]`s on the same struct see it and skip the row-level items, like the server expansion does.
 /// It also declares the column attributes as helper attributes, so they stay on the fields for later `#[table]`s.
@@ -381,7 +319,7 @@ pub(crate) fn client_table(args: TokenStream, item: TokenStream) -> syn::Result<
     let derives = existing_derives(&item.attrs)?;
     let first_table_on_row = !derives.iter().any(|d| d == TABLE_HELPER);
 
-    let selected = select_table_attrs(&item, &args.accessor)?;
+    let selected = select_table_attrs(&item, &args.accessor, first_table_on_row)?;
     let sats_ty = sats::sats_type_from_derive(&selected, quote!(spacetimedb::__codegen::__lib))?;
     let SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new_spanned(&item, "spacetimedb table must be a struct"));

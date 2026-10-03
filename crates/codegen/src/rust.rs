@@ -826,9 +826,9 @@ fn column_name_attr(field: &str, canonical_name: &str) -> Option<String> {
 ///
 /// Tables that share a row type can differ in their column attributes: C# and C++ modules declare
 /// primary keys, unique constraints, sequences and indexes per table. An attribute that only some of the tables have
-/// gets proposal 0022's `table = ...` modifier, such as `#[primary_key(table = player)]`,
-/// which only the client expansions accept. A default cannot be declared per table, so it is left out
-/// unless every table has it; the client does not use defaults.
+/// gets proposal 0022's `table = ...` modifier, such as `#[primary_key(table = player)]`.
+/// A default cannot be declared per table, so it is left out unless every table has it;
+/// the client does not use defaults.
 fn row_column_attrs(tables: &[&TableDef], tables_args: &[TableArgs], col: ColId) -> Vec<String> {
     // Each attribute, with the accessors of the tables that have it, in order of first appearance.
     let mut attrs: Vec<(&String, Vec<String>)> = vec![];

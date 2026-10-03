@@ -33,4 +33,17 @@ fn bad_filter_on_index(ctx: &spacetimedb::ReducerContext) {
     ctx.db.delta().compound_b().filter(Alpha { beta: 1 });
 }
 
+#[spacetimedb::table(accessor = with_pk)]
+#[spacetimedb::table(accessor = without_pk)]
+struct UnknownTableInColumnAttr {
+    #[primary_key(table = [with_pk, wihtout_pk])]
+    id: u64,
+}
+
+#[spacetimedb::table(accessor = empty_table_list)]
+struct EmptyTableListInColumnAttr {
+    #[primary_key(table = [])]
+    id: u64,
+}
+
 fn main() {}
