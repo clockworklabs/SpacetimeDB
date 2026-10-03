@@ -1,0 +1,18 @@
+# Proposal 0040 spike: names every public item of today's generated bindings for `templates/chat-console-rs`,
+# and compiles against either today's generated bindings or the module-shaped ones.
+#   cargo check -p module-shaped-chat-api-probe                        # module-shaped bindings
+#   cargo check -p module-shaped-chat-api-probe --features generated   # today's generated bindings
+[package]
+name = "module-shaped-chat-api-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+generated = []
+
+[dependencies]
+spacetimedb-sdk = { path = "../../.." }
+
+[lints]
+workspace = true

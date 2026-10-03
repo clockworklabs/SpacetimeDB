@@ -73,6 +73,7 @@ members = [
   "sdks/rust/tests/module-shaped/event-table-client",
   "sdks/rust/tests/module-shaped/event-table-source-client",
   "sdks/rust/tests/module-shaped/chat-console-client",
+  "sdks/rust/tests/module-shaped/chat-api-probe",
   "tools/ci",
   "tools/ci/commands/test",
   "tools/ci/commands/lint",

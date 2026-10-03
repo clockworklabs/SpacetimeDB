@@ -4332,6 +4332,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-shaped-chat-api-probe"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb-sdk",
+]
+
+[[package]]
 name = "module-shaped-chat-console-client"
 version = "0.1.0"
 dependencies = [
