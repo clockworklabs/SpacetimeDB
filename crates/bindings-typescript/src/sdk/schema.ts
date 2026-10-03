@@ -7,7 +7,7 @@ import {
   type TableDef,
   type UntypedSchemaDef,
 } from '../lib/schema';
-import { table, type CoerceRow } from '../lib/table';
+import { table, type CoerceRow, type UntypedTableDef } from '../lib/table';
 import type { TableDecl, UntypedTableDecl } from '../lib/table_schema';
 import {
   ArrayBuilder,
@@ -18,7 +18,7 @@ import {
   type TypeBuilder,
 } from '../lib/type_builders';
 import type { Prettify } from '../lib/type_util';
-import { toSnakeCase, type CoerceParams } from '../lib/util';
+import type { CoerceParams } from '../lib/util';
 import type {
   ProcedureOptsWithOptionalName,
   ProcedureSignature,
@@ -242,11 +242,11 @@ export function moduleDefFromExports<const M extends ModuleExports>(
   // the exception: the host also converts an explicit procedure name (see
   // `makeProcedureExport`), which this does not yet mirror.
   const { caseConversionPolicy } = spacetimedb.moduleDef;
-  const canonicalName = (accessorName: string, name: string | undefined) =>
+  const canonicalName = (accessorName: string, name?: string) =>
     name ??
     (caseConversionPolicy.tag === 'None'
       ? accessorName
-      : toSnakeCase(accessorName));
+      : toCanonicalSnakeCase(accessorName));
 
   const views: Record<string, UntypedTableDecl> = {};
   const reducers = [];
@@ -281,10 +281,13 @@ export function moduleDefFromExports<const M extends ModuleExports>(
     // No CLI generated this module def. This SDK built it, so it meets the
     // SDK's minimum by construction.
     versionInfo: { cliVersion: _MINIMUM_CLI_VERSION.toString() },
-    tables: {
-      ...spacetimedb.schemaType.tables,
-      ...tablesToSchema(new ModuleContext(), views).tables,
-    },
+    tables: withCanonicalNames(
+      {
+        ...spacetimedb.schemaType.tables,
+        ...tablesToSchema(new ModuleContext(), views).tables,
+      },
+      canonicalName
+    ),
     ...reducersToSchema(reducers),
     procedures,
   } as unknown as InferModule<M>;
@@ -302,6 +305,86 @@ function viewRow(ret: ViewReturnTypeBuilder): RowObj | RowBuilder<RowObj> {
       ? ret.element
       : (ret as OptionBuilder<any>).value;
   return element instanceof ProductBuilder ? element.elements : element;
+}
+
+/**
+ * Gives each table, and each column, the canonical name that the host gives
+ * it, so that the client's queries and table updates use the host's names.
+ * Generated bindings state every canonical name; module source need not.
+ */
+function withCanonicalNames(
+  tables: Record<string, UntypedTableDef>,
+  canonicalName: (accessorName: string, name?: string) => string
+): Record<string, UntypedTableDef> {
+  return Object.fromEntries(
+    Object.entries(tables).map(([accessorName, table]) => [
+      accessorName,
+      {
+        ...table,
+        sourceName: canonicalName(accessorName, table.tableName),
+        columns: Object.fromEntries(
+          Object.entries(table.columns).map(([key, column]) => {
+            const name = canonicalName(key, column.columnMetadata.name);
+            if (name === key || name === column.columnMetadata.name) {
+              return [key, column];
+            }
+            // Copy the column builder with the name, rather than call
+            // `.name()`, which the `Result` and unit column builders lack.
+            return [
+              key,
+              Object.assign(Object.create(Object.getPrototypeOf(column)), {
+                ...column,
+                columnMetadata: { ...column.columnMetadata, name },
+              }),
+            ];
+          })
+        ),
+      },
+    ])
+  );
+}
+
+/**
+ * Converts an accessor name to snake case as the host does when it derives a
+ * canonical name under the `SnakeCase` policy (`convert_case`'s `Case::Snake`).
+ * Unlike `toSnakeCase`, it splits acronyms (`XMLParser` is `xml_parser`)
+ * and digits (`userId2` is `user_id_2`), and drops leading, trailing, and
+ * repeated separators. It reads code points where the host reads graphemes,
+ * which differs only for combining characters.
+ */
+export function toCanonicalSnakeCase(name: string): string {
+  const isUpper = (c: string) =>
+    c.toUpperCase() !== c.toLowerCase() && c === c.toUpperCase();
+  const isLower = (c: string) =>
+    c.toUpperCase() !== c.toLowerCase() && c === c.toLowerCase();
+  const isDigit = (c: string) => c >= '0' && c <= '9';
+  const chars = Array.from(name);
+  const words: string[] = [];
+  let word = '';
+  chars.forEach((c, i) => {
+    if (c === '_' || c === '-' || c === ' ') {
+      words.push(word);
+      word = '';
+      return;
+    }
+    const prev = chars[i - 1] ?? '';
+    const next = chars[i + 1] ?? '';
+    if (
+      (isLower(prev) && (isUpper(c) || isDigit(c))) ||
+      (isDigit(prev) && (isUpper(c) || isLower(c))) ||
+      (isUpper(prev) && isDigit(c)) ||
+      (isUpper(prev) && isUpper(c) && isLower(next))
+    ) {
+      words.push(word);
+      word = '';
+    }
+    word += c;
+  });
+  words.push(word);
+  return words
+    .filter(w => w !== '')
+    .map(w => w.toLowerCase())
+    .join('_');
 }
 
 type HasAccessor = { accessorName: PropertyKey };
