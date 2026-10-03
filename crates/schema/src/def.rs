@@ -186,6 +186,10 @@ pub struct ModuleDef {
 
     /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
     environment: Option<EnvironmentSchema>,
+
+    /// The explicit canonical names of fields of the product types in `typespace`,
+    /// keyed by type and source name, which `typespace` has already applied.
+    explicit_field_names: BTreeMap<(AlgebraicTypeRef, RawIdentifier), RawIdentifier>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -1043,6 +1047,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             submodules: _,
             accessor_path: _,
             environment: _,
+            explicit_field_names: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1105,6 +1110,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             submodules,
             accessor_path: _,
             environment,
+            explicit_field_names,
         } = val;
 
         let mut sections = Vec::new();
@@ -1114,6 +1120,23 @@ impl From<ModuleDef> for RawModuleDefV10 {
             ));
         }
         let mut explicit_names = ExplicitNames::default();
+
+        // `typespace` has canonical names. Give an explicitly named field its source name back,
+        // so that validating the raw def again derives the same accessor name, and its explicit name.
+        // Validation keeps each canonical name distinct from the other fields' source names,
+        // so a field given its source name back never matches a later entry.
+        let mut typespace = typespace;
+        for ((ty, source_name), canonical_name) in &explicit_field_names {
+            if let Some(AlgebraicType::Product(product)) = typespace.types.get_mut(ty.idx())
+                && let Some(field) = product
+                    .elements
+                    .iter_mut()
+                    .find(|element| element.name() == Some(canonical_name))
+            {
+                field.name = Some(source_name.clone());
+            }
+            explicit_names.insert_field(*ty, source_name.clone(), canonical_name.clone());
+        }
 
         sections.push(RawModuleDefV10Section::Typespace(typespace));
 
@@ -1224,17 +1247,21 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     && let Some(primary_key) = vd.primary_key
                     && let Some(column) = vd.return_columns.get(primary_key.idx())
                 {
+                    // Validation matches the primary-key column by its name in the raw return type,
+                    // so use the column's name in the `Typespace` section emitted above. That is the
+                    // already canonicalized column name, because this raw module def is being emitted
+                    // from an already canonicalized `ModuleDef`, except for a column with an explicit
+                    // name, which has its source name back.
+                    let accessor_name = RawIdentifier::from(column.accessor_name.clone());
+                    let column_name =
+                        if explicit_field_names.contains_key(&(vd.product_type_ref, accessor_name.clone())) {
+                            accessor_name
+                        } else {
+                            RawIdentifier::from(column.name.clone())
+                        };
                     raw_view_primary_keys.push(RawViewPrimaryKeyDefV10 {
                         view_source_name: RawIdentifier::from(vd.accessor_name.clone()),
-                        // Use the already canonicalized column name, because this raw
-                        // module def is being emitted from an already canonicalized
-                        // `ModuleDef`. The `Typespace` section we emit below contains
-                        // those canonical column names, and V10 has no column-level
-                        // `ExplicitNames` section to translate source column names
-                        // during the next validation pass. Therefore the serialized
-                        // primary-key column must match the canonical name present in
-                        // the emitted return type.
-                        columns: vec![RawIdentifier::from(column.name.clone())],
+                        columns: vec![column_name],
                     });
                 }
                 vd.into()

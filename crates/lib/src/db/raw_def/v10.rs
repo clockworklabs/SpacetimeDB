@@ -212,6 +212,27 @@ pub enum ExplicitNameEntry {
     Function(NameMapping),
     Index(NameMapping),
     Namespace(NameMapping),
+    /// A field of a product type, such as a table column: `#[name("...")]` on a struct field.
+    ///
+    /// Hosts that predate this variant reject a module definition that contains it.
+    Field(FieldNameMapping),
+}
+
+/// The explicit canonical name of a field of a product type in the typespace.
+///
+/// The field is keyed by its type rather than by a table, because tables that share a row type
+/// share its column names.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, Ord, PartialOrd))]
+#[non_exhaustive]
+pub struct FieldNameMapping {
+    /// The product type that has the field.
+    pub ty: AlgebraicTypeRef,
+    /// The name of the field in the typespace, as defined in the module.
+    pub source_name: RawIdentifier,
+    /// The canonical name of the field, which replaces the one the case conversion policy derives.
+    pub canonical_name: RawIdentifier,
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -258,6 +279,19 @@ impl ExplicitNames {
         canonical_name: impl Into<RawIdentifier>,
     ) {
         self.insert(ExplicitNameEntry::Namespace(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_field(
+        &mut self,
+        ty: AlgebraicTypeRef,
+        source_name: impl Into<RawIdentifier>,
+        canonical_name: impl Into<RawIdentifier>,
+    ) {
+        self.insert(ExplicitNameEntry::Field(FieldNameMapping {
+            ty,
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
         }));
