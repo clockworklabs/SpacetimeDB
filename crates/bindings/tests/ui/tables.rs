@@ -46,4 +46,16 @@ struct EmptyTableListInColumnAttr {
     id: u64,
 }
 
+#[spacetimedb::table(accessor = unquoted_name)]
+struct UnquotedColumnName {
+    #[name(player_ref)]
+    player_ref: u32,
+}
+
+#[derive(spacetimedb::SpacetimeType)]
+enum NamedVariant {
+    #[name("red")]
+    Red(u8),
+}
+
 fn main() {}

@@ -1414,6 +1414,10 @@ impl TypespaceBuilder for RawModuleDefV10Builder {
             AlgebraicType::Ref(slot_ref)
         }
     }
+
+    fn add_explicit_field_name(&mut self, ty: AlgebraicTypeRef, field: &'static str, canonical_name: &'static str) {
+        self.explicit_names_mut().insert_field(ty, field, canonical_name);
+    }
 }
 
 pub fn reducer_default_ok_return_type() -> AlgebraicType {

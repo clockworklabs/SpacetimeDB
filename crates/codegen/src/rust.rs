@@ -816,8 +816,7 @@ fn canonical(accessor: &str) -> String {
 }
 
 /// `name("...")` for the field `field`, if the column's canonical name differs from the one the client derives,
-/// as under `CaseConversionPolicy::None`. Module syntax has no column name yet:
-/// this is proposal 0032's form, which only the client expansions accept.
+/// as under `CaseConversionPolicy::None` or with an explicit name: proposal 0032's form.
 fn column_name_attr(field: &str, canonical_name: &str) -> Option<String> {
     (canonical(field) != canonical_name).then(|| format!("name({canonical_name:?})"))
 }

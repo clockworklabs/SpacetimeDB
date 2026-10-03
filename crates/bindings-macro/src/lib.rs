@@ -290,7 +290,7 @@ fn derive_table_helper_attr() -> Attribute {
 ///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, default))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, default, name))]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
 }
@@ -348,7 +348,7 @@ pub fn serialize(input: StdTokenStream) -> StdTokenStream {
     sats_derive(input, false, sats::derive_serialize)
 }
 
-#[proc_macro_derive(SpacetimeType, attributes(sats))]
+#[proc_macro_derive(SpacetimeType, attributes(sats, name))]
 pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     sats_derive(input, true, |ty| {
         let ident = ty.ident;

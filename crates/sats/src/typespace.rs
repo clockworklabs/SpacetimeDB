@@ -336,6 +336,11 @@ pub trait TypespaceBuilder {
     {
         T::make_type(self)
     }
+
+    /// Records that the field `field` of the product type `ty`, which [`add`](Self::add) returned,
+    /// has the explicit canonical name `canonical_name`, as `#[name("...")]` on a struct field declares it.
+    /// Builders that don't record names ignore it.
+    fn add_explicit_field_name(&mut self, _ty: AlgebraicTypeRef, _field: &'static str, _canonical_name: &'static str) {}
 }
 
 /// Implements [`SpacetimeType`] for a type in a simplified manner.
