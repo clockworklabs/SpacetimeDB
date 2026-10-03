@@ -27,9 +27,8 @@
 //!
 //! The arguments of each attribute are parsed by the same code as the server expansion,
 //! so both accept the same syntax, including proposal 0022's `table = ...` modifier on column attributes
-//! (see `table::select_table_attrs`). The client also accepts proposal 0032's `#[name("...")]` on a field
-//! (see `column_name`), which the server does not yet accept, and which generated bindings use
-//! where the module declares something that module syntax cannot otherwise express.
+//! (see `table::select_table_attrs`), and proposal 0032's `#[name("...")]` on a field (see `column_name`),
+//! which generated bindings use where a column's canonical name differs from the default.
 //!
 //! The templates are string templates, ported from codegen's former Rust backend and parsed into tokens at the end.
 //! They write `__sdk::`, `__lib::`, `__sats::` and `__ws::`, which `qualify` spells out as
@@ -198,10 +197,9 @@ impl ColInfo {
 /// A per-item expansion cannot see the module's case conversion policy, so it assumes the default.
 /// Codegen writes proposal 0032's `#[name("...")]` on a field whose canonical name differs,
 /// such as `#[name("playerRef")]` on `player_ref` under `CaseConversionPolicy::None`.
-/// The server's `#[table]` and `#[derive(SpacetimeType)]` do not accept `#[name]` on fields yet.
 fn column_name(ident: &Ident, attrs: &[syn::Attribute]) -> syn::Result<String> {
-    match attrs.iter().find(|attr| attr.path().is_ident("name")) {
-        Some(attr) => Ok(attr.parse_args::<syn::LitStr>()?.value()),
+    match sats::explicit_name(attrs)? {
+        Some(name) => Ok(name.value()),
         None => Ok(canonical(&ident.unraw().to_string())),
     }
 }
