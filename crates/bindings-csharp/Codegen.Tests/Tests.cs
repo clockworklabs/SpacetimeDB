@@ -212,10 +212,82 @@ public static class GeneratorSnapshotTests
         var fixture = await Fixture.Compile("client");
 
         var compilationAfterGen = await fixture.RunAndCheckGenerators(
-            new SpacetimeDB.Codegen.Type()
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Client()
         );
 
         Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
+    public static async Task ClientGeneratorOnClient()
+    {
+        var fixture = await Fixture.Compile("clientgen");
+
+        var compilationAfterGen = (
+            await fixture.RunAndCheckGenerators(new SpacetimeDB.Codegen.Client())
+        ).AddSyntaxTrees(
+            // The [SpacetimeDB.Type] declarations, including the client SDK's, need the BSATN generator.
+            fixture.RunGeneratorAndGetResult(new SpacetimeDB.Codegen.Type()).GeneratedTrees
+        );
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
+    public static async Task ClientGeneratorDiagnostics()
+    {
+        var fixture = await Fixture.Compile("clientgen");
+
+        // One declaration for each diagnostic that the client generator reports.
+        const string source = """
+            namespace ClientDiag
+            {
+                [SpacetimeDB.Table(Accessor = "StructRow")]
+                public partial struct StructRow
+                {
+                    public int Id;
+                }
+
+                [SpacetimeDB.Table(Accessor = "UnknownColumn")]
+                [SpacetimeDB.Index.BTree(Accessor = "ByMissing", Columns = new[] { "Missing" })]
+                public partial class UnknownColumn
+                {
+                    public int Id;
+                }
+
+                public static partial class Module
+                {
+                    [SpacetimeDB.Reducer]
+                    public static partial void Overloaded(SpacetimeDB.ReducerContext ctx);
+
+                    [SpacetimeDB.Reducer]
+                    public static partial void Overloaded(SpacetimeDB.ReducerContext ctx, int x);
+
+                    [SpacetimeDB.Reducer]
+                    public static partial void RefParam(SpacetimeDB.ReducerContext ctx, ref int x);
+
+                    [SpacetimeDB.Reducer]
+                    public static partial void NoContext(int x);
+
+                    [SpacetimeDB.View]
+                    public static partial int NotRows(SpacetimeDB.ViewContext ctx);
+                }
+            }
+            """;
+        var compilation = fixture.SampleCompilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(source, fixture.ParseOptions, path: "ClientDiag.cs")
+        );
+        var diagnostics = CSharpGeneratorDriver
+            .Create(
+                [new SpacetimeDB.Codegen.Client().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions
+            )
+            .RunGenerators(compilation)
+            .GetRunResult()
+            .Diagnostics.OrderBy(diag => diag.Location.SourceSpan.Start);
+
+        await fixture.Verify("ClientDiagnostics", diagnostics);
     }
 
     [Fact]

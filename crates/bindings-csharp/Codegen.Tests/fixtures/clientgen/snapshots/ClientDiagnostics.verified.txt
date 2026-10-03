@@ -1,0 +1,104 @@
+﻿[
+  {/*
+    [SpacetimeDB.Table(Accessor = "StructRow")]
+    public partial struct StructRow
+                          ^^^^^^^^^
+    {
+*/
+    Message: StructRow is a struct, but row types in client bindings must be classes.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDBCL0006,
+      Title: Client row types must be classes,
+      MessageFormat: {0} is a struct, but row types in client bindings must be classes.,
+      Category: SpacetimeDB.Client,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true
+    }
+  },
+  {/*
+    [SpacetimeDB.Table(Accessor = "UnknownColumn")]
+    [SpacetimeDB.Index.BTree(Accessor = "ByMissing", Columns = new[] { "Missing" })]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public partial class UnknownColumn
+*/
+    Message: Could not find the specified column Missing in UnknownColumn.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDBCL0005,
+      Title: Unknown column,
+      MessageFormat: Could not find the specified column {0} in {1}.,
+      Category: SpacetimeDB.Client,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true
+    }
+  },
+  {/*
+        [SpacetimeDB.Reducer]
+        public static partial void Overloaded(SpacetimeDB.ReducerContext ctx, int x);
+                                   ^^^^^^^^^^
+
+*/
+    Message: ClientDiag.Module.Overloaded is declared as a reducer more than once. The client API has one reducer per name, so this declaration is skipped.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDBCL0001,
+      Title: Client bindings can't overload functions,
+      MessageFormat: {0}.{1} is declared as a {2} more than once. The client API has one {3} per name, so this declaration is skipped.,
+      Category: SpacetimeDB.Client,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true
+    }
+  },
+  {/*
+        [SpacetimeDB.Reducer]
+        public static partial void RefParam(SpacetimeDB.ReducerContext ctx, ref int x);
+                                                                                    ^
+
+*/
+    Message: Parameter x of RefParam is ref, out, in, or params, which the client API doesn't support.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDBCL0002,
+      Title: Parameters can't be ref, out, in, or params,
+      MessageFormat: Parameter {0} of {1} is ref, out, in, or params, which the client API doesn't support.,
+      Category: SpacetimeDB.Client,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true
+    }
+  },
+  {/*
+        [SpacetimeDB.Reducer]
+        public static partial void NoContext(int x);
+                                            ^^^^^^^
+
+*/
+    Message: NoContext does not have a ReducerContext as its first parameter.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDBCL0003,
+      Title: Functions must take a context as their first parameter,
+      MessageFormat: {0} does not have a {1} as its first parameter.,
+      Category: SpacetimeDB.Client,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true
+    }
+  },
+  {/*
+        [SpacetimeDB.View]
+        public static partial int NotRows(SpacetimeDB.ViewContext ctx);
+                              ^^^
+    }
+*/
+    Message: View NotRows returns int, which is not T?, List<T>, IEnumerable<T>, or IQuery<T> of a [SpacetimeDB.Type] or [SpacetimeDB.Table] class T.,
+    Severity: Error,
+    Descriptor: {
+      Id: STDBCL0004,
+      Title: Views must return rows,
+      MessageFormat: View {0} returns {1}, which is not T?, List<T>, IEnumerable<T>, or IQuery<T> of a [SpacetimeDB.Type] or [SpacetimeDB.Table] class T.,
+      Category: SpacetimeDB.Client,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true
+    }
+  }
+]
