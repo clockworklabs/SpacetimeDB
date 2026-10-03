@@ -10,10 +10,10 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  id: __t.u64(),
-  owner: __t.identity(),
-  title: __t.string(),
+export default __t.row("ChatViewRow", {
+  id: __t.u64().primaryKey().name("id"),
+  owner: __t.identity().name("owner"),
+  title: __t.string().name("title"),
   createdAt: __t.timestamp().name("created_at"),
   updatedAt: __t.timestamp().name("updated_at"),
 });
