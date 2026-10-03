@@ -1,6 +1,7 @@
 import { actionImplementation, ActionInconclusive } from './action-contract.js';
 import {
   actorFor,
+  controlAttribute,
   fail,
   inconclusive,
   routeProofs,
@@ -468,7 +469,7 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         const target = source.loc(input.namedTarget.testid, { contains: input.namedTarget.contains === undefined
           ? undefined : transport.expand(input.namedTarget.contains) });
         await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
-        const rawValue = await target.getAttribute(input.namedTarget.attribute);
+        const rawValue = await controlAttribute(target, input.namedTarget.attribute);
         if (rawValue === null || rawValue === '') {
           fail('interface-missing', { control: input.namedTarget.testid,
             attribute: input.namedTarget.attribute, action: action.id ?? 'replay' });

@@ -483,6 +483,30 @@ test('one named server action maps DOM input symmetrically and verifies its outc
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
 });
 
+test('an action input on the one element inside its control is read from there', async () => {
+  const row = (inner: number) => ({ name: 'admin', loc: () => ({
+    waitFor: async () => {},
+    getAttribute: async () => null,
+    locator: (selector: string) => {
+      assert.equal(selector, '[data-action-input]');
+      return { count: async () => inner, getAttribute: async () => JSON.stringify({ itemId: 1 }) };
+    },
+  }) });
+  const action: NonNullable<NamedOptions['actions']>[number] = { id: 'restock', path: '/api/admin/restock',
+    reducer: 'admin_restock', args: [0], params: [{ name: 'itemId', in: 'body' }] };
+  const call = (inner: number, fetchImpl?: NamedOptions['fetchImpl']) => run({ do: 'callAction', actor: 'admin',
+    action: 'restock', input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none', settleMs: 0 },
+  services(new Map<string, unknown>([['admin', row(inner)]]), { actions: [action], fetchImpl }));
+  const nested = await call(1, async (_url, options) => {
+    assert.deepEqual(JSON.parse(String(options.body)), { itemId: 1 });
+    return namedResponse(200, true);
+  });
+  assert.equal(nested.status, 'passed');
+  // Two inner inputs leave the row's own value to stand, so the read cannot pick one.
+  const ambiguous = await call(2);
+  assert.equal(ambiguous.finding?.kind, 'interface-missing');
+});
+
 test('a control that never appears is a page timeout, not a missing attribute', async () => {
   let clock = 0;
   const absent = { name: 'customer', loc: () => ({
@@ -1212,7 +1236,8 @@ test('a missing or malformed declared replay target is an application failure', 
   for (const [value, message] of [[null, /exposes no data-entity-id/],
     ['not-an-id', /data-entity-id for the ship action is not valid/]] as const) {
     const source = { name: 'staff', writes: [], received: [],
-      loc: () => ({ waitFor: async () => undefined, getAttribute: async () => value }) };
+      loc: () => ({ waitFor: async () => undefined, getAttribute: async () => value,
+        locator: () => ({ count: async () => 0 }) }) };
     const customer = { name: 'customer', writes: [], received: [] };
     const provided = services(new Map<string, unknown>([
       ['staff', source],
@@ -1746,7 +1771,8 @@ test('named calls override one declared parameter from another actor without cha
       const owner = { name: 'owner', writes: [{ headers: { Authorization: 'Bearer owner' } }], loc: () => ({ waitFor: async () => {},
         getAttribute: async () => JSON.stringify({ caseId: '101', orderId: '303' }) }) };
       const other = { name: 'other', writes: [{ headers: { Authorization: 'Bearer other' } }],
-        loc: () => ({ waitFor: async () => {}, getAttribute: async () => targetId }) };
+        loc: () => ({ waitFor: async () => {}, getAttribute: async () => targetId,
+          locator: () => ({ count: async () => 0 }) }) };
       const provided = services(new Map<string, unknown>([['owner', owner], ['other', other]]), {
         backend, spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
         actions: [{ id: 'link', path: '/api/cases/{caseId}/order', reducer: 'link_support_order',

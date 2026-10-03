@@ -18,6 +18,7 @@ export interface Locator {
   innerText(): Promise<string>;
   inputValue(): Promise<string>;
   isVisible(): Promise<boolean>;
+  locator(selector: string): Locator;
   or(locator: Locator): Locator;
   press(key: string): Promise<void>;
   waitFor(options?: unknown): Promise<void>;
@@ -159,6 +160,16 @@ export interface ActorActionArguments<Input, Capabilities extends ActorCapabilit
 export function fail<K extends FailedFindingKind>(kind: K, fields: FindingFields[K]): never {
   const value = finding(kind, fields);
   throw new ActionApplicationFailure(renderFinding(value), { finding: value });
+}
+
+// An action's input may sit on the one element inside the control that performs it, such as a
+// row's form; more than one such element would be ambiguous, so the control's own value stands.
+export async function controlAttribute(control: Locator, attribute: string,
+  options?: { timeout?: number }): Promise<string | null> {
+  const own = await control.getAttribute(attribute, options);
+  if (own !== null && own !== '') return own;
+  const inner = control.locator(`[${attribute}]`);
+  return await inner.count() === 1 ? inner.getAttribute(attribute, options) : own;
 }
 
 export function inconclusive<K extends InconclusiveFindingKind>(kind: K,

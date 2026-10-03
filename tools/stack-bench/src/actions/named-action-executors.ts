@@ -5,6 +5,7 @@ import { actionImplementation } from './action-contract.js';
 import type { Operation } from './action-findings.js';
 import {
   actorFor,
+  controlAttribute,
   fail,
   inconclusive,
   routeProofs,
@@ -112,7 +113,7 @@ async function readActionValues(capabilities: NamedActionCapabilities, source: A
       await target.waitFor({ state: 'attached', timeout: remaining() });
       attached = true;
       for (;;) {
-        const value = await target.getAttribute(selector.attribute, { timeout: remaining() });
+        const value = await controlAttribute(target, selector.attribute, { timeout: remaining() });
         signal.throwIfAborted();
         if (value !== null && value !== '') return value;
         await named.sleep(Math.min(100, remaining()), signal);
