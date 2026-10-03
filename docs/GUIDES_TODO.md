@@ -34,5 +34,6 @@ Each guide will also get a short-format video (done later, once the written guid
 - [ ] Admin and moderator roles with SpacetimeAuth
 - [ ] Send an email from your module
 - [ ] Call an external API from your module
-- [x] Call an AI model
+- [x] Call an AI model from your module
+- [x] Call an AI model from a sidecar
 - [ ] Seed initial data on first publish

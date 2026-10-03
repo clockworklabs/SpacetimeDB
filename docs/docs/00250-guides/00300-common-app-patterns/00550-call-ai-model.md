@@ -1,5 +1,5 @@
 ---
-title: Call an AI model
+title: Call an AI model from your module
 slug: /guides/app-patterns/call-ai-model
 ---
 
@@ -834,5 +834,7 @@ You now have a module that generates text with an AI model on behalf of its clie
 - The `generate_text` procedure rejects oversized prompts and players who call it too often, calls the model outside any transaction, and returns errors as values that every client can read.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) and [Access Permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
+
+To call the model from a separate program instead, with your provider's SDK and streaming replies, see [Call an AI model from a sidecar](./00560-call-ai-model-sidecar.md).
 
 To call other web services the same way, see [Call an external API from your module](./00500-call-external-api.md).
