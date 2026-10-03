@@ -187,6 +187,8 @@ pub enum ValidationError {
     Environment(#[from] spacetimedb_lib::environment::EnvironmentSchemaError),
     #[error("submodule {namespace:?} cannot declare environment variables")]
     EnvironmentInSubmodule { namespace: String },
+    #[error("an explicit name refers to field `{field}` of type {ty}, which does not exist")]
+    ExplicitNameFieldNotFound { ty: AlgebraicTypeRef, field: RawIdentifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
