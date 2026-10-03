@@ -41,10 +41,18 @@ export type UntypedProceduresDef = {
   procedures: readonly UntypedProcedureDef[];
 };
 
+/**
+ * @deprecated Declare procedures with `spacetimedb.procedure(...)` and build
+ * the module def with `moduleDefFromExports`.
+ */
 export function procedures<const H extends readonly UntypedProcedureDef[]>(
   ...handles: H
 ): { procedures: H };
 
+/**
+ * @deprecated Declare procedures with `spacetimedb.procedure(...)` and build
+ * the module def with `moduleDefFromExports`.
+ */
 export function procedures<const H extends readonly UntypedProcedureDef[]>(
   handles: H
 ): { procedures: H };
@@ -70,6 +78,10 @@ type ProcedureDef<
   returnType: ReturnType;
 };
 
+/**
+ * @deprecated Declare procedures with `spacetimedb.procedure(...)` and build
+ * the module def with `moduleDefFromExports`.
+ */
 export function procedureSchema<
   ProcedureName extends string,
   Params extends ParamsObj,

@@ -40,3 +40,4 @@ export { ScheduleAt } from '../lib/schedule_at';
 export type { Environment } from './environment';
 
 import './polyfills'; // Ensure polyfills are loaded
+import './module_hooks'; // Install the host's entry point on `Schema`

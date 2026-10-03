@@ -20,7 +20,8 @@
   "author": "Clockwork Labs",
   "type": "module",
   "sideEffects": [
-    "./src/server/polyfills.ts"
+    "./src/server/polyfills.ts",
+    "./src/server/module_hooks.ts"
   ],
   "scripts": {
     "build:js": "tsup",
@@ -120,7 +121,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "48 kB"
+      "limit": "50 kB"
     },
     {
       "name": "esm (uncompressed)",

@@ -23,6 +23,7 @@ vi.mock('../src/server/runtime', () => ({
 }));
 
 import { schema } from '../src/server/schema';
+import '../src/server/module_hooks';
 import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
 

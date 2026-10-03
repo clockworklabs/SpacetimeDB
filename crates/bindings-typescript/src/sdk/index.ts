@@ -8,7 +8,12 @@ export { type ClientTable } from './client_table.ts';
 export { type ModuleDef, type RemoteModule } from './spacetime_module.ts';
 export type { TableDefOf, TableNamesOf } from '../lib/schema.ts';
 export * from '../lib/type_builders.ts';
-export { schema, convertToAccessorMap } from './schema.ts';
+export {
+  schema,
+  convertToAccessorMap,
+  moduleDefFromExports,
+  type InferModule,
+} from './schema.ts';
 export { table } from '../lib/table.ts';
 export { reducerSchema, reducers } from './reducers.ts';
 export { procedureSchema, procedures } from './procedures.ts';
