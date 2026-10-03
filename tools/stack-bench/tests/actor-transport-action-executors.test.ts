@@ -483,6 +483,26 @@ test('one named server action maps DOM input symmetrically and verifies its outc
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
 });
 
+test('a control that never appears is a page timeout, not a missing attribute', async () => {
+  let clock = 0;
+  const absent = { name: 'customer', loc: () => ({
+    waitFor: async () => {
+      clock = Number.MAX_SAFE_INTEGER;
+      throw Object.assign(new Error('waiting for the control timed out'), { name: 'TimeoutError' });
+    },
+    getAttribute: async () => assert.fail('an absent control has no attribute to read'),
+  }) };
+  const provided = services(new Map<string, unknown>([['customer', absent]]), { actions: [{
+    id: 'restock', path: '/api/admin/restock', reducer: 'admin_restock', args: [0],
+    params: [{ name: 'itemId', in: 'body' }] }] });
+  const clocked = { ...provided, capabilities: { ...provided.capabilities,
+    'named-actions': { ...record(provided.capabilities['named-actions']), now: () => clock } } };
+  const result = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, clocked as typeof provided);
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.finding, { kind: 'page-timeout', fields: { control: 'row' } });
+});
+
 test('named action input uses declared defaults and a missing route is not mistaken for a refusal', async () => {
   const actor = (input: UnknownRecord) => ({
     name: 'customer',
