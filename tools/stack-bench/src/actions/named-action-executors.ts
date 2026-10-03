@@ -107,16 +107,10 @@ async function readActionValues(capabilities: NamedActionCapabilities, source: A
       if (ms <= 0) missing();
       return Math.max(1, ms);
     };
+    let attached = false;
     try {
-      // A control that never appears is not one that lacks the attribute.
-      try { await target.waitFor({ state: 'attached', timeout: remaining() }); }
-      catch (error) {
-        signal.throwIfAborted();
-        if (error instanceof Error && error.name === 'TimeoutError' && named.now() >= deadline) {
-          fail('page-timeout', { control: selector.testid });
-        }
-        throw error;
-      }
+      await target.waitFor({ state: 'attached', timeout: remaining() });
+      attached = true;
       for (;;) {
         const value = await target.getAttribute(selector.attribute, { timeout: remaining() });
         signal.throwIfAborted();
@@ -125,7 +119,11 @@ async function readActionValues(capabilities: NamedActionCapabilities, source: A
       }
     } catch (error) {
       signal.throwIfAborted();
-      if (error instanceof Error && error.name === 'TimeoutError' && named.now() >= deadline) missing();
+      // A control that never appears is not one that lacks the attribute.
+      if (error instanceof Error && error.name === 'TimeoutError' && named.now() >= deadline) {
+        if (attached) missing();
+        fail('page-timeout', { control: selector.testid });
+      }
       throw error;
     }
   };
