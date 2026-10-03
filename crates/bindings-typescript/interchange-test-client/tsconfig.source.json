@@ -1,0 +1,8 @@
+{
+  // Compiles the same client with `./module` resolved to `module.source.ts`,
+  // which is the module source rather than its generated declarations.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "moduleSuffixes": [".source", ""]
+  }
+}

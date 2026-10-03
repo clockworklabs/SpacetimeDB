@@ -2,6 +2,7 @@ packages:
   - 'crates/bindings-typescript'
   - 'crates/bindings-typescript/test-app'
   - 'crates/bindings-typescript/case-conversion-test-client'
+  - 'crates/bindings-typescript/interchange-test-client'
   - 'templates/chat-react-ts'
   - 'templates/money-exchange-react-ts'
   - 'templates/hangman-react-ts'
