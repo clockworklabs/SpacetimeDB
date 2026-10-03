@@ -171,10 +171,13 @@ type ReducerDecls<M> = {
   [K in keyof M & string]: ReducerDecl<K, SignatureOf<M[K]>>;
 }[keyof M & string];
 
+// The host converts a procedure's explicit name under the module's case
+// conversion policy, which the type of a module does not record, so the name
+// is a string.
 type ProcedureDecl<K extends string, Sig> =
-  Sig extends ProcedureSignature<infer Name, infer Params, infer Ret>
+  Sig extends ProcedureSignature<string, infer Params, infer Ret>
     ? {
-        name: Name;
+        name: string;
         accessorName: K;
         params: CoerceParams<Params>;
         returnType: Ret;
@@ -240,13 +243,12 @@ export function remoteModuleDeclFromExports<const M extends ModuleExports>(
   // As on the host, a canonical name is the explicit name, if given, or else
   // the accessor name under the module's case conversion policy. Procedures are
   // the exception: the host also converts an explicit procedure name (see
-  // `makeProcedureExport`), which this does not yet mirror.
+  // `makeProcedureExport`), and so does this.
   const { caseConversionPolicy } = spacetimedb.moduleDef;
+  const convert = (name: string) =>
+    caseConversionPolicy.tag === 'None' ? name : toCanonicalSnakeCase(name);
   const canonicalName = (accessorName: string, name?: string) =>
-    name ??
-    (caseConversionPolicy.tag === 'None'
-      ? accessorName
-      : toCanonicalSnakeCase(accessorName));
+    name ?? convert(accessorName);
 
   const views: Record<string, UntypedTableBody> = {};
   const reducers = [];
@@ -256,7 +258,10 @@ export function remoteModuleDeclFromExports<const M extends ModuleExports>(
       exportSignature
     ];
     if (signature === undefined) continue;
-    const name = canonicalName(accessorName, signature.name);
+    const name =
+      signature.kind === 'procedure'
+        ? convert(signature.name ?? accessorName)
+        : canonicalName(accessorName, signature.name);
     switch (signature.kind) {
       case 'reducer':
         reducers.push(reducerSchema(name, signature.params, accessorName));
