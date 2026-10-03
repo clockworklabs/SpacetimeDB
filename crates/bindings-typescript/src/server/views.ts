@@ -79,18 +79,25 @@ export function makeAnonViewExport<
   return viewExport;
 }
 
-export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
+export type ViewContext<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
   env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
 
-export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
+/** @deprecated Use `ViewContext` instead. */
+export type ViewCtx<S extends UntypedSchemaDef> = ViewContext<S>;
+
+export type AnonymousViewContext<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
   env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
+
+/** @deprecated Use `AnonymousViewContext` instead. */
+export type AnonymousViewCtx<S extends UntypedSchemaDef> =
+  AnonymousViewContext<S>;
 
 export type ViewOpts = {
   name?: string;
@@ -168,9 +175,9 @@ export type ViewFn<
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 > =
-  | ((ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
+  | ((ctx: ViewContext<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
   | ((
-      ctx: ViewCtx<S>,
+      ctx: ViewContext<S>,
       params: InferTypeOfRow<Params>
     ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
 
@@ -179,9 +186,12 @@ export type AnonymousViewFn<
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 > =
-  | ((ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
   | ((
-      ctx: AnonymousViewCtx<S>,
+      ctx: AnonymousViewContext<S>,
+      params: InferTypeOfRow<Params>
+    ) => Infer<Ret>)
+  | ((
+      ctx: AnonymousViewContext<S>,
       params: InferTypeOfRow<Params>
     ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
 
@@ -208,7 +218,7 @@ export function registerView<
   fn: ViewFn<S, Params, Ret>
 ) {
   const described = describeView(ctx, opts, exportName, false, params, ret);
-  // `ctx.views` is schema-erased. `ViewCtx<S>` and `ViewCtx<any>` describe the same
+  // `ctx.views` is schema-erased. `ViewContext<S>` and `ViewContext<any>` describe the same
   // shape, but TypeScript cannot relate two instantiations of the mapped type
   // `ReadonlyDbView` while the schema is still a type parameter, so erasing `S` here
   // needs an assertion. It is sound because the runtime builds the context it passes
@@ -370,8 +380,8 @@ type ViewInfo<F> = {
   returnTypeBaseSize: number;
 };
 
-type AnyViewFn = (ctx: ViewCtx<any>, params: any) => any;
-type AnyAnonymousViewFn = (ctx: AnonymousViewCtx<any>, params: any) => any;
+type AnyViewFn = (ctx: ViewContext<any>, params: any) => any;
+type AnyAnonymousViewFn = (ctx: AnonymousViewContext<any>, params: any) => any;
 
 export type Views = ViewInfo<AnyViewFn>[];
 export type AnonViews = ViewInfo<AnyAnonymousViewFn>[];

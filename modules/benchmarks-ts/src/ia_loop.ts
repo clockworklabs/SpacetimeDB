@@ -10,7 +10,7 @@ import {
   type Position,
   type Velocity,
 } from './schema';
-import { t, type ReducerCtx } from 'spacetimedb/server';
+import { t, type ReducerContext } from 'spacetimedb/server';
 
 function newPosition(
   entity_id: number,
@@ -173,7 +173,7 @@ export const insertWorld = spacetimedb.reducer(
 );
 
 function getTargetablesNearQuad(
-  ctx: ReducerCtx<S>,
+  ctx: ReducerContext<S>,
   entityId: bigint,
   numPlayers: bigint
 ): GameTargetableState[] {
@@ -197,7 +197,7 @@ function getTargetablesNearQuad(
 const MAX_MOVE_TIMESTAMPS = 20;
 
 function moveAgent(
-  ctx: ReducerCtx<S>,
+  ctx: ReducerContext<S>,
   agent: GameEnemyAiAgentState,
   agentCoord: SmallHexTile,
   currentTimeMs: bigint
@@ -250,7 +250,7 @@ function moveAgent(
 }
 
 function agentLoop(
-  ctx: ReducerCtx<S>,
+  ctx: ReducerContext<S>,
   agent: GameEnemyAiAgentState,
   agentTargetable: GameTargetableState,
   surroundingAgents: GameTargetableState[],
@@ -281,7 +281,7 @@ function agentLoop(
 export const gameLoopEnemyIa = spacetimedb.reducer(
   { name: 'game_loop_enemy_ia' },
   { players: t.u64() },
-  (ctx: ReducerCtx<S>, { players }) => {
+  (ctx: ReducerContext<S>, { players }) => {
     let count = 0;
     const currentTimeMs = momentMilliseconds();
 

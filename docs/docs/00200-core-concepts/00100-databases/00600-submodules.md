@@ -23,7 +23,7 @@ A submodule is a regular SpacetimeDB module. Nothing special marks a module as a
 
 ```typescript
 // auth_lib/src/index.ts
-import { schema, table, t, SyncResponse, Router, type ReducerCtx } from 'spacetimedb/server';
+import { schema, table, t, SyncResponse, Router, type ReducerContext } from 'spacetimedb/server';
 
 const users = table(
   { name: 'users', public: true },
@@ -158,7 +158,7 @@ Call a submodule reducer or a plain helper function typed against the submodule'
 
 ```typescript
 // auth_lib: plain helper function typed against the submodule's own schema
-export function sessionCountHelper(ctx: ReducerCtx<typeof spacetimedb>): number {
+export function sessionCountHelper(ctx: ReducerContext<InferSchema<typeof spacetimedb>>): bigint {
   return ctx.db.sessions.count();
 }
 
@@ -173,7 +173,7 @@ export const onLogin = spacetimedb.reducer({ token: t.string() }, (ctx, { token 
 });
 ```
 
-`ctx.as.myauth` is a `ReducerCtx` scoped to the `myauth` namespace. It shares the same sender, timestamp, and connectionId as the parent context, but its `ctx.db` points at `ctx.db.myauth`.
+`ctx.as.myauth` is a `ReducerContext` scoped to the `myauth` namespace. It shares the same sender, timestamp, and connectionId as the parent context, but its `ctx.db` points at `ctx.db.myauth`.
 
 For reducers registered through the submodule's own schema (via `schema.reducer(...)`), the host passes a scoped context automatically when invoked directly. `ctx.as` is only needed when the consumer calls a submodule function explicitly.
 
@@ -185,7 +185,7 @@ For reducers registered through the submodule's own schema (via `schema.reducer(
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Use `ctx.as.<alias>` to pass a submodule-scoped `ProcedureCtx` to a submodule procedure. To call a submodule reducer from inside a procedure, open a transaction first with `ctx.withTx` and then narrow with `tx.as.<alias>`:
+Use `ctx.as.<alias>` to pass a submodule-scoped `ProcedureContext` to a submodule procedure. To call a submodule reducer from inside a procedure, open a transaction first with `ctx.withTx` and then narrow with `tx.as.<alias>`:
 
 ```typescript
 // call a submodule procedure
@@ -200,7 +200,7 @@ export const transactAndCount = spacetimedb.procedure(
   t.u64(),
   (ctx, { token }) => {
     ctx.withTx(tx => {
-      // tx is a root ReducerCtx; narrow to the submodule namespace
+      // tx is a root ReducerContext; narrow to the submodule namespace
       authLib.verifyToken(tx.as.myauth, { token });
     });
     return authLib.sessionCount(ctx.as.myauth);

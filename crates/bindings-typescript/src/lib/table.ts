@@ -212,20 +212,33 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
   : CoerceArray<[]>;
 
 /**
- * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
+ * TableHandle<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
  *
  * - Row: row shape
  * - UCV: unique-constraint violation error type (never if none)
  * - AIO: auto-increment overflow error type (never if none)
  */
-export type Table<TableDef extends UntypedTableDef> = Prettify<
+export type TableHandle<TableDef extends UntypedTableDef> = Prettify<
   TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
 >;
 
-export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
+export type ReadonlyTableHandle<TableDef extends UntypedTableDef> = Prettify<
   ReadonlyTableMethods<TableDef> &
     ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
 >;
+
+/**
+ * @deprecated Use `TableHandle` instead. Kept so that declaration files emitted
+ * against older versions of the SDK keep resolving.
+ */
+export type Table<TableDef extends UntypedTableDef> = TableHandle<TableDef>;
+
+/**
+ * @deprecated Use `ReadonlyTableHandle` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type ReadonlyTable<TableDef extends UntypedTableDef> =
+  ReadonlyTableHandle<TableDef>;
 
 export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   /**

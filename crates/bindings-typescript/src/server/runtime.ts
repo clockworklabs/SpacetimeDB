@@ -46,23 +46,23 @@ import {
 } from './http_shared';
 import {
   type AliasViews,
-  type AuthCtx,
+  type AuthContext,
   type JsonObject,
   type JwtClaims,
-  type ReducerCtx as IReducerCtx,
+  type ReducerContext as IReducerContext,
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import {
   type RowType,
-  type Table,
+  type TableHandle,
   type TableMethods,
   type UntypedTableDef,
 } from '../lib/table';
 import { bsatnBaseSize, hasOwn } from '../lib/util';
 import {
-  type AnonymousViewCtx,
+  type AnonymousViewContext,
   type AnonViews,
-  type ViewCtx,
+  type ViewContext,
   type Views,
 } from './views';
 import {
@@ -153,7 +153,7 @@ class JwtClaimsImpl implements JwtClaims {
   }
 }
 
-class AuthCtxImpl implements AuthCtx {
+class AuthCtxImpl implements AuthContext {
   public readonly isInternal: boolean;
 
   // Source of the JWT payload string, if there is one.
@@ -200,7 +200,7 @@ class AuthCtxImpl implements AuthCtx {
   }
 
   /** Create a context representing internal (non-user) requests. */
-  static internal(): AuthCtx {
+  static internal(): AuthContext {
     return new AuthCtxImpl({
       isInternal: true,
       jwtSource: () => null,
@@ -212,7 +212,7 @@ class AuthCtxImpl implements AuthCtx {
   static fromSystemTables(
     connectionId: ConnectionId | null,
     sender: Identity
-  ): AuthCtx {
+  ): AuthContext {
     if (connectionId === null) {
       return new AuthCtxImpl({
         isInternal: false,
@@ -237,10 +237,10 @@ class AuthCtxImpl implements AuthCtx {
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
   SchemaDef extends UntypedSchemaDef,
-> implements IReducerCtx<SchemaDef>
+> implements IReducerContext<SchemaDef>
 {
   #identity: Identity | undefined;
-  #senderAuth: AuthCtx | undefined;
+  #senderAuth: AuthContext | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   sender: Identity;
@@ -265,7 +265,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.as = asViews as AliasViews<SchemaDef>;
   }
 
-  /** Reset the `ReducerCtx` to be used for a new transaction */
+  /** Reset the `ReducerContext` to be used for a new transaction */
   static reset(
     me: InstanceType<typeof this>,
     sender: Identity,
@@ -307,7 +307,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   /**
-   * Create a new random {@link Uuid} `v4` using this `ReducerCtx`'s RNG.
+   * Create a new random {@link Uuid} `v4` using this `ReducerContext`'s RNG.
    */
   newUuidV4(): Uuid {
     const bytes = this.random.fill(new Uint8Array(16));
@@ -315,7 +315,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   /**
-   * Create a new sortable {@link Uuid} `v7` using this `ReducerCtx`'s RNG, counter,
+   * Create a new sortable {@link Uuid} `v7` using this `ReducerContext`'s RNG, counter,
    * and timestamp.
    */
   newUuidV7(): Uuid {
@@ -427,7 +427,7 @@ class ModuleHooksImpl implements ModuleHooks {
   #flatSubmodules: FlatSubmoduleDispatch[];
   #consumerAnonViewCount: number;
   #consumerViewCount: number;
-  /** Cache the `ReducerCtx` object to avoid allocating anew for every reducer call. */
+  /** Cache the `ReducerContext` object to avoid allocating anew for every reducer call. */
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
   /** Per-submodule alias ctx maps, cached lazily (parallel to #flatSubmodules). */
   #submoduleAsViews_: (object | undefined)[] = [];
@@ -628,7 +628,7 @@ class ModuleHooksImpl implements ModuleHooks {
 
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       viewFns![localId!];
-    const ctx: ViewCtx<any> = freeze({
+    const ctx: ViewContext<any> = freeze({
       env: environment,
       sender: new Identity(sender),
       db: dbView!,
@@ -679,7 +679,7 @@ class ModuleHooksImpl implements ModuleHooks {
 
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       anonViewFns![localId!];
-    const ctx: AnonymousViewCtx<any> = freeze({
+    const ctx: AnonymousViewContext<any> = freeze({
       env: environment,
       db: dbView!,
       from: from!,
@@ -1063,7 +1063,7 @@ export function buildProcedureAliasCtxMap(
   );
 }
 
-/** Builds and assigns reducer-style alias views onto a freshly created TransactionCtx.
+/** Builds and assigns reducer-style alias views onto a freshly created TxContext.
  *  Must be called while inside a transaction (after sys.procedure_start_mut_tx). */
 export function assignTxAliasViews(
   tx: InstanceType<typeof ReducerCtxImpl>,
@@ -1079,7 +1079,7 @@ export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,
   namePrefix = ''
-): Table<any> {
+): TableHandle<any> {
   const table_id = sys.table_id_from_name(namePrefix + table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
@@ -1172,7 +1172,7 @@ export function makeTableView(
   const tableView = Object.assign(
     Object.create(null),
     tableMethods
-  ) as Table<any>;
+  ) as TableHandle<any>;
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;

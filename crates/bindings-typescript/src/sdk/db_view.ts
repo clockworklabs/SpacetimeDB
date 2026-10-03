@@ -1,5 +1,5 @@
 import type { UntypedModuleDef } from './spacetime_module';
-import type { ClientTable } from './client_table';
+import type { TableHandle } from './client_table';
 import type { Values } from '../lib/type_util';
 
 /**
@@ -8,5 +8,5 @@ import type { Values } from '../lib/type_util';
 export type ClientDbView<RemoteModule extends UntypedModuleDef> = {
   readonly [TblName in Values<
     RemoteModule['tables']
-  >['accessorName']]: ClientTable<RemoteModule, TblName>;
+  >['accessorName']]: TableHandle<RemoteModule, TblName>;
 };

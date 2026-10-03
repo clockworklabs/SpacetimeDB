@@ -8,7 +8,7 @@ import type {
 import type { UntypedSchemaDef } from '../lib/schema';
 import type { Timestamp } from '../lib/timestamp';
 import type { Uuid } from '../lib/uuid';
-import type { TransactionCtx } from './procedures';
+import type { TxContext } from './procedures';
 import type { HttpClient } from './http_internal';
 import type { Random } from './rng';
 import {
@@ -226,7 +226,7 @@ export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
   readonly identity: Identity;
   readonly random: Random;
   readonly as: HandlerAliasViews<S>;
-  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  withTx<T>(body: (ctx: TxContext<S>) => T): T;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
 }
