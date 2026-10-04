@@ -400,7 +400,7 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
       destination: hash(JSON.stringify([url.origin, url.pathname, route.operation, route.flags])),
       shape: hash(JSON.stringify([route.parameters, valueShape(args)])) })
       ? patchWriteFields(args, probe!.patch, route.parameters.map(name => ({ name }))) : null;
-  }, (receipt, changed) => { if (changed) recordPatch(receipt); }, fail);
+  }, (receipt, changed) => { if (changed) recordPatch(receipt); }, fail, completionOnly);
   const sockets = socketPatches.get(page);
   if (sockets?.active) { native?.dispose(); throw new Error('Authentication request capture is already active'); }
   let socketFinish: (() => void) | undefined, socketTimer: ReturnType<typeof setTimeout> | undefined;

@@ -501,6 +501,11 @@ test('mixed native and HTTP signup probes expose either source of authority', as
     send({ tag: 'InitialConnection', value: { identity: { __identity__: 1n }, connectionId: { __connection_id__: 1n }, token: 'fixture-token' } });
     socket.on('message', raw => {
       const message = codec.ClientMessage.deserialize(new codec.BinaryReader(raw));
+      if (message.value.reducer === 'create_product') {
+        send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
+          timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: { tag: 'OkEmpty' } } });
+        return;
+      }
       const reader = new codec.BinaryReader(message.value.args);
       const [user, , role] = [readString(reader), readString(reader), readString(reader)];
       calls.push({ transport: 'native', role }); profiles.set(user, role);
@@ -581,6 +586,23 @@ test('mixed native and HTTP signup probes expose either source of authority', as
         heldReceipts.clear(); nativeReceived = undefined;
         await page.context().close(); mode = 'correct';
       }
+    });
+    await t.test('a completion check waits for a reducer whose arguments it cannot decode', async () => {
+      const page = await fresh('undeclared');
+      // Not in the schema, and an array argument the patch codec does not read.
+      const bytes = encode(codec.ClientMessage, { tag: 'CallReducer', value: {
+        reducer: 'create_product', requestId: 7, flags: 0, args: new Uint8Array([1, 0, 0, 0, 3, 0, 0, 0, 77, 117, 103]) } });
+      const send = () => page.evaluate(async bytes => {
+        const socket = (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket;
+        // A refused write is never sent, so the app waits only so long for its reply.
+        const reply = new Promise(resolve => { socket.addEventListener('message', resolve, { once: true }); setTimeout(resolve, 2000); });
+        socket.send(new Uint8Array(bytes)); await reply;
+      }, [...bytes]);
+      try {
+        assert.equal((await withWriteCompletion(page, send)).writes.length, 1);
+        // A probe patches arguments, so its inventory still refuses a write it cannot read.
+        await assert.rejects(withAuthWriteInventory(page, send), ActionInconclusive);
+      } finally { await page.context().close(); }
     });
     const baselinePage = await fresh('baseline');
     const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage, 'baseline'));

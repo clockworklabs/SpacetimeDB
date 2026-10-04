@@ -374,7 +374,7 @@ async function authDeclarations(capture: Capture) {
 export async function startSpacetimeAuthWriteCapture(page: object,
   visit: (route: { url: string; operation: string; flags: number; parameters: readonly string[] }, args: unknown[]) =>
     { value: unknown; shape: string; absentParameters?: string[] } | null,
-  receipt: (value: AuthReceipt, changed: boolean) => void, onFailure: () => void) {
+  receipt: (value: AuthReceipt, changed: boolean) => void, onFailure: () => void, completionOnly = false) {
   const capture = captures.get(page);
   if (!capture) return null;
   if (capture.auth) throw new Error('Authentication request capture is already active');
@@ -383,10 +383,20 @@ export async function startSpacetimeAuthWriteCapture(page: object,
   const pending: Promise<void>[] = [];
   let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
   const fail = () => { onFailure(); for (const item of waiting.splice(0)) item.finish('unknown'); };
+  // Waiting for a write to finish needs its request ID and result, not its arguments. Arguments are
+  // decoded only to patch them, which a completion check never does.
+  const awaitResult = (socket: Socket, id: number, settled: (result: string) => void) =>
+    pending.push(new Promise<void>(resolve => waiting.push({ socket, id, finish(result) { settled(result); resolve(); } })));
   capture.auth = {
     fail,
     change(message, socket) {
       if (stopped) return null;
+      if (completionOnly) {
+        if (!leasedSocket(capture, socket, target, true, true)) { fail(); return null; }
+        visit({ url: socket.url, operation: operation(message.value), flags: message.value.flags, parameters: [] }, []);
+        awaitResult(socket, message.value.requestId, result => { if (!['Ok', 'OkEmpty', 'Err'].includes(result)) onFailure(); });
+        return null;
+      }
       const declaration = declarations?.get(operation(message.value));
       // An undeclared procedure leaves the capture unproved; the app's call still proceeds.
       if (!declaration && message.tag === 'CallProcedure') { fail(); return null; }
@@ -413,13 +423,12 @@ export async function startSpacetimeAuthWriteCapture(page: object,
       }
       const sent = { ...message, value: { ...message.value, args: encoded } };
       const bodySha256 = createHash('sha256').update(encode(capture.codec, capture.codec.ClientMessage, sent)).digest('hex');
-      pending.push(new Promise<void>(resolve => waiting.push({ socket, id: message.value.requestId, finish(result) {
+      awaitResult(socket, message.value.requestId, result => {
         if (!['Ok', 'OkEmpty', 'Err'].includes(result)) onFailure();
         else receipt({ shape: changed?.shape ?? 'captured', success: result !== 'Err',
           transport: 'spacetime-websocket', bodySha256,
           ...(changed?.absentParameters ? { absentParameters: changed.absentParameters } : {}) }, Boolean(changed));
-        resolve();
-      } })));
+      });
       return changed ? sent : null;
     },
   };
