@@ -16,7 +16,7 @@ import {
   getQueryAccessorName,
   getQueryWhereClause,
 } from '../../lib/query';
-import type { EventContextInterface } from '../../sdk';
+import type { EventContextBase } from '../../sdk';
 import type { UntypedRemoteModuleDecl } from '../../sdk/spacetime_module';
 
 export type RowTypeDef<TableDecl extends UntypedTableDecl> = Prettify<
@@ -152,7 +152,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     const table = connection.db[accessorName];
 
     const onInsert = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
@@ -168,7 +168,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     };
 
     const onDelete = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
@@ -184,7 +184,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     };
 
     const onUpdate = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       oldRow: any,
       newRow: any
     ) => {

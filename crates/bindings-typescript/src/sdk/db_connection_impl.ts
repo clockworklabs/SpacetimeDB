@@ -17,9 +17,13 @@ import { INTERNAL_REMOTE_MODULE } from './internal.ts';
 import { type DbContext } from './db_context.ts';
 import type { Event } from './event.ts';
 import {
+  type ErrorContextBase,
   type ErrorContextInterface,
+  type EventContextBase,
   type EventContextInterface,
+  type ReducerEventContextBase,
   type ReducerEventContextInterface,
+  type SubscriptionEventContextBase,
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
@@ -96,9 +100,13 @@ export type RemoteModuleOf<C> = RemoteModuleDeclOf<C>;
 
 export type {
   DbContext,
+  EventContextBase,
   EventContextInterface,
+  ReducerEventContextBase,
   ReducerEventContextInterface,
+  SubscriptionEventContextBase,
   SubscriptionEventContextInterface,
+  ErrorContextBase,
   ErrorContextInterface,
   ReducerEvent,
 };
@@ -531,7 +539,7 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
         InferTypeOfParams<RemoteModuleDecl['reducers'][number]['params']>
       >
     >
-  ): EventContextInterface<RemoteModuleDecl> {
+  ): EventContextBase<RemoteModuleDecl> {
     return {
       db: this.db,
       reducers: this.reducers,
@@ -890,7 +898,7 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
 
   #applyTableUpdates(
     tableUpdates: CacheTableUpdate<UntypedTableDecl>[],
-    eventContext: EventContextInterface<RemoteModuleDecl>
+    eventContext: EventContextBase<RemoteModuleDecl>
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
     for (const tableUpdate of tableUpdates) {
@@ -912,7 +920,7 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   }
 
   #applyTransactionUpdates(
-    eventContext: EventContextInterface<RemoteModuleDecl>,
+    eventContext: EventContextBase<RemoteModuleDecl>,
     tu: TransactionUpdate
   ): PendingCallback[] {
     const allUpdates: CacheTableUpdate<UntypedTableDecl>[] = [];

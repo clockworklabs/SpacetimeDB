@@ -30,7 +30,7 @@
 import type {
   DbConnectionBuilder,
   DbConnectionBase,
-  ErrorContextInterface,
+  ErrorContextBase,
 } from './db_connection_impl';
 import type { Identity } from '../lib/identity';
 import { ConnectionId } from '../lib/connection_id';
@@ -71,8 +71,8 @@ type ManagedConnection = {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   onConnect?: (conn: DbConnectionBase<any>) => void;
-  onDisconnect?: (ctx: ErrorContextInterface<any>, error?: Error) => void;
-  onConnectError?: (ctx: ErrorContextInterface<any>, error: Error) => void;
+  onDisconnect?: (ctx: ErrorContextBase<any>, error?: Error) => void;
+  onConnectError?: (ctx: ErrorContextBase<any>, error: Error) => void;
 };
 
 function defaultState(): ConnectionState {

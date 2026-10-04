@@ -8,7 +8,7 @@ import type {
 } from '../lib/table';
 import type { ColumnBuilder } from '../lib/type_builders';
 import type { Prettify } from '../lib/type_util';
-import type { EventContextInterface } from './event_context';
+import type { EventContextBase } from './event_context';
 import type { UntypedRemoteModuleDecl } from './spacetime_module';
 
 export type ClientTablePrimaryKeyMethods<
@@ -22,7 +22,7 @@ export type ClientTablePrimaryKeyMethods<
    */
   onUpdate(
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       oldRow: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>,
       newRow: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
@@ -34,7 +34,7 @@ export type ClientTablePrimaryKeyMethods<
    */
   removeOnUpdate(
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       oldRow: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>,
       newRow: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
@@ -50,7 +50,7 @@ export type ClientTableInsertMethods<
    */
   onInsert(
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void;
@@ -61,7 +61,7 @@ export type ClientTableInsertMethods<
    */
   removeOnInsert(
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void;
@@ -76,7 +76,7 @@ export type ClientTableDeleteMethods<
    */
   onDelete(
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void;
@@ -87,7 +87,7 @@ export type ClientTableDeleteMethods<
    */
   removeOnDelete(
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void;

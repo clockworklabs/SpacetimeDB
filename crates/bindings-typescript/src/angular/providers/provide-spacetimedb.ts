@@ -7,7 +7,7 @@ import {
 import type {
   DbConnectionBuilder,
   DbConnectionBase,
-  ErrorContextInterface,
+  ErrorContextBase,
   RemoteModuleDeclOf,
 } from '../../sdk/db_connection_impl';
 import {
@@ -56,7 +56,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionBase<any>>(
       };
 
       const onDisconnect = (
-        ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>
+        ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>
       ) => {
         state.set({
           ...state(),
@@ -65,7 +65,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionBase<any>>(
       };
 
       const onConnectError = (
-        ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+        ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
         err: Error
       ) => {
         state.set({

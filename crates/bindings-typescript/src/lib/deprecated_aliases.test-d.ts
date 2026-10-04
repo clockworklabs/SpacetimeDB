@@ -2,12 +2,20 @@ import type {
   ClientTable,
   DbConnectionBase,
   DbConnectionImpl,
+  ErrorContextBase,
+  ErrorContextInterface,
+  EventContextBase,
+  EventContextInterface,
+  ReducerEventContextBase,
+  ReducerEventContextInterface,
   RemoteModule,
   RemoteModuleDecl,
   RemoteModuleDeclOf,
   RemoteModuleOf,
   SubscriptionBuilderBase,
   SubscriptionBuilderImpl,
+  SubscriptionEventContextBase,
+  SubscriptionEventContextInterface,
   SubscriptionHandleBase,
   SubscriptionHandleImpl,
   TableDeclOf,
@@ -33,6 +41,10 @@ import type {
   ViewContext,
   ViewCtx,
 } from '../server';
+import type {
+  ProcedureEventContextBase,
+  ProcedureEventContextInterface,
+} from '../sdk/event_context';
 import type {
   UntypedProcedureDecl,
   UntypedProcedureDef,
@@ -244,4 +256,34 @@ type _SubscriptionHandleImpl = Assert<
 >;
 type _SubscriptionHandleImplValue = Assert<
   Equals<typeof SubscriptionHandleImpl, typeof SubscriptionHandleBase>
+>;
+type _EventContextInterface = Assert<
+  Equals<
+    EventContextInterface<UntypedRemoteModuleDecl>,
+    EventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ReducerEventContextInterface = Assert<
+  Equals<
+    ReducerEventContextInterface<UntypedRemoteModuleDecl>,
+    ReducerEventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ProcedureEventContextInterface = Assert<
+  Equals<
+    ProcedureEventContextInterface<UntypedRemoteModuleDecl>,
+    ProcedureEventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _SubscriptionEventContextInterface = Assert<
+  Equals<
+    SubscriptionEventContextInterface<UntypedRemoteModuleDecl>,
+    SubscriptionEventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ErrorContextInterface = Assert<
+  Equals<
+    ErrorContextInterface<UntypedRemoteModuleDecl>,
+    ErrorContextBase<UntypedRemoteModuleDecl>
+  >
 >;

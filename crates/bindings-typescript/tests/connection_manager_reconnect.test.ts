@@ -6,7 +6,7 @@ import {
   ConnectionManager,
 } from '../src/sdk/connection_manager.ts';
 
-type ErrorContextInterface = {
+type ErrorContextBase = {
   isActive: boolean;
 };
 
@@ -26,10 +26,10 @@ class MockConnection {
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
+    (ctx: ErrorContextBase, error?: Error) => void
   >();
   #onConnectErrorCallbacks = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
+    (ctx: ErrorContextBase, error: Error) => void
   >();
 
   disconnect(): void {
@@ -40,7 +40,7 @@ class MockConnection {
     this.disconnected = true;
     this.isActive = false;
     for (const cb of this.#onDisconnectCallbacks) {
-      cb(this as unknown as ErrorContextInterface);
+      cb(this as unknown as ErrorContextBase);
     }
   }
 
@@ -48,14 +48,12 @@ class MockConnection {
     this.#onConnectCallbacks.delete(cb);
   }
 
-  removeOnDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
-  ): void {
+  removeOnDisconnect(cb: (ctx: ErrorContextBase, error?: Error) => void): void {
     this.#onDisconnectCallbacks.delete(cb);
   }
 
   removeOnConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): void {
     this.#onConnectErrorCallbacks.delete(cb);
   }
@@ -90,14 +88,14 @@ class MockConnection {
   simulateDisconnect(error?: Error): void {
     this.isActive = false;
     for (const cb of this.#onDisconnectCallbacks) {
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this as unknown as ErrorContextBase, error);
     }
   }
 
   simulateConnectError(error: Error): void {
     this.isActive = false;
     for (const cb of this.#onConnectErrorCallbacks) {
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this as unknown as ErrorContextBase, error);
     }
   }
 
@@ -106,13 +104,13 @@ class MockConnection {
   }
 
   registerOnDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
+    cb: (ctx: ErrorContextBase, error?: Error) => void
   ): void {
     this.#onDisconnectCallbacks.add(cb);
   }
 
   registerOnConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): void {
     this.#onConnectErrorCallbacks.add(cb);
   }
@@ -132,10 +130,10 @@ class MockBuilder {
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
+    (ctx: ErrorContextBase, error?: Error) => void
   >();
   #onConnectErrorCallbacks = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
+    (ctx: ErrorContextBase, error: Error) => void
   >();
 
   withToken(token?: string): MockBuilder {
@@ -171,7 +169,7 @@ class MockBuilder {
   }
 
   onDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
+    cb: (ctx: ErrorContextBase, error?: Error) => void
   ): MockBuilder {
     this.#onDisconnectCallbacks.add(cb);
     for (const connection of this.connections) {
@@ -181,7 +179,7 @@ class MockBuilder {
   }
 
   onConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): MockBuilder {
     this.#onConnectErrorCallbacks.add(cb);
     for (const connection of this.connections) {

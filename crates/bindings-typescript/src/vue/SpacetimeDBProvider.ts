@@ -10,7 +10,7 @@ import {
 import {
   DbConnectionBuilder,
   type DbConnectionBase,
-  type ErrorContextInterface,
+  type ErrorContextBase,
   type RemoteModuleDeclOf,
 } from '../sdk/db_connection_impl';
 import { ConnectionId } from '../lib/connection_id';
@@ -50,11 +50,11 @@ function setupConnection<DbConnection extends DbConnectionBase<any>>(
 
   let onConnectCallback: ((conn: DbConnection) => void) | null = null;
   let onDisconnectCallback:
-    | ((ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>) => void)
+    | ((ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>) => void)
     | null = null;
   let onConnectErrorCallback:
     | ((
-        ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+        ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
         err: Error
       ) => void)
     | null = null;
@@ -78,13 +78,13 @@ function setupConnection<DbConnection extends DbConnectionBase<any>>(
     };
 
     onDisconnectCallback = (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>
     ) => {
       state.isActive = ctx.isActive;
     };
 
     onConnectErrorCallback = (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
       err: Error
     ) => {
       state.isActive = ctx.isActive;

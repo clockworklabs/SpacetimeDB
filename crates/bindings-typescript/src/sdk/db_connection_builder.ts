@@ -2,7 +2,7 @@ import { DbConnectionBase, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type {
   DbConnectionConfig,
-  ErrorContextInterface,
+  ErrorContextBase,
   Identity,
   RemoteModuleDeclOf,
 } from '../';
@@ -193,7 +193,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionBase<any>> {
    */
   onConnectError(
     callback: (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
       error: Error
     ) => void
   ): this {
@@ -230,7 +230,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionBase<any>> {
    */
   onDisconnect(
     callback: (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
       error?: Error | undefined
     ) => void
   ): this {
