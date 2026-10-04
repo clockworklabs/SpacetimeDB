@@ -1,5 +1,7 @@
 #include "spacetimedb.h"
 
+#include <type_traits>
+
 using namespace SpacetimeDB;
 
 SPACETIMEDB_HTTP_HANDLER(hello_handler, HandlerContext ctx, HttpRequest request) {
@@ -26,3 +28,9 @@ SPACETIMEDB_HTTP_ROUTER(register_http_routes) {
         .merge(merged)
         .nest("/api", nested);
 }
+
+// Each deprecated name must stay an alias of the type that replaced it.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static_assert(std::is_same_v<AuthCtx, AuthContext>);
+#pragma GCC diagnostic pop

@@ -5,7 +5,7 @@
 #include <spacetimedb/bsatn/timestamp.h> // For Timestamp
 #include <spacetimedb/bsatn/uuid.h> // For Uuid
 #include <spacetimedb/random.h> // For StdbRng
-#include <spacetimedb/auth_ctx.h> // For AuthCtx
+#include <spacetimedb/auth_ctx.h> // For AuthContext
 #include <optional>
 #include <array>
 #include <memory>
@@ -33,7 +33,7 @@ public:
     
 private:
     // Authentication context with lazy JWT loading (private like in Rust)
-    AuthCtx sender_auth_;
+    AuthContext sender_auth_;
     
     // Lazily initialized RNG (similar to Rust's OnceCell pattern)
     // Using shared_ptr to make ReducerContext copyable
@@ -48,7 +48,7 @@ public:
     }
 
     // Returns the authorization information for the caller of this reducer
-    const AuthCtx& sender_auth() const {
+    const AuthContext& sender_auth() const {
         return sender_auth_;
     }
     
@@ -122,13 +122,13 @@ public:
     }
 
     // Constructors
-    ReducerContext() : sender_auth_(AuthCtx::internal()) {}
+    ReducerContext() : sender_auth_(AuthContext::internal()) {}
     
     ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts)
         : sender_(s), connection_id(cid), timestamp(ts), 
-          sender_auth_(AuthCtx::from_connection_id_opt(cid, s)) {}
+          sender_auth_(AuthContext::from_connection_id_opt(cid, s)) {}
 
-    ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts, AuthCtx auth)
+    ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts, AuthContext auth)
         : sender_(s), connection_id(cid), timestamp(ts), sender_auth_(std::move(auth)) {}
 };
 
