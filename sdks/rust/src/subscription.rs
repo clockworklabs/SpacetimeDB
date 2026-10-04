@@ -5,7 +5,7 @@
 use crate::spacetime_module::AbstractEventContext;
 use crate::{
     db_connection::{next_query_set_id, next_request_id, DbContextImpl, PendingMutation},
-    spacetime_module::{SpacetimeModule, SubscriptionHandle},
+    spacetime_module::{RemoteModuleDecl, SubscriptionHandle},
 };
 use futures_channel::mpsc;
 use spacetimedb_client_api_messages::websocket::{self as ws, common::QuerySetId};
@@ -17,11 +17,11 @@ use std::sync::{Arc, Mutex};
 // Currently race conditions abound, as you may resubscribe before the prev sub was applied,
 // clobbering your previous callback.
 
-pub struct SubscriptionManager<M: SpacetimeModule> {
+pub struct SubscriptionManager<M: RemoteModuleDecl> {
     subscriptions: HashMap<QuerySetId, SubscriptionHandleImpl<M>>,
 }
 
-impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
+impl<M: RemoteModuleDecl> Default for SubscriptionManager<M> {
     fn default() -> Self {
         Self {
             subscriptions: HashMap::default(),
@@ -30,13 +30,13 @@ impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
 }
 
 pub(crate) type OnAppliedCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
+    Box<dyn FnOnce(&<M as RemoteModuleDecl>::SubscriptionEventContext) + Send + 'static>;
 pub(crate) type OnErrorCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, crate::Error) + Send + 'static>;
-pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
+    Box<dyn FnOnce(&<M as RemoteModuleDecl>::ErrorContext, crate::Error) + Send + 'static>;
+pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as RemoteModuleDecl>::SubscriptionEventContext) + Send + 'static>;
 
 /// When handling a pending unsubscribe, there are three cases the caller must handle.
-pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
+pub(crate) enum PendingUnsubscribeResult<M: RemoteModuleDecl> {
     // The unsubscribe message should be sent to the server.
     SendUnsubscribe(ws::v2::Unsubscribe),
     // The subscription is immediately being cancelled, so the callback should be run.
@@ -45,7 +45,7 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
     DoNothing,
 }
 
-impl<M: SpacetimeModule> SubscriptionManager<M> {
+impl<M: RemoteModuleDecl> SubscriptionManager<M> {
     pub(crate) fn on_disconnect(&mut self, _ctx: &M::ErrorContext) {
         // We need to clear all the subscriptions.
         // TODO: is this correct? We don't remove them from the client cache,
@@ -144,13 +144,13 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
 }
 
 /// Builder-pattern constructor for subscription queries.
-pub struct SubscriptionBuilder<M: SpacetimeModule> {
+pub struct SubscriptionBuilder<M: RemoteModuleDecl> {
     on_applied: Option<OnAppliedCallback<M>>,
     on_error: Option<OnErrorCallback<M>>,
     conn: DbContextImpl<M>,
 }
 
-impl<M: SpacetimeModule> SubscriptionBuilder<M> {
+impl<M: RemoteModuleDecl> SubscriptionBuilder<M> {
     #[doc(hidden)]
     /// Call `ctx.subscription_builder()` instead.
     pub fn new(imp: &DbContextImpl<M>) -> Self {
@@ -227,12 +227,12 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
 }
 
 // Wrapper around `SubscriptionBuilder` that tracks typed queries
-pub struct TypedSubscriptionBuilder<M: SpacetimeModule> {
+pub struct TypedSubscriptionBuilder<M: RemoteModuleDecl> {
     builder: SubscriptionBuilder<M>,
     queries: Vec<String>,
 }
 
-impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+impl<M: RemoteModuleDecl> TypedSubscriptionBuilder<M> {
     /// Build a query and invoke `subscribe` in order to subscribe to its results.
     pub fn add_query<T, Q: Query<T>>(mut self, build: impl Fn(M::QueryBuilder) -> Q) -> Self {
         let query = build(M::QueryBuilder::default());
@@ -319,7 +319,7 @@ enum SubscriptionServerState {
 /// We track the state of a subscription here.
 /// A reference to this is held by the `SubscriptionHandle` that clients use to unsubscribe,
 /// and by the `SubscriptionManager` that handles updates from the server.
-pub(crate) struct SubscriptionState<M: SpacetimeModule> {
+pub(crate) struct SubscriptionState<M: RemoteModuleDecl> {
     query_set_id: QuerySetId,
     query_sql: Box<[Box<str>]>,
     unsubscribe_called: bool,
@@ -332,7 +332,7 @@ pub(crate) struct SubscriptionState<M: SpacetimeModule> {
     pending_mutation_sender: mpsc::UnboundedSender<PendingMutation<M>>,
 }
 
-impl<M: SpacetimeModule> SubscriptionState<M> {
+impl<M: RemoteModuleDecl> SubscriptionState<M> {
     pub(crate) fn new(
         query_set_id: QuerySetId,
         query_sql: Box<[Box<str>]>,
@@ -452,11 +452,11 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
 
 #[doc(hidden)]
 /// Internal implementation held by the module-specific generated `SubscriptionHandle` type.
-pub struct SubscriptionHandleImpl<M: SpacetimeModule> {
+pub struct SubscriptionHandleImpl<M: RemoteModuleDecl> {
     pub(crate) inner: Arc<Mutex<SubscriptionState<M>>>,
 }
 
-impl<M: SpacetimeModule> Clone for SubscriptionHandleImpl<M> {
+impl<M: RemoteModuleDecl> Clone for SubscriptionHandleImpl<M> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -464,7 +464,7 @@ impl<M: SpacetimeModule> Clone for SubscriptionHandleImpl<M> {
     }
 }
 
-impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
+impl<M: RemoteModuleDecl> SubscriptionHandleImpl<M> {
     pub(crate) fn new(inner: SubscriptionState<M>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(inner)),

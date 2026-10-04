@@ -25,7 +25,7 @@ use crate::{
         UpdateCallback,
     },
     client_cache::{ClientCache, TableHandle},
-    spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
+    spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, RemoteModuleDecl},
     subscription::{PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager},
     websocket::{WsConnection, WsParams},
     Event, ReducerEvent, Status,
@@ -65,7 +65,7 @@ type SharedAsyncCell<T> = SharedCell<T>;
 ///
 /// This must be relatively cheaply `Clone`-able, and have internal sharing,
 /// as numerous operations will clone it to get new handles on the connection.
-pub struct DbContextImpl<M: SpacetimeModule> {
+pub struct DbContextImpl<M: RemoteModuleDecl> {
     #[cfg(not(feature = "browser"))]
     runtime: runtime::Handle,
 
@@ -106,7 +106,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     pub(crate) extra_logging: Option<SharedCell<File>>,
 }
 
-impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
+impl<M: RemoteModuleDecl> Clone for DbContextImpl<M> {
     fn clone(&self) -> Self {
         Self {
             #[cfg(not(feature = "browser"))]
@@ -127,7 +127,7 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
     }
 }
 
-impl<M: SpacetimeModule> DbContextImpl<M> {
+impl<M: RemoteModuleDecl> DbContextImpl<M> {
     pub(crate) fn debug_log(&self, body: impl FnOnce(&mut File) -> std::result::Result<(), std::io::Error>) {
         debug_log(&self.extra_logging, body);
     }
@@ -747,12 +747,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     pub fn invoke_reducer_with_callback<Args>(
         &self,
         reducer: Args,
-        callback: impl FnOnce(&<M as SpacetimeModule>::ReducerEventContext, Result<Result<(), String>, InternalError>)
+        callback: impl FnOnce(&<M as RemoteModuleDecl>::ReducerEventContext, Result<Result<(), String>, InternalError>)
             + Send
             + 'static,
     ) -> crate::Result<()>
     where
-        <M as SpacetimeModule>::Reducer: From<Args>,
+        <M as RemoteModuleDecl>::Reducer: From<Args>,
     {
         self.queue_mutation(PendingMutation::InvokeReducerWithCallback {
             reducer: reducer.into(),
@@ -784,7 +784,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         &self,
         procedure_name: &'static str,
         args: Args,
-        callback: impl FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<RetVal, InternalError>)
+        callback: impl FnOnce(&<M as RemoteModuleDecl>::ProcedureEventContext, Result<RetVal, InternalError>)
             + Send
             + 'static,
     ) {
@@ -804,12 +804,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 }
 
-type OnConnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
+type OnConnectCallback<M> = Box<dyn FnOnce(&<M as RemoteModuleDecl>::DbConnection, Identity, &str) + Send + 'static>;
 
-type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, crate::Error) + Send + 'static>;
+type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as RemoteModuleDecl>::ErrorContext, crate::Error) + Send + 'static>;
 
 type OnDisconnectCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, Option<crate::Error>) + Send + 'static>;
+    Box<dyn FnOnce(&<M as RemoteModuleDecl>::ErrorContext, Option<crate::Error>) + Send + 'static>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConnectionLifecycle {
@@ -822,7 +822,7 @@ enum ConnectionLifecycle {
 }
 
 /// All the stuff in a [`DbContextImpl`] which can safely be locked while invoking callbacks.
-pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
+pub(crate) struct DbContextImplInner<M: RemoteModuleDecl> {
     /// `Some` if not within the context of an outer runtime. The `Runtime` must
     /// then live as long as `Self`.
     #[allow(unused)]
@@ -847,7 +847,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
 ///
 /// Get a builder by calling `DbConnection::builder()`.
 // TODO: Move into its own module which is not #[doc(hidden)]?
-pub struct DbConnectionBuilder<M: SpacetimeModule> {
+pub struct DbConnectionBuilder<M: RemoteModuleDecl> {
     uri: Option<Uri>,
 
     database_name: Option<String>,
@@ -904,7 +904,7 @@ pub(crate) fn debug_log(
     }
 }
 
-impl<M: SpacetimeModule> DbConnectionBuilder<M> {
+impl<M: RemoteModuleDecl> DbConnectionBuilder<M> {
     /// Implementation of the generated `DbConnection::builder` method.
     /// Call that method instead.
     #[doc(hidden)]
@@ -1194,7 +1194,7 @@ Instead of registering multiple `on_disconnect` callbacks, register a single cal
 }
 
 /// Create a [`DbContextImplInner`] wrapped in `Arc<Mutex<...>>`.
-fn build_db_ctx_inner<M: SpacetimeModule>(
+fn build_db_ctx_inner<M: RemoteModuleDecl>(
     #[cfg(not(feature = "browser"))] runtime: Option<Runtime>,
 
     on_connect_cb: Option<OnConnectCallback<M>>,
@@ -1220,7 +1220,7 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
 
 #[allow(clippy::too_many_arguments)]
 /// Assemble and return a [`DbContextImpl`] from the provided [`DbContextImplInner`], and channels.
-fn build_db_ctx<M: SpacetimeModule>(
+fn build_db_ctx<M: RemoteModuleDecl>(
     #[cfg(not(feature = "browser"))] runtime_handle: runtime::Handle,
 
     inner_ctx: Arc<StdMutex<DbContextImplInner<M>>>,
@@ -1302,7 +1302,7 @@ pub async fn get_lock_async<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_,
 }
 
 #[derive(Debug)]
-enum ParsedMessage<M: SpacetimeModule> {
+enum ParsedMessage<M: RemoteModuleDecl> {
     TransactionUpdate(M::DbUpdate),
     IdentityToken(Identity, Box<str>, ConnectionId),
     SubscribeApplied {
@@ -1330,7 +1330,7 @@ enum ParsedMessage<M: SpacetimeModule> {
 }
 
 #[cfg(not(feature = "browser"))]
-fn spawn_parse_loop<M: SpacetimeModule>(
+fn spawn_parse_loop<M: RemoteModuleDecl>(
     raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     handle: &runtime::Handle,
     extra_logging: Option<SharedCell<File>>,
@@ -1341,7 +1341,7 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 }
 
 #[cfg(feature = "browser")]
-fn spawn_parse_loop<M: SpacetimeModule>(
+fn spawn_parse_loop<M: RemoteModuleDecl>(
     raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     extra_logging: Option<SharedCell<File>>,
 ) -> mpsc::UnboundedReceiver<ParsedMessage<M>> {
@@ -1352,7 +1352,7 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 
 /// A loop which reads raw WS messages from `recv`, parses them into domain types,
 /// and pushes the [`ParsedMessage`]s into `send`.
-async fn parse_loop<M: SpacetimeModule>(
+async fn parse_loop<M: RemoteModuleDecl>(
     mut recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
     extra_logging: Option<SharedCell<File>>,
@@ -1500,7 +1500,7 @@ async fn parse_loop<M: SpacetimeModule>(
 }
 
 /// Operations a user can make to a `DbContext` which must be postponed
-pub(crate) enum PendingMutation<M: SpacetimeModule> {
+pub(crate) enum PendingMutation<M: RemoteModuleDecl> {
     Unsubscribe {
         query_set_id: QuerySetId,
     },
@@ -1548,7 +1548,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
 }
 
 // Hand-written `Debug` impl, 'cause `SubscriptionHandleImpl` and callbacks aren't printable.
-impl<M: SpacetimeModule> std::fmt::Debug for PendingMutation<M> {
+impl<M: RemoteModuleDecl> std::fmt::Debug for PendingMutation<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             PendingMutation::Unsubscribe { query_set_id } => f
@@ -1603,7 +1603,7 @@ impl<M: SpacetimeModule> std::fmt::Debug for PendingMutation<M> {
     }
 }
 
-enum Message<M: SpacetimeModule> {
+enum Message<M: RemoteModuleDecl> {
     Ws(Option<ParsedMessage<M>>),
     Local(PendingMutation<M>),
 }

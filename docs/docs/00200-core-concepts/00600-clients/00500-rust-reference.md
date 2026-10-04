@@ -394,7 +394,7 @@ For typed query subscriptions, use [`add_query`](#method-add_query).
 ##### Method `add_query`
 
 ```rust
-impl<M: SpacetimeModule> SubscriptionBuilder<M> {
+impl<M: RemoteModuleDecl> SubscriptionBuilder<M> {
     fn add_query<T>(
         self,
         build: impl Fn(M::QueryBuilder) -> impl Query<T>,
@@ -436,7 +436,7 @@ TypedSubscriptionBuilder<M>
 ##### Method `add_query` (TypedSubscriptionBuilder)
 
 ```rust
-impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+impl<M: RemoteModuleDecl> TypedSubscriptionBuilder<M> {
     fn add_query<T>(
         self,
         build: impl Fn(M::QueryBuilder) -> impl Query<T>,
@@ -449,7 +449,7 @@ Add another typed query. This keeps all added queries grouped under one returned
 ##### Method `subscribe` (TypedSubscriptionBuilder)
 
 ```rust
-impl<M: SpacetimeModule> TypedSubscriptionBuilder<M> {
+impl<M: RemoteModuleDecl> TypedSubscriptionBuilder<M> {
     fn subscribe(self) -> M::SubscriptionHandle;
 }
 ```
