@@ -1,7 +1,7 @@
 //! Internal implementations of connections to a remote database.
 //!
 //! Contains a whole bunch of stuff that is referenced by the CLI codegen,
-//! most notably [`DbContextImpl`], which implements `DbConnection` and `EventContext`.
+//! most notably [`DbContextBase`], which implements `DbConnection` and `EventContext`.
 //!
 //! Broadly speaking, the Rust SDK works by having a background Tokio worker [`WsConnection`]
 //! send and receive raw messages.
@@ -26,7 +26,7 @@ use crate::{
     },
     client_cache::{ClientCache, TableHandle},
     spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, RemoteModuleDecl},
-    subscription::{PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager},
+    subscription::{PendingUnsubscribeResult, SubscriptionHandleBase, SubscriptionManager},
     websocket::{WsConnection, WsParams},
     Event, ReducerEvent, Status,
 };
@@ -65,7 +65,7 @@ type SharedAsyncCell<T> = SharedCell<T>;
 ///
 /// This must be relatively cheaply `Clone`-able, and have internal sharing,
 /// as numerous operations will clone it to get new handles on the connection.
-pub struct DbContextImpl<M: RemoteModuleDecl> {
+pub struct DbContextBase<M: RemoteModuleDecl> {
     #[cfg(not(feature = "browser"))]
     runtime: runtime::Handle,
 
@@ -106,13 +106,18 @@ pub struct DbContextImpl<M: RemoteModuleDecl> {
     pub(crate) extra_logging: Option<SharedCell<File>>,
 }
 
-impl<M: RemoteModuleDecl> Clone for DbContextImpl<M> {
+// The type's former name, which generated bindings use. It is not deprecated,
+// so that existing generated bindings compile without warnings.
+#[doc(hidden)]
+pub use DbContextBase as DbContextImpl;
+
+impl<M: RemoteModuleDecl> Clone for DbContextBase<M> {
     fn clone(&self) -> Self {
         Self {
             #[cfg(not(feature = "browser"))]
             runtime: self.runtime.clone(),
             // Being very explicit with `Arc::clone` here,
-            // since we'll be doing `DbContextImpl::clone` very frequently,
+            // since we'll be doing `DbContextBase::clone` very frequently,
             // and we need it to be fast.
             inner: Arc::clone(&self.inner),
             send_chan: Arc::clone(&self.send_chan),
@@ -127,7 +132,7 @@ impl<M: RemoteModuleDecl> Clone for DbContextImpl<M> {
     }
 }
 
-impl<M: RemoteModuleDecl> DbContextImpl<M> {
+impl<M: RemoteModuleDecl> DbContextBase<M> {
     pub(crate) fn debug_log(&self, body: impl FnOnce(&mut File) -> std::result::Result<(), std::io::Error>) {
         debug_log(&self.extra_logging, body);
     }
@@ -821,7 +826,7 @@ enum ConnectionLifecycle {
     Ended,
 }
 
-/// All the stuff in a [`DbContextImpl`] which can safely be locked while invoking callbacks.
+/// All the stuff in a [`DbContextBase`] which can safely be locked while invoking callbacks.
 pub(crate) struct DbContextImplInner<M: RemoteModuleDecl> {
     /// `Some` if not within the context of an outer runtime. The `Runtime` must
     /// then live as long as `Self`.
@@ -960,9 +965,9 @@ but you must call one of them, or else the connection will never progress.
     }
 
     /// Open a WebSocket connection, build an empty client cache, &c,
-    /// to construct a [`DbContextImpl`].
+    /// to construct a [`DbContextBase`].
     #[cfg(not(feature = "browser"))]
-    fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+    fn build_impl(self) -> crate::Result<DbContextBase<M>> {
         let extra_logging = self
             .additional_logging_path
             .map(|path| {
@@ -1012,9 +1017,9 @@ but you must call one of them, or else the connection will never progress.
     }
 
     /// Open a WebSocket connection, build an empty client cache, &c,
-    /// to construct a [`DbContextImpl`].
+    /// to construct a [`DbContextBase`].
     #[cfg(feature = "browser")]
-    async fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+    async fn build_impl(self) -> crate::Result<DbContextBase<M>> {
         // The wasm/browser SDK target runs under `wasm32-unknown-unknown`, where we do not
         // have the native file APIs that back `with_debug_to_file`. Keeping the
         // shared `extra_logging` field as `None` lets the rest of the connection and
@@ -1219,7 +1224,7 @@ fn build_db_ctx_inner<M: RemoteModuleDecl>(
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Assemble and return a [`DbContextImpl`] from the provided [`DbContextImplInner`], and channels.
+/// Assemble and return a [`DbContextBase`] from the provided [`DbContextImplInner`], and channels.
 fn build_db_ctx<M: RemoteModuleDecl>(
     #[cfg(not(feature = "browser"))] runtime_handle: runtime::Handle,
 
@@ -1230,12 +1235,12 @@ fn build_db_ctx<M: RemoteModuleDecl>(
     pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
     connection_id: Option<ConnectionId>,
     extra_logging: Option<SharedCell<File>>,
-) -> DbContextImpl<M> {
+) -> DbContextBase<M> {
     let mut cache = ClientCache::new(extra_logging.clone());
     M::register_tables(&mut cache);
     let cache = Arc::new(StdMutex::new(cache));
 
-    DbContextImpl {
+    DbContextBase {
         #[cfg(not(feature = "browser"))]
         runtime: runtime_handle,
         inner: inner_ctx,
@@ -1506,7 +1511,7 @@ pub(crate) enum PendingMutation<M: RemoteModuleDecl> {
     },
     Subscribe {
         query_set_id: QuerySetId,
-        handle: SubscriptionHandleImpl<M>,
+        handle: SubscriptionHandleBase<M>,
     },
     AddInsertCallback {
         table: &'static str,
@@ -1547,7 +1552,7 @@ pub(crate) enum PendingMutation<M: RemoteModuleDecl> {
     },
 }
 
-// Hand-written `Debug` impl, 'cause `SubscriptionHandleImpl` and callbacks aren't printable.
+// Hand-written `Debug` impl, 'cause `SubscriptionHandleBase` and callbacks aren't printable.
 impl<M: RemoteModuleDecl> std::fmt::Debug for PendingMutation<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {

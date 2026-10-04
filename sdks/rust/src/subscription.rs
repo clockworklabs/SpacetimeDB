@@ -4,7 +4,7 @@
 
 use crate::spacetime_module::AbstractEventContext;
 use crate::{
-    db_connection::{next_query_set_id, next_request_id, DbContextImpl, PendingMutation},
+    db_connection::{next_query_set_id, next_request_id, DbContextBase, PendingMutation},
     spacetime_module::{RemoteModuleDecl, SubscriptionHandle},
 };
 use futures_channel::mpsc;
@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 // clobbering your previous callback.
 
 pub struct SubscriptionManager<M: RemoteModuleDecl> {
-    subscriptions: HashMap<QuerySetId, SubscriptionHandleImpl<M>>,
+    subscriptions: HashMap<QuerySetId, SubscriptionHandleBase<M>>,
 }
 
 impl<M: RemoteModuleDecl> Default for SubscriptionManager<M> {
@@ -68,7 +68,7 @@ impl<M: RemoteModuleDecl> SubscriptionManager<M> {
 
     /// Register a new subscription. This does not send the subscription to the server.
     /// Rather, it makes the subscription available for the next `apply_subscriptions` call.
-    pub(crate) fn register_subscription(&mut self, query_set_id: QuerySetId, handle: SubscriptionHandleImpl<M>) {
+    pub(crate) fn register_subscription(&mut self, query_set_id: QuerySetId, handle: SubscriptionHandleBase<M>) {
         self.subscriptions
             .try_insert(query_set_id, handle.clone())
             .unwrap_or_else(|_| unreachable!("Duplicate subscription id {query_set_id:?}"));
@@ -147,13 +147,13 @@ impl<M: RemoteModuleDecl> SubscriptionManager<M> {
 pub struct SubscriptionBuilder<M: RemoteModuleDecl> {
     on_applied: Option<OnAppliedCallback<M>>,
     on_error: Option<OnErrorCallback<M>>,
-    conn: DbContextImpl<M>,
+    conn: DbContextBase<M>,
 }
 
 impl<M: RemoteModuleDecl> SubscriptionBuilder<M> {
     #[doc(hidden)]
     /// Call `ctx.subscription_builder()` instead.
-    pub fn new(imp: &DbContextImpl<M>) -> Self {
+    pub fn new(imp: &DbContextBase<M>) -> Self {
         Self {
             on_applied: None,
             on_error: None,
@@ -180,7 +180,7 @@ impl<M: RemoteModuleDecl> SubscriptionBuilder<M> {
 
     pub fn subscribe<Queries: IntoQueries>(self, query_sql: Queries) -> M::SubscriptionHandle {
         let query_set_id = next_query_set_id();
-        let handle = SubscriptionHandleImpl::new(SubscriptionState::new(
+        let handle = SubscriptionHandleBase::new(SubscriptionState::new(
             query_set_id,
             query_sql.into_queries(),
             self.conn.pending_mutations_send.clone(),
@@ -452,11 +452,16 @@ impl<M: RemoteModuleDecl> SubscriptionState<M> {
 
 #[doc(hidden)]
 /// Internal implementation held by the module-specific generated `SubscriptionHandle` type.
-pub struct SubscriptionHandleImpl<M: RemoteModuleDecl> {
+pub struct SubscriptionHandleBase<M: RemoteModuleDecl> {
     pub(crate) inner: Arc<Mutex<SubscriptionState<M>>>,
 }
 
-impl<M: RemoteModuleDecl> Clone for SubscriptionHandleImpl<M> {
+// The type's former name, which generated bindings use. It is not deprecated,
+// so that existing generated bindings compile without warnings.
+#[doc(hidden)]
+pub use SubscriptionHandleBase as SubscriptionHandleImpl;
+
+impl<M: RemoteModuleDecl> Clone for SubscriptionHandleBase<M> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -464,7 +469,7 @@ impl<M: RemoteModuleDecl> Clone for SubscriptionHandleImpl<M> {
     }
 }
 
-impl<M: RemoteModuleDecl> SubscriptionHandleImpl<M> {
+impl<M: RemoteModuleDecl> SubscriptionHandleBase<M> {
     pub(crate) fn new(inner: SubscriptionState<M>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(inner)),

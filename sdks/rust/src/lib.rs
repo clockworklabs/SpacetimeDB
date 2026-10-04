@@ -51,7 +51,7 @@ pub mod __codegen {
 
     pub use crate::callbacks::{CallbackId, DbCallbacks};
     pub use crate::client_cache::{ClientCache, TableAppliedDiff, TableHandle, UniqueConstraintHandle};
-    pub use crate::db_connection::DbContextImpl;
+    pub use crate::db_connection::{DbContextBase, DbContextImpl};
     pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
         parse_row_list_as_deletes, parse_row_list_as_inserts, transaction_update_iter_table_updates,
@@ -59,7 +59,9 @@ pub mod __codegen {
         ProcedureEventContext, QueryBuilder, QueryTableAccessor, Reducer, ReducerEventContext, RemoteModuleDecl,
         SpacetimeModule, SubscriptionEventContext, SubscriptionHandle, TableUpdate,
     };
-    pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
+    pub use crate::subscription::{
+        OnEndedCallback, SubscriptionBuilder, SubscriptionHandleBase, SubscriptionHandleImpl,
+    };
     pub use crate::table::{TableLike, WithDelete, WithInsert, WithUpdate};
     pub use crate::{
         ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, Identity, ReducerEvent, ScheduleAt, Table,
