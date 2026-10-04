@@ -193,7 +193,7 @@
             {"do":"wait","actor":"owner-fresh","ms":35000},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"relativeTo":"deliveries-at-pause","plus":0},
             {"do":"dbExpectStock","item":"Desk Lamp","relativeTo":"stock-at-pause","plus":0},
-            {"do":"click","actor":"owner-fresh","testid":"subscription-resume","in":{"testid":"subscription-row","contains":"Desk Lamp"}},
+            {"do":"click","awaitWrites":true,"actor":"owner-fresh","testid":"subscription-resume","in":{"testid":"subscription-row","contains":"Desk Lamp"}},
             {"do":"freshClient","actor":"owner"},
             {"do":"signIn","actor":"owner-fresh","name":"subscription-763"},
             {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},

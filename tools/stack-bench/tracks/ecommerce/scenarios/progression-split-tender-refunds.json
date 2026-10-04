@@ -53,7 +53,7 @@
           "desc": "Full refund restores each original payment portion",
           "points": 2,
           "steps": [
-            {"do":"click","actor":"staff","testid":"support-refund","in":{"testid":"support-ticket","contains":"Split refund 751"}},
+            {"do":"click","awaitWrites":true,"actor":"staff","testid":"support-refund","in":{"testid":"support-ticket","contains":"Split refund 751"}},
             {"do":"freshClient","actor":"owner"},
             {"do":"signIn","actor":"owner-fresh","name":"credit-owner-751"},
             {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},

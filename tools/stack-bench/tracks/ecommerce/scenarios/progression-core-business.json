@@ -96,7 +96,7 @@
         { "do": "fill", "actor": "admin", "testid": "catalog-category", "text": "Kitchen" },
         { "do": "fill", "actor": "admin", "testid": "catalog-price", "text": "24.00" },
         { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Black, Silver" },
-        { "do": "click", "actor": "admin", "testid": "catalog-save" },
+        { "do": "click", "awaitWrites": true, "actor": "admin", "testid": "catalog-save" },
         { "do": "reload", "actor": "visitor", "settleMs": 2500 }
       ],
       "criteria": [

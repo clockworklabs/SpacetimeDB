@@ -34,7 +34,7 @@
           "points": 1,
           "statedBy": "The recorded refund equals the amount paid and is applied only once.",
           "steps": [
-            {"do":"click","actor":"staff","testid":"support-refund","in":{"testid":"support-ticket","contains":"Accounting refund case"}},
+            {"do":"click","awaitWrites":true,"actor":"staff","testid":"support-refund","in":{"testid":"support-ticket","contains":"Accounting refund case"}},
             {"do":"reload","actor":"owner","settleMs":1000},
             {"do":"ensureSignedIn","actor":"owner","name":"refund-accounting-owner","readyTestid":"current-user"},
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
