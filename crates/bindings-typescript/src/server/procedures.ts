@@ -29,7 +29,7 @@ import {
   assignTxAliasViews,
   buildProcedureAliasCtxMap,
   callUserFunction,
-  ReducerCtxImpl,
+  ReducerContextImpl,
   runWithTx,
   sys,
 } from './runtime';
@@ -136,8 +136,8 @@ export type TransactionCtx<S extends UntypedSchemaDecl> = TxContext<S>;
 
 type ITxContext<S extends UntypedSchemaDecl> = TxContext<S>;
 
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDecl>
-  extends ReducerCtxImpl<S>
+const TxContextImpl = class TransactionCtx<S extends UntypedSchemaDecl>
+  extends ReducerContextImpl<S>
   implements ITxContext<S> {};
 
 function registerProcedure<
@@ -211,7 +211,7 @@ export function callProcedure(
     procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
-  const ctx: ProcedureContext<UntypedSchemaDecl> = new ProcedureCtxImpl(
+  const ctx: ProcedureContext<UntypedSchemaDecl> = new ProcedureContextImpl(
     sender,
     timestamp,
     connectionId,
@@ -227,7 +227,7 @@ export function callProcedure(
 }
 
 type IProcedureContext<S extends UntypedSchemaDecl> = ProcedureContext<S>;
-const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDecl>
+const ProcedureContextImpl = class ProcedureCtx<S extends UntypedSchemaDecl>
   implements IProcedureContext<S>
 {
   #identity: Identity | undefined;
@@ -280,7 +280,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDecl>
     const dispatches = this.#dispatches;
     const parentPrefix = this.#parentPrefix;
     return runWithTx(timestamp => {
-      const tx = new TransactionCtxImpl(
+      const tx = new TxContextImpl(
         this.sender,
         timestamp,
         this.connectionId,

@@ -62,6 +62,7 @@ import type {
   UntypedReducersDef,
 } from '../sdk/reducers';
 import type { ClientDbView, RemoteTables } from '../sdk/db_view';
+import type { ReducerContextImpl, ReducerCtxImpl } from '../server/runtime';
 import type {
   ReducersDef,
   SchemaDef,
@@ -309,4 +310,7 @@ type _ProceduresView = Assert<
     ProceduresView<UntypedRemoteModuleDecl>,
     RemoteProcedures<UntypedRemoteModuleDecl>
   >
+>;
+type _ReducerCtxImpl = Assert<
+  Equals<typeof ReducerCtxImpl, typeof ReducerContextImpl>
 >;
