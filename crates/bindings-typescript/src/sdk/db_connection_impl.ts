@@ -58,13 +58,13 @@ import { stdbLogger, stringify } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
   ReducerEventInfo,
-  ReducersView,
+  RemoteReducers,
   SubscriptionEventCallback,
 } from './reducers.ts';
-import type { ClientDbView } from './db_view.ts';
+import type { RemoteTables } from './db_view.ts';
 import type { RowType, UntypedTableDecl } from '../lib/table.ts';
 import type { UntypedSchemaDecl } from '../lib/schema';
-import type { ProceduresView } from './procedures.ts';
+import type { RemoteProcedures } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
 import { InternalError, SenderError } from '../lib/errors.ts';
@@ -254,17 +254,17 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
    * The accessor field to access the tables in the database and associated
    * callback functions.
    */
-  db: ClientDbView<RemoteModuleDecl>;
+  db: RemoteTables<RemoteModuleDecl>;
 
   /**
    * The accessor field to access the reducers in the database.
    */
-  reducers: ReducersView<RemoteModuleDecl>;
+  reducers: RemoteReducers<RemoteModuleDecl>;
 
   /**
    * The accessor field to access the procedures in the database.
    */
-  procedures: ProceduresView<RemoteModuleDecl>;
+  procedures: RemoteProcedures<RemoteModuleDecl>;
 
   /**
    * The `ConnectionId` of the connection to to the database.
@@ -454,11 +454,11 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
 
   #getNextRequestId = () => this.#requestId++;
 
-  #makeDbView(): ClientDbView<RemoteModuleDecl> {
-    const view = Object.create(null) as ClientDbView<RemoteModuleDecl>;
+  #makeDbView(): RemoteTables<RemoteModuleDecl> {
+    const view = Object.create(null) as RemoteTables<RemoteModuleDecl>;
 
     for (const tbl of Object.values(this.#sourceNameToTableDef)) {
-      // ClientDbView uses this name verbatim
+      // RemoteTables uses this name verbatim
       const key = tbl.accessorName;
       Object.defineProperty(view, key, {
         enumerable: true,
@@ -470,7 +470,7 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
     return view;
   }
 
-  #makeReducers(def: RemoteModuleDecl): ReducersView<RemoteModuleDecl> {
+  #makeReducers(def: RemoteModuleDecl): RemoteReducers<RemoteModuleDecl> {
     const out: Record<string, unknown> = {};
 
     for (const reducer of def.reducers) {
@@ -497,10 +497,10 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
       };
     }
 
-    return out as ReducersView<RemoteModuleDecl>;
+    return out as RemoteReducers<RemoteModuleDecl>;
   }
 
-  #makeProcedures(def: RemoteModuleDecl): ProceduresView<RemoteModuleDecl> {
+  #makeProcedures(def: RemoteModuleDecl): RemoteProcedures<RemoteModuleDecl> {
     const out: Record<string, unknown> = {};
 
     const writer = new BinaryWriter(1024);
@@ -529,7 +529,7 @@ export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
       };
     }
 
-    return out as ProceduresView<RemoteModuleDecl>;
+    return out as RemoteProcedures<RemoteModuleDecl>;
   }
 
   #makeEventContext(

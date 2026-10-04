@@ -1,5 +1,5 @@
-import type { ClientDbView } from './db_view';
-import type { ReducersView } from './reducers';
+import type { RemoteTables } from './db_view';
+import type { RemoteReducers } from './reducers';
 import type { UntypedRemoteModuleDecl } from './spacetime_module';
 import type { SubscriptionBuilderBase } from './subscription_builder_impl';
 
@@ -10,8 +10,8 @@ import type { SubscriptionBuilderBase } from './subscription_builder_impl';
  * @template ReducersDecl - Type representing the reducers.
  */
 export interface DbContext<RemoteModuleDecl extends UntypedRemoteModuleDecl> {
-  db: ClientDbView<RemoteModuleDecl>;
-  reducers: ReducersView<RemoteModuleDecl>;
+  db: RemoteTables<RemoteModuleDecl>;
+  reducers: RemoteReducers<RemoteModuleDecl>;
   isActive: boolean;
 
   /**

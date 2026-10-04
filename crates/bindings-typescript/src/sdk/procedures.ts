@@ -17,7 +17,7 @@ type ProceduresViewLoose = {
   [k: string]: (params: any) => Promise<any>;
 };
 
-export type ProceduresView<RemoteModuleDecl> = IfAny<
+export type RemoteProcedures<RemoteModuleDecl> = IfAny<
   RemoteModuleDecl,
   ProceduresViewLoose,
   RemoteModuleDecl extends UntypedRemoteModuleDecl
@@ -29,6 +29,13 @@ export type ProceduresView<RemoteModuleDecl> = IfAny<
       }
     : never
 >;
+
+/**
+ * @deprecated Use `RemoteProcedures` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type ProceduresView<RemoteModuleDecl> =
+  RemoteProcedures<RemoteModuleDecl>;
 
 export type UntypedProcedureDecl = {
   name: string;

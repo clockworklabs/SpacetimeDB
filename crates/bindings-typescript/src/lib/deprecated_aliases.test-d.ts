@@ -46,17 +46,22 @@ import type {
   ProcedureEventContextInterface,
 } from '../sdk/event_context';
 import type {
+  ProceduresView,
+  RemoteProcedures,
   UntypedProcedureDecl,
   UntypedProcedureDef,
   UntypedProceduresDecl,
   UntypedProceduresDef,
 } from '../sdk/procedures';
 import type {
+  ReducersView,
+  RemoteReducers,
   UntypedReducerDecl,
   UntypedReducerDef,
   UntypedReducersDecl,
   UntypedReducersDef,
 } from '../sdk/reducers';
+import type { ClientDbView, RemoteTables } from '../sdk/db_view';
 import type {
   ReducersDef,
   SchemaDef,
@@ -285,5 +290,23 @@ type _ErrorContextInterface = Assert<
   Equals<
     ErrorContextInterface<UntypedRemoteModuleDecl>,
     ErrorContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ClientDbView = Assert<
+  Equals<
+    ClientDbView<UntypedRemoteModuleDecl>,
+    RemoteTables<UntypedRemoteModuleDecl>
+  >
+>;
+type _ReducersView = Assert<
+  Equals<
+    ReducersView<UntypedRemoteModuleDecl>,
+    RemoteReducers<UntypedRemoteModuleDecl>
+  >
+>;
+type _ProceduresView = Assert<
+  Equals<
+    ProceduresView<UntypedRemoteModuleDecl>,
+    RemoteProcedures<UntypedRemoteModuleDecl>
   >
 >;

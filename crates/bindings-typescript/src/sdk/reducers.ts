@@ -20,7 +20,7 @@ type ReducersViewLoose = {
   [k: string]: (params: any) => Promise<void>;
 };
 
-export type ReducersView<RemoteModuleDecl> = IfAny<
+export type RemoteReducers<RemoteModuleDecl> = IfAny<
   RemoteModuleDecl,
   ReducersViewLoose,
   RemoteModuleDecl extends UntypedRemoteModuleDecl
@@ -31,6 +31,12 @@ export type ReducersView<RemoteModuleDecl> = IfAny<
       }
     : never
 >;
+
+/**
+ * @deprecated Use `RemoteReducers` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type ReducersView<RemoteModuleDecl> = RemoteReducers<RemoteModuleDecl>;
 
 export type ReducerEventInfo<
   Name extends string = string,
