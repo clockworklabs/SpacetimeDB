@@ -188,7 +188,7 @@ public:
 /**
  * @brief Database context with name-based table accessors (RECOMMENDED API)
  * 
- * DatabaseContext provides the recommended interface for all table operations
+ * DbView provides the recommended interface for all table operations
  * in C++ modules. It automatically handles table ID resolution and provides
  * a reliable wrapper around the low-level Table API.
  * 
@@ -199,7 +199,7 @@ public:
  * @code
  * SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx, uint32_t id, std::string name)
  * {
- *     // ALWAYS use DatabaseContext through ctx.db
+ *     // ALWAYS use DbView through ctx.db
  *     auto users = ctx.db.table<User>("users");
  *     
  *     // All operations work reliably
@@ -213,7 +213,7 @@ public:
  * @endcode
  */
 // Database context with name-based table accessors
-class DatabaseContext {
+class DbView {
 public:
     // Generic table accessor method (type-only, requires explicit table name later)
     template<typename T>
@@ -268,6 +268,7 @@ public:
     }
 };
 
+using DatabaseContext [[deprecated("renamed to DbView")]] = DbView;
 
 } // namespace SpacetimeDB
 

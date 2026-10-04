@@ -10,7 +10,7 @@
 #include <array>
 #include <memory>
 
-// Include database for DatabaseContext
+// Include database for DbView
 #include <spacetimedb/database.h>
 
 #include <spacetimedb/environment.h>
@@ -29,7 +29,7 @@ public:
     Timestamp timestamp;
     
     // Database context with name-based access
-    DatabaseContext db;
+    DbView db;
     
 private:
     // Authentication context with lazy JWT loading (private like in Rust)

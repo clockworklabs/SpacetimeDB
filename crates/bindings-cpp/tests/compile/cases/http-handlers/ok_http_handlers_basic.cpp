@@ -33,4 +33,6 @@ SPACETIMEDB_HTTP_ROUTER(register_http_routes) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static_assert(std::is_same_v<AuthCtx, AuthContext>);
+static_assert(std::is_same_v<DatabaseContext, DbView>);
+static_assert(std::is_same_v<ReadOnlyDatabaseContext, ReadOnlyDbView>);
 #pragma GCC diagnostic pop

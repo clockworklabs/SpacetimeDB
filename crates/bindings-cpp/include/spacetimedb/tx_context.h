@@ -55,7 +55,7 @@ public:
     // In Rust, Deref makes tx.db work the same as ctx.db
     // In C++, we explicitly expose references where possible and provide
     // accessors for fields exposed as methods on ReducerContext.
-    DatabaseContext& db;
+    DbView& db;
     const Environment& env;
     const Timestamp& timestamp;
     const std::optional<ConnectionId>& connection_id;

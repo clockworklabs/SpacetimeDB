@@ -4,7 +4,7 @@
 #include <spacetimedb/bsatn/types.h> // For Identity
 #include <spacetimedb/bsatn/timestamp.h> // For Timestamp
 #include <spacetimedb/query_builder.h>
-#include <spacetimedb/readonly_database_context.h> // For ReadOnlyDatabaseContext
+#include <spacetimedb/readonly_database_context.h> // For ReadOnlyDbView
 #include <array>
 
 #include <spacetimedb/environment.h>
@@ -19,7 +19,7 @@ namespace SpacetimeDB {
  * filter or customize results based on who is calling it.
  * 
  * Key differences from ReducerContext:
- * - db is ReadOnlyDatabaseContext (no mutations allowed)
+ * - db is ReadOnlyDbView (no mutations allowed)
  * - No connection_id (views are stateless, don't track connections)
  * - No rng() method (views should be deterministic)
  * 
@@ -42,7 +42,7 @@ private:
 
 public:
     // Read-only database access - no mutations allowed
-    ReadOnlyDatabaseContext db;
+    ReadOnlyDbView db;
     Environment env;
     QueryBuilder from;
     
@@ -78,7 +78,7 @@ public:
  */
 struct AnonymousViewContext {
     // Read-only database access - no mutations allowed
-    ReadOnlyDatabaseContext db;
+    ReadOnlyDbView db;
     Environment env;
     QueryBuilder from;
     
