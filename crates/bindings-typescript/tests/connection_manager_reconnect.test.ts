@@ -13,7 +13,7 @@ type ErrorContextInterface = {
 class MockConnection {
   isActive = false;
   identity = undefined;
-  // A real DbConnectionImpl is constructed with the builder's token and keeps
+  // A real DbConnectionBase is constructed with the builder's token and keeps
   // it in this field, so the mock takes it the same way.
   token: string | undefined;
   connectionId = ConnectionId.random();
@@ -675,7 +675,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
   // Precedence rule: whatever the live session settled on outranks the token
   // the builder was constructed with. Today a real client only adopts a
   // server-issued token when it presented none (see the `!this.token` guard in
-  // `DbConnectionImpl#processServerMessage`), so the rotation below is
+  // `DbConnectionBase#processServerMessage`), so the rotation below is
   // hypothetical — it pins the rule for any future support for rotation.
   test("the session token takes precedence over the builder's own token", () => {
     const key = nextKey();

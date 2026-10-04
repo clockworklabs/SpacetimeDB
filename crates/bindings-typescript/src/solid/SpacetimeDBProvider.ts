@@ -1,6 +1,6 @@
 import {
   DbConnectionBuilder,
-  type DbConnectionImpl,
+  type DbConnectionBase,
 } from '../sdk/db_connection_impl';
 import { onCleanup, createMemo, createComputed } from 'solid-js';
 import { createStore } from 'solid-js/store';
@@ -13,13 +13,13 @@ import {
 } from '../sdk/connection_manager';
 
 export interface SpacetimeDBProviderProps<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 > {
   connectionBuilder: DbConnectionBuilder<DbConnection>;
   children?: any;
 }
 
-export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
+export function SpacetimeDBProvider<DbConnection extends DbConnectionBase<any>>(
   props: SpacetimeDBProviderProps<DbConnection>
 ) {
   const uri = () => props.connectionBuilder.getUri();

@@ -9,7 +9,7 @@ import {
 } from 'vue';
 import {
   DbConnectionBuilder,
-  type DbConnectionImpl,
+  type DbConnectionBase,
   type ErrorContextInterface,
   type RemoteModuleDeclOf,
 } from '../sdk/db_connection_impl';
@@ -20,21 +20,21 @@ import {
 } from './connection_state';
 
 export interface SpacetimeDBProviderProps<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 > {
   connectionBuilder: DbConnectionBuilder<DbConnection>;
 }
 
-let connRef: DbConnectionImpl<any> | null = null;
+let connRef: DbConnectionBase<any> | null = null;
 let cleanupTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-function setupConnection<DbConnection extends DbConnectionImpl<any>>(
+function setupConnection<DbConnection extends DbConnectionBase<any>>(
   connectionBuilder: DbConnectionBuilder<DbConnection>
 ): {
   state: ConnectionState;
   cleanup: () => void;
 } {
-  const getConnection = <T extends DbConnectionImpl<any>>() =>
+  const getConnection = <T extends DbConnectionBase<any>>() =>
     connRef as T | null;
 
   const state = reactive<ConnectionState>({
@@ -150,7 +150,7 @@ export const SpacetimeDBProvider = defineComponent({
 });
 
 export function useSpacetimeDBProvider<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 >(connectionBuilder: DbConnectionBuilder<DbConnection>): ConnectionState {
   const { state } = setupConnection(connectionBuilder);
   return state;

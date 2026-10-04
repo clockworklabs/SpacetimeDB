@@ -1,10 +1,15 @@
 import type {
   ClientTable,
+  DbConnectionBase,
   DbConnectionImpl,
   RemoteModule,
   RemoteModuleDecl,
   RemoteModuleDeclOf,
   RemoteModuleOf,
+  SubscriptionBuilderBase,
+  SubscriptionBuilderImpl,
+  SubscriptionHandleBase,
+  SubscriptionHandleImpl,
   TableDeclOf,
   TableDefByName,
   TableDefForTableName,
@@ -88,7 +93,7 @@ type _RemoteModule = Assert<
 type _RemoteModuleOf = Assert<
   Equals<
     RemoteModuleOf<
-      DbConnectionImpl<
+      DbConnectionBase<
         RemoteModuleDecl<
           UntypedSchemaDecl,
           UntypedReducersDecl,
@@ -97,7 +102,7 @@ type _RemoteModuleOf = Assert<
       >
     >,
     RemoteModuleDeclOf<
-      DbConnectionImpl<
+      DbConnectionBase<
         RemoteModuleDecl<
           UntypedSchemaDecl,
           UntypedReducersDecl,
@@ -212,4 +217,31 @@ type _ClientTable = Assert<
     ClientTable<UntypedRemoteModuleDecl, TableNamesOf<UntypedRemoteModuleDecl>>,
     TableHandle<UntypedRemoteModuleDecl, TableNamesOf<UntypedRemoteModuleDecl>>
   >
+>;
+type _DbConnectionImpl = Assert<
+  Equals<
+    DbConnectionImpl<UntypedRemoteModuleDecl>,
+    DbConnectionBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _DbConnectionImplValue = Assert<
+  Equals<typeof DbConnectionImpl, typeof DbConnectionBase>
+>;
+type _SubscriptionBuilderImpl = Assert<
+  Equals<
+    SubscriptionBuilderImpl<UntypedRemoteModuleDecl>,
+    SubscriptionBuilderBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _SubscriptionBuilderImplValue = Assert<
+  Equals<typeof SubscriptionBuilderImpl, typeof SubscriptionBuilderBase>
+>;
+type _SubscriptionHandleImpl = Assert<
+  Equals<
+    SubscriptionHandleImpl<UntypedRemoteModuleDecl>,
+    SubscriptionHandleBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _SubscriptionHandleImplValue = Assert<
+  Equals<typeof SubscriptionHandleImpl, typeof SubscriptionHandleBase>
 >;

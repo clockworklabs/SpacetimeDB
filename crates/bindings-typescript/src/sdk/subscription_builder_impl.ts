@@ -1,4 +1,4 @@
-import type { DbConnectionImpl } from './db_connection_impl';
+import type { DbConnectionBase } from './db_connection_impl';
 import { INTERNAL_REMOTE_MODULE } from './internal';
 import type {
   ErrorContextInterface,
@@ -14,14 +14,14 @@ import {
 } from '../lib/query';
 import type { UntypedSchemaDecl } from '../lib/schema';
 
-export class SubscriptionBuilderImpl<
+export class SubscriptionBuilderBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > {
   #onApplied?: (
     ctx: SubscriptionEventContextInterface<RemoteModuleDecl>
   ) => void = undefined;
   #onError?: (ctx: ErrorContextInterface<RemoteModuleDecl>) => void = undefined;
-  constructor(private db: DbConnectionImpl<RemoteModuleDecl>) {}
+  constructor(private db: DbConnectionBase<RemoteModuleDecl>) {}
 
   /**
    * Registers `callback` to run when this query is successfully added to our subscribed set,
@@ -40,7 +40,7 @@ export class SubscriptionBuilderImpl<
    */
   onApplied(
     cb: (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void
-  ): SubscriptionBuilderImpl<RemoteModuleDecl> {
+  ): SubscriptionBuilderBase<RemoteModuleDecl> {
     this.#onApplied = cb;
     return this;
   }
@@ -67,7 +67,7 @@ export class SubscriptionBuilderImpl<
    */
   onError(
     cb: (ctx: ErrorContextInterface<RemoteModuleDecl>) => void
-  ): SubscriptionBuilderImpl<RemoteModuleDecl> {
+  ): SubscriptionBuilderBase<RemoteModuleDecl> {
     this.#onError = cb;
     return this;
   }
@@ -90,10 +90,10 @@ export class SubscriptionBuilderImpl<
    */
   subscribe(
     query_sql: string | RowTypedQuery<any, any>
-  ): SubscriptionHandleImpl<RemoteModuleDecl>;
+  ): SubscriptionHandleBase<RemoteModuleDecl>;
   subscribe(
     query_sql: Array<string | RowTypedQuery<any, any>>
-  ): SubscriptionHandleImpl<RemoteModuleDecl>;
+  ): SubscriptionHandleBase<RemoteModuleDecl>;
   /**
    * @param queryFn - Receives the query builder for all tables (root and namespaced), e.g.
    *   `tables => tables.players.build()` or, for a submodule table,
@@ -103,14 +103,14 @@ export class SubscriptionBuilderImpl<
     queryFn: (
       tables: NamespacedQueryBuilder<RemoteModuleDecl & UntypedSchemaDecl>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
-  ): SubscriptionHandleImpl<RemoteModuleDecl>;
+  ): SubscriptionHandleBase<RemoteModuleDecl>;
   subscribe(
     query_sql:
       | string
       | RowTypedQuery<any, any>
       | Array<string | RowTypedQuery<any, any>>
       | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
-  ): SubscriptionHandleImpl<RemoteModuleDecl> {
+  ): SubscriptionHandleBase<RemoteModuleDecl> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
       const tables = this.db.getFromBuilder<
@@ -129,7 +129,7 @@ export class SubscriptionBuilderImpl<
       if (isRowTypedQuery(q)) return toSql(q);
       throw new Error('Subscriptions must be SQL strings or typed queries');
     });
-    return new SubscriptionHandleImpl(
+    return new SubscriptionHandleBase(
       this.db,
       queryStrings,
       this.#onApplied,
@@ -163,6 +163,13 @@ export class SubscriptionBuilderImpl<
   }
 }
 
+/** @deprecated Use `SubscriptionBuilderBase` instead. */
+export type SubscriptionBuilderImpl<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = SubscriptionBuilderBase<RemoteModuleDecl>;
+/** @deprecated Use `SubscriptionBuilderBase` instead. */
+export const SubscriptionBuilderImpl = SubscriptionBuilderBase;
+
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
 export class SubscriptionManager<
@@ -171,13 +178,13 @@ export class SubscriptionManager<
   subscriptions: Map<
     number,
     {
-      handle: SubscriptionHandleImpl<RemoteModuleDecl>;
+      handle: SubscriptionHandleBase<RemoteModuleDecl>;
       emitter: EventEmitter<SubscribeEvent>;
     }
   > = new Map();
 }
 
-export class SubscriptionHandleImpl<
+export class SubscriptionHandleBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > {
   #querySetId: number;
@@ -188,7 +195,7 @@ export class SubscriptionHandleImpl<
     new EventEmitter();
 
   constructor(
-    private db: DbConnectionImpl<RemoteModuleDecl>,
+    private db: DbConnectionBase<RemoteModuleDecl>,
     querySql: string[],
     onApplied?: (
       ctx: SubscriptionEventContextInterface<RemoteModuleDecl>
@@ -297,3 +304,10 @@ export class SubscriptionHandleImpl<
     return this.#activeState;
   }
 }
+
+/** @deprecated Use `SubscriptionHandleBase` instead. */
+export type SubscriptionHandleImpl<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = SubscriptionHandleBase<RemoteModuleDecl>;
+/** @deprecated Use `SubscriptionHandleBase` instead. */
+export const SubscriptionHandleImpl = SubscriptionHandleBase;

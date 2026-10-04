@@ -6,7 +6,7 @@ import {
 } from '@angular/core';
 import type {
   DbConnectionBuilder,
-  DbConnectionImpl,
+  DbConnectionBase,
   ErrorContextInterface,
   RemoteModuleDeclOf,
 } from '../../sdk/db_connection_impl';
@@ -16,9 +16,9 @@ import {
 } from '../connection_state';
 import { ConnectionId } from '../../lib/connection_id';
 
-let connRef: DbConnectionImpl<any> | null = null;
+let connRef: DbConnectionBase<any> | null = null;
 
-export function provideSpacetimeDB<DbConnection extends DbConnectionImpl<any>>(
+export function provideSpacetimeDB<DbConnection extends DbConnectionBase<any>>(
   connectionBuilder: DbConnectionBuilder<DbConnection>
 ): EnvironmentProviders {
   const state = signal<ConnectionState>({
@@ -37,7 +37,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionImpl<any>>(
         return;
       }
 
-      const getConnection = <T extends DbConnectionImpl<any>>() =>
+      const getConnection = <T extends DbConnectionBase<any>>() =>
         connRef as T | null;
 
       if (!connRef) {

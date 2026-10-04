@@ -43,7 +43,9 @@ import {
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
 import {
+  SubscriptionBuilderBase,
   SubscriptionBuilderImpl,
+  SubscriptionHandleBase,
   SubscriptionHandleImpl,
   SubscriptionManager,
   type SubscribeEvent,
@@ -78,14 +80,16 @@ import {
 
 export {
   DbConnectionBuilder,
+  SubscriptionBuilderBase,
   SubscriptionBuilderImpl,
+  SubscriptionHandleBase,
   SubscriptionHandleImpl,
   type TableCache,
   type Event,
 };
 
 export type RemoteModuleDeclOf<C> =
-  C extends DbConnectionImpl<infer RM> ? RM : never;
+  C extends DbConnectionBase<infer RM> ? RM : never;
 
 /** @deprecated Use `RemoteModuleDeclOf` instead. */
 export type RemoteModuleOf<C> = RemoteModuleDeclOf<C>;
@@ -171,7 +175,7 @@ const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 const WS_READY_STATE_CLOSING = 2;
 const WS_READY_STATE_CLOSED = 3;
 
-export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
+export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   implements DbContext<RemoteModuleDecl>
 {
   /**
@@ -298,7 +302,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   #messageReader = new BinaryReader(new Uint8Array());
   #rowListReader = new BinaryReader(new Uint8Array());
   #clientFrameEncoder = new BinaryWriter(1024);
-  #boundSubscriptionBuilder!: () => SubscriptionBuilderImpl<RemoteModuleDecl>;
+  #boundSubscriptionBuilder!: () => SubscriptionBuilderBase<RemoteModuleDecl>;
   #boundDisconnect!: () => void;
 
   // These fields are not part of the public API, but in a pinch you
@@ -545,8 +549,8 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   // Do not remove this function, or shoot yourself in the foot please.
   // It's not clear what would be a better way to do this at this exact
   // moment.
-  subscriptionBuilder = (): SubscriptionBuilderImpl<RemoteModuleDecl> => {
-    return new SubscriptionBuilderImpl(this);
+  subscriptionBuilder = (): SubscriptionBuilderBase<RemoteModuleDecl> => {
+    return new SubscriptionBuilderBase(this);
   };
 
   getFromBuilder<
@@ -558,7 +562,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   }
 
   registerSubscription(
-    handle: SubscriptionHandleImpl<RemoteModuleDecl>,
+    handle: SubscriptionHandleBase<RemoteModuleDecl>,
     handleEmitter: EventEmitter<
       SubscribeEvent,
       SubscriptionEventCallback<RemoteModuleDecl>
@@ -1399,51 +1403,57 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
 
   private on(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   private off(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
   private onConnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connect', callback);
   }
 
   private onDisconnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   private onConnectError(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
   removeOnConnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
   removeOnDisconnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
   removeOnConnectError(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }
 }
+
+/** @deprecated Use `DbConnectionBase` instead. */
+export type DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl> =
+  DbConnectionBase<RemoteModuleDecl>;
+/** @deprecated Use `DbConnectionBase` instead. */
+export const DbConnectionImpl = DbConnectionBase;

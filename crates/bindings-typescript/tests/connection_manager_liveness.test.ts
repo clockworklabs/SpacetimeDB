@@ -12,7 +12,7 @@ type ErrorContextInterface = { isActive: boolean };
 class MockConnection {
   isActive = false;
   identity = undefined;
-  // A real DbConnectionImpl is constructed with the builder's token and keeps
+  // A real DbConnectionBase is constructed with the builder's token and keeps
   // it in this field, so the mock takes it the same way.
   token: string | undefined;
   connectionId = ConnectionId.random();
