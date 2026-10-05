@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { chromium } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { ORDER_DATA_COLUMNS, readOrderDataSnapshot } from '../src/stacks/order-data.js';
@@ -14,7 +17,7 @@ import { getSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-oper
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -22,7 +25,8 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
-import { parseGradeArgs } from '../grader/grade.js';
+import { Actor, parseGradeArgs } from '../grader/grade.js';
+import { createNamedActionsCapability } from '../src/actions/named-action-runtime.js';
 
 const fullStorage = { kind: 'order-data' as const, cart: true, warehouses: true };
 
@@ -131,6 +135,111 @@ test('compiled UI checkout waits for complete stored effects and preserves defec
     }
     if (mode === 'late-wake') assert.equal(reads, 1, 'do not start another read after the deadline');
   });
+});
+
+// Cart preparation must complete before the immutable native snapshot is taken.
+// An optimistic UI or a returned Playwright click is not a committed cart write.
+test('checkout preparation waits for delayed cart commits without excusing broken writes', async t => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-checkout-crash.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+  const setup = scenario.features[0]!.setup;
+  const steps = setup.slice(setup.findIndex(step => step.do === 'dbRecordCheckout'),
+    setup.findIndex(step => step.do === 'dbExpectCheckout') + 1);
+  const evidence: unknown[] = [];
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const mode of ['immediate', 'delayed', 'missing-line', 'no-op-add', 'lost-response']) await t.test(mode, async () => {
+      const raw = data();
+      raw.order_account = [{ id: 'a', username: 'database' }];
+      raw.item = [{ id: 'k', name: 'Keyboard', price: 19.99 }, { id: 'c', name: 'Coffee Grinder', price: 3.25 }];
+      const storage = { kind: 'order-data' as const, cart: true, warehouses: false };
+      const events: unknown[] = [], pendingAdds: Promise<void>[] = [];
+      const started = performance.now();
+      const record = (event: string, details: object = {}) => events.push({ event, elapsedMs: Math.round(performance.now() - started), ...details });
+      const server = createServer(async (req, res) => {
+        if (req.url === '/state') {
+          record('independent-read', { cart: structuredClone(raw.order_cart), orders: raw.order_header.length });
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(raw)); return;
+        }
+        if (req.url === '/api/add') {
+          let body = ''; for await (const part of req) body += String(part);
+          const { item } = JSON.parse(body) as { item: string }; record('add-dispatched', { item });
+          const pending = (async () => {
+            if (item === 'c' && mode !== 'immediate') await delay(900);
+            if (!(mode === 'no-op-add' && item === 'c')) raw.order_cart.push({ account_id: 'a', item_id: item, quantity: 1 });
+            record('add-finished', { item, committed: !(mode === 'no-op-add' && item === 'c') });
+            if (mode === 'lost-response' && item === 'c') res.destroy();
+            else res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}');
+          })();
+          pendingAdds.push(pending); await pending; return;
+        }
+        if (req.url === '/api/checkout') {
+          for await (const _part of req) { /* Receive the checkout request. */ }
+          await Promise.all(pendingAdds);
+          const lines = raw.order_cart.map((line, i) => ({ id: 'line-' + i, order_id: 'order', item_id: line.item_id, quantity: Number(line.quantity),
+            unit_price: Number(raw.item.find(item => item.id === line.item_id)!.price) }));
+          raw.order_header.push({ id: 'order', account_id: 'a', status: 'pending',
+            total: lines.reduce((sum, line) => sum + Math.round(line.unit_price * 100) * line.quantity, 0) / 100, refunded: 0 });
+          raw.order_line = mode === 'missing-line' ? lines.slice(0, 1) : lines;
+          raw.order_cart = []; record('checkout-committed', { lines: structuredClone(raw.order_line) });
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}'); return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' }).end(`<!doctype html><body>
+          <button id="catalog-link">Catalog</button><button id="overlay-close">Close</button>
+          <section id="item-list"><article data-role="item-card">Keyboard<button data-role="add-to-cart" data-item="k">Add</button></article>
+          <article data-role="item-card">Coffee Grinder<button data-role="add-to-cart" data-item="c">Add</button></article></section>
+          <script>window.getSessionToken=()=> 'local-fixture-user'; document.querySelectorAll('[data-role=add-to-cart]').forEach(button => {
+            button.onclick = () => { fetch('/api/add',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer local-fixture-user'},body:JSON.stringify({item:button.dataset.item})}).catch(()=>{}); };
+          });</script></body>`);
+      }).listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const actor = new Actor('a', page, context, true);
+      await actor.ready; await page.goto(url);
+      const observation = { defaultWithin: 1000, recorded: new Map(), expand: (value: string) => value,
+        sleep: (ms: number) => delay(ms), testId: (id: string) => id };
+      const database = { checkoutSnapshots: new Map(), markCheckoutUnsettled: () => assert.fail('fixture checkout did not complete'),
+        async getCheckoutState(input: { item: string }) {
+          const rows = await (await fetch(url + '/state')).json() as ReturnType<typeof data>;
+          return readOrderDataSnapshot(rows, 'database', input.item, storage);
+        } };
+      const capabilities = { actors: { get: () => actor }, 'browser-interaction': observation, 'browser-observation': observation,
+        clock: { sleep: (ms: number) => delay(ms) }, 'database-read': database,
+        'named-actions': createNamedActionsCapability({ backend: 'postgres', url,
+          lastCalls: { get: () => null, set() {} }, sleep: async ms => { await delay(ms); } }) };
+      const actions: { input: unknown; evidence: Awaited<ReturnType<typeof executeAction>> }[] = [];
+      try {
+        for (const step of steps) {
+          const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities });
+          actions.push({ input: step, evidence: result });
+          if (result.status !== 'passed') break;
+        }
+        const final = readOrderDataSnapshot(raw, 'database', 'Keyboard', storage).state;
+        const actual = actions.at(-1)!.evidence;
+        const expected = ['immediate', 'delayed'].includes(mode) ? 'passed' : mode === 'lost-response' ? 'inconclusive' : 'failed';
+        evidence.push({ mode, expected, actual: actual.status, events, actions, finalState: final });
+        assert.equal(actual.status, expected, `${mode}: ${actual.summary}`);
+        if (expected === 'passed') {
+          assert.equal(final.orders[0]!.lines.length, 2);
+          assert.equal(final.orders[0]!.totalMinor, 2324);
+          assert.equal(final.cart.length, 0);
+        }
+        if (mode === 'lost-response') assert.equal(actual.action.id, 'click', 'do not use a cart snapshot after unmeasured delivery');
+      } finally {
+        await Promise.all(pendingAdds); await actor.prepareNavigation(1000, new AbortController().signal);
+        await context.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+    });
+  } finally {
+    await browser.close();
+    if (process.env.STACK_BENCH_PREPARED_CART_EVIDENCE) writeFileSync(process.env.STACK_BENCH_PREPARED_CART_EVIDENCE,
+      JSON.stringify({ rerun: 'STACK_BENCH_PREPARED_CART_EVIDENCE=<file> node --test --test-name-pattern="checkout preparation" dist/tests/order-data.test.js',
+        source, scenarioSha256: createHash('sha256').update(readFileSync(source)).digest('hex'), node: process.version,
+        scope: 'real browser, action dispatcher and independent order-data parser/oracle; local HTTP storage, no external database or crash',
+        cleanup: 'owned contexts, browser and loopback servers closed', cases: evidence }, null, 2));
+  }
 });
 
 test('multi-item checkout reconciles every cart line, stored price and selected warehouse effect, including refused writes', async () => {

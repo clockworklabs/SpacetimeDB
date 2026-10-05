@@ -31,6 +31,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -83,6 +84,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -170,6 +172,7 @@
             },
             {
               "do": "click",
+              "awaitWrites": true,
               "actor": "b",
               "testid": "add-to-cart",
               "in": {
@@ -247,6 +250,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -299,6 +303,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -386,6 +391,7 @@
             },
             {
               "do": "click",
+              "awaitWrites": true,
               "actor": "b",
               "testid": "add-to-cart",
               "in": {

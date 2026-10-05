@@ -33,6 +33,7 @@
         { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -56,6 +57,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -118,6 +120,7 @@
         { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -141,6 +144,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "add-to-cart",
           "in": {
@@ -213,6 +217,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "cart-remove",
           "in": {
@@ -224,6 +229,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "a",
           "testid": "cart-remove",
           "in": {
@@ -259,6 +265,7 @@
         { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "b",
           "testid": "add-to-cart",
           "in": {
@@ -282,6 +289,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "b",
           "testid": "add-to-cart",
           "in": {
@@ -344,6 +352,7 @@
         { "do": "click", "actor": "b", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "b",
           "testid": "add-to-cart",
           "in": {
@@ -367,6 +376,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "b",
           "testid": "add-to-cart",
           "in": {
@@ -440,6 +450,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "b",
           "testid": "cart-remove",
           "in": {
@@ -451,6 +462,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "b",
           "testid": "cart-remove",
           "in": {
@@ -486,6 +498,7 @@
         { "do": "click", "actor": "c", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "c",
           "testid": "add-to-cart",
           "in": {
@@ -509,6 +522,7 @@
         },
         {
           "do": "click",
+          "awaitWrites": true,
           "actor": "c",
           "testid": "add-to-cart",
           "in": {
