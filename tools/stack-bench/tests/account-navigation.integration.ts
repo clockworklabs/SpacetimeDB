@@ -914,6 +914,24 @@ test('conditional navigation opens closed drawers and preserves inline or animat
       await actor.loc('cancel-order').click({ timeout: 1000 });
       if (layout === 'below-fold') assert((await page.locator('#panel').boundingBox())!.y < 600, 'inline content was scrolled into view');
     }
+    // After a reload a browser can still be animating to the restored scroll position when the
+    // check runs. A link at the top of the page is there to click once the page holds still.
+    await page.setContent(`<header><button id="current-user" onclick="document.body.dataset.clicked='true'">admin</button>
+      <a id="admin-link" href="#admin">Admin</a></header><div style="height:4000px"></div>`);
+    await page.evaluate(() => {
+      let top = 0;
+      const step = () => { scrollTo({ top: top += 60, behavior: 'instant' }); if (top < 1500) requestAnimationFrame(step); };
+      requestAnimationFrame(step);
+    });
+    await page.waitForFunction(() => scrollY > 100);
+    const moving = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+    const reached = await executeAction(ACTION_REGISTRY, 'click', {
+      do: 'click', actor: 'admin', testid: 'current-user', ifAvailable: true, unlessVisible: 'admin-link',
+    }, { capabilities: { actors: { get: () => moving }, 'browser-interaction': {
+      defaultWithin: 5000, expand: (value: string) => value, testId: stableElementSelector,
+    } } });
+    assert.deepEqual(reached.observation, { clicked: false, testid: 'current-user', visible: 'admin-link' });
+    assert.equal(await page.locator('body').getAttribute('data-clicked'), null);
     // The staff role check after reload keeps an open role panel visible and opens a closed one.
     const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-staff-roles.json');
     const roles = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!

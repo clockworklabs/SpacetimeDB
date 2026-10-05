@@ -24,6 +24,7 @@ interface ScrollTarget {
   closest(selector: 'details'): (ScrollTarget & { open: boolean }) | null;
   querySelectorAll(selector: 'details'): ArrayLike<{ open: boolean }>;
   scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
+  getBoundingClientRect(): { x: number; y: number };
   readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
     callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
   ) => { observe(element: unknown): void; disconnect(): void } } };
@@ -239,18 +240,29 @@ async function click({ input, capabilities, signal }:
           if (!await sentinel.isVisible()) break;
           // Native scrolling does not wait for animation stability. A translated
           // closed drawer remains offscreen; ordinary inline content becomes visible.
-          const visible = await sentinel.evaluateAll(elements => {
+          const visible = await sentinel.evaluateAll(async elements => {
             // Resolve once. A destination removed by navigation is absent, not a timeout.
             const element = elements[0];
             if (!element) return false;
-            return new Promise<boolean>(resolve => {
+            const place = () => {
+              const box = element.getBoundingClientRect();
+              return `${box.x},${box.y}`;
+            };
+            // A page still scrolling on its own, such as a restored position under smooth
+            // scrolling, carries the destination back out of view. Judge it once it holds still.
+            const until = Date.now() + 2000;
+            while (true) {
               element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-              const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
-                observer.disconnect();
-                resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+              const placed = place();
+              const intersecting = await new Promise<boolean>(resolve => {
+                const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
+                  observer.disconnect();
+                  resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+                });
+                observer.observe(element);
               });
-              observer.observe(element);
-            });
+              if (intersecting || place() === placed || Date.now() >= until) return intersecting;
+            }
           });
           if (visible) {
             visibleDestination = testid;
