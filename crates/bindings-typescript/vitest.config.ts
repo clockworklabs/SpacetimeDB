@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import type { UserConfig } from 'vite';
+import { defaultServerConditions, type UserConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 const sysMock = fileURLToPath(
@@ -16,6 +16,14 @@ export default defineConfig({
       { find: 'spacetime:sys@2.1', replacement: sysMock },
       { find: 'spacetime:sys@2.2', replacement: sysMock },
     ],
+  },
+  ssr: {
+    resolve: {
+      // A client that imports module source applies this condition, so that
+      // `spacetimedb/server` is the client's copy of the SDK
+      // (tests/interchange.test.ts).
+      conditions: ['spacetimedb-client', ...defaultServerConditions],
+    },
   },
   test: {
     include: ['tests/**/*.test.ts'],

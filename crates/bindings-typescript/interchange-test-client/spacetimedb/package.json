@@ -1,0 +1,5 @@
+{
+  "name": "interchange-test-module",
+  "private": true,
+  "type": "module"
+}

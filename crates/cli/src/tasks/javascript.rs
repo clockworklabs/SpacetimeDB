@@ -119,8 +119,15 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         module_types: None, // Lets you associate file extensions with module types, e.g. `.data` -> `json`. We don't need this.
         // Wrapper around https://docs.rs/oxc_resolver/latest/oxc_resolver/struct.ResolveOptions.html, see also https://rolldown.rs/guide/features#module-resolution
         resolve: Some(rolldown::ResolveOptions {
-            // Prefer environment-neutral exports
-            condition_names: Some(vec!["production".into(), "import".into(), "default".into()]),
+            // Prefer environment-neutral exports. The `spacetimedb` condition selects
+            // the host build of `spacetimedb/server`. That build is also the default,
+            // which older CLIs rely on, but naming it lets a later SDK change the default.
+            condition_names: Some(vec![
+                "spacetimedb".into(),
+                "production".into(),
+                "import".into(),
+                "default".into(),
+            ]),
             main_fields: Some(vec!["exports".into(), "module".into(), "main".into()]),
             extensions: Some(vec![
                 ".ts".into(),

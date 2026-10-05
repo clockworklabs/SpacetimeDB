@@ -1,4 +1,9 @@
-import type { ReadonlyIndexes } from '../lib/indexes';
+import type {
+  ReadonlyIndexes,
+  ReadonlyRangedIndex,
+  ReadonlyUniqueIndex,
+  UntypedIndex,
+} from '../lib/indexes';
 import type { TableDeclOf, TableNamesOf } from '../lib/schema';
 import type {
   ReadonlyTableMethods,
@@ -111,11 +116,25 @@ export type ClientTable<
   TableName extends TableNamesOf<RemoteModuleDecl>,
 > = Prettify<
   ClientTableCore<RemoteModuleDecl, TableName> &
-    ReadonlyIndexes<
+    ClientIndexes<
       TableDeclOf<RemoteModuleDecl, TableName>,
       TableIndexes<TableDeclOf<RemoteModuleDecl, TableName>>
     >
 >;
+
+/**
+ * The indexes of a table as a client sees them. The client's cache keeps every
+ * index as a btree, as generated bindings declare it, so unlike
+ * {@link ReadonlyIndexes}, this types a hash index in module source as ranged.
+ */
+export type ClientIndexes<
+  TableDecl extends UntypedTableDecl,
+  I extends Record<string, UntypedIndex<keyof TableDecl['columns'] & string>>,
+> = {
+  [K in keyof I]: I[K]['unique'] extends true
+    ? ReadonlyUniqueIndex<TableDecl, I[K]>
+    : ReadonlyRangedIndex<TableDecl, I[K]>;
+};
 
 type IsEventTable<TableDecl extends UntypedTableDecl> = TableDecl extends {
   isEvent: true;
