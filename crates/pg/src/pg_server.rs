@@ -137,7 +137,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
-            // SQL execution failures mapped upstream to 400 still require finer classification.
+            // `Host::exec_sql` returns 400 for client SQL errors and 500 for internal failures.
             if is_server_error {
                 log::error!("PG: Error for database {database}: {err}");
             } else {
