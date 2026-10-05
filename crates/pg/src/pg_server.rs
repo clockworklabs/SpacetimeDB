@@ -138,10 +138,11 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
             // `Host::exec_sql` returns 400 for client SQL errors and 500 for internal failures.
+            // A 400 body can quote SQL values, so only the client receives it.
             if is_server_error {
                 log::error!("PG: Error for database {database}: {err}");
             } else {
-                log::warn!("PG: Error for database {database}: {err}");
+                log::debug!("PG: Request rejected for database {database}");
             }
             Err(PgError::Sql(format!("{err}")))
         }
