@@ -177,6 +177,7 @@ namespace SpacetimeDB
         private Action<SubscriptionEventContext>? onEnded;
 
         private QuerySetId? queryId;
+        private bool unsubscribeCalled;
 
         private SubscriptionState state;
 
@@ -205,6 +206,11 @@ namespace SpacetimeDB
         void ISubscriptionHandle.OnApplied(ISubscriptionEventContext ctx)
         {
             state = new SubscriptionState.Active(queryId ?? throw new InvalidOperationException("Subscription query id is missing."));
+            if (unsubscribeCalled)
+            {
+                conn.Unsubscribe(queryId);
+                return;
+            }
             onApplied?.Invoke((SubscriptionEventContext)ctx);
         }
 
@@ -257,11 +263,11 @@ namespace SpacetimeDB
         /// </summary>
         public void UnsubscribeThen(Action<SubscriptionEventContext>? onEnded)
         {
-            if (state is not SubscriptionState.Active)
+            if (state is SubscriptionState.Ended)
             {
-                throw new Exception("Cannot unsubscribe from inactive subscription.");
+                throw new Exception("Cannot unsubscribe from ended subscription.");
             }
-            if (this.onEnded != null)
+            if (unsubscribeCalled)
             {
                 throw new Exception("Unsubscribe already called.");
             }
@@ -271,11 +277,12 @@ namespace SpacetimeDB
                 onEnded = (ctx) => { };
             }
             this.onEnded = onEnded;
+            unsubscribeCalled = true;
             if (queryId == null)
             {
                 Log.Warn("Unsubscribing from a query that was never submitted to the server does nothing.");
             }
-            else
+            else if (state is SubscriptionState.Active)
             {
                 conn.Unsubscribe(queryId);
             }
