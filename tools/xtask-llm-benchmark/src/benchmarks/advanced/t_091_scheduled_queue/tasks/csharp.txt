@@ -1,0 +1,14 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Implement a scheduled job queue with durable completion state. A failed job must not stop other jobs. A business failure (negative input) is recorded as failed; it must not throw and lose its status. Duplicate submissions must not run a job twice. The scheduled callback must reject direct external calls. Native private-callback rejection is valid; an explicit identity guard must report 'scheduler only'.
+
+Tables (the first field is the primary key):
+- public QueuedWork: Id: ulong, Input: long, Status: string, Attempts: ulong
+- public WorkEffect: Id: ulong, Value: long
+- private WorkTimer: ScheduledId: ulong, ScheduledAt: ScheduleAt, WorkId: ulong
+
+Reducers (argument order is part of the contract):
+- enqueue(Id: ulong, Input: long): Exact existing id+input is a no-op even after completion or failure. Changed input fails 'request conflict'. New input must be within -1000000..=1000000 ('invalid input'). Insert queued_work with status='queued', attempts=0, and one timer due after 1ms.
+
+work_timer uses an auto-increment primary key and schedules execute_work(job: WorkTimer). For a queued job only, increment attempts once; negative input sets status='failed' without an effect. Otherwise insert work_effect(id,input*2) and set status='complete' in the same transaction. Missing or already terminal jobs are no-ops. Do not delete queued_work rows.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

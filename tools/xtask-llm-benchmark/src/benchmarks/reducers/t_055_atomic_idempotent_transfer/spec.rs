@@ -39,6 +39,28 @@ pub fn spec() -> BenchmarkSpec {
                 },
             ));
         }
+        scorers.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                for args in [
+                    json!(["bad", 1, 2, -1]),
+                    json!(["bad", 1, 2, 0]),
+                    json!(["bad", 1, 1, 1]),
+                    json!(["bad", 1, 2, 61]),
+                    json!(["bad", 1, 99, 1]),
+                ] {
+                    s.reject("transfer", args, "")?;
+                    s.rows("account", &["id", "balance"], json!([[1, 60], [2, 65]]))?;
+                    s.rows("transfer_request", &["request_id"], json!([["request-1"]]))?;
+                }
+                s.call("transfer", json!(["bad", 1, 2, 10]))?;
+                s.rows("account", &["id", "balance"], json!([[1, 50], [2, 75]]))?;
+                Ok(())
+            },
+        ));
         scorers
     })
 }

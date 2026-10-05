@@ -1,0 +1,9 @@
+Implement this SpacetimeDB module in rust. Return only the module source.
+
+Implement a persistent cache for an external text-generating service. Cache identity is the exact (product, language) pair, NOT TTL or URL, and must not collide when either string contains punctuation. Procedure fetch_cached(product:string, language:string, ttl_ms:u64, url:string) returns a string. If product/language is empty or ttl_ms>60000, return 'invalid input' without HTTP or writes. For ttl_ms>0, return a nonexpired cached value without HTTP. Expired/missing entries cause one HTTP GET to url outside a transaction. On HTTP/network failure return 'upstream error' without changing the cache. On HTTP 200, cache the complete response text with expiry server_now+ttl_ms*1000, and return it. ttl_ms=0 always fetches but never reads or changes cache rows. Use the server clock. Requests in this test are sequential; request coalescing is not required.
+
+Tables (the first field is the primary key):
+- public cache_entry: id: u64, product: String, language: String, value: String, expires_at: i64
+
+cache_entry.id is auto-increment. At most one row may exist per exact product/language pair; update expired rows instead of accumulating duplicates. No cache seed reducers. GET endpoints are controlled local test servers.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.
