@@ -242,6 +242,8 @@ function fixture(framework: string) {
       .withDatabaseName('db')
       .withAutomaticReconnect()
       .withWSFn(factory.openWebSocket)
+      // Keep Pings out of the exact outgoing-message assertions.
+      .withPingInterval(0)
       .onConnect(notify)
       .onAutomaticReconnect(notify)
       .onDisconnect(notify)
@@ -508,7 +510,9 @@ test('Solid provider exposes replacement connections without rebinding on reconn
   const builder = DbConnection.builder()
     .withUri('ws://localhost:1234')
     .withDatabaseName('solid-provider-reconnect')
-    .withWSFn(factory.openWebSocket);
+    .withWSFn(factory.openWebSocket)
+    // Keep Pings out of the exact outgoing-message assertions.
+    .withPingInterval(0);
   const key = ConnectionManager.getKey(
     builder.getUri(),
     builder.getModuleName()

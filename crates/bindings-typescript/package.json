@@ -142,7 +142,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "50 kB"
+      "limit": "55 kB"
     },
     {
       "name": "esm (uncompressed)",

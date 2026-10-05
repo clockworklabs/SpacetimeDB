@@ -1,7 +1,12 @@
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import { ClientMessage, ServerMessage } from './client_api/types';
-import type { WebSocketAdapter, WebSocketArgs, WebSocketFactory } from './ws';
+import type {
+  WebSocketAdapter,
+  WebSocketArgs,
+  WebSocketFactory,
+  WebSocketMessage,
+} from './ws';
 import { PREFERRED_WS_PROTOCOLS, V3_WS_PROTOCOL } from './websocket_protocols';
 import {
   decodeClientMessagesV3,
@@ -27,7 +32,7 @@ class WebsocketTestAdapter implements WebSocketAdapter {
 
   #onclose: (ev: CloseEvent) => void = () => {};
   #onopen: () => void = () => {};
-  #onmessage: (msg: { data: Uint8Array }) => void = () => {};
+  #onmessage: (msg: WebSocketMessage) => void = () => {};
   #onerror: (msg: ErrorEvent) => void = () => {};
 
   constructor() {
@@ -45,7 +50,7 @@ class WebsocketTestAdapter implements WebSocketAdapter {
     this.#onopen = handler;
   }
 
-  set onmessage(handler: (msg: { data: Uint8Array }) => void) {
+  set onmessage(handler: (msg: WebSocketMessage) => void) {
     this.#onmessage = handler;
   }
 
@@ -112,7 +117,10 @@ class WebsocketTestAdapter implements WebSocketAdapter {
     this.#onopen();
   }
 
-  sendToClient(message: ServerMessage): void {
+  sendToClient(
+    message: ServerMessage,
+    opts: { receivedAt?: number } = {}
+  ): void {
     const writer = new BinaryWriter(1024);
     ServerMessage.serialize(writer, message);
     const rawBytes = writer.getBuffer().slice();
@@ -125,7 +133,7 @@ class WebsocketTestAdapter implements WebSocketAdapter {
       this.protocol === V3_WS_PROTOCOL
         ? encodeServerMessagesV3(writer, [rawBytes]).slice()
         : rawBytes;
-    this.#onmessage({ data: outboundData });
+    this.#onmessage({ data: outboundData, receivedAt: opts.receivedAt });
   }
 
   openWebSocket: WebSocketFactory = async args => {
