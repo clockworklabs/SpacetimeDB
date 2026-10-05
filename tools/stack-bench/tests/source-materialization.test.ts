@@ -7,6 +7,30 @@ import test from 'node:test';
 import { materializeAcceptedSource, restoreRepairSource } from '../src/runtime/source-materialization.js';
 import { assertPlainAppSourceTree, hashAppSource, snapshotAppSource, restoreAppSource } from '../src/runtime/source-snapshot.js';
 
+test('accepted startup cannot read rejected files outside the saved source', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-runtime-rollback-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(app);
+    writeFileSync(join(app, 'start.sh'), 'node app.cjs\n');
+    writeFileSync(join(app, 'app.cjs'), `const fs = require('node:fs');
+      const paths = ['config.log', 'config.pid', 'stack-bench/config'];
+      process.stdout.write(paths.filter(p => fs.existsSync(p)).map(p => fs.readFileSync(p, 'utf8')).join(','));`);
+    snapshotAppSource(app, accepted);
+    const hash = hashAppSource(accepted).sha256;
+    for (const file of ['config.log', 'config.pid', 'stack-bench/config']) {
+      mkdirSync(dirname(join(app, file)), { recursive: true });
+      writeFileSync(join(app, file), 'rejected');
+    }
+    const execute = () => execFileSync(process.execPath, ['app.cjs'], { cwd: app, encoding: 'utf8' });
+    assert.equal(execute(), 'rejected,rejected,rejected');
+    assert.equal(hashAppSource(app).sha256, hash, 'control: excluded files have no source identity');
+    await materializeAcceptedSource(accepted, app, { backend: 'postgres', app, port: 6573, probe: '' },
+      async (_spec, mode) => { if (mode === 'start') assert.equal(execute(), ''); });
+    assert.equal(execute(), '', 'accepted app must have the same inputs as a clean reconstruction');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('rejected installed dependency changes cannot survive accepted source materialization', { timeout: 60_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-rollback-'));
   try {

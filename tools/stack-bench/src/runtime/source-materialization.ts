@@ -6,7 +6,7 @@ import { hashFiles } from '../evidence/provenance.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
-import { hashAppSource, restoreAppSource } from './source-snapshot.js';
+import { hashAppSource, resetAppToSource } from './source-snapshot.js';
 import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 import { resetRepairBackend } from '../stacks/backend-reset.js';
 
@@ -30,10 +30,10 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   lifecycle: typeof controlAppServer = controlAppServer): Promise<void> {
   const accepted = hashAppSource(sourcePath);
   await lifecycle(application, 'stop');
-  // Installed code is not part of a source snapshot. A rejected repair can
-  // change it without changing the source hash. The accepted start contract
-  // installs dependencies from its restored manifests and lockfiles.
-  restoreAppSource(sourcePath, appDir, { cleanDependencies: true });
+  // A stopped app must start with only its saved inputs. Dependencies, logs and
+  // other excluded files can carry rejected behavior too. The agent's own git
+  // repository stays: later sessions use its history.
+  resetAppToSource(sourcePath, appDir);
   if (!existsSync(join(appDir, 'start.sh'))) {
     throw Object.assign(new Error(`accepted application source has no ${CODING_CONTAINER_START_SCRIPT}`),
       { code: 'generated_app_start_contract_missing' });
@@ -52,7 +52,7 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
       cleanupFailure = error;
     }
     try {
-      restoreAppSource(sourcePath, appDir, { cleanDependencies: true });
+      resetAppToSource(sourcePath, appDir);
     } catch (error) {
       cleanupFailure ??= error;
     }
