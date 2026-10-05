@@ -1,6 +1,7 @@
-import { environment, type EnvironmentFor } from './environment';
+import type { EnvironmentFor } from './environment';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
+import { env_get } from 'spacetime:sys@2.2';
 
 import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
@@ -29,8 +30,7 @@ import {
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
-import { callProcedure } from './procedures';
-import type { Procedures } from './procedures';
+import type { ProcedureCtx, Procedures, TransactionCtx } from './procedures';
 import type { Reducers } from './reducers';
 import {
   type HandlerContext,
@@ -51,6 +51,7 @@ import {
   type JwtClaims,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
+import type { Environment } from '../lib/environment';
 import { type UntypedSchemaDecl } from '../lib/schema';
 import {
   type RowType,
@@ -81,6 +82,22 @@ import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 const { freeze } = Object;
 
 export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
+
+/** Values are not cached: transaction and procedure reads retain host semantics. */
+export const environment: Environment = new Proxy(
+  Object.freeze(
+    Object.assign(Object.create(null), { get: (key: string) => env_get(key) })
+  ),
+  {
+    get(target, key) {
+      if (key === 'get') return target.get;
+      if (typeof key !== 'string') return undefined;
+      // The host rejects undeclared keys and missing required values. Optional
+      // named access uses undefined; the generic ABI accessor retains null.
+      return env_get(key) ?? undefined;
+    },
+  }
+);
 
 function requestFromWire(request: HttpRequest, body: Uint8Array): Request {
   return Request[makeRequest](body, {
@@ -369,6 +386,119 @@ export function runWithTx<T, Ctx>(
     throw new Error('transaction retry failed again', { cause: e });
   }
 }
+
+type ITransactionCtx<S extends UntypedSchemaDecl> = TransactionCtx<S>;
+
+const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDecl>
+  extends ReducerCtxImpl<S>
+  implements ITransactionCtx<S> {};
+
+export function callProcedure(
+  procedures: Procedures,
+  id: number,
+  sender: Identity,
+  connectionId: ConnectionId | null,
+  timestamp: Timestamp,
+  argsBuf: Uint8Array,
+  dbView: () => DbView<any>,
+  dispatches: SubmoduleDispatchInfo[] = [],
+  parentPrefix = ''
+): Uint8Array {
+  const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
+    procedures[id];
+  const args = deserializeArgs(new BinaryReader(argsBuf));
+
+  const ctx: ProcedureCtx<UntypedSchemaDecl> = new ProcedureCtxImpl(
+    sender,
+    timestamp,
+    connectionId,
+    dbView,
+    dispatches,
+    parentPrefix
+  );
+
+  const ret = callUserFunction(fn, ctx, args);
+  const retBuf = new BinaryWriter(returnTypeBaseSize);
+  serializeReturn(retBuf, ret);
+  return retBuf.getBuffer();
+}
+
+type IProcedureCtx<S extends UntypedSchemaDecl> = ProcedureCtx<S>;
+const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDecl>
+  implements IProcedureCtx<S>
+{
+  #identity: Identity | undefined;
+  #uuidCounter: { value: 0 } | undefined;
+  #random: Random | undefined;
+  #dbView: () => DbView<any>;
+  readonly env = environment as EnvironmentFor<S>;
+  #dispatches: SubmoduleDispatchInfo[];
+  #parentPrefix: string;
+  #asViews: object | undefined;
+
+  constructor(
+    readonly sender: Identity,
+    readonly timestamp: Timestamp,
+    readonly connectionId: ConnectionId | null,
+    dbView: () => DbView<any>,
+    dispatches: SubmoduleDispatchInfo[] = [],
+    parentPrefix = ''
+  ) {
+    this.#dbView = dbView;
+    this.#dispatches = dispatches;
+    this.#parentPrefix = parentPrefix;
+  }
+
+  get databaseIdentity() {
+    return (this.#identity ??= new Identity(sys.identity()));
+  }
+
+  get identity() {
+    return this.databaseIdentity;
+  }
+
+  get random() {
+    return (this.#random ??= makeRandom(this.timestamp));
+  }
+
+  get http() {
+    return httpClient;
+  }
+
+  get as() {
+    return (this.#asViews ??= buildProcedureAliasCtxMap(
+      this,
+      this.#dispatches,
+      this.#parentPrefix
+    )) as any;
+  }
+
+  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
+    const dispatches = this.#dispatches;
+    const parentPrefix = this.#parentPrefix;
+    return runWithTx(timestamp => {
+      const tx = new TransactionCtxImpl(
+        this.sender,
+        timestamp,
+        this.connectionId,
+        this.#dbView()
+      );
+      assignTxAliasViews(tx, dispatches, parentPrefix);
+      return tx as unknown as TransactionCtx<S>;
+    }, body);
+  }
+
+  newUuidV4(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(16));
+    return Uuid.fromRandomBytesV4(bytes);
+  }
+
+  newUuidV7(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(4));
+    const counter = (this.#uuidCounter ??= { value: 0 });
+    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
+  }
+};
 
 type FlatSubmoduleDispatch = {
   reducerFns: Reducers;

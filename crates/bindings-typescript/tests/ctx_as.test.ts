@@ -24,6 +24,7 @@ describe('ctx.as alias proxy', () => {
 
   beforeAll(async () => {
     ({ schema } = await import('../src/server/schema'));
+    await import('../src/server/module_hooks');
     ({ table } = await import('../src/lib/table'));
     ({ t } = await import('../src/lib/type_builders'));
     ({ moduleHooks } = (await import('spacetime:sys@2.0')) as any);

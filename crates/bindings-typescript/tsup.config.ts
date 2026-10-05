@@ -253,7 +253,10 @@ export default defineConfig([
         '(globalThis.window=globalThis.window||globalThis));',
     },
     treeshake: {
-      moduleSideEffects: ['src/server/polyfills.ts'],
+      moduleSideEffects: [
+        'src/server/polyfills.ts',
+        'src/server/module_hooks.ts',
+      ],
     },
     external: ['undici', /^spacetime:sys.*$/],
     noExternal: ['object-inspect', 'base64-js', 'statuses', 'pure-rand'],

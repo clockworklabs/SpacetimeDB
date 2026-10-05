@@ -18,13 +18,26 @@ export interface ReducerExport<
 > extends Reducer<S, Params>,
     ModuleExport {}
 
-export interface ReducerOpts<Params extends ParamsObj = ParamsObj> {
-  name: string;
+export interface ReducerOpts<
+  Params extends ParamsObj = ParamsObj,
+  Name extends string = string,
+> {
+  name: Name;
   onSchedule?: ScheduleTableForParams<Params>;
 }
 
-export type ReducerOptsWithOptionalName<Params extends ParamsObj = ParamsObj> =
-  Omit<ReducerOpts<Params>, 'name'> & { name?: string };
+export type ReducerOptsWithOptionalName<
+  Params extends ParamsObj = ParamsObj,
+  Name extends string = string,
+> = Omit<ReducerOpts<Params, Name>, 'name'> & { name?: Name };
+
+/** What a client reads from a reducer declaration. See `remoteModuleDeclFromExports`. */
+export type ReducerSignature<Name extends string, Params extends ParamsObj> = {
+  readonly kind: 'reducer';
+  /** The canonical name, if the declaration gives one. */
+  readonly name: Name | undefined;
+  readonly params: Params;
+};
 
 export function makeReducerExport<
   S extends UntypedSchemaDecl,
@@ -33,10 +46,10 @@ export function makeReducerExport<
   ctx: SchemaInner,
   opts: ReducerOptsWithOptionalName<Params> | undefined,
   params: RowObj | RowBuilder<RowObj>,
-  fn: Reducer<any, any>,
+  fn: Reducer<any, any> | undefined,
   lifecycle?: Lifecycle
 ): ReducerExport<S, Params> {
-  const reducerExport: ReducerExport<S, Params> = (...args) => fn(...args);
+  const reducerExport: ReducerExport<S, Params> = (...args) => fn!(...args);
   reducerExport[exportContext] = ctx;
   reducerExport[registerExport] = (ctx, exportName) => {
     registerReducer(ctx, exportName, params, fn, opts, lifecycle);
@@ -67,11 +80,12 @@ export function registerReducer(
   ctx: SchemaInner,
   exportName: string,
   params: RowObj | RowBuilder<RowObj>,
-  fn: Reducer<any, any>,
+  fn: Reducer<any, any> | undefined,
   opts?: ReducerOptsWithOptionalName<any>,
   lifecycle?: Lifecycle
 ): void {
   ctx.defineFunction(exportName);
+  ctx.requireBody('reducer', exportName, fn);
 
   if (!(params instanceof RowBuilder)) {
     params = new RowBuilder(params);
@@ -114,11 +128,12 @@ export function registerReducer(
 
   // If the function isn't named (e.g. `function foobar() {}`), give it the same
   // name as the reducer so that it's clear what it is in in backtraces.
-  if (!fn.name) {
+  if (fn && !fn.name) {
     Object.defineProperty(fn, 'name', { value: exportName, writable: false });
   }
 
-  ctx.reducers.push(fn);
+  // Only a client registers a reducer without a body, and it never runs it.
+  ctx.reducers.push(fn!);
 }
 
 export type Reducers = Reducer<any, any>[];

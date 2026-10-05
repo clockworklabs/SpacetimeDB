@@ -1,10 +1,8 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { schema } from '../src/server/schema';
 import { t } from '../src/lib/type_builders';
-import {
-  environment,
-  environmentDeclarations,
-} from '../src/server/environment';
+import { environmentDeclarations } from '../src/server/environment';
+import { environment } from '../src/server/runtime';
 import type { EnvironmentSchema } from '../src/lib/environment';
 import { env_get } from 'spacetime:sys@2.2';
 
