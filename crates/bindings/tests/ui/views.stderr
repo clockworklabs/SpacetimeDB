@@ -222,7 +222,7 @@ help: the trait `spacetimedb::rt::ViewReturn` is not implemented for `Player`
               RawQuery<T>
               RightSemiJoin<R, L>
               Vec<T>
-              spacetimedb::spacetimedb_query_builder::Table<T>
+              table::Table<T>
 
 error[E0277]: invalid view signature
    --> tests/ui/views.rs:123:1
@@ -474,7 +474,7 @@ error[E0277]: `&'a NonFilterableViewPrimaryKey` cannot appear as an argument to 
               &ethnum::int::I256
               &ethnum::uint::U256
             and $N others
-    = note: required for `NonFilterableViewPrimaryKey` to implement `spacetimedb::ViewPrimaryKeyColumn`
+    = note: required for `NonFilterableViewPrimaryKey` to implement `spacetimedb::spacetimedb_lib::ViewPrimaryKeyColumn`
 note: required by a bound in `_::_assert_view_primary_key_column::_assert_view_primary_key_column_type`
    --> tests/ui/views.rs:229:1
     |
