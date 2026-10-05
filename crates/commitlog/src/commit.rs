@@ -9,6 +9,7 @@ use spacetimedb_sats::buffer::{BufReader, Cursor, DecodeError};
 use crate::{
     error::ChecksumMismatch,
     payload::Decoder,
+    repo::SegmentPos,
     segment::{CHECKSUM_ALGORITHM_CRC32C, CHECKSUM_CRC32C_LEN},
     Transaction, DEFAULT_LOG_FORMAT_VERSION,
 };
@@ -67,9 +68,9 @@ impl Header {
         match &mut hdr.as_slice() {
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
             buf => {
-                let min_tx_offset = buf.get_u64().map_err(decode_error)?;
-                let n = buf.get_u16().map_err(decode_error)?;
-                let len = buf.get_u32().map_err(decode_error)?;
+                let min_tx_offset = buf.get_u64().map_err(|e| decode_header_error(e, "min_tx_offset"))?;
+                let n = buf.get_u16().map_err(|e| decode_header_error(e, "n"))?;
+                let len = buf.get_u32().map_err(|e| decode_header_error(e, "len"))?;
 
                 Ok(Some(Self {
                     min_tx_offset,
@@ -88,15 +89,15 @@ impl Header {
                 return Ok(None);
             }
 
-            return Err(e);
+            return Err(io::Error::new(e.kind(), format!("error reading commit header: {e}")));
         }
         match &mut hdr.as_slice() {
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
             buf => {
-                let min_tx_offset = buf.get_u64().map_err(decode_error)?;
-                let epoch = buf.get_u64().map_err(decode_error)?;
-                let n = buf.get_u16().map_err(decode_error)?;
-                let len = buf.get_u32().map_err(decode_error)?;
+                let min_tx_offset = buf.get_u64().map_err(|e| decode_header_error(e, "min_tx_offset"))?;
+                let epoch = buf.get_u64().map_err(|e| decode_header_error(e, "epoch"))?;
+                let n = buf.get_u16().map_err(|e| decode_header_error(e, "n"))?;
+                let len = buf.get_u32().map_err(|e| decode_header_error(e, "len"))?;
 
                 Ok(Some(Self {
                     min_tx_offset,
@@ -189,7 +190,7 @@ impl Commit {
     /// [`ChecksumMismatch`] is returned.
     ///
     /// To retain access to the checksum, use [`StoredCommit::decode`].
-    pub fn decode<R: Read>(reader: R) -> io::Result<Option<Self>> {
+    pub fn decode<R: Read + SegmentPos>(reader: &mut R) -> io::Result<Option<Self>> {
         let commit = StoredCommit::decode(reader)?;
         Ok(commit.map(Into::into))
     }
@@ -294,11 +295,15 @@ impl StoredCommit {
     /// Verifies the checksum of the commit. If it doesn't match, an error of
     /// kind [`io::ErrorKind::InvalidData`] with an inner error downcastable to
     /// [`ChecksumMismatch`] is returned.
-    pub fn decode<R: Read>(reader: R) -> io::Result<Option<Self>> {
+    pub fn decode<R: Read + SegmentPos>(reader: &mut R) -> io::Result<Option<Self>> {
         Self::decode_internal(reader, DEFAULT_LOG_FORMAT_VERSION)
     }
 
-    pub(crate) fn decode_internal<R: Read>(reader: R, log_format_version: u8) -> io::Result<Option<Self>> {
+    pub(crate) fn decode_internal<R: Read + SegmentPos>(
+        reader: &mut R,
+        log_format_version: u8,
+    ) -> io::Result<Option<Self>> {
+        let pos = reader.segment_pos()?;
         let mut reader = Crc32cReader::new(reader);
 
         let v = if log_format_version == 0 {
@@ -306,17 +311,36 @@ impl StoredCommit {
         } else {
             Version::V1
         };
-        let Some(hdr) = Header::decode_internal(&mut reader, v)? else {
+        let Some(hdr) = Header::decode_internal(&mut reader, v).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("commit at byte position {}: failed to decode commit header: {}", pos, e),
+            )
+        })?
+        else {
             return Ok(None);
         };
         let mut records = vec![0; hdr.len as usize];
-        reader.read_exact(&mut records)?;
+        reader.read_exact(&mut records).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "commit at byte position {}: failed to read {} bytes of commit payload: {}",
+                    pos, hdr.len, e
+                ),
+            )
+        })?;
 
         let chk = reader.crc32c();
-        let crc = decode_u32(reader.into_inner())?;
+        let crc = decode_u32(reader.into_inner()).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("commit at byte position{}: failed to read checksum: {}", pos, e),
+            )
+        })?;
 
         if chk != crc {
-            return Err(invalid_data(ChecksumMismatch));
+            return Err(invalid_data(ChecksumMismatch { commit_pos: pos }));
         }
 
         Ok(Some(Self {
@@ -358,7 +382,7 @@ impl Metadata {
     /// Note that this decodes the commit due to checksum verification.
     /// Like [`StoredCommit::decode`], this method returns `None` if the reader
     /// is at EOF already.
-    pub fn extract<R: io::Read>(reader: R) -> io::Result<Option<Self>> {
+    pub fn extract<R: io::Read + SegmentPos>(reader: &mut R) -> io::Result<Option<Self>> {
         StoredCommit::decode(reader).map(|maybe_commit| maybe_commit.map(Self::from))
     }
 }
@@ -385,8 +409,8 @@ fn decode_u32<R: Read>(mut read: R) -> io::Result<u32> {
     Ok(u32::from_le_bytes(buf))
 }
 
-fn decode_error(e: DecodeError) -> io::Error {
-    invalid_data(e)
+fn decode_header_error(e: DecodeError, field: &str) -> io::Error {
+    invalid_data(format!("failed to decode commit header field '{field}': {e}"))
 }
 
 fn invalid_data<E>(e: E) -> io::Error
@@ -417,7 +441,7 @@ mod tests {
 
         let mut buf = Vec::with_capacity(commit.encoded_len());
         commit.write(&mut buf).unwrap();
-        let commit2 = Commit::decode(&mut buf.as_slice()).unwrap().unwrap();
+        let commit2 = Commit::decode(&mut io::Cursor::new(buf.as_slice())).unwrap().unwrap();
 
         assert_eq!(commit, commit2);
     }
@@ -470,7 +494,7 @@ mod tests {
             // so we get `ChecksumMismatch` not any other error.
             buf[pos] ^= mask.get();
 
-            match Commit::decode(&mut buf.as_slice()) {
+            match Commit::decode(&mut io::Cursor::new(buf.as_slice())) {
                 Err(e) => {
                     assert_eq!(e.kind(), io::ErrorKind::InvalidData);
                     e.into_inner()

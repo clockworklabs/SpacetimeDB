@@ -1,3 +1,4 @@
+import type { EnvironmentFor } from './environment';
 import type { DbView } from '../server/db_view';
 import type { Random } from '../server/rng';
 import type { ConnectionId } from './connection_id';
@@ -98,6 +99,12 @@ export interface JwtClaims {
   readonly fullPayload: JsonObject;
 }
 
+export type AliasViews<SchemaDef extends UntypedSchemaDef> = SchemaDef extends {
+  namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+}
+  ? { readonly [K in keyof NS]: ReducerCtx<NS[K]> }
+  : {};
+
 /**
  * Reducer context parametrized by the inferred Schema
  */
@@ -109,8 +116,10 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  env: EnvironmentFor<SchemaDef>;
   senderAuth: AuthCtx;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
   random: Random;
+  as: AliasViews<SchemaDef>;
 }>;

@@ -32,7 +32,7 @@ function Install {
 
     $AssetName = "spacetimedb-update-x86_64-pc-windows-msvc.exe"
     $DownloadUrl = "https://github.com/clockworklabs/SpacetimeDB/releases/latest/download/$AssetName"
-    $MirrorBase = "https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com"
+    $MirrorBase = "https://spacetimedb-client-binaries.s3.amazonaws.com"
     Write-Output "Downloading installer..."
 
     function UpdatePathIfNotExists {

@@ -9,5 +9,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { path = "../../../../../../sdks/rust/" }
+spacetimedb = { path = "../../../../../../sdks/rust/", features = ["unstable"] }
 log = "0.4"

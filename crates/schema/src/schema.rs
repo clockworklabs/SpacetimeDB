@@ -16,7 +16,7 @@ use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, WithTypespace};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -25,7 +25,19 @@ use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
     RawModuleDefVersion, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
-use crate::identifier::Identifier;
+use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
+
+/// The local part of a stored, possibly namespaced name.
+///
+/// Names in the database carry the namespace of the module that owns them, so recovering the
+/// local name means removing exactly that prefix. Splitting on the last `.` is wrong: a V9
+/// index, constraint or sequence name may itself contain dots (see the `wacky_names` test),
+/// in which case the final segment is not the local name and the comparison spuriously fails.
+fn strip_namespace<'a>(stored: &'a str, namespace: &NamespacePath) -> anyhow::Result<&'a str> {
+    namespace
+        .strip_from(stored)
+        .ok_or_else(|| anyhow::anyhow!("Name `{stored}` is not in the expected namespace `{namespace}`"))
+}
 
 /// Helper trait documenting allowing schema entities to be built from a validated `ModuleDef`.
 pub trait Schema: Sized {
@@ -55,15 +67,10 @@ pub trait Schema: Sized {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewDefInfo {
     pub view_id: ViewId,
-    pub has_args: bool,
     pub is_anonymous: bool,
 }
 
-impl ViewDefInfo {
-    pub fn num_private_cols(&self) -> usize {
-        (if self.is_anonymous { 0 } else { 1 }) + (if self.has_args { 1 } else { 0 })
-    }
-}
+pub const VIEW_ARG_HASH_COL: ColId = ColId(0);
 
 /// A wrapper around a [`TableSchema`] for views.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,7 +106,7 @@ impl TableOrViewSchema {
     }
 
     /// Returns the [`TableSchema`] of the underlying datastore table.
-    /// For views, this schema will include the internal `sender` and `arg_id` columns.
+    /// For views, this schema will include the internal `arg_hash` column when present.
     pub fn inner(&self) -> Arc<TableSchema> {
         self.inner.clone()
     }
@@ -109,32 +116,10 @@ impl TableOrViewSchema {
     /// The [`ColId`]s in this list do not necessarily correspond to their position in this list.
     /// Rather they correspond to the position of the column in the physical datastore table.
     /// This is important since this method may not return all columns recorded in the datastore.
-    /// For views in particular it will not include the internal `sender` and `arg_id` columns.
+    /// For views in particular it will not include the internal `arg_hash` column.
     /// Hence columns in this list should be looked up by their [`ColId`] - not their position.
     pub fn public_columns(&self) -> &[ColumnSchema] {
-        match self.view_info {
-            Some(ViewDefInfo {
-                has_args: true,
-                is_anonymous: false,
-                ..
-            }) => &self.inner.columns[2..],
-            Some(ViewDefInfo {
-                has_args: true,
-                is_anonymous: true,
-                ..
-            }) => &self.inner.columns[1..],
-            Some(ViewDefInfo {
-                has_args: false,
-                is_anonymous: false,
-                ..
-            }) => &self.inner.columns[1..],
-            Some(ViewDefInfo {
-                has_args: false,
-                is_anonymous: true,
-                ..
-            })
-            | None => &self.inner.columns,
-        }
+        &self.inner.columns[self.inner.num_private_cols()..]
     }
 
     /// Check if the `col_name` exist on this [`TableOrViewSchema`]
@@ -163,7 +148,9 @@ pub struct TableSchema {
     /// The name of the table.
     pub table_name: TableName,
 
-    pub alias: Option<Identifier>,
+    /// The source-level (accessor) name of the table, for client codegen.
+    /// Namespaced for submodule tables, matching `table_name`.
+    pub alias: Option<NamespacedIdentifier>,
 
     /// Is this the backing table of a view?
     pub view_info: Option<ViewDefInfo>,
@@ -229,7 +216,7 @@ impl TableSchema {
         schedule: Option<ScheduleSchema>,
         primary_key: Option<ColId>,
         is_event: bool,
-        alias: Option<Identifier>,
+        alias: Option<NamespacedIdentifier>,
         outbox: Option<OutboxSchema>,
     ) -> Self {
         Self {
@@ -265,7 +252,7 @@ impl TableSchema {
                 col_name: element
                     .name
                     .clone()
-                    .map(Identifier::new_assume_valid)
+                    .map(Identifier::new_unsafe_assume_valid)
                     .unwrap_or_else(|| Identifier::for_test(format!("col{col_pos}"))),
                 col_type: element.algebraic_type.clone(),
                 alias: None,
@@ -303,10 +290,7 @@ impl TableSchema {
     /// How many private columns does this table have?
     /// Will only be non-zero in the case of views.
     pub fn num_private_cols(&self) -> usize {
-        self.view_info
-            .as_ref()
-            .map(|view_info| view_info.num_private_cols())
-            .unwrap_or_default()
+        usize::from(self.is_view())
     }
 
     /// Update the table id of this schema.
@@ -699,12 +683,16 @@ impl TableSchema {
     /// This method works around this problem by copying the column types from the module def into the table schema.
     /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
-        let table_name = self.table_name.clone().into();
+        // `janky_fix_column_defs` only runs for v8 modules, which have no submodules,
+        // so the table is at the root.
+        let full_name: NamespacedIdentifier = self.table_name.clone().into();
+        let local_name = full_name.local_name().clone();
         for col in &mut self.columns {
-            let def: &ColumnDef = module_def.lookup((&table_name, &col.col_name)).unwrap();
+            let def: &ColumnDef = module_def.lookup((&local_name, &col.col_name)).unwrap();
             col.col_type = def.ty.clone();
         }
-        let table_def: &TableDef = module_def.expect_lookup(&table_name);
+        let root = NamespacePath::root();
+        let table_def: &TableDef = module_def.expect_lookup((&root, &local_name));
         self.row_type = module_def.typespace()[table_def.product_type_ref]
             .as_product()
             .unwrap()
@@ -765,9 +753,7 @@ impl TableSchema {
         let ViewDef {
             name,
             is_public,
-            is_anonymous,
             primary_key,
-            param_columns,
             return_columns,
             ..
         } = view_def;
@@ -789,16 +775,10 @@ impl TableSchema {
             StAccess::Private
         };
 
-        let view_info = ViewDefInfo {
-            view_id: ViewId::SENTINEL,
-            has_args: !param_columns.is_empty(),
-            is_anonymous: *is_anonymous,
-        };
-
         TableSchema::new(
             TableId::SENTINEL,
             TableName::new(name.clone()),
-            Some(view_info),
+            None,
             columns,
             vec![],
             vec![],
@@ -827,25 +807,33 @@ impl TableSchema {
     /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     ///
     /// #[view(accessor = my_anonymous_view, public)]
-    /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
+    /// fn my_anonymous_view(ctx: &AnonymousViewContext) -> Vec<MyTable> { ... }
+    ///
+    /// #[view(accessor = my_parameterized_anonymous_view, public)]
+    /// fn my_parameterized_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     /// ```
     ///
     /// The above views are materialized with the following schema:
     ///
     /// my_view:
     ///
-    /// | sender         | arg_id | a   | b   |
-    /// |----------------|--------|-----|-----|
-    /// | (some = 0x...) | u64    | u32 | u32 |
+    /// | arg_hash | a   | b   |
+    /// |----------|-----|-----|
+    /// | u256     | u32 | u32 |
     ///
     /// my_anonymous_view:
     ///
-    /// | sender      | arg_id | a   | b   |
-    /// |-------------|--------|-----|-----|
-    /// | (none = ()) | u64    | u32 | u32 |
+    /// | arg_hash | a   | b   |
+    /// |----------|-----|-----|
+    /// | u256     | u32 | u32 |
     ///
-    /// Note, `sender` and `arg_id` are internal columns not defined by the module,
-    /// where `arg_id` is a foreign key into `st_view_arg`.
+    /// my_parameterized_anonymous_view:
+    ///
+    /// | arg_hash | a   | b   |
+    /// |----------|-----|-----|
+    /// | u256     | u32 | u32 |
+    ///
+    /// Note, `arg_hash` is an internal column not defined by the module.
     pub fn from_view_def_for_datastore(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
@@ -854,41 +842,26 @@ impl TableSchema {
             is_public,
             is_anonymous,
             primary_key,
-            param_columns,
             return_columns,
             accessor_name,
             ..
         } = view_def;
 
-        let n = return_columns.len() + 2;
-        let mut columns = Vec::with_capacity(n);
-        let mut meta_cols = 0;
-
-        let mut push_column = |name: &'static str, col_type| {
-            meta_cols += 1;
-            columns.push(ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: columns.len().into(),
-                col_name: Identifier::new_assume_valid(name.into()),
-                col_type,
-                alias: None,
-            });
-        };
-
-        if !is_anonymous {
-            push_column("sender", AlgebraicType::identity());
-        }
-
-        if !param_columns.is_empty() {
-            push_column("arg_id", AlgebraicType::U64);
-        }
+        let mut columns = Vec::with_capacity(return_columns.len() + 1);
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: VIEW_ARG_HASH_COL,
+            col_name: Identifier::new_unsafe_assume_valid("arg_hash".into()),
+            col_type: AlgebraicType::U256,
+            alias: None,
+        });
 
         columns.extend(
             return_columns
                 .iter()
                 .map(|def| ColumnSchema::from_view_column_def(module_def, def))
                 .enumerate()
-                .map(|(i, schema)| (ColId::from(meta_cols + i), schema))
+                .map(|(i, schema)| (ColId::from(1 + i), schema))
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
@@ -902,54 +875,34 @@ impl TableSchema {
             RawIdentifier::new(format!("{name}_{cols_name}_key"))
         };
 
-        let mut indexes = match meta_cols {
-            1 => vec![IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: make_index_name(&col_list![0]),
-                index_algorithm: IndexAlgorithm::BTree(col_list![0].into()),
-                alias: None,
-            }],
-            2 => vec![IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: make_index_name(&col_list![0, 1]),
-                index_algorithm: IndexAlgorithm::BTree(col_list![0, 1].into()),
-                alias: None,
-            }],
-            _ => vec![],
-        };
+        let arg_hash_cols = col_list![VIEW_ARG_HASH_COL];
+        let mut indexes = vec![IndexSchema {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: make_index_name(&arg_hash_cols).into(),
+            index_algorithm: IndexAlgorithm::BTree(arg_hash_cols.into()),
+            alias: None,
+        }];
 
         let mut constraints = vec![];
         let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
-            .then_some(primary_key.map(|pk| ColId::from(meta_cols + pk.idx())))
+            .then_some(primary_key.map(|pk| ColId::from(1 + pk.idx())))
             .flatten();
 
-        if *is_anonymous {
-            if let Some(pk_col) = view_primary_key {
-                let cols = col_list![pk_col];
-                constraints.push(ConstraintSchema {
-                    table_id: TableId::SENTINEL,
-                    constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: make_constraint_name(&cols),
-                    data: ConstraintData::Unique(UniqueConstraintData {
-                        columns: ColSet::from(cols.clone()),
-                    }),
-                });
-                indexes.push(IndexSchema {
-                    index_id: IndexId::SENTINEL,
-                    table_id: TableId::SENTINEL,
-                    index_name: make_index_name(&cols),
-                    index_algorithm: IndexAlgorithm::BTree(cols.into()),
-                    alias: None,
-                });
-            }
-        } else if let Some(pk_col) = view_primary_key {
-            let cols = col_list![ColId(0), pk_col];
+        if let Some(pk_col) = view_primary_key {
+            let cols = col_list![VIEW_ARG_HASH_COL, pk_col];
+            constraints.push(ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: make_constraint_name(&cols).into(),
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: ColSet::from(cols.clone()),
+                }),
+            });
             indexes.push(IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,
-                index_name: make_index_name(&cols),
+                index_name: make_index_name(&cols).into(),
                 index_algorithm: IndexAlgorithm::BTree(cols.into()),
                 alias: None,
             });
@@ -963,7 +916,6 @@ impl TableSchema {
 
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
-            has_args: !param_columns.is_empty(),
             is_anonymous: *is_anonymous,
         };
 
@@ -978,9 +930,9 @@ impl TableSchema {
             StTableType::User,
             table_access,
             None,
-            if *is_anonymous { view_primary_key } else { None },
+            None,
             false,
-            Some(accessor_name.clone()),
+            Some(accessor_name.clone().into()),
             None,
         )
     }
@@ -1058,13 +1010,20 @@ impl Schema for TableSchema {
             schedule,
             *primary_key,
             *is_event,
-            Some(accessor_name.clone()),
+            Some(accessor_name.clone().into()),
             outbox_schema,
         )
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
+        // Both root and submodule tables are stored under their canonical name, qualified by
+        // the namespace their module is mounted under. Check the whole thing, not just the
+        // last segment: a table in `lib` must not validate against a root def of the same name.
+        ensure_eq!(
+            strip_namespace(&self.table_name, &def.namespace)?,
+            &def.name[..],
+            "Table name mismatch"
+        );
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
         let def_table_access: StAccess = (def.table_access).into();
         ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
@@ -1080,19 +1039,22 @@ impl Schema for TableSchema {
         }
         ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
 
+        // Index names in the DB are prefixed for submodule tables (e.g. "lib.library_table_id_idx_btree"),
+        // but `def.indexes` is keyed by the local name.
         for index in &self.indexes {
             let index_def = def
                 .indexes
-                .get(&index.index_name)
+                .get(strip_namespace(&index.index_name, &def.namespace)?)
                 .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
             index.check_compatible(module_def, index_def)?;
         }
         ensure_eq!(self.indexes.len(), def.indexes.len(), "Index count mismatch");
 
+        // Like index names, constraint names are namespaced in the DB for submodule tables.
         for constraint in &self.constraints {
             let constraint_def = def
                 .constraints
-                .get(&constraint.constraint_name)
+                .get(strip_namespace(&constraint.constraint_name, &def.namespace)?)
                 .ok_or_else(|| anyhow::anyhow!("Constraint {} not found in definition", constraint.constraint_id.0))?;
             constraint.check_compatible(module_def, constraint_def)?;
         }
@@ -1102,10 +1064,11 @@ impl Schema for TableSchema {
             "Constraint count mismatch"
         );
 
+        // Like index names, sequence names are namespaced in the DB for submodule tables.
         for sequence in &self.sequences {
             let sequence_def = def
                 .sequences
-                .get(&sequence.sequence_name)
+                .get(strip_namespace(&sequence.sequence_name, &def.namespace)?)
                 .ok_or_else(|| anyhow::anyhow!("Sequence {} not found in definition", sequence.sequence_id.0))?;
             sequence.check_compatible(module_def, sequence_def)?;
         }
@@ -1297,25 +1260,32 @@ impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
 }
 
 /// Represents a schema definition for a database sequence.
+///
+/// Previous versions of this definition exposed options `start`, `min_value`, `max_value` and `increment`.
+/// SpacetimeDB never exercised these options in any useful way,
+/// and supporting them caused considerable implementation burden,
+/// so we chose to remove them.
+/// All sequences start at some arbitrary nonnegative value near zero,
+/// have the range of the non-negative `i128`s,
+/// and increment by 1.
+/// Raw defs still have these values, but we reject any def that uses values other than the defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceSchema {
     /// The unique identifier for the sequence within a database.
     pub sequence_id: SequenceId,
-    /// The name of the sequence.
+    /// The name of the sequence. Namespaced for submodule tables.
     /// Deprecated. In the future, sequences will be identified by col_pos.
-    pub sequence_name: RawIdentifier,
+    pub sequence_name: RawNamespacedIdentifier,
     /// The ID of the table associated with the sequence.
     pub table_id: TableId,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
-    /// The increment value for the sequence.
-    pub increment: i128,
-    /// The initial value to be returned by this sequence.
+    /// The starting point for this schema, i.e. the first value from it.
+    ///
+    /// For user-defined sequences, this will be [`Self::START`].
+    /// For system-defiend sequences, it will be a higher value,
+    /// as we reserve a range of values in system-defined sequences for IDs of future system-defined rows.
     pub start: i128,
-    /// The minimum value for the sequence.
-    pub min_value: i128,
-    /// The maximum value for the sequence.
-    pub max_value: i128,
 }
 
 impl spacetimedb_memory_usage::MemoryUsage for SequenceSchema {
@@ -1325,20 +1295,33 @@ impl spacetimedb_memory_usage::MemoryUsage for SequenceSchema {
             sequence_name,
             table_id,
             col_pos,
-            increment,
             start,
-            min_value,
-            max_value,
         } = self;
         sequence_id.heap_usage()
             + sequence_name.heap_usage()
             + table_id.heap_usage()
             + col_pos.heap_usage()
-            + increment.heap_usage()
             + start.heap_usage()
-            + min_value.heap_usage()
-            + max_value.heap_usage()
     }
+}
+
+impl SequenceSchema {
+    /// Value to fill into the `increment` field of `StSequenceRow`.
+    ///
+    /// All sequences increment by 1.
+    pub const INCREMENT: i128 = SequenceDef::INCREMENT;
+    /// Value to fill into the `start` field of `StSequenceRow`.
+    ///
+    /// User-defined sequences start at 1.
+    const START: i128 = 1;
+    /// Value to fill into the `min_value` field of `StSequenceRow`.
+    ///
+    /// All sequences have a minimum value the same as their start, which is 1.
+    pub const MIN_VALUE: i128 = Self::START;
+    /// Value to fill into the `max_value` field of `StSequenceRow`.
+    ///
+    /// All sequences have a max value of the largest representable value.
+    pub const MAX_VALUE: i128 = i128::MAX;
 }
 
 impl Schema for SequenceSchema {
@@ -1351,30 +1334,21 @@ impl Schema for SequenceSchema {
 
         SequenceSchema {
             sequence_id: id,
-            sequence_name: def.name.clone(),
+            sequence_name: def.name.clone().into(),
             table_id: parent_id,
             col_pos: def.column,
-            increment: def.increment,
-            start: def.start.unwrap_or(1),
-            min_value: def.min_value.unwrap_or(1),
-            max_value: def.max_value.unwrap_or(i128::MAX),
-            // allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
+            start: Self::START,
         }
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.sequence_name[..], &def.name[..], "Sequence name mismatch");
+        // Sequence names are namespaced in the DB for submodule tables; def.name is local.
+        ensure_eq!(
+            strip_namespace(&self.sequence_name, &def.namespace)?,
+            &def.name[..],
+            "Sequence name mismatch"
+        );
         ensure_eq!(self.col_pos, def.column, "Sequence column mismatch");
-        ensure_eq!(self.increment, def.increment, "Sequence increment mismatch");
-        if let Some(start) = &def.start {
-            ensure_eq!(self.start, *start, "Sequence start mismatch");
-        }
-        if let Some(min_value) = &def.min_value {
-            ensure_eq!(self.min_value, *min_value, "Sequence min_value mismatch");
-        }
-        if let Some(max_value) = &def.max_value {
-            ensure_eq!(self.max_value, *max_value, "Sequence max_value mismatch");
-        }
         Ok(())
     }
 }
@@ -1392,7 +1366,10 @@ pub struct ScheduleSchema {
     pub schedule_name: Identifier,
 
     /// The name of the reducer or procedure to call.
-    pub function_name: Identifier,
+    ///
+    /// Namespaced for submodule tables (e.g. `"lib.library_scheduled_procedure"`),
+    /// since that is how the scheduler resolves it.
+    pub function_name: NamespacedIdentifier,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
@@ -1405,7 +1382,7 @@ impl ScheduleSchema {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: Identifier::for_test(name.as_ref()),
-            function_name: Identifier::for_test(function.as_ref()),
+            function_name: Identifier::for_test(function.as_ref()).into(),
             at_column: at.into(),
         }
     }
@@ -1425,7 +1402,7 @@ impl Schema for ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
             schedule_name: def.name.clone(),
-            function_name: def.function_name.clone(),
+            function_name: def.function_name.clone().into(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
@@ -1433,8 +1410,10 @@ impl Schema for ScheduleSchema {
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
+        // For submodule tables the stored function name is namespaced
+        // (e.g. `"lib.library_scheduled_procedure"`) while `def.function_name` is local.
         ensure_eq!(
-            &self.function_name[..],
+            strip_namespace(&self.function_name, &def.namespace)?,
             &def.function_name[..],
             "Schedule function name mismatch"
         );
@@ -1459,10 +1438,10 @@ pub struct IndexSchema {
     /// The ID of the table associated with the index.
     pub table_id: TableId,
     /// The name of the index. This should not be assumed to follow any particular format.
-    /// Unique within the database.
-    pub index_name: RawIdentifier,
+    /// Unique within the database. Namespaced for submodule tables.
+    pub index_name: RawNamespacedIdentifier,
 
-    pub alias: Option<RawIdentifier>,
+    pub alias: Option<RawNamespacedIdentifier>,
     /// The data for the schema.
     pub index_algorithm: IndexAlgorithm,
 }
@@ -1485,7 +1464,7 @@ impl IndexSchema {
         Self {
             index_id: IndexId::SENTINEL,
             table_id: TableId::SENTINEL,
-            index_name: RawIdentifier::new(name.as_ref()),
+            index_name: RawNamespacedIdentifier::new(name.as_ref()),
             index_algorithm: algo.into(),
             alias: None,
         }
@@ -1504,14 +1483,19 @@ impl Schema for IndexSchema {
         IndexSchema {
             index_id: id,
             table_id: parent_id,
-            index_name: def.name.clone(),
+            index_name: def.name.clone().into(),
             index_algorithm,
-            alias: Some(def.source_name.clone()),
+            alias: Some(def.source_name.clone().into()),
         }
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.index_name[..], &def.name[..], "Index name mismatch");
+        // Index names are namespaced in the DB for submodule tables; def.name is local.
+        ensure_eq!(
+            strip_namespace(&self.index_name, &def.namespace)?,
+            &def.name[..],
+            "Index name mismatch"
+        );
         ensure_eq!(&self.index_algorithm, &def.algorithm, "Index algorithm mismatch");
         Ok(())
     }
@@ -1528,7 +1512,7 @@ pub struct ConstraintSchema {
     /// The unique ID of the constraint within the database.
     pub constraint_id: ConstraintId,
     /// The name of the constraint.
-    pub constraint_name: RawIdentifier,
+    pub constraint_name: RawNamespacedIdentifier,
     /// The data for the constraint.
     pub data: ConstraintData, // this reuses the type from Def, which is fine, neither of `schema` nor `def` are ABI modules.
 }
@@ -1550,7 +1534,7 @@ impl ConstraintSchema {
         Self {
             table_id: TableId::SENTINEL,
             constraint_id: ConstraintId::SENTINEL,
-            constraint_name: RawIdentifier::new(name.as_ref()),
+            constraint_name: RawNamespacedIdentifier::new(name.as_ref()),
             data: ConstraintData::Unique(UniqueConstraintData { columns: cols.into() }),
         }
     }
@@ -1566,7 +1550,7 @@ impl ConstraintSchema {
         if constraint.constraints.has_unique() {
             Some(ConstraintSchema {
                 constraint_id: ConstraintId::SENTINEL, // Set to 0 as it may be assigned later.
-                constraint_name: RawIdentifier::new(constraint.constraint_name.trim()),
+                constraint_name: RawNamespacedIdentifier::new(constraint.constraint_name.trim()),
                 table_id,
                 data: ConstraintData::Unique(UniqueConstraintData {
                     columns: constraint.columns.into(),
@@ -1588,14 +1572,19 @@ impl Schema for ConstraintSchema {
 
         ConstraintSchema {
             constraint_id: id,
-            constraint_name: def.name.clone(),
+            constraint_name: def.name.clone().into(),
             table_id: parent_id,
             data: def.data.clone(),
         }
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.constraint_name[..], &def.name[..], "Constraint name mismatch");
+        // Constraint names are namespaced in the DB for submodule tables; def.name is local.
+        ensure_eq!(
+            strip_namespace(&self.constraint_name, &def.namespace)?,
+            &def.name[..],
+            "Constraint name mismatch"
+        );
         ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
         Ok(())
     }
@@ -1606,4 +1595,96 @@ impl Schema for ConstraintSchema {
 pub struct RowLevelSecuritySchema {
     pub table_id: TableId,
     pub sql: RawSql,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10};
+    use spacetimedb_sats::AlgebraicType;
+
+    fn module_with_table() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("MyTable", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    /// The same table, mounted in a `lib` submodule.
+    fn module_with_submodule_table() -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("MyTable", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".to_string(),
+                module: sub.finish(),
+            }]));
+        root.try_into().expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn check_compatible_table_name() {
+        let def = module_with_table();
+        let table_def = def.tables().next().expect("table should exist");
+        assert_eq!(&table_def.name[..], "my_table");
+        assert_eq!(&table_def.accessor_name[..], "MyTable");
+
+        let mut schema = TableSchema::from_module_def(&def, table_def, (), TableId::SENTINEL);
+        assert!(schema.check_compatible(&def, table_def).is_ok());
+
+        // A root table must match the def's canonical name exactly.
+        schema.table_name = TableName::for_test("MyTable");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+        schema.table_name = TableName::for_test("other");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+
+        // A namespaced name does not match a def mounted at the root.
+        schema.table_name = TableName::for_test("lib.my_table");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+    }
+
+    /// A submodule table is stored under its namespace-qualified canonical name, and must be
+    /// checked against the namespace its def is actually mounted under.
+    #[test]
+    fn check_compatible_submodule_table_name() {
+        let def = module_with_submodule_table();
+        let (prefix, owning, table_def) = def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("submodule table should exist");
+        assert_eq!(&table_def.name[..], "my_table");
+        assert_eq!(&table_def.accessor_name[..], "MyTable");
+
+        // `from_module_def` yields local names; the engine qualifies them when it creates the
+        // table (see `create_table_from_def_with_prefix`), so do the same here.
+        let mut schema = TableSchema::from_module_def(owning, table_def, (), TableId::SENTINEL);
+        schema.table_name = TableName::from(prefix.join(table_def.name.clone()));
+        for index in &mut schema.indexes {
+            index.index_name = prefix.join_raw(&index.index_name);
+        }
+        for constraint in &mut schema.constraints {
+            constraint.constraint_name = prefix.join_raw(&constraint.constraint_name);
+        }
+        for sequence in &mut schema.sequences {
+            sequence.sequence_name = prefix.join_raw(&sequence.sequence_name);
+        }
+        assert!(schema.check_compatible(owning, table_def).is_ok());
+
+        // The accessor name is an alias, never an identity.
+        schema.table_name = TableName::for_test("lib.MyTable");
+        assert!(schema.check_compatible(owning, table_def).is_err());
+        // Nor does the bare canonical name match a def mounted in `lib`.
+        schema.table_name = TableName::for_test("my_table");
+        assert!(schema.check_compatible(owning, table_def).is_err());
+        // Nor a different namespace.
+        schema.table_name = TableName::for_test("other.my_table");
+        assert!(schema.check_compatible(owning, table_def).is_err());
+    }
 }

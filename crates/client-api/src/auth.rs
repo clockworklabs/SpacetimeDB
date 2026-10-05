@@ -12,7 +12,7 @@ use spacetimedb::auth::token_validation::{
     new_validator, DefaultValidator, TokenSigner, TokenValidationError, TokenValidator,
 };
 use spacetimedb::auth::JwtKeys;
-use spacetimedb::energy::EnergyQuanta;
+use spacetimedb::energy::FunctionBudget;
 use spacetimedb::identity::Identity;
 use spacetimedb_data_structures::map::HashMap;
 use std::time::{Duration, SystemTime};
@@ -367,7 +367,8 @@ mod tests {
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse JWT payload as object"))?;
         let keys: HashSet<String> = as_object.keys().map(|s| s.to_string()).collect();
-        let expected_keys = vec!["iss", "sub", "aud", "iat", "exp", "hex_identity"]
+        // No-expiration tokens used to include `"exp": null`; new tokens omit it.
+        let expected_keys = vec!["iss", "sub", "aud", "iat", "hex_identity"]
             .into_iter()
             .map(|s| s.to_string())
             .collect::<HashSet<String>>();
@@ -518,7 +519,7 @@ impl headers::Header for SpacetimeIdentityToken {
     }
 }
 
-pub struct SpacetimeEnergyUsed(pub EnergyQuanta);
+pub struct SpacetimeEnergyUsed(pub FunctionBudget);
 impl headers::Header for SpacetimeEnergyUsed {
     fn name() -> &'static http::HeaderName {
         static NAME: http::HeaderName = http::HeaderName::from_static("spacetime-energy-used");
@@ -530,9 +531,7 @@ impl headers::Header for SpacetimeEnergyUsed {
     }
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-        let mut buf = itoa::Buffer::new();
-        let value = buf.format(self.0.get());
-        values.extend([value.try_into().unwrap()]);
+        values.extend([self.0.get().into()]);
     }
 }
 

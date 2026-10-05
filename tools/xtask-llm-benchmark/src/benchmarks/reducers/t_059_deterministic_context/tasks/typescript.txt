@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in TypeScript that records deterministic reducer time and randomness.
+
+TABLE
+- generated_value (public)
+  - Fields:
+    - id: u64 (primary key, auto-increment)
+    - createdAt: Timestamp
+    - randomValue: i64
+
+REDUCERS
+- generate()
+  - Store ctx.timestamp in createdAt
+  - Store a random integer from ctx.random in randomValue
+  - Do not use Date, Math.random, or a separately seeded RNG

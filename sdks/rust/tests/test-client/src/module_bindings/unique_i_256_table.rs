@@ -18,6 +18,18 @@ pub struct UniqueI256TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `unique_i_256`.
+pub struct UniqueI256TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for UniqueI256TableAccessor {
+    type Row = UniqueI256;
+    type Handle<'db> = UniqueI256TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.unique_i_256()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `unique_i_256`.
 ///
@@ -39,6 +51,18 @@ impl UniqueI256TableAccess for super::RemoteTables {
 
 pub struct UniqueI256InsertCallbackId(__sdk::CallbackId);
 pub struct UniqueI256DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for UniqueI256TableHandle<'ctx> {
+    type Row = UniqueI256;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueI256> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
     type Row = UniqueI256;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueI256DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueI256DeleteCallbackId {
+        UniqueI256DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueI256DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueI256TableHandle<'ctx> {
+    type InsertCallbackId = UniqueI256InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueI256InsertCallbackId {
+        UniqueI256InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueI256InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueI256TableHandle<'ctx> {
     type DeleteCallbackId = UniqueI256DeleteCallbackId;
 
     fn on_delete(

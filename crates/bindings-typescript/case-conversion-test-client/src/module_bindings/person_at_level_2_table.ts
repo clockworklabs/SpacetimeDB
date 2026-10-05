@@ -12,10 +12,10 @@ import {
 import { Person3Info } from './types';
 
 export default __t.row({
-  person2Id: __t.u32().primaryKey().name('Person2Id'),
-  firstName: __t.string().name('FirstName'),
-  playerRef: __t.u32(),
+  person2Id: __t.u32().primaryKey().name('person_2_id'),
+  firstName: __t.string().name('first_name'),
+  playerRef: __t.u32().name('player_ref'),
   get personInfo() {
-    return Person3Info;
+    return Person3Info.name('person_info');
   },
 });

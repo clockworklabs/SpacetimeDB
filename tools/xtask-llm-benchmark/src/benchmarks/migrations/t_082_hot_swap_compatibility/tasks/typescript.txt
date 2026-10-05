@@ -1,0 +1,17 @@
+Update the existing SpacetimeDB backend module in TypeScript through a compatible republish.
+
+TABLES
+- counter (public)
+  - Preserve the existing table and its exact fields
+- release (private)
+  - Fields:
+    - version: u32 (primary key)
+
+REDUCERS
+- Preserve seed
+- Preserve increment without renaming it or changing its signature
+- record_release(version: u32)
+
+MIGRATION
+- Existing counter data must remain usable after republish
+- The existing server API must remain usable after republish

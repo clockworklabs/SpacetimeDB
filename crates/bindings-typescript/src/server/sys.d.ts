@@ -37,6 +37,13 @@ declare module 'spacetime:sys@2.0' {
       timestamp: bigint,
       args: Uint8Array
     ): Uint8Array;
+
+    __call_http_handler__(
+      id: u32,
+      timestamp: bigint,
+      request: Uint8Array,
+      body: Uint8Array
+    ): [response: Uint8Array, body: Uint8Array];
   }
 
   export function register_hooks(hooks: ModuleHooks);
@@ -115,4 +122,9 @@ declare module 'spacetime:sys@2.0' {
 
 declare module 'spacetime:sys@2.1' {
   export function datastore_clear(table_id: u32): u64;
+}
+
+declare module 'spacetime:sys@2.2' {
+  /** Null means missing; an empty string is a present value. */
+  export function env_get(key: string): string | null;
 }

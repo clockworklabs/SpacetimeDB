@@ -2,9 +2,7 @@ use crate::module_bindings::*;
 
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Event, EventTable};
 use std::sync::atomic::{AtomicU32, Ordering};
-use test_counter::TestCounter;
-
-const LOCALHOST: &str = "http://localhost:3000";
+use test_counter::{server_url, TestCounter};
 
 macro_rules! assert_eq_or_bail {
     ($expected:expr, $found:expr) => {{
@@ -57,7 +55,7 @@ async fn connect_then(
     let name = db_name.to_owned();
     let conn = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));

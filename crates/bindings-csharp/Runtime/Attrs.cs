@@ -1,5 +1,16 @@
 namespace SpacetimeDB
 {
+    /// <summary>Declares the complete environment schema for this module.</summary>
+    [AttributeUsage(AttributeTargets.Struct)]
+    public sealed class EnvAttribute : Attribute { }
+
+    /// <summary>Restricts one declared string to these exact permitted values.</summary>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class EnvValuesAttribute(params string[] values) : Attribute
+    {
+        public string[] Values { get; } = values;
+    }
+
     namespace Internal
     {
         [Flags]
@@ -33,7 +44,7 @@ namespace SpacetimeDB
     /// so that any row permitted by at least one filter is visible.
     ///
     /// The query follows the same syntax as a subscription query.
-    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    /// See the <see href="https://spacetimedb.com/docs/reference/sql">SQL reference</see> for more information.
     ///
     /// This is an experimental feature and subject to change in the future.
     /// </summary>
@@ -102,6 +113,11 @@ namespace SpacetimeDB
         public string? Name { get; init; }
 
         /// <summary>
+        /// The source/accessor name of the view return column that identifies rows.
+        /// </summary>
+        public string? PrimaryKey { get; init; }
+
+        /// <summary>
         /// Marks the view as callable by any client. Leave false to restrict to the module owner.
         /// </summary>
         public bool Public { get; init; } = false;
@@ -167,6 +183,10 @@ namespace SpacetimeDB
                 {
                     return value.ToString()?.ToLower()!;
                 }
+                if (value is float f)
+                {
+                    return $"{f.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}F";
+                }
                 var str = value.ToString();
                 if (value is string)
                 {
@@ -203,4 +223,10 @@ namespace SpacetimeDB
     {
         public string? Name { get; init; }
     }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class HttpHandlerAttribute() : Attribute { }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class HttpRouterAttribute() : Attribute { }
 }

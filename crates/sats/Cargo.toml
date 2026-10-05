@@ -39,7 +39,6 @@ spacetimedb-metrics = { workspace = true, optional = true }
 
 anyhow.workspace = true
 arrayvec.workspace = true
-bitflags.workspace = true
 bytes.workspace = true
 bytemuck.workspace = true
 bytestring = { workspace = true, optional = true }

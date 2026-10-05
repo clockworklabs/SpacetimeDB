@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 project(SpacetimeDBCppModuleLibrary 
-    VERSION 2.2.0
+    VERSION 2.11.0
     LANGUAGES CXX)
 
 # Generate version header from template
@@ -28,8 +28,36 @@ add_library(spacetimedb::spacetimedb_cpp_library ALIAS spacetimedb_cpp_library)
 
 target_sources(spacetimedb_cpp_library PRIVATE ${LIBRARY_SOURCES})
 
+# A declared Environment adds named methods to the context member type. Every
+# SDK and module translation unit must see the same prelude before any context.
+if(NOT DEFINED SPACETIMEDB_ENV_HEADER)
+    set(SPACETIMEDB_ENV_HEADER "" CACHE FILEPATH "Absolute module environment declaration header")
+endif()
+if(SPACETIMEDB_ENV_HEADER)
+    if(NOT IS_ABSOLUTE "${SPACETIMEDB_ENV_HEADER}" OR NOT EXISTS "${SPACETIMEDB_ENV_HEADER}")
+        message(FATAL_ERROR "SPACETIMEDB_ENV_HEADER must name an existing absolute declaration header")
+    endif()
+    # The standalone WASI ABI shims have no context or Environment type. Their
+    # hand-written ABI declarations must not include the C++ standard library's
+    # WASI declarations through the module prelude.
+    set_source_files_properties(src/abi/wasi_shims.cpp PROPERTIES
+        COMPILE_DEFINITIONS SPACETIMEDB_WASI_SHIMS=1)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/spacetimedb/environment_prelude.h.in
+        ${CMAKE_CURRENT_BINARY_DIR}/include/spacetimedb/environment_prelude.h
+        @ONLY)
+    set(SPACETIMEDB_ENV_PRELUDE "${CMAKE_CURRENT_BINARY_DIR}/include/spacetimedb/environment_prelude.h")
+    target_compile_definitions(spacetimedb_cpp_library PUBLIC SPACETIMEDB_ENV_HEADER_ACTIVE=1)
+    if(MSVC)
+        target_compile_options(spacetimedb_cpp_library PUBLIC "/FI${SPACETIMEDB_ENV_PRELUDE}")
+    else()
+        target_compile_options(spacetimedb_cpp_library PUBLIC -include "${SPACETIMEDB_ENV_PRELUDE}")
+    endif()
+endif()
+
 # Require C++20 for consumers of this library without forcing global flags
 target_compile_features(spacetimedb_cpp_library PUBLIC cxx_std_20)
+target_compile_definitions(spacetimedb_cpp_library PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
 
 # Set include directories
 target_include_directories(spacetimedb_cpp_library
@@ -60,46 +88,5 @@ if(PROJECT_IS_TOP_LEVEL)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 endif()
 
-# ---- Tests ----
-# Default: ON only when building this project directly; OFF when used via FetchContent/add_subdirectory
-if(CMAKE_VERSION VERSION_LESS 3.21)
-    # Fallback heuristic for older CMake
-    set(_is_top_level FALSE)
-    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-        set(_is_top_level TRUE)
-    endif()
-else()
-    set(_is_top_level ${PROJECT_IS_TOP_LEVEL})
-endif()
-
-option(BUILD_TESTS "Build the test suite" ${_is_top_level})
-
-if(BUILD_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    enable_testing()
-    
-    # Add test executable
-    add_executable(test_bsatn tests/main.cpp tests/module_library_unit_tests.cpp)
-    
-    # Link against the module library
-    target_link_libraries(test_bsatn PRIVATE spacetimedb_cpp_library)
-    
-    # Set C++20 standard for tests
-    target_compile_features(test_bsatn PRIVATE cxx_std_20)
-    
-    # Add test to CTest
-    add_test(NAME bsatn_tests COMMAND test_bsatn)
-    
-    # Add verbose test variant
-    add_test(NAME bsatn_tests_verbose COMMAND test_bsatn -v)
-    
-    # Set test properties
-    set_tests_properties(bsatn_tests PROPERTIES 
-        TIMEOUT 30
-        LABELS "unit"
-    )
-    
-    set_tests_properties(bsatn_tests_verbose PROPERTIES 
-        TIMEOUT 30
-        LABELS "unit;verbose"
-    )
-endif()
+# Unit/compile/smoke test harnesses live under `tests/` as standalone runners
+# rather than being built through the top-level library CMake target.

@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Modules.ModuleTestCs;
 
+using System.Collections.Generic;
 using System.Reflection.Metadata.Ecma335;
 using SpacetimeDB;
 
@@ -502,4 +503,19 @@ static partial class Module
             Log.Info($"Called by the owner {owner}");
         }
     }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse get_simple(HandlerContext ctx, HttpRequest request)
+    {
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString("ok")
+        );
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router router() =>
+        SpacetimeDB.Router.New().Get("/get", Handlers.get_simple);
 }

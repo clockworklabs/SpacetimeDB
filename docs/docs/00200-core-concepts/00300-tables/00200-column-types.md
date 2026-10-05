@@ -31,7 +31,7 @@ Consider a game inventory with ordered pockets. A `Vec<Item>` preserves pocket o
 
 ## Binary Data and Files
 
-SpacetimeDB includes optimizations for storing binary data as `Vec<u8>` (Rust), `List<byte>` (C#), or `t.array(t.u8())` (TypeScript). You can store files, images, serialized data, or other binary blobs directly in table columns.
+SpacetimeDB includes optimizations for storing binary data as `Vec<u8>` (Rust), `List<byte>` (C#), `t.array(t.u8())` (TypeScript), or `std::vector<uint8_t>` (C++). You can store files, images, serialized data, or other binary blobs directly in table columns.
 
 This approach works well when:
 - The binary data is associated with a specific row (e.g., a user's avatar image)
@@ -195,19 +195,19 @@ const player = table(
     experience: t.u32(),
     health: t.f32(),
     score: t.i64(),
-    is_online: t.bool(),
+    isOnline: t.bool(),
 
     // Composite types
     position: Coordinates,
     status: Status,
     inventory: t.array(t.u32()),
-    guild_id: t.option(t.u64()),
+    guildId: t.option(t.u64()),
 
     // Special types
     owner: t.identity(),
     connection: t.option(t.connectionId()),
-    created_at: t.timestamp(),
-    play_time: t.timeDuration(),
+    createdAt: t.timestamp(),
+    playTime: t.timeDuration(),
   }
 );
 ```

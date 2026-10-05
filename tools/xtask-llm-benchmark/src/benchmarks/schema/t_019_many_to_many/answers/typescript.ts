@@ -23,9 +23,10 @@ const group = table(
 const membership = table(
   {
     name: 'membership',
+    public: true,
     indexes: [
-      { name: 'byUser', algorithm: 'btree', columns: ['userId'] },
-      { name: 'byGroup', algorithm: 'btree', columns: ['groupId'] },
+      { accessor: 'byUser', algorithm: 'btree', columns: ['userId'] },
+      { accessor: 'byGroup', algorithm: 'btree', columns: ['groupId'] },
     ],
   },
   {

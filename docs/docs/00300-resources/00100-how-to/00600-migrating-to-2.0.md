@@ -107,9 +107,9 @@ conn.Reducers.OnDealDamage += (ctx, _, _) =>
     {
         Console.WriteLine("Reducer succeeded");
     }
-    else if (ctx.Event.Status is Status.Failed failed)
+    else if (ctx.Event.Status is Status.Failed(var reason))
     {
-        Console.WriteLine($"Reducer failed: {failed}");
+        Console.WriteLine($"Reducer failed: {reason}");
     }
     else if (ctx.Event.Status is Status.OutOfEnergy)
     {
@@ -190,7 +190,7 @@ spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (c
 **Server (module) -- after:**
 ```typescript
 // 2.0 server -- explicitly publish events via an event table
-const damageEvent = table({ event: true }, {
+const damageEvent = table({ name: 'damage_event', event: true }, {
     target: t.identity(),
     amount: t.u32(),
 })
@@ -399,7 +399,11 @@ Conn->Db->DamageEvent->OnInsert.AddDynamic(this, &AMyActor::OnDamageEvent);
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
-    ->Subscribe({ TEXT("SELECT * FROM damage_event") });
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.DamageEvent();
+    })
+    ->Subscribe();
 ```
 
 </TabItem>
@@ -420,7 +424,7 @@ Conn->SubscriptionBuilder()
 - On the client, `count()` always returns 0 and `iter()` is always empty.
 - Only `on_insert` callbacks are generated (no `on_delete` or `on_update`).
 - The `event` keyword in `#[table(..., event)]` marks the table as transient.
-- Event tables must be subscribed to explicitly (they are excluded from `subscribeToAllTables` / `SubscribeToAllTables` / `subscribe_to_all_tables`).
+- Event tables can be subscribed to with subscribe-all helpers or explicit typed queries, but clients observe them only through insert callbacks.
 
 ## Event Type Changes
 
@@ -585,25 +589,29 @@ ctx.subscription_builder()
 <TabItem value="cpp-unreal" label="Unreal C++">
 
 ```cpp
-// 2.0 -- same as 1.0 today
+// 2.0 -- typed query builder
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
-    ->Subscribe({ TEXT("SELECT * FROM person") });
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.Person();
+    })
+    ->Subscribe();
 ```
 
-The Unreal SDK does not expose typed query builders yet. For now, use SQL strings. Typed query builder support is planned.
+Unreal 2.0 now supports typed query-builder subscriptions in C++. Use `AddQuery(...)` as the default for table and event-table subscriptions.
 
 </TabItem>
 </Tabs>
 
-Note that subscribing to event tables requires an explicit query:
+Use explicit queries when you want to subscribe to event tables without subscribing to every public table:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-// Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
+// Subscribe explicitly to an event table:
 import { tables } from "./module_bindings";
 ctx.subscriptionBuilder()
     .onApplied((ctx) => { /* ... */ })
@@ -625,7 +633,7 @@ conn.SubscriptionBuilder()
 <TabItem value="rust" label="Rust">
 
 ```rust
-// Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
+// Subscribe explicitly to an event table:
 ctx.subscription_builder()
     .on_applied(|ctx| { /* ... */ })
     .add_query(|q| q.from.damage_event())
@@ -636,11 +644,15 @@ ctx.subscription_builder()
 <TabItem value="cpp-unreal" label="Unreal C++">
 
 ```cpp
-// Event tables are excluded from SubscribeToAllTables(), so subscribe explicitly:
+// Subscribe explicitly to an event table:
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
-    ->Subscribe({ TEXT("SELECT * FROM damage_event") });
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.DamageEvent();
+    })
+    ->Subscribe();
 ```
 
 </TabItem>
@@ -1354,7 +1366,7 @@ spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
 ```
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimer }, {
+const myTimer = table({ name: 'my_timer', scheduled: (): any => runMyTimer }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
@@ -1467,7 +1479,7 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimerPrivate }, {
+const myTimer = table({ name: 'my_timer', scheduled: (): any => runMyTimerPrivate }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
@@ -1782,6 +1794,8 @@ spacetime sql <database> "SELECT * FROM my_table"
   - Replace with `_then()` callbacks for your own reducer calls
   - Unreal: replace with generated `On<Reducer>` delegates on the calling connection
   - Replace with event tables + `on_insert` for cross-client notifications
+- [ ] Migrate Unreal subscription SQL strings to typed queries where appropriate
+  - Use `Conn->SubscriptionBuilder()->AddQuery(...)->Subscribe()` instead of `Subscribe({ TEXT("SELECT ...") })`
 - [ ] Update `Event::UnknownTransaction` matches to `Event::Transaction`
 - [ ] For each reducer whose args you were observing from other clients:
   1. Create an `#[table(..., event)]` on the server

@@ -2,7 +2,6 @@ on:
   push:
     branches:
       - master
-      - jgilles/fix-callgrind-again
 
   workflow_dispatch:
     inputs:
@@ -24,8 +23,10 @@ jobs:
   benchmark:
     name: run criterion benchmarks
     runs-on: benchmarks-runner
+    # disable until we fix the benchmarks
+    if: false
     # filter for a comment containing 'benchmarks please'
-    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
+    #if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
@@ -131,7 +132,7 @@ jobs:
 
       # this will work for both PR and master
       - name: Upload criterion results to DO spaces
-        uses: shallwefootball/s3-upload-action@master
+        uses: shallwefootball/s3-upload-action@0d261a6f15b3b2e209dfebdecace4b100c04f95b # master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
@@ -180,13 +181,16 @@ jobs:
     # Fortunately, we can run on standard GitHub Actions infra because we don't care
     # about other stuff running on the machine!
     # runs-on: benchmarks-runner
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
-      image: rust:1.93.0
+      # !rust-toolchain-sync
+      image: rust:1.96.1
       options: --privileged
+    # disable until we fix the benchmarks
+    if: false
     # filter for a comment containing 'benchmarks please'
-    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
+    #if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
@@ -305,7 +309,7 @@ jobs:
 
       # this will work for both PR and master
       - name: Upload callgrind results to DO spaces
-        uses: shallwefootball/s3-upload-action@master
+        uses: shallwefootball/s3-upload-action@0d261a6f15b3b2e209dfebdecace4b100c04f95b # master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}

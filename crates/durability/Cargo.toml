@@ -12,7 +12,6 @@ test = []
 fallocate = ["spacetimedb-commitlog/fallocate"]
 
 [dependencies]
-anyhow.workspace = true
 async-channel.workspace = true
 futures.workspace = true
 itertools.workspace = true
@@ -21,12 +20,13 @@ scopeguard.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-runtime.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
 spacetimedb-commitlog = { workspace = true, features = ["test"] }
 tempfile.workspace = true
 tokio.workspace = true

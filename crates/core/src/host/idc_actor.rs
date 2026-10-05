@@ -11,7 +11,7 @@
 ///    `on_result_reducer` (read from the outbox table's schema) and deletes the st_outbound_msg row.
 /// 6. Enforces sequential delivery per target database: msg N+1 is only delivered after N is done.
 use crate::db::relational_db::RelationalDB;
-use crate::energy::EnergyQuanta;
+use crate::energy::FunctionBudget;
 use crate::host::module_host::{CallReducerParams, ModuleInfo, WeakModuleHost};
 use crate::host::{FunctionArgs, ReducerCallError, ReducerCallResult, ReducerOutcome};
 use anyhow::anyhow;
@@ -23,6 +23,7 @@ use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -95,7 +96,26 @@ struct PendingMessage {
     on_result_reducer: Option<String>,
 }
 
-/// Per-target-database delivery state.
+#[derive(Clone, Debug, Eq)]
+struct DeliveryStreamKey {
+    target_db_identity: Identity,
+    target_reducer: String,
+}
+
+impl PartialEq for DeliveryStreamKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.target_db_identity == other.target_db_identity && self.target_reducer == other.target_reducer
+    }
+}
+
+impl Hash for DeliveryStreamKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.target_db_identity.hash(state);
+        self.target_reducer.hash(state);
+    }
+}
+
+/// Per-delivery-stream state.
 struct DatabaseQueue {
     queue: VecDeque<PendingMessage>,
     /// When `Some`, this target is in backoff and should not be retried until this instant.
@@ -163,8 +183,8 @@ async fn run_idc_loop(
         .build()
         .unwrap();
 
-    // Per-target-database delivery state.
-    let mut db_queues: HashMap<Identity, DatabaseQueue> = HashMap::new();
+    // Per-(target database, target reducer) delivery state.
+    let mut db_queues: HashMap<DeliveryStreamKey, DatabaseQueue> = HashMap::new();
 
     // On startup, load any pending messages that survived a restart.
     load_pending_into_targets(&db, &mut db_queues);
@@ -291,16 +311,23 @@ fn duplicate_result_from_st_inbound_row(
     ReducerCallResult {
         outcome,
         reducer_return_value: (row.result_status == StInboundMsgResultStatus::Success).then_some(row.result_payload),
-        energy_used: EnergyQuanta::ZERO,
+        execution_budget_used: FunctionBudget::ZERO,
         execution_duration: Duration::ZERO,
         tx_offset: None,
     }
 }
 
-fn record_failed_inbound_result(db: &RelationalDB, sender_identity: Identity, sender_msg_id: u64, error: &str) {
+fn record_failed_inbound_result(
+    db: &RelationalDB,
+    sender_identity: Identity,
+    target_reducer: &str,
+    sender_msg_id: u64,
+    error: &str,
+) {
     let mut dedup_tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     if let Err(e) = dedup_tx.upsert_inbound_last_msg(
         sender_identity,
+        target_reducer,
         sender_msg_id,
         StInboundMsgResultStatus::ReducerError,
         error.to_string().into(),
@@ -324,7 +351,8 @@ where
     F: FnOnce(Option<MutTxId>, CallReducerParams, ReducerSuccessAction) -> (ReducerCallResult, bool),
 {
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, reducer_workload(module, &params));
-    if let Some(row) = tx.get_inbound_msg_row(sender_identity) {
+    let target_reducer = module.module_def.reducer_by_id(params.reducer_id).name.to_string();
+    if let Some(row) = tx.get_inbound_msg_row(sender_identity, &target_reducer) {
         if sender_msg_id == row.last_outbound_msg {
             let _ = db.rollback_mut_tx(tx);
             return Ok((duplicate_result_from_st_inbound_row(row), false));
@@ -340,12 +368,14 @@ where
         }
     }
 
+    let target_reducer_for_success = target_reducer.clone();
     let (result, trapped) = call_reducer(
         Some(tx),
         params,
         Box::new(move |tx, reducer_return_value| {
             tx.upsert_inbound_last_msg(
                 sender_identity,
+                &target_reducer_for_success,
                 sender_msg_id,
                 StInboundMsgResultStatus::Success,
                 reducer_return_value.clone().unwrap_or_default(),
@@ -355,7 +385,7 @@ where
     );
 
     if let ReducerOutcome::Failed(err) = &result.outcome {
-        record_failed_inbound_result(db, sender_identity, sender_msg_id, err);
+        record_failed_inbound_result(db, sender_identity, &target_reducer, sender_msg_id, err);
     }
 
     Ok((result, trapped))
@@ -486,7 +516,7 @@ async fn finalize_message(
 ///
 /// A row's presence in ST_OUTBOUND_MSG means it has not yet been processed.
 /// Messages already in a target's queue (by msg_id) are not re-added.
-fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Identity, DatabaseQueue>) {
+fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<DeliveryStreamKey, DatabaseQueue>) {
     let tx = db.begin_tx(Workload::Internal);
 
     let st_outbound_msg_rows: Vec<StOutboundMsgRow> = db
@@ -603,9 +633,11 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Identity
     pending.sort_by_key(|m| m.msg_id);
 
     for msg in pending {
-        let state = db_queues
-            .entry(msg.target_db_identity)
-            .or_insert_with(DatabaseQueue::new);
+        let stream_key = DeliveryStreamKey {
+            target_db_identity: msg.target_db_identity,
+            target_reducer: msg.target_reducer.clone(),
+        };
+        let state = db_queues.entry(stream_key).or_insert_with(DatabaseQueue::new);
         // Only add if not already in the queue (avoid duplicates after reload).
         let already_queued = state.queue.iter().any(|m| m.msg_id == msg.msg_id);
         if !already_queued {

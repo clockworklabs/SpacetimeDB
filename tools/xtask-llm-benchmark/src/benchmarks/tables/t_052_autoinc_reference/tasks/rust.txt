@@ -1,0 +1,16 @@
+Write a SpacetimeDB backend module in Rust that safely creates related rows with an auto-incremented parent ID.
+
+TABLES
+- parent (public), struct Parent
+  - Fields:
+    - id: u64 (primary key, auto-increment)
+    - name: String
+- child (public), struct Child
+  - Fields:
+    - id: u64 (primary key, auto-increment)
+    - parent_id: u64 (btree index by_parent)
+    - name: String
+
+REDUCERS
+- create_family(parent_name: String, child_names: Vec<String>)
+  - Insert the parent, then insert every child using the ID actually assigned to that parent

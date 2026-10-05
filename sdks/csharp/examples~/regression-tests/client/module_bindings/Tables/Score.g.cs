@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ScoreHandle : RemoteTableHandle<EventContext, Score>
         {
-            protected override string RemoteTableName => "score";
+            public override string RemoteTableName => "score";
 
             public sealed class ByPlayerAndLevelIndex : BTreeIndexBase<(uint PlayerId, uint Level)>
             {

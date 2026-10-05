@@ -1,0 +1,23 @@
+{
+  "name": "@clockworklabs/blackholio-server-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "packageManager": "pnpm@10.16.0",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=10.16.0"
+  },
+  "scripts": {
+    "build": "spacetime build",
+    "publish": "./publish.sh",
+    "spacetime:generate": "./generate.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "spacetimedb": "link:../../../crates/bindings-typescript"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2"
+  }
+}

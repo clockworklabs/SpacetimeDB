@@ -59,7 +59,7 @@ fn releases_url() -> String {
         .unwrap_or_else(|_| "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases".to_owned())
 }
 
-const MIRROR_BASE_URL: &str = "https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com";
+const MIRROR_BASE_URL: &str = "https://spacetimedb-client-binaries.s3.amazonaws.com";
 
 /// Fetch the latest version tag from the mirror.
 ///

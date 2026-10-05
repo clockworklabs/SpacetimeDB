@@ -6,7 +6,7 @@ pub struct Score {
     pub right: i32,
 }
 
-#[table(accessor = result)]
+#[table(accessor = result, public)]
 pub struct ResultRow {
     #[primary_key]
     pub id: i32,

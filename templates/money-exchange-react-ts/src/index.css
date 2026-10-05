@@ -1,0 +1,76 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #162018;
+  background: #f3f6ee;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 0.65rem;
+  padding: 0.72rem 1rem;
+  background: #206c43;
+  color: white;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+button:hover:not(:disabled) {
+  background: #164b2f;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button.secondary {
+  border: 1px solid #ccd7c7;
+  background: white;
+  color: #334137;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid #d3dccd;
+  border-radius: 0.65rem;
+  background: #fff;
+  color: inherit;
+  padding: 0.72rem 0.85rem;
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid #65b381;
+  border-color: transparent;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}

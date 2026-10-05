@@ -3,99 +3,75 @@ import { writable, type Writable } from 'svelte/store';
 import {
   DbConnectionBuilder,
   type DbConnectionImpl,
-  type ErrorContextInterface,
-  type RemoteModuleOf,
 } from '../sdk/db_connection_impl';
 import { ConnectionId } from '../lib/connection_id';
+import {
+  ConnectionManager,
+  type ConnectionState as ManagerConnectionState,
+} from '../sdk/connection_manager';
 import {
   SPACETIMEDB_CONTEXT_KEY,
   type ConnectionState,
 } from './connection_state';
 
-let connRef: DbConnectionImpl<any> | null = null;
-let cleanupTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
+/**
+ * Establish a SpacetimeDB connection for the current component subtree and make
+ * it available to `useSpacetimeDB`, `useTable` and `useReducer`.
+ *
+ * The connection is owned by the shared `ConnectionManager` (the same pool the
+ * React and Solid bindings use), keyed by uri + database name. The manager's
+ * reference counting and deferred cleanup absorb rapid mount/unmount cycles
+ * (HMR, `{#key}` blocks), and it reconnects automatically with exponential
+ * backoff if the socket drops unexpectedly.
+ *
+ * To swap the connection's auth token without reloading the page (e.g. after a
+ * sign-in), call `reconnect(builder)` from the context value with a builder
+ * carrying the new token.
+ */
 export function createSpacetimeDBProvider<
   DbConnection extends DbConnectionImpl<any>,
 >(
   connectionBuilder: DbConnectionBuilder<DbConnection>
 ): Writable<ConnectionState> {
-  const getConnection = () => connRef as DbConnection | null;
+  const key = ConnectionManager.getKey(
+    connectionBuilder.getUri(),
+    connectionBuilder.getModuleName()
+  );
 
-  const store = writable<ConnectionState>({
+  const fallback: ManagerConnectionState = {
     isActive: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
     connectionError: undefined,
-    getConnection: getConnection as ConnectionState['getConnection'],
+  };
+
+  const getConnection = () =>
+    ConnectionManager.getConnection<DbConnection>(key);
+  const reconnect = (builder: DbConnectionBuilder<DbConnection>): void => {
+    ConnectionManager.rebuild(key, builder);
+  };
+
+  const snapshot = (): ConnectionState => ({
+    ...(ConnectionManager.getSnapshot(key) ?? fallback),
+    getConnection,
+    reconnect,
   });
 
-  if (cleanupTimeoutId) {
-    clearTimeout(cleanupTimeoutId);
-    cleanupTimeoutId = null;
-  }
-
-  if (!connRef) {
-    connRef = connectionBuilder.build();
-  }
-
-  const onConnect = (conn: DbConnection) => {
-    store.update(s => ({
-      ...s,
-      isActive: conn.isActive,
-      identity: conn.identity,
-      token: conn.token,
-      connectionId: conn.connectionId,
-    }));
-  };
-
-  const onDisconnect = (
-    ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>
-  ) => {
-    store.update(s => ({
-      ...s,
-      isActive: ctx.isActive,
-    }));
-  };
-
-  const onConnectError = (
-    ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
-    err: Error
-  ) => {
-    store.update(s => ({
-      ...s,
-      isActive: ctx.isActive,
-      connectionError: err,
-    }));
-  };
-
-  connectionBuilder.onConnect(onConnect);
-  connectionBuilder.onDisconnect(onDisconnect);
-  connectionBuilder.onConnectError(onConnectError);
-
-  const conn = connRef;
-  store.update(s => ({
-    ...s,
-    isActive: conn.isActive,
-    identity: conn.identity,
-    token: conn.token,
-    connectionId: conn.connectionId,
-  }));
-
-  setContext(SPACETIMEDB_CONTEXT_KEY, store);
+  // Retain for this provider's lifetime, then mirror the manager's external
+  // store into a Svelte store. `getConnection` / `reconnect` are stable across
+  // updates; only the plain state fields change.
+  ConnectionManager.retain(key, connectionBuilder);
+  const store = writable<ConnectionState>(snapshot());
+  const unsubscribe = ConnectionManager.subscribe(key, () =>
+    store.set(snapshot())
+  );
 
   onDestroy(() => {
-    connRef?.removeOnConnect(onConnect as any);
-    connRef?.removeOnDisconnect(onDisconnect as any);
-    connRef?.removeOnConnectError(onConnectError as any);
-
-    cleanupTimeoutId = setTimeout(() => {
-      connRef?.disconnect();
-      connRef = null;
-      cleanupTimeoutId = null;
-    }, 0);
+    unsubscribe();
+    ConnectionManager.release(key);
   });
 
+  setContext(SPACETIMEDB_CONTEXT_KEY, store);
   return store;
 }

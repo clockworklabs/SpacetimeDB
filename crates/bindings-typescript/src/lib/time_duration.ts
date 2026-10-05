@@ -1,4 +1,5 @@
 import { AlgebraicType } from './algebraic_type';
+import { coerceToBigInt } from './util';
 
 export type TimeDurationAlgebraicType = {
   tag: 'Product';
@@ -58,7 +59,10 @@ export class TimeDuration {
   }
 
   constructor(micros: bigint) {
-    this.__time_duration_micros__ = micros;
+    // Coerce so callers who arrive via JSON (where bigint precision is
+    // lost) get a clear early failure instead of silent field corruption
+    // that crashes later in arithmetic.
+    this.__time_duration_micros__ = coerceToBigInt(micros, 'TimeDuration');
   }
 
   static fromMillis(millis: number): TimeDuration {

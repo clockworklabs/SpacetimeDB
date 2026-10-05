@@ -970,10 +970,33 @@ Each table defined by a module has an accessor method, whose name is the table n
 
 | Name                                                              | Description                                                                     |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [`TableAccessor` trait](#trait-tableaccessor)                     | Accesses a generated table handle from a database view in generic code.         |
 | [`Table` trait](#trait-table)                                     | Provides access to subscribed rows of a specific table within the client cache. |
 | [`TableWithPrimaryKey` trait](#trait-tablewithprimarykey)         | Extension trait for tables which have a column designated as a primary key.     |
 | [Unique constraint index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
 | [BTree index access](#btree-index-access)                         | Not supported.                                                                  |
+
+### Trait `TableAccessor`
+
+```rust
+spacetimedb_sdk::TableAccessor
+```
+
+For each table, `spacetime generate` emits a marker type named in the form `{TableNamePascalCase}TableAccessor` that implements `TableAccessor<RemoteTables>`.
+This is mainly useful when writing generic helpers or integrations that need to name a table at the type level. Most application code should access tables directly through the generated methods on `ctx.db`.
+
+```rust
+trait spacetimedb_sdk::TableAccessor<DbView: ?Sized> {
+    type Row: 'static;
+    type Handle<'db>
+    where
+        DbView: 'db;
+
+    fn get<'db>(db: &'db DbView) -> Self::Handle<'db>;
+}
+```
+
+The marker type itself does not contain or cache table data. `TableAccessor::get` still requires a database view borrowed from a [`DbConnection`](#type-dbconnection) or context, so the normal client-cache lifetime rules still apply.
 
 ### Trait `Table`
 
@@ -1057,7 +1080,8 @@ The `on_delete` callback runs whenever a previously-resident row is deleted from
 spacetimedb_sdk::TableWithPrimaryKey
 ```
 
-Implemented for handles whose rows have a known primary key, including query builder views with inferred primary keys.
+Implemented for handles whose rows have a known primary key.
+This includes table handles for tables with primary keys, query builder view handles with inferred primary keys, and procedural view handles with declared primary keys.
 
 | Name                                        | Description                                                                          |
 | ------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -1077,7 +1101,7 @@ trait spacetimedb_sdk::TableWithPrimaryKey {
 
 The `on_update` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. Registering an `on_update` callback returns a callback id, which can later be passed to `remove_on_update` to cancel the callback. Newly registered or canceled callbacks do not take effect until the following event.
 
-This also applies to query builder views over tables with primary keys.
+This also applies to views with known primary keys, including query builder views with inferred keys and procedural views that declare a primary key.
 
 ### Unique constraint index access
 

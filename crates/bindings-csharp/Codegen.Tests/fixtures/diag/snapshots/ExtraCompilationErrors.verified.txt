@@ -23,7 +23,7 @@
     }
   },
   {/*
-SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
+        
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
                                                                                   ^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);

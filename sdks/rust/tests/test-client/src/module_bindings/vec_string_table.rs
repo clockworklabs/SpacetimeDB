@@ -18,6 +18,18 @@ pub struct VecStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_string`.
+pub struct VecStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecStringTableAccessor {
+    type Row = VecString;
+    type Handle<'db> = VecStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_string`.
 ///
@@ -39,6 +51,18 @@ impl VecStringTableAccess for super::RemoteTables {
 
 pub struct VecStringInsertCallbackId(__sdk::CallbackId);
 pub struct VecStringDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for VecStringTableHandle<'ctx> {
+    type Row = VecString;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecString> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for VecStringTableHandle<'ctx> {
     type Row = VecString;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for VecStringTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecStringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecStringDeleteCallbackId {
+        VecStringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecStringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecStringTableHandle<'ctx> {
+    type InsertCallbackId = VecStringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecStringInsertCallbackId {
+        VecStringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecStringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecStringTableHandle<'ctx> {
     type DeleteCallbackId = VecStringDeleteCallbackId;
 
     fn on_delete(

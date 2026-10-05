@@ -1,9 +1,7 @@
 use crate::module_bindings::*;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext};
-use test_counter::TestCounter;
-
-const LOCALHOST: &str = "http://localhost:3000";
+use test_counter::{server_url, TestCounter};
 
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
@@ -42,11 +40,20 @@ async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    let connected_result = test_counter.add_test("on_connect");
+    connect_then_named(db_name, test_counter, "on_connect", callback).await
+}
+
+async fn connect_then_named(
+    db_name: &str,
+    test_counter: &std::sync::Arc<TestCounter>,
+    connect_test_name: &'static str,
+    callback: impl FnOnce(&DbConnection) + Send + 'static,
+) -> DbConnection {
+    let connected_result = test_counter.add_test(connect_test_name);
     let name = db_name.to_owned();
     let conn = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));

@@ -1,14 +1,13 @@
-# `perf-test` *Rust* test
+# `perf-test` *Rust* benchmark module
 
 A module with various `index scan` workloads for SpacetimeDB.
 
-Called as part of our tests to ensure the system is working as expected.
+Called by the `index_scan_gate` benchmark to ensure the system is working as expected.
 
 ## How to Run
 
-Execute the test `test_index_scans`
-at [standalone_integration_test](../../crates/testing/tests/standalone_integration_test.rs):
+Execute the benchmark gate:
 
 ```bash
-cargo test -p spacetimedb-testing test_index_scans
+cargo bench -p spacetimedb-bench --bench index_scan_gate
 ```

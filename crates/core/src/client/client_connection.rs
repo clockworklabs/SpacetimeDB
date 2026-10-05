@@ -13,23 +13,27 @@ use crate::error::DBError;
 use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
 use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError};
 use crate::subscription::module_subscription_manager::BroadcastError;
-use crate::util::prometheus_handle::IntGaugeExt;
-use crate::worker_metrics::WORKER_METRICS;
+use crate::worker_metrics::{
+    record_client_rejection, ClientDisconnectCause, ClientDisconnectRecorder, ClientRejectCause, WORKER_METRICS,
+};
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
+use log::warn;
 use prometheus::{Histogram, IntCounter, IntGauge};
+use scopeguard::ScopeGuard;
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use spacetimedb_metrics::utils::IntGaugeExt;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
-use tracing::{trace, warn};
+use tracing::trace;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -154,11 +158,13 @@ impl DurableOffsetSupply for Arc<RelationalDB> {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
-    current: Option<ClientUpdate>,
+    pending: Vec<ClientUpdate>,
     offset_supply: Box<dyn DurableOffsetSupply>,
 }
 
 impl ClientConnectionReceiver {
+    pub const DEFAULT_RECV_MANY_LIMIT: usize = 4096;
+
     fn new(
         confirmed_reads: bool,
         channel: MeteredReceiver<ClientUpdate>,
@@ -167,80 +173,113 @@ impl ClientConnectionReceiver {
         Self {
             confirmed_reads,
             channel,
-            current: None,
+            pending: Vec::new(),
             offset_supply: Box::new(offset_supply),
         }
     }
 
-    /// Receive the next message from this channel.
-    ///
-    /// If this method returns `None`, the channel is closed and no more messages
-    /// are in the internal buffers. No more messages can ever be received from
-    /// the channel.
+    #[cfg(test)]
+    pub(crate) async fn recv(&mut self) -> Option<OutboundMessage> {
+        let mut buf = Vec::with_capacity(1);
+        (self.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
+    }
+
+    /// Receive multiple messages from this channel.
     ///
     /// Messages are returned immediately if:
     ///
-    ///   - The (internal) [`ClientUpdate`] does not have a `tx_offset`
+    ///   - The [`ClientUpdate`] does not have a `tx_offset`
     ///     (such as for error messages).
-    ///   - The client hasn't requested confirmed reads (i.e.
-    ///     [`ClientConfig::confirmed_reads`] is `false`).
+    ///   - The client hasn't requested confirmed reads
+    ///     (i.e. [`ClientConfig::confirmed_reads`] is `false`).
     ///   - The database is configured to not persist transactions.
     ///
-    /// Otherwise, the update's `tx_offset` is compared against the module's
+    /// Otherwise, the last `tx_offset` in the batch is compared against the module's
     /// durable offset. If the durable offset is behind the `tx_offset`, the
     /// method waits until it catches up before returning the message.
     ///
     /// If the database is shut down while waiting for the durable offset,
-    /// `None` is returned. In this case, no more messages can ever be received
+    /// 0 is returned. In this case, no more messages can ever be received
     /// from the channel.
+    ///
+    /// For non-zero values of `max`, this method will never return `0` unless the
+    /// input channel has been closed and there are no pending messages, or if the
+    /// database goes away. This indicates that no further values can ever be received
+    /// from this `Receiver`.
     ///
     /// # Cancel safety
     ///
     /// This method is cancel safe, as long as `self` is not dropped.
     ///
-    /// If `recv` is used in a [`tokio::select!`] statement, it may get
+    /// If `recv_many` is used in a [`tokio::select!`] statement, it may get
     /// cancelled while waiting for the durable offset to catch up. At this
-    /// point, it has already received a value from the underlying channel.
-    /// This value is stored internally, so calling `recv` again will not lose
-    /// data.
-    //
-    // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
-    pub async fn recv(&mut self) -> Option<OutboundMessage> {
-        let ClientUpdate { tx_offset, message } = match self.current.take() {
-            None => self.channel.recv().await?,
-            Some(update) => update,
-        };
-        if !self.confirmed_reads {
-            return Some(message);
+    /// point, it has already received values from the underlying channel.
+    /// These values are stored internally, so calling `recv_many` again will
+    /// not lose data.
+    pub async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        // If there are no pending updates and the input channel has been closed,
+        // no more messages can be received from this receiver.
+        if max == 0 || (self.pending.is_empty() && self.channel.recv_many(&mut self.pending, max).await == 0) {
+            return 0;
         }
 
-        if let Some(tx_offset) = tx_offset {
-            match self.offset_supply.durable_offset() {
-                Ok(Some(mut durable)) => {
-                    // Store the current update in case we get cancelled while
-                    // waiting for the durable offset.
-                    self.current = Some(ClientUpdate {
-                        tx_offset: Some(tx_offset),
-                        message,
-                    });
-                    trace!("waiting for offset {tx_offset} to become durable");
-                    durable
-                        .wait_for(tx_offset)
-                        .await
-                        .inspect_err(|_| {
-                            warn!("database went away while waiting for durable offset");
-                        })
-                        .ok()?;
-                    self.current.take().map(|update| update.message)
-                }
-                // Database shut down or crashed.
-                Err(NoSuchModule) => None,
-                // In-memory database.
-                Ok(None) => Some(message),
-            }
-        } else {
-            Some(message)
+        // If we don't have to wait for txns to be made durable,
+        // drain the pending updates.
+        if !self.confirmed_reads {
+            return self.drain_pending(buf, max);
         }
+
+        // If we do have to wait for txns to be made durable,
+        // but the next client update doesn't have a tx offset,
+        // there's no reason to wait - just send it.
+        if !self.pending_update_has_offset() {
+            return self.drain_pending(buf, 1);
+        }
+
+        // Otherwise, grab the next offset that we should wait for.
+        let (n, wait_for_offset) = self.next_confirmed_reads_batch(max);
+
+        match self.offset_supply.durable_offset() {
+            Ok(Some(mut durable)) => {
+                trace!("waiting for offset {wait_for_offset} to become durable");
+                if durable.wait_for(wait_for_offset).await.is_err() {
+                    warn!("database went away while waiting for durable offset");
+                    return 0;
+                }
+                self.drain_pending(buf, n)
+            }
+            // Database shut down or crashed.
+            Err(NoSuchModule) => 0,
+            // In-memory database.
+            Ok(None) => self.drain_pending(buf, max),
+        }
+    }
+
+    /// Compute the next batch of pending client updates that have a tx offset.
+    /// What is the size of the batch and what is the max offset?
+    fn next_confirmed_reads_batch(&self, max: usize) -> (usize, TxOffset) {
+        self.pending
+            .iter()
+            .take(max)
+            .map_while(|update| update.tx_offset)
+            .fold((0, 0), |(count, max_offset), tx_offset| {
+                (count + 1, max_offset.max(tx_offset))
+            })
+    }
+
+    /// Drain the pending [`ClientUpdate`]s, up to `max, into `buf`.
+    fn drain_pending(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        let n = self.pending.len().min(max);
+        buf.reserve(n);
+        buf.extend(self.pending.drain(..n).map(|u| u.message));
+        n
+    }
+
+    /// Does the next pending update have a tx offset?
+    ///
+    /// Assumes that [`Self::pending`] is not empty.
+    fn pending_update_has_offset(&self) -> bool {
+        self.pending.first().is_some_and(|update| update.tx_offset.is_some())
     }
 
     /// Close the receiver without dropping it.
@@ -277,6 +316,8 @@ pub struct ClientConnectionSender {
 pub struct ClientConnectionMetrics {
     pub websocket_request_msg_size: Histogram,
     pub websocket_requests: IntCounter,
+    pub outgoing_queue_disconnects: IntCounter,
+    pub disconnect_recorder: ClientDisconnectRecorder,
 
     /// The `total_outgoing_queue_length` metric labeled with this database's `Identity`,
     /// which we'll increment whenever sending a message.
@@ -297,13 +338,19 @@ impl ClientConnectionMetrics {
         let websocket_requests = WORKER_METRICS
             .websocket_requests
             .with_label_values(&database_identity, message_kind);
+        let outgoing_queue_disconnects = WORKER_METRICS
+            .client_outgoing_queue_disconnects
+            .with_label_values(&database_identity);
         let sendtx_queue_size = WORKER_METRICS
             .total_outgoing_queue_length
             .with_label_values(&database_identity);
+        let disconnect_recorder = ClientDisconnectRecorder::new(database_identity);
 
         Self {
             websocket_request_msg_size,
             websocket_requests,
+            outgoing_queue_disconnects,
+            disconnect_recorder,
             sendtx_queue_size,
         }
     }
@@ -361,6 +408,20 @@ impl ClientConnectionSender {
         self.cancelled.load(Ordering::Relaxed)
     }
 
+    /// Stop this connection's websocket actor.
+    ///
+    /// Used when a newer connection arrives for this connection's session
+    /// (see [`super::ClientSessionIndex`]), and when a client exceeds its
+    /// outgoing queue capacity. The actor's teardown runs the module-side
+    /// disconnect.
+    pub fn kick(&self, cause: ClientDisconnectCause) {
+        if let Some(metrics) = &self.metrics {
+            metrics.disconnect_recorder.record(cause);
+        }
+        self.abort_handle.abort();
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
     /// Send a message to the client. For data-related messages, you should probably use
     /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
     ///
@@ -404,10 +465,12 @@ impl ClientConnectionSender {
                 log::warn!(
                     "Client {:?} exceeded channel capacity of {}, kicking",
                     self.id,
-                    self.sendtx.capacity(),
+                    self.sendtx.max_capacity(),
                 );
-                self.abort_handle.abort();
-                self.cancelled.store(true, Ordering::Relaxed);
+                if let Some(metrics) = &self.metrics {
+                    metrics.outgoing_queue_disconnects.inc();
+                }
+                self.kick(ClientDisconnectCause::OutgoingQueueFull);
                 return Err(ClientSendError::Cancelled);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
@@ -822,22 +885,31 @@ impl ClientConnection {
         let module_info = module.info.clone();
         let database_identity = module_info.database_identity;
         let client_identity = id.identity;
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
+        let actor_disconnect_recorder = metrics.disconnect_recorder.clone();
         let abort_handle = tokio::spawn(async move {
-            let Ok(fut) = fut_rx.await else { return };
+            let Ok(fut) = fut_rx.await else {
+                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}` before actor startup");
+                record_client_rejection(database_identity, ClientRejectCause::ActorStartupFailure);
+                return };
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer! {
+            let abort_guard = scopeguard::guard((), |_| {
                 let database_identity = module_info.database_identity;
-                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
                 module_info.metrics.ws_clients_aborted.inc();
-            };
+                // This is always called for to make sure `ws_clients_aborted` is incremented, but we only want to log a warning here
+                // if we haven't already recorded a cause for this disconnection.
+                if actor_disconnect_recorder.record(ClientDisconnectCause::Unknown) {
+                    log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
+                }
+            });
 
-            fut.await
+            fut.await;
+            ScopeGuard::into_inner(abort_guard);
         })
         .abort_handle();
 
-        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
         let receiver = ClientConnectionReceiver::new(
             config.confirmed_reads,
             MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
@@ -897,6 +969,13 @@ impl ClientConnection {
 
     pub fn sender(&self) -> Arc<ClientConnectionSender> {
         self.sender.clone()
+    }
+
+    pub fn disconnect_recorder(&self) -> Option<ClientDisconnectRecorder> {
+        self.sender
+            .metrics
+            .as_ref()
+            .map(|metrics| metrics.disconnect_recorder.clone())
     }
 
     /// Get the [`ModuleHost`] for this connection.
@@ -1107,6 +1186,16 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         self.module()
             .call_view_add_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
+    }
+
+    pub async fn subscribe_batch(
+        &self,
+        request: ws_v2::SubscribeBatch,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        self.module()
+            .call_view_add_batch_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
     pub async fn subscribe_multi(
@@ -1432,5 +1521,49 @@ mod tests {
         assert_pending(&mut pin!(receiver.recv())).await;
         offset.mark_durable_at(3);
         assert_received_update(receiver.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn client_connection_sender_records_outgoing_queue_full_disconnect() {
+        let database_identity = Identity::from_be_byte_array([7; 32]);
+        let cause = ClientDisconnectCause::OutgoingQueueFull;
+        let before = WORKER_METRICS
+            .ws_client_disconnections
+            .with_label_values(&database_identity, cause.as_str())
+            .get();
+
+        let (sendtx, _rx) = mpsc::channel(1);
+        let abort_handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        let sender = ClientConnectionSender {
+            id: ClientActorId::for_test(Identity::ZERO),
+            auth: ConnectionAuthCtx::try_from(SpacetimeIdentityClaims {
+                identity: Identity::ZERO,
+                subject: "".into(),
+                issuer: "".into(),
+                audience: [].into(),
+                iat: SystemTime::now(),
+                exp: None,
+                extra: None,
+            })
+            .unwrap(),
+            config: ClientConfig::for_test(),
+            sendtx,
+            abort_handle,
+            cancelled: AtomicBool::new(false),
+            metrics: Some(ClientConnectionMetrics::new(database_identity, Protocol::Binary)),
+        };
+
+        sender.send_message(None, empty_tx_update()).unwrap();
+        assert_matches!(
+            sender.send_message(None, empty_tx_update()),
+            Err(ClientSendError::Cancelled)
+        );
+        assert_eq!(
+            WORKER_METRICS
+                .ws_client_disconnections
+                .with_label_values(&database_identity, cause.as_str())
+                .get(),
+            before + 1
+        );
     }
 }

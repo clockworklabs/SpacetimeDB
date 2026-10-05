@@ -13,9 +13,9 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawSequenceDefV8.g.h"
-#include "RawColumnDefV8.g.h"
-#include "RawConstraintDefV8.g.h"
 #include "RawIndexDefV8.g.h"
+#include "RawConstraintDefV8.g.h"
+#include "RawColumnDefV8.g.h"
 
 namespace SpacetimeDB::Internal {
 

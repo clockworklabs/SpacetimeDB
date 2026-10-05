@@ -73,13 +73,12 @@ using ::identity;
 
 // ===== JWT =====
 using ::get_jwt;
+using ::env_get;
 
 // ===== Procedure Transactions =====
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
 using ::procedure_start_mut_tx;
 using ::procedure_commit_mut_tx;
 using ::procedure_abort_mut_tx;
-#endif
 
 // ===== Module Export Helpers =====
 

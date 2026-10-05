@@ -1,5 +1,9 @@
 import type { ParamsObj } from '../lib/reducers';
-import type { Infer, InferTypeOfRow, TypeBuilder } from '../lib/type_builders';
+import type {
+  Infer,
+  InferTypeOfParams,
+  TypeBuilder,
+} from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { coerceParams, toCamelCase, type CoerceParams } from '../lib/util';
 import type { UntypedRemoteModule } from './spacetime_module';
@@ -20,7 +24,7 @@ export type ProceduresView<RemoteModule> = IfAny<
     ? // x: camelCase(name)
       {
         [K in RemoteModule['procedures'][number] as K['accessorName']]: (
-          params: InferTypeOfRow<K['params']>
+          params: InferTypeOfParams<K['params']>
         ) => Promise<Infer<K['returnType']>>;
       }
     : never
@@ -58,9 +62,10 @@ type ProcedureDef<
   Name extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
+  AccessorName extends string = CamelCase<Name>,
 > = {
   name: Name;
-  accessorName: CamelCase<Name>;
+  accessorName: AccessorName;
   params: CoerceParams<Params>;
   returnType: ReturnType;
 };
@@ -69,14 +74,16 @@ export function procedureSchema<
   ProcedureName extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
+  AccessorName extends string = CamelCase<ProcedureName>,
 >(
   name: ProcedureName,
   params: Params,
-  returnType: ReturnType
-): ProcedureDef<ProcedureName, Params, ReturnType> {
+  returnType: ReturnType,
+  accessorName?: AccessorName
+): ProcedureDef<ProcedureName, Params, ReturnType, AccessorName> {
   return {
     name,
-    accessorName: toCamelCase(name),
+    accessorName: accessorName ?? (toCamelCase(name) as AccessorName),
     params: coerceParams(params),
     returnType,
   };

@@ -1,0 +1,6 @@
+{
+  "dev": {
+    "run": "npm run dev"
+  },
+  "server": "maincloud"
+}

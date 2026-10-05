@@ -13,6 +13,7 @@ use std::collections::{btree_map, BTreeMap};
 pub mod connection_id;
 pub mod db;
 mod direct_index_key;
+pub mod environment;
 pub mod error;
 mod filterable_value;
 pub mod http;
@@ -23,6 +24,7 @@ pub mod query;
 pub mod scheduler;
 pub mod st_var;
 pub mod version;
+pub mod view_args;
 
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
@@ -35,18 +37,22 @@ pub use connection_id::ConnectionId;
 pub use direct_index_key::{assert_column_type_valid_for_direct_index, DirectIndexKey};
 #[doc(hidden)]
 pub use filterable_value::Private;
-pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound};
+pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound, ViewPrimaryKeyColumn};
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
+pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;
 pub use spacetimedb_sats::uuid::Uuid;
 pub use spacetimedb_sats::SpacetimeType;
-pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
+pub use view_args::{
+    empty_view_arg_hash_value, hash_empty_view_args, hash_sender_view_args, hash_view_args, sender_view_arg_hash_value,
+    VIEW_ARGS_HASH_DOMAIN,
+};
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 10;
 

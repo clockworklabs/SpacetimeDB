@@ -455,6 +455,56 @@ public enum TypeKind
     Sum,
 }
 
+public static class SpacetimeDbFieldDiscovery
+{
+    private static readonly string[] SpacetimeDbRowAttributeNames =
+    [
+        "SpacetimeDB.TypeAttribute",
+        "SpacetimeDB.TableAttribute",
+    ];
+
+    public static IEnumerable<IFieldSymbol> GetFieldsDeclaredInAnnotatedPartial(
+        TypeDeclarationSyntax typeSyntax,
+        INamedTypeSymbol type
+    ) =>
+        typeSyntax
+            .Members.OfType<FieldDeclarationSyntax>()
+            .SelectMany(f => f.Declaration.Variables)
+            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Where(f => !f.IsStatic);
+
+    public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
+    {
+        if (rowType is not INamedTypeSymbol namedRowType)
+        {
+            return null;
+        }
+
+        foreach (var typeSyntax in GetAnnotatedPartialDeclarations(namedRowType))
+        {
+            var field = GetFieldsDeclaredInAnnotatedPartial(typeSyntax, namedRowType)
+                .FirstOrDefault(field => field.Name == fieldName);
+            if (field is not null)
+            {
+                return field;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<TypeDeclarationSyntax> GetAnnotatedPartialDeclarations(
+        INamedTypeSymbol type
+    ) =>
+        type.GetAttributes()
+            .Where(attr => SpacetimeDbRowAttributeNames.Contains(attr.AttributeClass?.ToString()))
+            .Select(attr => attr.ApplicationSyntaxReference?.GetSyntax())
+            .OfType<AttributeSyntax>()
+            .Select(attr => attr.FirstAncestorOrSelf<TypeDeclarationSyntax>())
+            .OfType<TypeDeclarationSyntax>()
+            .Distinct();
+}
+
 public abstract record BaseTypeDeclaration<M>
     where M : MemberDeclaration, IEquatable<M>
 {
@@ -498,11 +548,10 @@ public abstract record BaseTypeDeclaration<M>
         //
         // To achieve this, we need to walk over the annotated type syntax node, collect the field names,
         // and look up the resolved field symbols only for those fields.
-        var fields = typeSyntax
-            .Members.OfType<FieldDeclarationSyntax>()
-            .SelectMany(f => f.Declaration.Variables)
-            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
-            .Where(f => !f.IsStatic);
+        var fields = SpacetimeDbFieldDiscovery.GetFieldsDeclaredInAnnotatedPartial(
+            typeSyntax,
+            type
+        );
 
         // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
         if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
@@ -514,7 +563,13 @@ public abstract record BaseTypeDeclaration<M>
                 is not INamedTypeSymbol { IsTupleType: true, TupleElements: var taggedEnumVariants }
             )
             {
-                diag.Report(ErrorDescriptor.TaggedEnumInlineTuple, type.BaseType);
+                diag.Report(
+                    ErrorDescriptor.TaggedEnumInlineTuple,
+                    (
+                        type.BaseType,
+                        (SyntaxNode?)typeSyntax.BaseList?.Types.FirstOrDefault()?.Type ?? typeSyntax
+                    )
+                );
             }
 
             if (fields.FirstOrDefault() is { } field)
@@ -685,13 +740,13 @@ public abstract record BaseTypeDeclaration<M>
 
             write = "value.WriteFields(writer);";
 
-            var declHashName = (MemberDeclaration decl) => $"___hash{decl.Name}";
+            static string DeclHashName(MemberDeclaration decl) => $"___hash{decl.Name}";
 
             getHashCode = $$"""
-                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, declHashName(decl))))}}
+                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, DeclHashName(decl))))}}
                 return {{JoinOrValue(
                     " ^\n            ",
-                    bsatnDecls.Select(declHashName),
+                    bsatnDecls.Select(DeclHashName),
                     "0" // if there are no members, the hash is 0.
                 )}};
                 """;
@@ -734,7 +789,7 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
+            static string DeclEqualsName(MemberDeclaration decl) => $"___eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""
@@ -743,10 +798,10 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqualsName(decl))))}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", DeclEqualsName(decl))))}}
                     return {{JoinOrValue(
                         " &&\n        ",
-                        bsatnDecls.Select(declEqualsName),
+                        bsatnDecls.Select(DeclEqualsName),
                         "true" // if there are no elements, the structs are equal :)
                     )}};
                 }

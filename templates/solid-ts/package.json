@@ -1,0 +1,24 @@
+{
+  "name": "@clockworklabs/solid-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+  },
+  "dependencies": {
+    "spacetimedb": "workspace:*",
+    "solid-js": "^1.9.5"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2",
+    "vite": "^7.1.5",
+    "vite-plugin-solid": "^2.11.8"
+  }
+}

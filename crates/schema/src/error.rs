@@ -1,5 +1,7 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
+use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
+use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
@@ -20,6 +22,14 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ValidationError {
+    #[error("module has repeated environment declarations")]
+    RepeatedEnvironmentDeclaration,
+    #[error("invalid environment declaration: {error}")]
+    Environment {
+        error: spacetimedb_lib::environment::EnvironmentSchemaError,
+    },
+    #[error("submodule {namespace:?} cannot declare environment variables")]
+    EnvironmentInSubmodule { namespace: String },
     #[error("name `{name}` is used for multiple entities")]
     DuplicateName { name: RawIdentifier },
     #[error("name `{name}` is used for multiple types")]
@@ -72,18 +82,29 @@ pub enum ValidationError {
         column: RawColumnName,
         column_type: PrettyAlgebraicType,
     },
-    #[error("invalid sequence range information: expected {min_value:?} <= {start:?} <= {max_value:?} in sequence `{sequence}`")]
-    InvalidSequenceRange {
+    #[error("sequence definition `{sequence}` specifies unsupported option `{option}` with value {supplied_value}, should be {expected_value}")]
+    InvalidSequenceDefOption {
         sequence: RawIdentifier,
-        min_value: Option<i128>,
-        start: Option<i128>,
-        max_value: Option<i128>,
+        option: &'static str,
+        supplied_value: i128,
+        expected_value: &'static str,
     },
     #[error("View {view} has invalid return type {ty}")]
     InvalidViewReturnType {
         view: RawIdentifier,
         ty: PrettyAlgebraicType,
     },
+    #[error("View {view} referenced by primary key definition not found")]
+    ViewPrimaryKeyViewNotFound { view: RawIdentifier },
+    #[error("View {view} has multiple primary key definitions")]
+    RepeatedViewPrimaryKey { view: RawIdentifier },
+    #[error("View {view} has multiple primary key columns: {columns:?}")]
+    MultipleViewPrimaryKeyColumns {
+        view: RawIdentifier,
+        columns: Vec<RawIdentifier>,
+    },
+    #[error("Primary key column {column} for view {view} not found")]
+    ViewPrimaryKeyColumnNotFound { view: RawIdentifier, column: RawIdentifier },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
@@ -135,6 +156,17 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
+    #[error("HTTP handler name {name} is used for multiple HTTP handlers")]
+    DuplicateHttpHandlerName { name: Identifier },
+    #[error("HTTP route duplicates method {method:?} for path {path}")]
+    DuplicateHttpRoute { path: RawIdentifier, method: MethodOrAny },
+    #[error(
+        "HTTP route path `{path}` is invalid; allowed characters are {allowed}",
+        allowed = ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
+    )]
+    InvalidHttpRoutePath { path: RawIdentifier },
+    #[error("HTTP route refers to unknown HTTP handler `{handler}`")]
+    MissingHttpHandler { handler: RawIdentifier },
     #[error("lifecycle event {lifecycle:?} without reducer")]
     LifecycleWithoutReducer { lifecycle: Lifecycle },
     #[error("lifecycle event {lifecycle:?} assigned multiple reducers")]
@@ -168,6 +200,13 @@ pub enum ValidationError {
     },
     #[error("outbox table {table} must have at least 2 columns (id, target_identity)")]
     OutboxTooFewColumns { table: Identifier },
+    #[error(
+        "lifecycle event {lifecycle:?} is not permitted in submodule under namespace `{namespace}`; \
+         lifecycle reducers may only be declared in the root module"
+    )]
+    LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
+    #[error("submodule namespace `{namespace}` is {len} bytes, which exceeds the 63-byte limit")]
+    NamespaceTooLong { namespace: RawIdentifier, len: usize },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

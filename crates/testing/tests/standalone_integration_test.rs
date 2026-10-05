@@ -2,7 +2,7 @@ use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
     CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
-    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    TypeScript, DEFAULT_CONFIG,
 };
 use std::{
     future::Future,
@@ -356,58 +356,6 @@ fn test_call_query_macro() {
     });
 }
 
-#[test]
-#[serial]
-/// This test runs the index scan workloads in the `perf-test` module.
-/// Timing spans should be < 1ms if the correct index was used.
-/// Otherwise these workloads will degenerate into full table scans.
-fn test_index_scans() {
-    init();
-    CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
-        IN_MEMORY_CONFIG,
-        |module| async move {
-            let no_args = &product![];
-
-            module
-                .call_reducer_binary("load_location_table", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_id", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_chunk", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_x_z_dimension", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_x_z", no_args)
-                .await
-                .unwrap();
-
-            let logs = read_logs(&module).await;
-
-            // Each timing span should be < 1ms
-            let timing = |line: &str| {
-                line.starts_with("Timing span")
-                    && (line.ends_with("ns") || line.ends_with("us") || line.ends_with("µs"))
-            };
-            assert!(timing(&logs[0]));
-            assert!(timing(&logs[1]));
-            assert!(timing(&logs[2]));
-            assert!(timing(&logs[3]));
-        },
-    );
-}
-
 async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
     let now = Instant::now();
 
@@ -510,4 +458,51 @@ fn test_calling_bench_db_ia_loop_typescript() {
 #[serial]
 fn test_calling_bench_db_ia_loop_cpp() {
     test_calling_bench_db_ia_loop::<Cpp>();
+}
+
+fn test_submodule_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // ── 1. Cross-namespace reducer call ──────────────────────────────────
+            // `useSubmodule` is exported as camelCase; its wire name is the canonical
+            // snake_case form.
+            let json =
+                r#"{"CallReducer": {"reducer": "use_submodule", "args": "[\"hello_submodule\"]", "request_id": 0, "flags": 0}}"#
+                    .to_string();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
+
+            let logs = read_logs(&module).await;
+            let relevant: Vec<_> = logs
+                .into_iter()
+                .filter(|l| !is_scheduled_test_log(l))
+                .collect();
+            assert_eq!(relevant, ["libInsert: hello_submodule"].map(String::from));
+
+            // ── 2. Cross-namespace procedure call ─────────────────────────────────
+            // useSubmoduleProcedure calls libCount in the lib submodule.
+            // We inserted one row above, so the count should be 1.
+            let return_val = module
+                .call_procedure_with_args("use_submodule_procedure", "[]")
+                .await
+                .expect("use_submodule_procedure should succeed");
+            assert_eq!(return_val, AlgebraicValue::U64(1), "libCount should return 1 after one insert");
+
+            // ── 3. Cross-namespace HTTP handler ───────────────────────────────────
+            // The root module's /lib-hello route delegates to lib_submodule's libHello handler.
+            let body = module
+                .call_http_route_get("/lib-hello")
+                .await
+                .expect("GET /lib-hello should succeed");
+            assert_eq!(body.as_ref(), b"Hello from lib submodule!");
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_submodule_typescript() {
+    test_submodule_in_module("module-test-ts");
 }

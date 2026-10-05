@@ -4,6 +4,7 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
+mod schema_extract;
 pub mod spacetime_config;
 mod subcommands;
 mod tasks;
@@ -22,12 +23,14 @@ pub use tasks::build;
 pub fn get_subcommands() -> Vec<Command> {
     vec![
         publish::cli(),
+        env::cli(),
         delete::cli(),
         logs::cli(),
         call::cli(),
         describe::cli(),
         dev::cli(),
         sql::cli(),
+        mcp::cli(),
         dns::cli(),
         generate::cli(),
         list::cli(),
@@ -38,6 +41,8 @@ pub fn get_subcommands() -> Vec<Command> {
         server::cli(),
         subscribe::cli(),
         start::cli(),
+        lock::cli(),
+        unlock::cli(),
         subcommands::version::cli(),
     ]
 }
@@ -54,9 +59,11 @@ pub async fn exec_subcommand(
         "describe" => describe::exec(config, args).await,
         "dev" => dev::exec(config, args).await,
         "publish" => publish::exec(config, args).await,
+        "env" => env::exec(config, args).await,
         "delete" => delete::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
+        "mcp" => mcp::exec(config, args).await,
         "rename" => dns::exec(config, args).await,
         "generate" => generate::exec(config, args).await,
         "list" => list::exec(config, args).await,
@@ -67,6 +74,8 @@ pub async fn exec_subcommand(
         "start" => return start::exec(config, paths, args).await,
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
+        "lock" => lock::exec(config, args).await,
+        "unlock" => unlock::exec(config, args).await,
         "version" => return subcommands::version::exec(paths, root_dir, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }

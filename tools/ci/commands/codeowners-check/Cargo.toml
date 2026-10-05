@@ -1,0 +1,12 @@
+[package]
+name = "ci-codeowners-check"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+ci-common = { path = "../../common" }
+duct.workspace = true
+regex.workspace = true
+serde_json.workspace = true

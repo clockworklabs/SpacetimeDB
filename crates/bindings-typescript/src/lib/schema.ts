@@ -7,6 +7,7 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
+  RawSubmoduleV10,
   RawModuleDefV10,
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
@@ -42,6 +43,7 @@ export type TableNamesOf<S extends UntypedSchemaDef> = Values<
  */
 export type UntypedSchemaDef = {
   tables: Record<string, UntypedTableDef>;
+  namespaces?: Record<string, UntypedSchemaDef>;
 };
 
 /**
@@ -194,11 +196,16 @@ export class ModuleContext {
     schedules: [],
     procedures: [],
     views: [],
+    viewPrimaryKeys: [],
     lifeCycleReducers: [],
+    httpHandlers: [],
+    httpRoutes: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
     },
+    submodules: [],
+    environment: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -220,11 +227,29 @@ export class ModuleContext {
     push(module.reducers && { tag: 'Reducers', value: module.reducers });
     push(module.procedures && { tag: 'Procedures', value: module.procedures });
     push(module.views && { tag: 'Views', value: module.views });
+    push(
+      module.viewPrimaryKeys && {
+        tag: 'ViewPrimaryKeys',
+        value: module.viewPrimaryKeys,
+      }
+    );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',
         value: module.lifeCycleReducers,
+      }
+    );
+    push(
+      module.httpHandlers && {
+        tag: 'HttpHandlers',
+        value: module.httpHandlers,
+      }
+    );
+    push(
+      module.httpRoutes && {
+        tag: 'HttpRoutes',
+        value: module.httpRoutes,
       }
     );
     push(
@@ -245,7 +270,18 @@ export class ModuleContext {
         value: module.caseConversionPolicy,
       }
     );
+    push(
+      module.submodules && {
+        tag: 'Submodules',
+        value: module.submodules,
+      }
+    );
+    push({ tag: 'Environment', value: module.environment });
     return { sections };
+  }
+
+  addSubmodule(submodule: RawSubmoduleV10) {
+    this.#moduleDef.submodules.push(submodule);
   }
 
   /**

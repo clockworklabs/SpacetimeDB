@@ -15,13 +15,13 @@ You can get started by first installing the `spacetime` CLI tool. The `spacetime
 
 ## Log in to SpacetimeDB
 
-SpacetimeDB authenticates users using a GitHub login, to prevent unauthorized access (e.g. somebody else publishing over your module). Log in to SpacetimeDB using:
+SpacetimeDB authenticates users using a GitHub or Google login, to prevent unauthorized access (e.g. somebody else publishing over your module). Log in to SpacetimeDB using:
 
 ```bash
 spacetime login
 ```
 
-This will open a browser and ask you to log in via GitHub. If you forget this step, any commands that require login (like `spacetime publish`) will ask you to log in when you run them.
+This will open a browser and ask you to log in via GitHub or Google. If you forget this step, any commands that require login (like `spacetime publish`) will ask you to log in when you run them.
 
 ## Quickstart Guides
 

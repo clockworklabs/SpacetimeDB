@@ -26,6 +26,7 @@ authorize users with the SpacetimeDB server.
 ### Authentication methods
 
 - Magic link
+- Steam (Session Ticket)
 - Github
 - Google
 - Discord

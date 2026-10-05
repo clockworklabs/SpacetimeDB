@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class IenumerableAdminsFromFilterHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "ienumerable_admins_from_filter";
+            public override string RemoteTableName => "ienumerable_admins_from_filter";
 
             internal IenumerableAdminsFromFilterHandle(DbConnection conn) : base(conn)
             {

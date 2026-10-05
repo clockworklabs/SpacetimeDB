@@ -13,6 +13,7 @@ const Shape = t.enum('Shape', {
 const result = table(
   {
     name: 'result',
+    public: true,
   },
   {
     id: t.i32().primaryKey(),

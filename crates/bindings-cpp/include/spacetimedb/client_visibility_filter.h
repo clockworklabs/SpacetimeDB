@@ -1,5 +1,7 @@
 #pragma once
 
+#include "spacetimedb/query_builder.h"
+
 #include <string>
 
 namespace SpacetimeDB {
@@ -21,7 +23,7 @@ namespace SpacetimeDB {
 /// will be reported during `spacetime publish`, not at compile time.
 class Filter {
 private:
-    const char* sql_text_;
+    std::string sql_text_;
 
 public:
     /// Create a SQL-based client visibility filter
@@ -29,13 +31,25 @@ public:
         return Filter(sql);
     }
 
+    /// Create a SQL-based client visibility filter from an owned string
+    static Filter Sql(std::string sql) {
+        return Filter(std::move(sql));
+    }
+
+    /// Create a SQL-based client visibility filter from a typed query-builder value.
+    template<query_builder::QueryLike TQuery>
+    static Filter Sql(const TQuery& query) {
+        return Filter(query.into_sql());
+    }
+
     /// Get the SQL text for this filter
-    const char* sql_text() const {
+    const std::string& sql_text() const {
         return sql_text_;
     }
 
 private:
-    explicit Filter(const char* sql) : sql_text_(sql) {}
+    explicit Filter(const char* sql) : sql_text_(sql != nullptr ? sql : "") {}
+    explicit Filter(std::string sql) : sql_text_(std::move(sql)) {}
 };
 
 } // namespace SpacetimeDB

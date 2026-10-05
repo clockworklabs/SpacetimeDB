@@ -382,6 +382,13 @@ impl PageHeader {
     pub(super) fn present_rows_storage_ptr_for_test(&self) -> *const () {
         self.fixed.present_rows.storage().as_ptr().cast()
     }
+
+    /// Returns the number of var-len granules available for allocation,
+    /// including those in the "gap" between the fixed-len and var-len part of the page.
+    fn available_var_len_granules(&self) -> usize {
+        self.var.freelist_len as usize
+            + VarLenGranule::space_to_granules(gap_remaining_size(self.var.first, self.fixed.last))
+    }
 }
 
 /// Fixed-length row portions must be at least large enough to store a `FreeCellRef`.
@@ -1195,6 +1202,12 @@ impl Page {
         self.header.var.num_granules as usize
     }
 
+    /// Returns the number of var-len granules free to store data,
+    /// including those in the "gap" between the fixed-len and var-len part of the page.
+    pub fn available_var_len_granules(&self) -> usize {
+        self.header.available_var_len_granules()
+    }
+
     #[cfg(test)]
     /// # Safety
     ///
@@ -1369,7 +1382,7 @@ impl Page {
 
     /// Returns whether the row is full with respect to storing a fixed row with `fixed_row_size`
     /// and no variable component.
-    pub fn is_full(&self, fixed_row_size: Size) -> bool {
+    pub(crate) fn is_full(&self, fixed_row_size: Size) -> bool {
         !self.has_space_for_row(fixed_row_size, 0)
     }
 

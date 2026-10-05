@@ -1,5 +1,5 @@
 use core::ops::AddAssign;
-use spacetimedb::{log_stopwatch::LogStopwatch, rand::Rng, reducer, table, DbContext, ReducerContext, Table};
+use spacetimedb::{log_stopwatch::LogStopwatch, rand::Rng, reducer, table, ReducerContext, Table};
 
 #[derive(Clone, Copy, Debug)]
 #[table(accessor = position, public)]
@@ -39,7 +39,7 @@ fn init(ctx: &ReducerContext) {
 
     // Insert 10^6 randomized positions and velocities,
     // but with incrementing and corresponding ids.
-    let db = ctx.db();
+    let db = &ctx.db;
     let mut rng = ctx.rng();
     for id in 0..1_000_000 {
         let (x, y, z) = rng.r#gen();
@@ -71,7 +71,7 @@ fn update_positions_by_collect(ctx: &ReducerContext) {
 #[reducer]
 fn roundtrip(ctx: &ReducerContext) {
     // Warmup the index.
-    let id = ctx.db().velocity().id();
+    let id = ctx.db.velocity().id();
     for x in 0..10_000 {
         id.find(x);
     }

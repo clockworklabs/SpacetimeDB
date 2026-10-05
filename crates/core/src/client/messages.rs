@@ -7,6 +7,7 @@ use crate::subscription::websocket_building::{brotli_compress, decide_compressio
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_client_api_messages::websocket::common::{self as ws_common, RowListLen as _};
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
@@ -16,6 +17,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
@@ -196,20 +198,46 @@ pub fn serialize(
 /// conditional compression when configured.
 pub fn serialize_v2(
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-    mut buffer: SerializeBuffer,
+    buffer: SerializeBuffer,
     msg: ws_v2::ServerMessage,
     compression: ws_v1::Compression,
 ) -> (InUseSerializeBuffer, Bytes) {
+    serialize_v2_messages(bsatn_rlb_pool, buffer, std::iter::once(msg), compression)
+}
+
+/// Serialize one or more [`ws_v2::ServerMessage`]s into a v3 websocket payload.
+///
+/// Protocol v3 keeps the v2 message schema, but allows the uncompressed payload
+/// body to contain consecutive BSATN-encoded server messages.
+pub fn serialize_v3(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    buffer: SerializeBuffer,
+    msgs: impl IntoIterator<Item = ws_v2::ServerMessage>,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    serialize_v2_messages(bsatn_rlb_pool, buffer, msgs, compression)
+}
+
+fn serialize_v2_messages(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    mut buffer: SerializeBuffer,
+    msgs: impl IntoIterator<Item = ws_v2::ServerMessage>,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
-        bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+        let out = w.into_inner();
+        for msg in msgs {
+            write_v2_server_message(bsatn_rlb_pool, out, msg);
+        }
     });
     let srv_msg_len = srv_msg.len();
-
-    // At this point, we no longer have a use for `msg`,
-    // so try to reclaim its buffers.
-    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
-
     finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
+}
+
+fn write_v2_server_message(bsatn_rlb_pool: &BsatnRowListBuilderPool, out: &mut BytesMut, msg: ws_v2::ServerMessage) {
+    bsatn::to_writer(out, &msg).expect("should be able to bsatn encode v2 message");
+    // At this point, we no longer have a use for `msg`, so try to reclaim its buffers.
+    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 }
 
 #[derive(Debug, From)]
@@ -288,6 +316,7 @@ impl OutboundMessage {
             Self::V2(message) => match message {
                 ws_v2::ServerMessage::InitialConnection(_) => None,
                 ws_v2::ServerMessage::SubscribeApplied(_) => Some(WorkloadType::Subscribe),
+                ws_v2::ServerMessage::SubscribeBatchApplied(_) => Some(WorkloadType::Subscribe),
                 ws_v2::ServerMessage::UnsubscribeApplied(_) => Some(WorkloadType::Unsubscribe),
                 ws_v2::ServerMessage::SubscriptionError(_) => None,
                 ws_v2::ServerMessage::TransactionUpdate(_) => Some(WorkloadType::Update),
@@ -303,6 +332,16 @@ fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
     match message {
         ws_v2::ServerMessage::InitialConnection(_) => None,
         ws_v2::ServerMessage::SubscribeApplied(message) => Some(count_query_rows(&message.rows)),
+        ws_v2::ServerMessage::SubscribeBatchApplied(message) => Some(
+            message
+                .results
+                .iter()
+                .map(|result| match &result.outcome {
+                    ws_v2::SubscribeSetOutcome::Applied(rows) => count_query_rows(rows),
+                    ws_v2::SubscribeSetOutcome::Error(_) => 0,
+                })
+                .sum(),
+        ),
         ws_v2::ServerMessage::UnsubscribeApplied(message) => {
             Some(message.rows.as_ref().map(count_query_rows).unwrap_or_default())
         }
@@ -408,7 +447,12 @@ impl ToProtocol for TransactionUpdateMessage {
                     args,
                     request_id,
                 },
-                energy_quanta_used: event.energy_quanta_used,
+                // This conversion is lying. We used to tell the client how much eV a transaction
+                // used, but now the database just tracks cpu usage, and it's converted to energy
+                // elsewhere. So, we just pretend that this is `EnergyQuanta` when it's actually
+                // a different unit, and it doesn't really matter to the client anyway.
+                // TODO(noa): maybe we could just have this be zero, unconditionally?
+                energy_quanta_used: EnergyQuanta::new(event.execution_budget_used.get().into()),
                 total_host_execution_duration: event.host_execution_duration.into(),
                 caller_connection_id: event.caller_connection_id.unwrap_or(ConnectionId::ZERO),
             };
@@ -576,7 +620,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -589,7 +633,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -607,7 +651,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -620,7 +664,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }

@@ -39,9 +39,45 @@ export type Infer<T> = T extends RowObj
 /**
  * Helper type to extract the type of a row from an object.
  */
-export type InferTypeOfRow<T extends RowObj> = {
-  [K in keyof T & string]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
-};
+type OptionalRowKeys<T extends RowObj> = {
+  [K in keyof T & string]-?: CollapseColumn<T[K]> extends OptionBuilder<any>
+    ? K
+    : never;
+}[keyof T & string];
+
+type RequiredRowKeys<T extends RowObj> = Exclude<
+  keyof T & string,
+  OptionalRowKeys<T>
+>;
+
+export type InferTypeOfRow<T extends RowObj> = Prettify<
+  {
+    [K in RequiredRowKeys<T>]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
+  } & {
+    [K in OptionalRowKeys<T>]?: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
+  }
+>;
+
+type OptionalParamKeys<T extends RowObj> = {
+  [K in keyof T & string]-?: undefined extends InferTypeOfTypeBuilder<
+    CollapseColumn<T[K]>
+  >
+    ? K
+    : never;
+}[keyof T & string];
+
+type RequiredParamKeys<T extends RowObj> = Exclude<
+  keyof T & string,
+  OptionalParamKeys<T>
+>;
+
+export type InferTypeOfParams<T extends RowObj> = Prettify<
+  {
+    [K in RequiredParamKeys<T>]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
+  } & {
+    [K in OptionalParamKeys<T>]?: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
+  }
+>;
 
 /**
  * Helper type to extract the type of a row from an object.
@@ -1532,7 +1568,9 @@ class SumBuilderImpl<Variants extends VariantsObj>
   extends TypeBuilder<EnumType<Variants>, VariantsToSumType<Variants>>
   implements
     Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
-    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>
+    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    Indexable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    PrimaryKeyable<EnumType<Variants>, VariantsToSumType<Variants>>
 {
   readonly variants: Variants;
   readonly typeName: string | undefined;
@@ -1636,6 +1674,33 @@ class SumBuilderImpl<Variants extends VariantsObj>
     name: Name
   ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'name', Name>> {
     return new SumColumnBuilder(this, set(defaultMetadata, { name }));
+  }
+  index(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new SumColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+  primaryKey(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new SumColumnBuilder(
+      this,
+      set(defaultMetadata, { isPrimaryKey: true })
+    );
   }
 }
 
@@ -3237,7 +3302,9 @@ export class SumColumnBuilder<
   extends ColumnBuilder<EnumType<Variants>, VariantsToSumType<Variants>, M>
   implements
     Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
-    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>
+    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    Indexable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    PrimaryKeyable<EnumType<Variants>, VariantsToSumType<Variants>>
 {
   default(
     value: EnumType<Variants>
@@ -3256,6 +3323,33 @@ export class SumColumnBuilder<
     return new SumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { name })
+    );
+  }
+  index(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new SumColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+  primaryKey(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new SumColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
 }

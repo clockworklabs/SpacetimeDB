@@ -18,6 +18,12 @@ On Linux and macOS, this directory is by default `~/.local/share/spacetime/data`
 
 - [`logs`](#logs)
 
+- [`module-http`](#module-http)
+
+- [`commitlog`](#commitlog)
+
+- [`websocket`](#websocket)
+
 ### `certificate-authority`
 
 ```toml
@@ -27,6 +33,17 @@ jwt-pub-key-path = "/path/to/id_ecdsas.pub"
 ```
 
 The `certificate-authority` table lets you configure the public and private keys used by the database to sign tokens.
+
+### `module-http`
+
+```toml
+[module-http]
+enabled = false
+```
+
+The `module-http` table controls outbound HTTP requests initiated by database modules. Requests are enabled by default.
+Setting `enabled` to `false` blocks outbound requests from procedures and module HTTP handlers. Inbound HTTP handlers remain unaffected.
+Changing this setting requires restarting the server.
 
 ### `logs`
 
@@ -46,6 +63,56 @@ Can be one of `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`, or `"off"`, c
 #### `logs.directives`
 
 A list of filtering directives controlling what messages get logged, which overwrite the global [`logs.level`](#logslevel). See [`tracing documentation`](https://docs.rs/tracing-subscriber/0.3/tracing_subscriber/filter/struct.EnvFilter.html#directives) for syntax. Note that this is primarily intended as a debugging tool, and log message fields and targets are not considered stable.
+
+### `commitlog`
+
+```toml
+[commitlog]
+log-format-version = 1
+max-segment-size = 1073741824 # 1GiB
+offset-index-interval-bytes = 4096
+offset-index-require-segment-fsync = true
+preallocate-segments = false
+write-buffer-size = 131072 # 128KiB
+```
+
+The `commitlog` table configures local durability. These settings are advanced and may affect recovery behavior, disk usage, memory usage, and write throughput. Omitted fields use the server's built-in defaults.
+
+#### `commitlog.log-format-version`
+
+The maximum supported commitlog format version, also used for writing.
+
+::::caution
+This setting should not normally be changed from the commitlog crate's default. A reason to change it could be to make the server accept an older, incompatible commitlog.
+::::
+
+#### `commitlog.max-segment-size`
+
+The maximum size in bytes to which commitlog segments should be allowed to grow.
+
+#### `commitlog.offset-index-interval-bytes`
+
+Number of bytes written to the commitlog after which an entry is added to the offset index.
+
+#### `commitlog.offset-index-require-segment-fsync`
+
+If `true`, require that the segment must be synced to disk before an index entry is added.
+
+Setting this to `false` will update the index every `offset-index-interval-bytes`, even if the commitlog was not synced. This means that the index could contain non-existent entries in the event of a crash.
+
+Setting this to `true` will update the index when the commitlog is synced, and `offset-index-interval-bytes` have been written. This means that the index could contain fewer index entries than strictly every `offset-index-interval-bytes`.
+
+::::note
+The commitlog operates correctly under both settings, but the choice can have performance implications.
+::::
+
+#### `commitlog.preallocate-segments`
+
+If `true`, preallocate disk space for commitlog segments up to `commitlog.max-segment-size`. This has no effect unless commitlog fallocate support is enabled.
+
+#### `commitlog.write-buffer-size`
+
+Size in bytes of the memory buffer holding commit data before flushing to storage.
 
 ### `websocket`
 

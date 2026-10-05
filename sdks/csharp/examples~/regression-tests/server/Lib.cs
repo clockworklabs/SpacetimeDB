@@ -178,6 +178,9 @@ public static partial class Module
         [SpacetimeDB.PrimaryKey]
         public ulong Id;
 
+        [SpacetimeDB.Index.BTree]
+        public Identity Sender;
+
         public string Name;
     }
 
@@ -482,6 +485,16 @@ public static partial class Module
             );
     }
 
+    [SpacetimeDB.View(
+        Accessor = "procedural_view_pk_players",
+        Public = true,
+        PrimaryKey = "Id"
+    )]
+    public static IEnumerable<ViewPkPlayer> ProceduralViewPkPlayers(ViewContext ctx)
+    {
+        return ctx.Db.view_pk_player.Sender.Filter(ctx.Sender);
+    }
+
     // IEnumerable<T> view support - manual list building with filtering
     [SpacetimeDB.View(Accessor = "ienumerable_players_from_iter", Public = true)]
     public static IEnumerable<Player> IEnumerablePlayersFromIter(AnonymousViewContext ctx)
@@ -619,13 +632,27 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void InsertViewPkPlayer(ReducerContext ctx, ulong id, string name)
     {
-        ctx.Db.view_pk_player.Insert(new ViewPkPlayer { Id = id, Name = name });
+        ctx.Db.view_pk_player.Insert(
+            new ViewPkPlayer
+            {
+                Id = id,
+                Sender = ctx.Sender,
+                Name = name,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
     public static void UpdateViewPkPlayer(ReducerContext ctx, ulong id, string name)
     {
-        ctx.Db.view_pk_player.Id.Update(new ViewPkPlayer { Id = id, Name = name });
+        ctx.Db.view_pk_player.Id.Update(
+            new ViewPkPlayer
+            {
+                Id = id,
+                Sender = ctx.Sender,
+                Name = name,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
