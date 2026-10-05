@@ -86,12 +86,14 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         // thereby comparing for syntactic rather than structural equality. This shouldn't matter,
         // since we expect that the `derive_table_helper` will always have the same [`Span`]s,
         // but it's nice to know.
-        if !derive_input.attrs.contains(&derive_table_helper) {
+        let first_table_on_row = !derive_input.attrs.contains(&derive_table_helper);
+        if first_table_on_row {
             derive_input.attrs.push(derive_table_helper);
         }
 
         let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
-        let generated = table::table_impl(args, &derive_input)?;
+        let selected = table::select_table_attrs(&derive_input, &args.accessor, first_table_on_row)?;
+        let generated = table::table_impl(args, &selected)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }

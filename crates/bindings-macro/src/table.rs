@@ -822,6 +822,132 @@ fn is_first_appearance(struct_name: &str) -> bool {
     set.insert(struct_name.to_string())
 }
 
+/// `item`, with the column attributes that apply to the table `accessor`.
+///
+/// Proposal 0022's `table = ...` modifier limits a column attribute to some of the tables that share a row type:
+/// `#[primary_key(table = player)]`, `#[unique(table = [player, npc])]`, `#[auto_inc(table = player)]`
+/// or `#[index(btree, table = player)]`. An attribute without it applies to every table.
+/// This drops the attributes that do not apply to `accessor`, and removes the modifier from the others,
+/// so the rest of the expansion sees attributes without it.
+///
+/// If `first_table_on_row`, this also rejects a modifier that names a table not declared on the struct.
+/// Only the first `#[table]` on a struct can check this, because rustc removes each attribute from the item
+/// before expanding it, so the later `#[table]`s no longer see the earlier ones.
+///
+/// Shared by the server expansion of `#[table]` and its client expansion in `client.rs`.
+/// Codegen writes the modifier when tables that share a row type differ in their column constraints,
+/// which C# and C++ modules can declare.
+pub(crate) fn select_table_attrs(
+    item: &syn::DeriveInput,
+    accessor: &Ident,
+    first_table_on_row: bool,
+) -> syn::Result<syn::DeriveInput> {
+    let declared = first_table_on_row.then(|| declared_tables(item, accessor));
+    let mut item = item.clone();
+    let syn::Data::Struct(data) = &mut item.data else {
+        return Ok(item);
+    };
+    for field in data.fields.iter_mut() {
+        let mut attrs = Vec::with_capacity(field.attrs.len());
+        for attr in std::mem::take(&mut field.attrs) {
+            let is_column_attr = ["primary_key", "unique", "auto_inc", "index"]
+                .iter()
+                .any(|name| attr.path().is_ident(name));
+            if !is_column_attr || !matches!(attr.meta, syn::Meta::List(_)) {
+                attrs.push(attr);
+                continue;
+            }
+            // Arguments that don't parse are left to the attribute's own parser, which reports them.
+            let Ok(metas) = attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated) else {
+                attrs.push(attr);
+                continue;
+            };
+            let mut tables = None;
+            let mut rest = Punctuated::<syn::Meta, Token![,]>::new();
+            for meta in metas {
+                match meta {
+                    syn::Meta::NameValue(nv) if nv.path.is_ident("table") => {
+                        check_duplicate(&tables, nv.path.span())?;
+                        tables = Some(active_tables(&nv.value)?);
+                    }
+                    meta => rest.push(meta),
+                }
+            }
+            let Some(tables) = tables else {
+                attrs.push(attr);
+                continue;
+            };
+            if let Some(declared) = &declared
+                && let Some(unknown) = tables
+                    .iter()
+                    .find(|table| !declared.iter().any(|d| d.unraw() == table.unraw()))
+            {
+                return Err(syn::Error::new_spanned(
+                    unknown,
+                    format_args!(
+                        "unknown table `{}`: `table = ...` must name the accessor of a `#[table]` on this struct",
+                        unknown.unraw()
+                    ),
+                ));
+            }
+            if tables.iter().any(|table| table.unraw() == accessor.unraw()) {
+                let path = attr.path();
+                attrs.push(if rest.is_empty() {
+                    syn::parse_quote!(#[#path])
+                } else {
+                    syn::parse_quote!(#[#path(#rest)])
+                });
+            }
+        }
+        field.attrs = attrs;
+    }
+    Ok(item)
+}
+
+/// The tables of `table = ident` or `table = [ident, ...]`.
+fn active_tables(value: &syn::Expr) -> syn::Result<Vec<Ident>> {
+    let error = || syn::Error::new_spanned(value, "expected `table = ident` or `table = [ident, ...]`");
+    match value {
+        syn::Expr::Array(array) if array.elems.is_empty() => Err(syn::Error::new_spanned(
+            value,
+            "`table = [...]` must name at least one table",
+        )),
+        syn::Expr::Array(array) => array.elems.iter().map(|e| expr_ident(e).ok_or_else(error)).collect(),
+        value => Ok(vec![expr_ident(value).ok_or_else(error)?]),
+    }
+}
+
+/// The accessors of the tables declared on `item`: `accessor`, and those of the `#[table]` attributes still on it.
+///
+/// A `#[table]` attribute is recognized by its top-level `accessor = ident` argument rather than by its path,
+/// so that `table` imported under another name, as in `use spacetimedb::table as tbl;`, still counts.
+/// Index accessors are nested inside `index(...)`, so they don't count.
+/// An attribute that doesn't parse is left to its own expansion, which reports it.
+fn declared_tables(item: &syn::DeriveInput, accessor: &Ident) -> Vec<Ident> {
+    let mut tables = vec![accessor.clone()];
+    for attr in &item.attrs {
+        let Ok(metas) = attr.parse_args_with(Punctuated::<syn::Meta, Token![,]>::parse_terminated) else {
+            continue;
+        };
+        for meta in metas {
+            if let syn::Meta::NameValue(nv) = meta
+                && nv.path.is_ident("accessor")
+                && let Some(table) = expr_ident(&nv.value)
+            {
+                tables.push(table);
+            }
+        }
+    }
+    tables
+}
+
+fn expr_ident(expr: &syn::Expr) -> Option<Ident> {
+    match expr {
+        syn::Expr::Path(path) => path.path.get_ident().cloned(),
+        _ => None,
+    }
+}
+
 /// The columns of a table, with the constraints declared by their attributes.
 pub(crate) struct TableColumns<'a> {
     pub(crate) columns: Vec<Column<'a>>,

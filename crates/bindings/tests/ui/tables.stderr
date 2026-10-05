@@ -10,6 +10,18 @@ error: const parameters are not allowed on tables
 14 | struct ConstParam<const X: u8> {}
    |                   ^^^^^^^^^^^
 
+error: unknown table `wihtout_pk`: `table = ...` must name the accessor of a `#[table]` on this struct
+  --> tests/ui/tables.rs:39:37
+   |
+39 |     #[primary_key(table = [with_pk, wihtout_pk])]
+   |                                     ^^^^^^^^^^
+
+error: `table = [...]` must name at least one table
+  --> tests/ui/tables.rs:45:27
+   |
+45 |     #[primary_key(table = [])]
+   |                           ^^
+
 error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
  --> tests/ui/tables.rs:5:8
   |
