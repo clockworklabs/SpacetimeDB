@@ -75,9 +75,12 @@
 //!
 //! ## Custom Root Directory
 //!
-//! Users on all platforms must be allowed to override the default installation
-//! paths entirely with a single `--root-dir` argument passed to the initial
-//! installation commands.
+//! Users on all platforms can override the default installation paths with a
+//! `--root-dir` argument passed to the installer. The installed `spacetime` command
+//! does not remember that argument: pass the same `--root-dir` before the subcommand
+//! whenever you want to use that installation. For example, after installing with
+//! `--root-dir /stdb`, run `spacetime --root-dir /stdb start`. Without the option,
+//! the command uses the platform default directories.
 //!
 //! If users specify a `--root-dir` flag, then the installation paths should be
 //! defined relative to the `root-dir` as follows:

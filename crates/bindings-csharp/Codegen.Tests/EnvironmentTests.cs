@@ -33,15 +33,15 @@ public static class EnvironmentTests
             }
         }
         namespace SpacetimeDB.Internal {
-            public abstract record EnvVarType {
-                public sealed record String(System.ValueTuple Value) : EnvVarType;
-                public sealed record StringLiteral(string Value) : EnvVarType;
-                public sealed record Union(System.Collections.Generic.List<string> Value) : EnvVarType;
+            public abstract record RawEnvVarTypeV10 {
+                public sealed record String(System.ValueTuple Value) : RawEnvVarTypeV10;
+                public sealed record StringLiteral(string Value) : RawEnvVarTypeV10;
+                public sealed record Union(System.Collections.Generic.List<string> Value) : RawEnvVarTypeV10;
             }
-            public sealed record EnvironmentDeclaration(string Name, EnvVarType Ty, bool Optional);
+            public sealed record RawEnvironmentDeclarationV10(string Name, RawEnvVarTypeV10 Ty, bool Optional);
             public static class Module {
-                public static System.Collections.Generic.List<EnvironmentDeclaration> Declarations = new();
-                public static void RegisterEnvironment(EnvironmentDeclaration value) => Declarations.Add(value);
+                public static System.Collections.Generic.List<RawEnvironmentDeclarationV10> Declarations = new();
+                public static void RegisterEnvironment(RawEnvironmentDeclarationV10 value) => Declarations.Add(value);
             }
         }
         """;
@@ -89,9 +89,9 @@ public static class EnvironmentTests
                     catch (System.InvalidOperationException) {}
                     var declarations = SpacetimeDB.Internal.Module.Declarations;
                     if (declarations.Count != 5 || declarations[0].Optional || !declarations[1].Optional ||
-                        declarations[0].Ty is not SpacetimeDB.Internal.EnvVarType.String ||
-                        declarations[2].Ty is not SpacetimeDB.Internal.EnvVarType.Union { Value.Count: 2 } ||
-                        declarations[3].Ty is not SpacetimeDB.Internal.EnvVarType.StringLiteral { Value: "reserved" })
+                        declarations[0].Ty is not SpacetimeDB.Internal.RawEnvVarTypeV10.String ||
+                        declarations[2].Ty is not SpacetimeDB.Internal.RawEnvVarTypeV10.Union { Value.Count: 2 } ||
+                        declarations[3].Ty is not SpacetimeDB.Internal.RawEnvVarTypeV10.StringLiteral { Value: "reserved" })
                         throw new System.Exception("bad metadata");
                 }
             }

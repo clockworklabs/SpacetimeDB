@@ -17,9 +17,8 @@
 //! initialization is durable, but is currently retained until reset replaces it
 //! or database deletion removes it atomically with both indexes and the binding.
 use super::*;
-use spacetimedb_client_api_messages::publish::PublishRequest;
+use spacetimedb_lib::environment::EnvironmentMap;
 use spacetimedb_lib::Hash;
-use std::collections::BTreeMap;
 
 // Keep the existing tree name for on-disk compatibility.
 const METADATA_TREE: &str = "database_bootstrap";
@@ -85,7 +84,7 @@ impl ControlDb {
     }
 
     /// Recheck the exact persisted generation and program before releasing any values.
-    pub(crate) fn initial_environment(&self, database: &Database, replica_id: u64) -> Result<BTreeMap<String, String>> {
+    pub(crate) fn initial_environment(&self, database: &Database, replica_id: u64) -> Result<EnvironmentMap> {
         let databases = self.db.open_tree("database_by_identity")?;
         let metadata = self.db.open_tree(METADATA_TREE)?;
         let values = self.db.open_tree(VALUES_TREE)?;
@@ -149,14 +148,8 @@ impl ControlDb {
             });
         let bytes = result.map_err(transaction_error)?;
         match bytes {
-            None => Ok(BTreeMap::new()),
-            Some(bytes) => {
-                let request = PublishRequest::decode(&bytes).map_err(|_| invalid())?;
-                if request.module.as_ref().is_some_and(|module| !module.is_empty()) {
-                    return Err(invalid());
-                }
-                Ok(request.environment)
-            }
+            None => Ok(Default::default()),
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(|_| invalid()),
         }
     }
 
@@ -171,7 +164,7 @@ impl ControlDb {
         &self,
         mut database: Database,
         expected: Option<&Database>,
-        environment: BTreeMap<String, String>,
+        environment: EnvironmentMap,
         previous_replicas: &[Replica],
     ) -> Result<(Database, Replica)> {
         if expected.is_none() {
@@ -186,13 +179,7 @@ impl ControlDb {
             node_id: 0,
             leader: true,
         };
-        let input = PublishRequest {
-            module: None,
-            environment,
-            ..Default::default()
-        }
-        .encode()
-        .map_err(|_| invalid())?;
+        let input = serde_json::to_vec(&environment).map_err(|_| invalid())?;
         let binding = InitializationMetadata {
             version: 1,
             database_id: database.id,
@@ -300,7 +287,7 @@ fn transaction_error(error: TransactionError<Error>) -> Error {
 
 #[async_trait::async_trait]
 impl spacetimedb::host::InitialEnvironmentSource for ControlDb {
-    async fn load(&self, database: &Database, replica_id: u64) -> anyhow::Result<BTreeMap<String, String>> {
+    async fn load(&self, database: &Database, replica_id: u64) -> anyhow::Result<EnvironmentMap> {
         let source = self.clone();
         let database = database.clone();
         spacetimedb::util::asyncify(move || {
@@ -314,6 +301,8 @@ impl spacetimedb::host::InitialEnvironmentSource for ControlDb {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use spacetimedb::messages::control_db::HostType;
 

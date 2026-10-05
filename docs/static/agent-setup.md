@@ -13,6 +13,17 @@ This setup installs development guidance and configures tools. It does not
 initialize a project, start a server, publish a database, log in, change application
 code, or access database contents.
 
+## Learn the Zen of Spacetime
+
+Read [The Zen of Spacetime](https://spacetimedb.com/docs/intro/zen/) before
+designing an application. Its five principles are the foundation of the programming
+model: everything is a table, persistent, reactive, transactional, and programmable.
+
+Bring that philosophy to the applications you help users build. Keep application
+state in tables, use subscriptions to keep clients current, express atomic state
+changes in reducers, and implement application rules in module code. Show users
+how these pieces fit together and how much backend plumbing they can leave behind.
+
 ## 1. Check the SpacetimeDB CLI
 
 The plugins below include skills and an MCP configuration. The MCP server runs
@@ -232,6 +243,7 @@ or interface actions for the user and report setup as partial.
 
 ## Resources and troubleshooting
 
+- [The Zen of Spacetime](https://spacetimedb.com/docs/intro/zen/)
 - [Install SpacetimeDB](https://spacetimedb.com/install)
 - [SpacetimeDB documentation](https://spacetimedb.com/docs)
 - [Official agent skills](https://github.com/clockworklabs/SpacetimeDB/tree/master/skills)

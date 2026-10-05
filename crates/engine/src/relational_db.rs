@@ -627,13 +627,10 @@ impl RelationalDB {
             // Try to restore from any snapshot that was taken within the
             // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
             let mut upper_bound = durable_tx_offset;
-            loop {
-                let Some(snapshot_offset) = snapshot_repo
-                    .latest_snapshot_older_than(upper_bound)
-                    .map_err(Box::new)?
-                else {
-                    break;
-                };
+            while let Some(snapshot_offset) = snapshot_repo
+                .latest_snapshot_older_than(upper_bound)
+                .map_err(Box::new)?
+            {
                 if min_commitlog_offset > 0 && min_commitlog_offset > snapshot_offset + 1 {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
@@ -3166,16 +3163,17 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         insert(&stdb, &mut tx, table_id, &product![0i64]).unwrap();
 
-        // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 4097]);
+        // Check the second row is directly after the first, as we perform no preallocation.
+        // The property we actually care about is that the next value is greater than the previous.
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
         stdb.commit_tx(tx)?;
 
         let stdb = stdb.reopen()?;
         let mut tx = begin_mut_tx(&stdb);
         insert(&stdb, &mut tx, table_id, &product![0i64]).unwrap();
-        // The next value will have a gap because we preallocate, but asserting the specific number
-        // seems brittle.
-        assert!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?[2] > 4097);
+        // The next value will not have a gap because we do not preallocate.
+        // The property we actually care about is that it is larger than the previous two values.
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?[2], 3);
         Ok(())
     }
 

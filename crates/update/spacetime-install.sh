@@ -17,7 +17,9 @@ Usage: spacetime-install[EXE] [OPTIONS]
 Options:
       --root-dir <ROOT_DIR>
           The directory to locally install SpacetimeDB into. If unspecified,
-          uses platform defaults
+          uses platform defaults. To use this installation, pass the same
+          --root-dir before each spacetime subcommand (for example, spacetime
+          --root-dir /stdb start)
 
   -y, --yes
           Skip the confirmation dialog

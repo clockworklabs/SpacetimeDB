@@ -15,25 +15,47 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
     this.#ws.onopen = handler;
   }
   set onmessage(handler: (msg: { data: Uint8Array }) => void) {
+    let tail: Promise<void> = Promise.resolve();
     this.#ws.onmessage = async (msg: MessageEvent<ArrayBuffer>) => {
-      let data: Uint8Array;
+      const pending = this.#decompress(new Uint8Array(msg.data));
+      // Mark the rejection handled now: the chain may not reach this frame for
+      // several ticks, and without this an inflate failure surfaces as an
+      // unhandledrejection in the meantime. Awaiting pending still throws it.
+      pending.catch(() => {});
+
+      // Reserve this frame's position before yielding, while decompression
+      // proceeds concurrently with earlier frames.
+      const previous = tail;
+      let release!: () => void;
+      tail = new Promise<void>(resolve => {
+        release = resolve;
+      });
+
       try {
-        data = await this.#decompress(new Uint8Array(msg.data));
-      } catch (e) {
-        // A decompression failure (e.g. WebKit's DecompressionStream rejecting
-        // with "Incomplete compressed input.") would otherwise become an
-        // unhandled rejection: the frame is silently dropped and the
-        // connection stalls without ever reaching onDisconnect. Close the
-        // socket instead so the caller's disconnect/reconnect handling
-        // takes over.
-        console.error(
-          '[SpacetimeDB] WebSocket decompress failed, closing socket:',
-          e
-        );
-        this.#ws.close();
-        return;
+        await previous;
+
+        let data: Uint8Array;
+        try {
+          data = await pending;
+        } catch (e) {
+          // A decompression failure (e.g. WebKit's DecompressionStream rejecting
+          // with "Incomplete compressed input.") would otherwise become an
+          // unhandled rejection: the frame is silently dropped and the
+          // connection stalls without ever reaching onDisconnect. Close the
+          // socket instead so the caller's disconnect/reconnect handling
+          // takes over.
+          console.error(
+            '[SpacetimeDB] WebSocket decompress failed, closing socket:',
+            e
+          );
+          this.#ws.close();
+          return;
+        }
+        handler({ data });
+      } finally {
+        // Handler exceptions must not prevent delivery of subsequent frames.
+        release();
       }
-      handler({ data });
     };
   }
   set onerror(handler: (msg: ErrorEvent) => void) {

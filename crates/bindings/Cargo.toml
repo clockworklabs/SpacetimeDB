@@ -42,6 +42,7 @@ serde_json.workspace = true
 [dev-dependencies]
 insta.workspace = true
 trybuild.workspace = true
+spacetimedb-lib = { path = "../lib", features = ["test"] }
 
 [lints]
 workspace = true

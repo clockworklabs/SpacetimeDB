@@ -18,6 +18,10 @@ Get a SpacetimeDB C# app running in under 5 minutes.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) installed ([.NET 8](https://dotnet.microsoft.com/download/dotnet/8.0) is supported but will be deprecated soon). Please note that target .NET 10 is currently unsupported on Mac.
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed.
 
+::::note
+If you are building C# modules on macOS and need to target .NET 10, run SpacetimeDB inside a Linux environment, such as a Linux VM or container, and build and publish your module from there.
+::::
+
 <InstallCardLink />
 
 ---

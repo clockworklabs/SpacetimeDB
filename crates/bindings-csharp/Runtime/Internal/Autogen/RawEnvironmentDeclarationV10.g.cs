@@ -11,18 +11,18 @@ namespace SpacetimeDB.Internal
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class EnvironmentDeclaration
+    public sealed partial class RawEnvironmentDeclarationV10
     {
         [DataMember(Name = "name")]
         public string Name;
         [DataMember(Name = "ty")]
-        public EnvVarType Ty;
+        public RawEnvVarTypeV10 Ty;
         [DataMember(Name = "optional")]
         public bool Optional;
 
-        public EnvironmentDeclaration(
+        public RawEnvironmentDeclarationV10(
             string Name,
-            EnvVarType Ty,
+            RawEnvVarTypeV10 Ty,
             bool Optional
         )
         {
@@ -31,7 +31,7 @@ namespace SpacetimeDB.Internal
             this.Optional = Optional;
         }
 
-        public EnvironmentDeclaration()
+        public RawEnvironmentDeclarationV10()
         {
             this.Name = "";
             this.Ty = null!;

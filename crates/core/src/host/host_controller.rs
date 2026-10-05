@@ -1,4 +1,6 @@
-use super::module_host::{DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule};
+use super::module_host::{
+    DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule, UpdateEnvironmentResult,
+};
 use super::scheduler::SchedulerStarter;
 use super::v8::V8HeapMetrics;
 use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
@@ -31,6 +33,7 @@ use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use scopeguard::{defer, guard};
+use spacetimedb_client_api_messages::name::EnvironmentVersionConflict;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
@@ -91,10 +94,6 @@ where
 }
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
-
-#[derive(Debug, thiserror::Error)]
-#[error("database program changed before publication; reload environment metadata and retry")]
-pub struct EnvironmentVersionConflict;
 
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
@@ -581,6 +580,61 @@ impl HostController {
         Ok(info)
     }
 
+    async fn update_module_inner<R, Fut>(
+        &self,
+        database: Database,
+        replica_id: u64,
+        f: impl FnOnce(HostController, Host) -> Fut + Send + 'static,
+    ) -> anyhow::Result<R>
+    where
+        Fut: Future<Output = (Host, anyhow::Result<R>)> + Send,
+        R: Send + 'static,
+    {
+        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
+            bail!("unable to lock database {} for update", database.database_identity);
+        };
+
+        // `HostController::clone` is fast,
+        // as all of its fields are either `Copy` or wrapped in `Arc`.
+        let this = self.clone();
+
+        // `try_init_host` is not cancel safe, as it will spawn other async tasks
+        // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
+        // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
+        //
+        // The rest of this future is also not cancel safe, as it will `Option::take` out of the guard
+        // at the start of the block and then store back into it at the end.
+        //
+        // This is problematic because Axum will cancel its handler tasks if the client disconnects,
+        // and this method is called from Axum handlers, e.g. for the publish route.
+        // `tokio::spawn` a task to update the contents of `guard`,
+        // so that it will run to completion even if the caller goes away.
+        //
+        // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
+        // at which point we won't be calling `try_init_host` again anyways.
+        let update_result = tokio::spawn(async move {
+            let host = match guard.take() {
+                None => {
+                    trace!("host not running, try_init");
+                    this.try_init_host(database, replica_id).await?.host
+                }
+                Some(host) => {
+                    trace!("host found, updating");
+                    host
+                }
+            };
+            let (host, update_result) = f(this, host).await;
+
+            // Rejected publication leaves the existing host usable. Restore it
+            // before propagating validation or migration failure to the caller.
+            *guard = Some(host);
+            update_result
+        })
+        .await??;
+
+        Ok(update_result)
+    }
+
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
@@ -599,14 +653,8 @@ impl HostController {
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
         environment: spacetimedb_lib::environment::EnvironmentUpdate,
-        expected_module_version: Option<spacetimedb_lib::Hash>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         environment.validate()?;
-        let environment_only = program_bytes.is_empty();
-        anyhow::ensure!(
-            !environment_only || expected_module_version.is_some(),
-            "environment-only publication requires expected_module_version"
-        );
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
@@ -616,63 +664,21 @@ impl HostController {
             program.hash
         );
 
-        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
-            bail!("unable to lock database {} for update", database.database_identity);
-        };
-
-        // `HostController::clone` is fast,
-        // as all of its fields are either `Copy` or wrapped in `Arc`.
-        let this = self.clone();
         let database_identity = database.database_identity;
 
-        // `try_init_host` is not cancel safe, as it will spawn other async tasks
-        // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
-        // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
-        //
-        // The rest of this future is also not cancel safe, as it will `Option::take` out of the guard
-        // at the start of the block and then store back into it at the end.
-        //
-        // This is problematic because Axum will cancel its handler tasks if the client disconnects,
-        // and this method is called from Axum handlers, e.g. for the publish route.
-        // `tokio::spawn` a task to update the contents of `guard`,
-        // so that it will run to completion even if the caller goes away.
-        //
-        // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
-        // at which point we won't be calling `try_init_host` again anyways.
-        let update_result = tokio::spawn(async move {
-            let mut host = match guard.take() {
-                None => {
-                    trace!("host not running, try_init");
-                    this.try_init_host(database, replica_id).await?.host
-                }
-                Some(host) => {
-                    trace!("host found, updating");
-                    host
-                }
-            };
+        self.update_module_inner(database, replica_id, async move |this, mut host| {
             let update_result = async {
                 let module = host.module.borrow().clone();
-                if let Some(expected) = expected_module_version
-                    && module.info.module_hash != expected
-                {
-                    return Err(EnvironmentVersionConflict.into());
-                }
                 let previous = host
                     .replica_ctx
                     .relational_db()
                     .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
                 let environment = environment.resulting_values(&previous)?;
-                if environment_only || program.hash == module.info.module_hash {
+                if program.hash == module.info.module_hash {
                     if environment == previous {
                         return Ok(UpdateDatabaseResult::NoUpdateNeeded);
                     }
-                    let program = module
-                        .relational_db()
-                        .program()?
-                        .context("database program is not initialized")?;
-                    return module
-                        .update_database_with_environment(program, module.info.clone(), policy, environment)
-                        .await;
+                    return module.update_environment(environment).await.map(Into::into);
                 }
                 host.update_module(
                     this.runtimes.clone(),
@@ -687,14 +693,43 @@ impl HostController {
             }
             .await;
 
-            // Rejected publication leaves the existing host usable. Restore it
-            // before propagating validation or migration failure to the caller.
-            *guard = Some(host);
-            update_result
+            (host, update_result)
         })
-        .await??;
+        .await
+    }
 
-        Ok(update_result)
+    #[tracing::instrument(level = "trace", skip_all, err)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_environment(
+        &self,
+        database: Database,
+        replica_id: u64,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        environment.validate()?;
+
+        self.update_module_inner(database, replica_id, async move |_, host| {
+            let update_result = async {
+                let module = host.module.borrow().clone();
+                if module.info.module_hash != expected_module_hash {
+                    return Err(EnvironmentVersionConflict.into());
+                }
+                let previous = host
+                    .replica_ctx
+                    .relational_db()
+                    .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
+                let environment = environment.resulting_values(&previous)?;
+                if environment == previous {
+                    return Ok(UpdateEnvironmentResult::NoUpdateNeeded);
+                }
+                module.update_environment(environment).await
+            }
+            .await;
+
+            (host, update_result)
+        })
+        .await
     }
 
     pub async fn migrate_plan(
@@ -821,7 +856,7 @@ impl HostController {
             crate::db::environment::snapshot(tx).map(|values| values.into_keys().collect())
         })?;
         Ok(spacetimedb_client_api_messages::publish::EnvironmentMetadata {
-            module_version: module.info.module_hash.to_string(),
+            module_hash: module.info.module_hash,
             declarations: module.info.module_def.environment().declarations().cloned().collect(),
             stored_keys,
         })

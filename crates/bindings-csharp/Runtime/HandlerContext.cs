@@ -28,7 +28,7 @@ public abstract class HandlerContextBase
                 default,
                 null,
                 timestamp,
-                AuthCtx.BuildFromSystemTables(null, default),
+                AuthCtx.Anonymous,
                 random
             ),
             inner => CreateTxContext(inner)
@@ -93,6 +93,7 @@ public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefresha
     public LocalBase Db => (LocalBase)Inner.Db;
     public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Timestamp Timestamp => Inner.Timestamp;
+    public AuthCtx SenderAuth => Inner.SenderAuth;
     public Random Rng => Inner.Rng;
 }
 
