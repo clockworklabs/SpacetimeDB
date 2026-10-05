@@ -211,7 +211,9 @@ fn run_inner<I: WasmInstance>(
                 )));
             }
             if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
-                return Err(anyhow!("Database environment variables can only be changed by publishing").into());
+                return Err(SqlExecutionError::client(anyhow!(
+                    "Database environment variables can only be changed by publishing"
+                )));
             }
 
             // Evaluate the mutation
