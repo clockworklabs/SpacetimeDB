@@ -1395,6 +1395,7 @@ pub(crate) mod tests {
             pk,
             false,
             None,
+            None,
         )
     }
 
