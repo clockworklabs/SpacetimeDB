@@ -19,8 +19,6 @@ pub(crate) struct SatsType<'a> {
     pub generics: &'a syn::Generics,
     pub name: LitStr,
     pub krate: TokenStream,
-    // may want to use in the future
-    #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
     /// Was the type marked as `#[repr(C)]`?
@@ -46,8 +44,6 @@ pub(crate) struct SatsVariant<'a> {
     pub name: String,
     pub ty: Option<&'a syn::Type>,
     pub member: Option<syn::Member>,
-    // may want to use in the future
-    #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
 }
 
@@ -142,10 +138,59 @@ pub(crate) fn extract_sats_type<'a>(
     })
 }
 
+/// The explicit canonical name of a field, from proposal 0032's `#[name("...")]`.
+pub(crate) fn explicit_name(attrs: &[syn::Attribute]) -> syn::Result<Option<LitStr>> {
+    let mut name = None;
+    for attr in attrs.iter().filter(|attr| attr.path() == sym::name) {
+        check_duplicate(&name, attr.span())?;
+        name = Some(attr.parse_args::<LitStr>()?);
+    }
+    Ok(name)
+}
+
+/// The fields of `ty` that have an explicit canonical name, with their names.
+/// `#[name]` is not supported yet on a type itself, an enum variant or an unnamed field.
+fn explicit_field_names(ty: &SatsType<'_>) -> syn::Result<Vec<(String, LitStr)>> {
+    let unsupported = |attrs: &[syn::Attribute], msg: &str| match attrs.iter().find(|attr| attr.path() == sym::name) {
+        Some(attr) => Err(syn::Error::new_spanned(attr, msg)),
+        None => Ok(()),
+    };
+    unsupported(
+        ty.original_attrs,
+        "`#[name]` names a field; to name a type, use `#[sats(name = \"...\")]`",
+    )?;
+    match &ty.data {
+        SatsTypeData::Product(fields) => fields
+            .iter()
+            .filter_map(|field| match (explicit_name(field.original_attrs), &field.name) {
+                (Ok(None), _) => None,
+                (Ok(Some(name)), Some(field_name)) => Some(Ok((field_name.clone(), name))),
+                (Ok(Some(name)), None) => Some(Err(syn::Error::new(name.span(), "`#[name]` requires a named field"))),
+                (Err(e), _) => Some(Err(e)),
+            })
+            .collect(),
+        SatsTypeData::Sum(variants) => {
+            for variant in variants {
+                unsupported(
+                    variant.original_attrs,
+                    "`#[name]` is not supported on enum variants yet",
+                )?;
+            }
+            Ok(vec![])
+        }
+    }
+}
+
 pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     let ty_name = &ty.name;
     let name = &ty.ident;
     let krate = &ty.krate;
+
+    // The module def records explicit field names once `add` has given the type a ref.
+    let (explicit_names, explicit_names_error) = match explicit_field_names(ty) {
+        Ok(names) => (names, None),
+        Err(e) => (vec![], Some(e.into_compile_error())),
+    };
 
     let mut add_impls_for_plain_enum = false;
     let typ = match &ty.data {
@@ -251,20 +296,49 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
         None
     };
 
+    let make_type = if explicit_names.is_empty() {
+        quote! {
+            #krate::sats::typespace::TypespaceBuilder::add(
+                __typespace,
+                core::any::TypeId::of::<#name #typeid_ty_generics>(),
+                Some(#ty_name),
+                // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                |__typespace| #typ,
+            )
+        }
+    } else {
+        let (fields, names): (Vec<_>, Vec<_>) = explicit_names.into_iter().unzip();
+        quote! {
+            let mut __added = false;
+            let __ty = #krate::sats::typespace::TypespaceBuilder::add(
+                __typespace,
+                core::any::TypeId::of::<#name #typeid_ty_generics>(),
+                Some(#ty_name),
+                |__typespace| {
+                    __added = true;
+                    #typ
+                },
+            );
+            // Only the first `add` of the type adds it to the typespace.
+            if __added {
+                if let #krate::sats::AlgebraicType::Ref(__ty_ref) = &__ty {
+                    #(#krate::sats::typespace::TypespaceBuilder::add_explicit_field_name(__typespace, *__ty_ref, #fields, #names);)*
+                }
+            }
+            __ty
+        }
+    };
+
     quote! {
         #impl_plain_enum_extras
+
+        #explicit_names_error
 
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
             // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
             fn make_type<S: #krate::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> #krate::sats::AlgebraicType {
-                #krate::sats::typespace::TypespaceBuilder::add(
-                    __typespace,
-                    core::any::TypeId::of::<#name #typeid_ty_generics>(),
-                    Some(#ty_name),
-                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
-                    |__typespace| #typ,
-                )
+                #make_type
             }
         }
     }

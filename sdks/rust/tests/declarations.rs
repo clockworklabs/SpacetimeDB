@@ -1,8 +1,8 @@
 //! Compiles the client expansions of module syntax (proposal 0040) for declarations that the SDK test clients
 //! do not contain: several tables on one row type, a column default, a type in a namespace,
 //! a view with a primary key whose row type is not a table's,
-//! the forms that codegen writes for per-table column attributes, and the client-only ones for explicit column names
-//! and omitted tables,
+//! the forms that codegen writes for per-table column attributes and explicit column names, the client-only one
+//! for omitted tables,
 //! and module source with raw identifiers and private items.
 // The SDK's `browser` feature removes `run_threaded` and the other blocking methods,
 // while the expansion gates them on `target_arch`, as generated bindings always have.

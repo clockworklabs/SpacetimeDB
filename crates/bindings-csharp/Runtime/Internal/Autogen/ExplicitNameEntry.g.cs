@@ -12,6 +12,7 @@ namespace SpacetimeDB.Internal
         NameMapping Table,
         NameMapping Function,
         NameMapping Index,
-        NameMapping Namespace
+        NameMapping Namespace,
+        FieldNameMapping Field
     )>;
 }

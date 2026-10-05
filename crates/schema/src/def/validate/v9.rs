@@ -173,6 +173,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
         submodules: IndexMap::new(),
         environment: None,
+        explicit_field_names: Default::default(),
     };
 
     // Records each def's namespace. V9 has no submodules, so this just resolves everything at
@@ -649,6 +650,16 @@ impl CoreValidator<'_> {
         self.resolve_identifier(source, &self.explicit_names.indexes)
     }
 
+    /// The canonical name of the field `source` of the product type `ty`.
+    /// Must agree with `typespace_case_conversion`.
+    pub(crate) fn resolve_field_ident(&self, ty: AlgebraicTypeRef, source: RawIdentifier) -> Result<Identifier> {
+        match self.explicit_names.fields.get(&(ty, source.clone())) {
+            Some(canonical_name) => Identifier::new(canonical_name.clone())
+                .map_err(|error| ValidationError::IdentifierError { error }.into()),
+            None => self.resolve_identifier_with_case(source),
+        }
+    }
+
     /// Apply case conversion to an identifier.
     pub(crate) fn resolve_identifier_with_case(&self, raw: RawIdentifier) -> Result<Identifier> {
         let ident = convert(raw, self.case_policy);
@@ -670,24 +681,35 @@ impl CoreValidator<'_> {
     }
 
     // Recursive function to change typenames in the typespace according to the case conversion
-    // policy.
-    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
+    // policy, or to the explicit names of the fields of the typespace's product types.
+    pub(crate) fn typespace_case_conversion(
+        case_policy: ValidationCase,
+        explicit_names: &ExplicitNamesLookup,
+        typespace: &mut Typespace,
+    ) {
         let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
             ValidationCase::CamelCase
         } else {
             case_policy
         };
 
-        for ty in &mut typespace.types {
-            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
+        for (ty_ref, ty) in (0..).map(AlgebraicTypeRef).zip(&mut typespace.types) {
+            Self::convert_algebraic_type(
+                ty,
+                case_policy,
+                case_policy_for_enum_variants,
+                Some((ty_ref, explicit_names)),
+            );
         }
     }
 
-    // Recursively convert names in an AlgebraicType
+    // Recursively convert names in an AlgebraicType.
+    // `explicit_names` applies to the fields of `ty` itself, which is the type `ty_ref` in the typespace.
     fn convert_algebraic_type(
         ty: &mut AlgebraicType,
         case_policy: ValidationCase,
         case_policy_for_enum_variants: ValidationCase,
+        explicit_names: Option<(AlgebraicTypeRef, &ExplicitNamesLookup)>,
     ) {
         if ty.is_special() {
             return;
@@ -697,14 +719,18 @@ impl CoreValidator<'_> {
                 for element in &mut product.elements.iter_mut() {
                     // Convert the element name if it exists
                     if let Some(name) = element.name() {
-                        let new_name = convert(name.clone(), case_policy);
-                        element.name = Some(new_name.into());
+                        let explicit_name = explicit_names
+                            .and_then(|(ty_ref, names)| names.fields.get(&(ty_ref, name.clone())))
+                            .cloned();
+                        let new_name = explicit_name.unwrap_or_else(|| convert(name.clone(), case_policy).into());
+                        element.name = Some(new_name);
                     }
                     // Recursively convert the element's type
                     Self::convert_algebraic_type(
                         &mut element.algebraic_type,
                         case_policy,
                         case_policy_for_enum_variants,
+                        None,
                     );
                 }
             }
@@ -720,12 +746,13 @@ impl CoreValidator<'_> {
                         &mut variant.algebraic_type,
                         case_policy,
                         case_policy_for_enum_variants,
+                        None,
                     );
                 }
             }
             AlgebraicType::Array(array) => {
                 // Arrays contain a base type that might need conversion
-                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
+                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants, None);
             }
             _ => {}
         }
@@ -1082,7 +1109,9 @@ impl<'a, 'b> TableValidator<'a, 'b> {
 
         Ok(ColumnDef {
             accessor_name: identifier(accessor_name.clone())?,
-            name: self.module_validator.resolve_identifier_with_case(accessor_name)?,
+            name: self
+                .module_validator
+                .resolve_field_ident(self.product_type_ref, accessor_name)?,
             ty: column.algebraic_type.clone(),
             ty_for_generate,
             col_id,

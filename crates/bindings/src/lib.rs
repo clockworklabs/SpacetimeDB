@@ -432,6 +432,27 @@ pub use spacetimedb_bindings_macro::settings;
 /// So a semijoin can't use a column that only a later table indexes, and one that joins a later table
 /// on a column only the first table indexes compiles, but the server rejects it.
 ///
+/// ### `#[name("...")]`
+///
+/// Sets the column's canonical name, which the database and SQL use, instead of the one that the module's
+/// case conversion policy derives from the field name. Module code still uses the field name.
+/// A field of a type that derives [`SpacetimeType`] accepts `#[name("...")]` too.
+///
+/// ```ignore
+/// #[table(accessor = player)]
+/// pub struct Player {
+///     #[name("playerRef")]
+///     player_ref: u32,
+/// }
+/// ```
+///
+/// Adding `#[name]` to an existing column renames it, which automatic migration rejects, like renaming the field.
+/// To rename a field and keep its column, give it `#[name]` with the old name.
+/// Automatic migration still rejects renaming a field with `#[primary_key]`, `#[unique]` or `#[index]`,
+/// because the index on the column takes its accessor from the field name.
+///
+/// Hosts that predate `#[name]` reject a module that uses it.
+///
 /// # Generated code
 ///
 /// For each `[table(accessor = {name})]` annotation on a type `{T}`, generates a struct

@@ -22,6 +22,18 @@ error: `table = [...]` must name at least one table
 45 |     #[primary_key(table = [])]
    |                           ^^
 
+error: expected string literal
+  --> tests/ui/tables.rs:51:12
+   |
+51 |     #[name(player_ref)]
+   |            ^^^^^^^^^^
+
+error: `#[name]` is not supported on enum variants yet
+  --> tests/ui/tables.rs:57:5
+   |
+57 |     #[name("red")]
+   |     ^^^^^^^^^^^^^^
+
 error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
  --> tests/ui/tables.rs:5:8
   |

@@ -63,7 +63,7 @@ fn test_typescript_table_handles_are_camel_case() {
 
 /// The Rust backend writes column attributes of only some of the tables that share a row type
 /// with proposal 0022's `table = ...` modifier, and canonical column names that differ from the field names
-/// with proposal 0032's `#[name]`, which only the client expansions accept.
+/// with proposal 0032's `#[name]`.
 /// `sdks/rust/tests/declarations.rs` compiles the same forms.
 #[test]
 fn test_rust_per_table_column_attrs_and_column_names() {

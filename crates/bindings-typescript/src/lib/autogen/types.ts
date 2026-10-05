@@ -82,6 +82,9 @@ export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Namespace() {
     return NameMapping;
   },
+  get Field() {
+    return FieldNameMapping;
+  },
 });
 export type ExplicitNameEntry = __Infer<typeof ExplicitNameEntry>;
 
@@ -91,6 +94,13 @@ export const ExplicitNames = __t.object('ExplicitNames', {
   },
 });
 export type ExplicitNames = __Infer<typeof ExplicitNames>;
+
+export const FieldNameMapping = __t.object('FieldNameMapping', {
+  ty: __t.u32(),
+  sourceName: __t.string(),
+  canonicalName: __t.string(),
+});
+export type FieldNameMapping = __Infer<typeof FieldNameMapping>;
 
 // The tagged union or sum type for the algebraic type `FunctionVisibility`.
 export const FunctionVisibility = __t.enum('FunctionVisibility', {
