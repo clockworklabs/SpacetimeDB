@@ -33,6 +33,32 @@ This matters when you persist tokens on the client:
 - Expect this distinction on browser-style transports where WebSocket headers
   are unavailable, such as Unity WebGL builds.
 
+### Temporary token lifetime and upgrades
+
+The WebSocket-token endpoint issues a temporary copy that expires within 60 seconds
+and never after the credential used to request it. Exchanging a temporary copy
+again does not extend its expiration. This prevents a leaked WebSocket URL token
+from being renewed indefinitely. The temporary copy's `iat` remains the time of
+the exchange.
+
+Keep the original credential and use it to request a fresh temporary token on each
+connection. A non-expiring server-issued original can continue to be used this way
+indefinitely. For an expiring original, obtain a fresh credential from its issuer
+when needed.
+
+This is a security-related behavior change for clients that repeatedly exchange
+temporary tokens. Before deploying the server change, update Rust browser and C#
+WebGL clients to SDK versions that preserve the original credential in connection
+callbacks. The TypeScript SDK already preserves it. Older clients that overwrite
+their saved original with a callback's temporary token can no longer keep that
+token alive through repeated reconnects. If the original has already been lost,
+it cannot be recovered from the temporary token; the client needs to authenticate
+again. For server-created identities without another authentication mechanism,
+creating a new anonymous identity does not restore access to the old identity.
+
+The token lifetime limits authentication of new connections; it does not impose
+a 60-second lifetime on an established WebSocket connection.
+
 ## SpacetimeAuth
 
 To make it easier to get started with authentication, SpacetimeDB offers

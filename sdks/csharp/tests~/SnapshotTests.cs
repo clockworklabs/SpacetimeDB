@@ -382,6 +382,61 @@ public class SnapshotTests
     }
 
     [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("original-long-lived-token")]
+    public void ConnectionTokenSurvivesRepeatedConnections(string? savedToken)
+    {
+        var wasTesting = DbConnection.IsTesting;
+        DbConnection.IsTesting = true;
+        var expectedToken = string.IsNullOrEmpty(savedToken) ? "new-identity-token" : savedToken;
+        try
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                string? callbackToken = null;
+                var client = DbConnection.Builder()
+                    .WithUri("wss://spacetimedb.com")
+                    .WithDatabaseName("example")
+                    .WithToken(savedToken)
+                    .OnConnect((_, _, token) => callbackToken = token)
+                    .Build();
+                try
+                {
+                    // WebGL receives the temporary URL token back from the server.
+                    // An anonymous connection receives its new persistent credential.
+                    var wireToken = string.IsNullOrEmpty(savedToken) ? expectedToken : $"temporary-token-{attempt}";
+                    var message = new ServerMessage.InitialConnection(new()
+                    {
+                        Identity = Identity.From(Convert.FromBase64String("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=")),
+                        ConnectionId = client.ConnectionId,
+                        Token = wireToken,
+                    });
+                    using var output = new MemoryStream();
+                    output.WriteByte(0); // Uncompressed WebSocket message.
+                    using (var writer = new BinaryWriter(output, System.Text.Encoding.UTF8, leaveOpen: true))
+                    {
+                        new ServerMessage.BSATN().Write(writer, message);
+                    }
+                    client.OnMessageReceived(output.ToArray(), DateTime.UtcNow);
+                    Assert.True(SpinWait.SpinUntil(() => client.HasMessageToApply, TimeSpan.FromSeconds(5)));
+                    client.FrameTick();
+                    Assert.Equal(expectedToken, callbackToken);
+                    savedToken = callbackToken;
+                }
+                finally
+                {
+                    client.Disconnect();
+                }
+            }
+        }
+        finally
+        {
+            DbConnection.IsTesting = wasTesting;
+        }
+    }
+
+    [Theory]
     [MemberData(nameof(SampleDump))]
     public async Task VerifySampleDump(string dumpName, ServerMessage[] sampleDumpParsed)
     {

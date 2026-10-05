@@ -52,6 +52,12 @@ Returns JSON in the form:
 ```
 
 The `token` value is a short-lived [JSON Web Token](https://datatracker.ietf.org/doc/html/rfc7519).
+Its expiration is the earlier of 60 seconds from issuance and the input token's
+expiration, if present. Exchanging the returned token again cannot extend its
+expiration. Its `iat` is the time of the exchange.
+
+Retain the original credential for future exchanges. A non-expiring original
+remains valid and can be exchanged repeatedly for fresh temporary tokens.
 
 ## `GET /v1/identity/public-key`
 

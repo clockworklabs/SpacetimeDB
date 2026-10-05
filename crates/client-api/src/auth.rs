@@ -208,16 +208,17 @@ impl SpacetimeAuth {
 
     // Sign a short-lived copy of this token that we will be able to verify.
     // Note that this will not change the issuer, so the private_key might not match.
-    // The copy keeps the original `iat` and expires within `expiry`, but never after the
-    // original: re-signing a copy can't renew a token forever, and modules can still tell
-    // when it was issued.
+    // The copy expires within `expiry`, but never after the original: re-signing a copy
+    // can't renew a token forever. Keep the historical `iat` behavior (the re-sign time).
     pub fn re_sign_with_expiry(
         &self,
         signer: &impl TokenSigner,
         expiry: Duration,
     ) -> Result<(SpacetimeIdentityClaims, String), JwtError> {
-        let cap = SystemTime::now() + expiry;
+        let iat = SystemTime::now();
+        let cap = iat + expiry;
         let claims = SpacetimeIdentityClaims {
+            iat,
             exp: Some(self.claims.exp.map_or(cap, |exp| exp.min(cap))),
             ..self.claims.clone()
         };
@@ -384,41 +385,62 @@ mod tests {
         Ok(())
     }
 
-    // A re-signed copy keeps the original `iat` and never outlives the original token.
+    // Re-signing cannot extend expiration, even when a longer lifetime is requested.
     #[tokio::test]
     async fn re_sign_never_extends_a_token() -> Result<(), anyhow::Error> {
         let kp = JwtKeys::generate()?;
         let claims = TokenClaims::new("localhost".into(), "test-subject".into());
-        let re_sign = |token: String, claims| {
+        let re_sign = |token: String, claims, lifetime| {
             crate::auth::SpacetimeAuth::new(SpacetimeCreds::from_signed_token(token), claims)?
-                .re_sign_with_expiry(&kp.private, std::time::Duration::from_secs(60))
+                .re_sign_with_expiry(&kp.private, std::time::Duration::from_secs(lifetime))
                 .map_err(|e| anyhow!("{e}"))
         };
 
         let (_, token) = claims.encode_and_sign_with_expiry(&kp.private, Some(std::time::Duration::from_secs(30)))?;
         let original = kp.public.validate_token(&token).await?;
-        let (_, copy) = re_sign(token, original.clone())?;
+        let (_, copy) = re_sign(token, original.clone(), 60)?;
         let copy = kp.public.validate_token(&copy).await?;
-        assert_eq!(copy.iat, original.iat);
         assert_eq!(copy.exp, original.exp);
 
         // A token without an expiry gets one, 60 seconds out.
         let (_, token) = claims.encode_and_sign(&kp.private)?;
         let original = kp.public.validate_token(&token).await?;
-        let (_, copy_token) = re_sign(token, original.clone())?;
+        let (_, copy_token) = re_sign(token.clone(), original.clone(), 60)?;
         let copy = kp.public.validate_token(&copy_token).await?;
-        assert_eq!(copy.iat, original.iat);
-        let exp = copy.exp.ok_or_else(|| anyhow!("no exp"))?;
-        let now = std::time::SystemTime::now();
-        assert!(exp > now + std::time::Duration::from_secs(50));
-        // JWT times are whole seconds, so allow the one it can round up by.
-        assert!(exp <= now + std::time::Duration::from_secs(61));
+        assert_eq!(copy.exp.unwrap().duration_since(copy.iat)?.as_secs(), 60);
 
-        // Re-signing that copy again keeps its expiry instead of renewing it.
-        let (_, again) = re_sign(copy_token, copy.clone())?;
+        // Requesting a longer lifetime makes this fail on the old implementation
+        // deterministically, without needing to sleep across a JWT whole-second boundary.
+        let (_, again) = re_sign(copy_token, copy.clone(), 120)?;
         let again = kp.public.validate_token(&again).await?;
-        assert_eq!(again.iat, copy.iat);
         assert_eq!(again.exp, copy.exp);
+
+        // Keeping the non-expiring original still allows new temporary credentials.
+        let (_, fresh) = re_sign(token, original, 120)?;
+        let fresh = kp.public.validate_token(&fresh).await?;
+        assert!(fresh.exp > copy.exp);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn re_sign_preserves_issue_time_behavior_and_caps_long_lived_tokens() -> Result<(), anyhow::Error> {
+        use spacetimedb::auth::token_validation::TokenSigner;
+        use std::time::{Duration, SystemTime};
+
+        let kp = JwtKeys::generate()?;
+        let (mut original, _) = TokenClaims::new("localhost".into(), "test-subject".into())
+            .encode_and_sign_with_expiry(&kp.private, Some(Duration::from_secs(3600)))?;
+        original.iat = SystemTime::now() - Duration::from_secs(3600);
+        let token = kp.private.sign(&original)?;
+        let auth = crate::auth::SpacetimeAuth::new(SpacetimeCreds::from_signed_token(token), original.clone())?;
+        let before = SystemTime::now();
+        let (copy, token) = auth.re_sign_with_expiry(&kp.private, Duration::from_secs(60))?;
+        assert!(copy.iat >= before && copy.iat <= SystemTime::now());
+        assert_eq!(copy.exp, Some(copy.iat + Duration::from_secs(60)));
+        assert!(copy.exp < original.exp);
+        let decoded = kp.public.validate_token(&token).await?;
+        assert!(decoded.iat > original.iat);
+        assert_eq!(decoded.exp.unwrap().duration_since(decoded.iat)?.as_secs(), 60);
         Ok(())
     }
 
