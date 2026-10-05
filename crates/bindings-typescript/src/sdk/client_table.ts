@@ -107,6 +107,12 @@ export type ClientTableMethods<
  * - UCV: unique-constraint violation error type (never if none)
  * - AIO: auto-increment overflow error type (never if none)
  */
+/** A client table handle for a connection whose module type is not known statically. */
+export type UntypedClientTable = ClientTable<
+  UntypedRemoteModule,
+  TableNamesOf<UntypedRemoteModule>
+>;
+
 export type ClientTable<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,

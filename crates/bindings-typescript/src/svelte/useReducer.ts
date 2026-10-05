@@ -1,3 +1,4 @@
+import { getByAccessorPath } from '../lib/util';
 import { onDestroy } from 'svelte';
 import { get } from 'svelte/store';
 import type { InferTypeOfParams } from '../lib/type_builders';
@@ -30,7 +31,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     const conn = state.getConnection();
     if (!conn) return;
 
-    const fn = (conn.reducers as any)[reducerName] as (
+    const fn = getByAccessorPath(conn.reducers, reducerName) as (
       ...p: ParamsType<ReducerDef>
     ) => Promise<void>;
     if (queueRef.length) {
@@ -53,7 +54,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
         queueRef.push({ params, resolve, reject });
       });
     }
-    const fn = (conn.reducers as any)[reducerName] as (
+    const fn = getByAccessorPath(conn.reducers, reducerName) as (
       ...p: ParamsType<ReducerDef>
     ) => Promise<void>;
     return fn(...params);
