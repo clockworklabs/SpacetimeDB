@@ -163,7 +163,7 @@ fn build_context_from_rustdoc_json() -> Result<String> {
         });
     }
 
-    rows.sort_by(|a, b| (order_key(&a.kind), a.path.to_lowercase()).cmp(&(order_key(&b.kind), b.path.to_lowercase())));
+    rows.sort_by_key(|a| (order_key(&a.kind), a.path.to_lowercase()));
 
     let mut out = String::with_capacity(1024 * 1024);
     out.push_str(&format!(

@@ -16,7 +16,7 @@ use crate::{
     Options,
 };
 
-pub const MAGIC: [u8; 6] = [b'(', b'd', b's', b')', b'^', b'2'];
+pub const MAGIC: [u8; 6] = *b"(ds)^2";
 
 pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 1;
 pub const DEFAULT_CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;

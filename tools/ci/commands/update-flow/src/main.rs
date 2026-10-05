@@ -56,7 +56,7 @@ fn main() -> Result<()> {
         ["run", "-p", "spacetimedb-update"]
             .into_iter()
             .chain(common_args.clone())
-            .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
+            .chain(["--", "self-install", &root_arg, "--yes"]),
     )
     .run()?;
 

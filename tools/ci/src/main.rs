@@ -73,6 +73,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-codeowners-check",
     },
     Command {
+        path: &["other-workflows", "new-script-check"],
+        package: "ci-new-script-check",
+    },
+    Command {
         path: &["other-workflows", "cla-assistant"],
         package: "ci-cla-assistant",
     },
@@ -87,6 +91,14 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "check-release-deps"],
         package: "ci-check-release-deps",
+    },
+    Command {
+        path: &["other-workflows", "llm-benchmark-summary"],
+        package: "ci-llm-benchmark-summary",
+    },
+    Command {
+        path: &["other-workflows", "cache-warm"],
+        package: "ci-cache-warm",
     },
 ];
 
