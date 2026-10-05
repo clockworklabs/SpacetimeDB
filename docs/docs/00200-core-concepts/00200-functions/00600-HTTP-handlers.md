@@ -13,7 +13,9 @@ External clients can make HTTP requests to routes nested under [`/v1/database/:n
 ***HTTP handlers are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
 :::
 
-Transaction contexts inside HTTP handlers are external: `is_internal()` is false and no JWT is available through the authentication context. SpacetimeDB does not authenticate the `Authorization` header on user-defined routes; handlers must validate any credentials they require.
+HTTP handlers do not populate JWT claims. Their `HandlerContext` does not expose caller authentication (such as `senderAuth` or `sender_auth`), and a transaction opened by an HTTP handler has no JWT in its authentication context. That transaction is external: `is_internal()` is false. SpacetimeDB does not authenticate the `Authorization` header on user-defined routes, so handlers must validate any credentials they require.
+
+If a client call needs SpacetimeDB to provide the caller's JWT claims, use a [procedure](./00400-procedures.md) instead. A procedure's transaction context can access the caller's authentication claims.
 
 ## Defining HTTP Handlers
 
