@@ -17,7 +17,7 @@ The template deploys the first-party `clockworklabs/spacetime` image, exposes po
 
 Open the official deployment template:
 
-[SpacetimeDB Template](https://railway.com/deploy/spacetimedb)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/spacetimedb?utm_medium=integration&utm_source=button&utm_campaign=spacetimedb)
 
 Then:
 
