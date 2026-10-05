@@ -1,3 +1,5 @@
+import type { UntypedClientTable } from '../sdk/client_table';
+import { getByAccessorPath } from '../lib/accessor_path';
 import {
   useCallback,
   useEffect,
@@ -103,7 +105,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!connection) {
       return [[], false];
     }
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName
+    );
     const result: readonly Prettify<UseTableRowType>[] = whereExpr
       ? (Array.from(table.iter()).filter(row =>
           evaluateBooleanExpr(whereExpr, row as Record<string, any>)
@@ -215,7 +220,10 @@ export function useTable<TableDef extends UntypedTableDef>(
         return () => {};
       }
 
-      const table = connection.db[accessorName];
+      const table = getByAccessorPath<UntypedClientTable>(
+        connection.db,
+        accessorName
+      );
       table.onInsert(onInsert);
       table.onDelete(onDelete);
       table.onUpdate?.(onUpdate);
