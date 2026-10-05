@@ -177,14 +177,15 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   if (await restoredSession()) return { user, signedIn: false };
   const username = actor.page.locator(browser.testId('signin-username')).first();
   const toggle = actor.loc('signin-toggle');
+  const signupUsername = actor.page.locator(browser.testId('signup-username')).first();
   let observation: ReturnType<typeof beginSpacetimeAuthObservation> = null;
   try {
-    const entry = username.or(toggle);
+    // An app may drop the toggle's ID while its dialog is open on sign-up.
+    const entry = username.or(toggle).or(signupUsername);
     await (acceptRestoredSession ? entry.or(currentUser) : entry)
       .filter({ visible: true }).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
     if (await restoredSession()) return { user, signedIn: false };
     if (!(await username.isVisible())) {
-      const signupUsername = actor.page.locator(browser.testId('signup-username')).first();
       let signupOpen = await signupUsername.isVisible();
       // A dialog left on sign-up can cover the toggle; its close control dismisses it.
       const overlayClose = actor.loc('overlay-close');
