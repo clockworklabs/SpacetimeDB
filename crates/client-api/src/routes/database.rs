@@ -598,10 +598,9 @@ fn extract_environment_error(mut error: &anyhow::Error) -> Option<axum::response
         } else {
             Err((StatusCode::BAD_REQUEST, error.to_string()).into())
         }
-    } else if let Some(error) = error.downcast_ref::<EnvironmentVersionConflict>() {
-        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
     } else {
-        return None;
+        let error = error.downcast_ref::<EnvironmentVersionConflict>()?;
+        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
     };
     Some(res)
 }
