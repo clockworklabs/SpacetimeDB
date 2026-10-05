@@ -7,7 +7,7 @@ import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
  * Interface representing a database context.
  *
  * @template DbView - Type representing the database view.
- * @template ReducersDef - Type representing the reducers.
+ * @template ReducersDecl - Type representing the reducers.
  */
 export interface DbContext<RemoteModule extends UntypedRemoteModule> {
   db: ClientDbView<RemoteModule>;

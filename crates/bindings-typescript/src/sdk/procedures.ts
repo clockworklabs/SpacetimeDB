@@ -30,26 +30,38 @@ export type ProceduresView<RemoteModule> = IfAny<
     : never
 >;
 
-export type UntypedProcedureDef = {
+export type UntypedProcedureDecl = {
   name: string;
   accessorName: string;
   params: CoerceParams<ParamsObj>;
   returnType: TypeBuilder<any, any>;
 };
 
-export type UntypedProceduresDef = {
-  procedures: readonly UntypedProcedureDef[];
+export type UntypedProceduresDecl = {
+  procedures: readonly UntypedProcedureDecl[];
 };
 
-export function procedures<const H extends readonly UntypedProcedureDef[]>(
+/**
+ * @deprecated Use `UntypedProcedureDecl` instead. Kept so that declaration
+ * files emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedProcedureDef = UntypedProcedureDecl;
+
+/**
+ * @deprecated Use `UntypedProceduresDecl` instead. Kept so that declaration
+ * files emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedProceduresDef = UntypedProceduresDecl;
+
+export function procedures<const H extends readonly UntypedProcedureDecl[]>(
   ...handles: H
 ): { procedures: H };
 
-export function procedures<const H extends readonly UntypedProcedureDef[]>(
+export function procedures<const H extends readonly UntypedProcedureDecl[]>(
   handles: H
 ): { procedures: H };
 
-export function procedures<const H extends readonly UntypedProcedureDef[]>(
+export function procedures<const H extends readonly UntypedProcedureDecl[]>(
   ...args: [H] | H
 ): { procedures: H } {
   const procedures = (
@@ -58,7 +70,7 @@ export function procedures<const H extends readonly UntypedProcedureDef[]>(
   return { procedures };
 }
 
-type ProcedureDef<
+type ProcedureDecl<
   Name extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
@@ -80,7 +92,7 @@ export function procedureSchema<
   params: Params,
   returnType: ReturnType,
   accessorName?: AccessorName
-): ProcedureDef<ProcedureName, Params, ReturnType, AccessorName> {
+): ProcedureDecl<ProcedureName, Params, ReturnType, AccessorName> {
   return {
     name,
     accessorName: accessorName ?? (toCamelCase(name) as AccessorName),

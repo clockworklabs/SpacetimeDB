@@ -40,22 +40,34 @@ export type ReducerEventInfo<
   args: Args;
 };
 
-export type UntypedReducerDef = {
+export type UntypedReducerDecl = {
   name: string;
   accessorName: string;
   params: ParamsObj;
   paramsType: ProductType;
 };
 
-export type UntypedReducersDef = {
-  reducers: readonly UntypedReducerDef[];
+export type UntypedReducersDecl = {
+  reducers: readonly UntypedReducerDecl[];
 };
 
-class Reducers<ReducersDef extends UntypedReducersDef> {
-  reducersType: ReducersDef;
+/**
+ * @deprecated Use `UntypedReducerDecl` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedReducerDef = UntypedReducerDecl;
+
+/**
+ * @deprecated Use `UntypedReducersDecl` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedReducersDef = UntypedReducersDecl;
+
+class Reducers<ReducersDecl extends UntypedReducersDecl> {
+  reducersType: ReducersDecl;
 
   constructor(handles: readonly ReducerSchema<any, any, any>[]) {
-    this.reducersType = reducersToSchema(handles) as ReducersDef;
+    this.reducersType = reducersToSchema(handles) as ReducersDecl;
   }
 }
 
@@ -64,7 +76,7 @@ class Reducers<ReducersDef extends UntypedReducersDef> {
  */
 type ReducersToSchema<T extends readonly ReducerSchema<any, any, any>[]> = {
   reducers: {
-    /** @type {UntypedReducerDef} */
+    /** @type {UntypedReducerDecl} */
     readonly [i in keyof T]: {
       name: T[i]['reducerName'];
       accessorName: T[i]['accessorName'];

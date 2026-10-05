@@ -1,15 +1,15 @@
 import { assertInInjectionContext, inject, effect } from '@angular/core';
 import { SPACETIMEDB_CONNECTION } from '../connection_state';
 import type { ParamsType } from '../../sdk';
-import type { UntypedReducerDef } from '../../sdk/reducers';
+import type { UntypedReducerDecl } from '../../sdk/reducers';
 
-export function injectReducer<ReducerDef extends UntypedReducerDef>(
-  reducerDef: ReducerDef
-): (...params: ParamsType<ReducerDef>) => void {
+export function injectReducer<ReducerDecl extends UntypedReducerDecl>(
+  reducerDef: ReducerDecl
+): (...params: ParamsType<ReducerDecl>) => void {
   assertInInjectionContext(injectReducer);
 
   const connState = inject(SPACETIMEDB_CONNECTION);
-  const queue: ParamsType<ReducerDef>[] = [];
+  const queue: ParamsType<ReducerDecl>[] = [];
   const reducerName = reducerDef.accessorName;
 
   // flush queued calls when connection becomes active
@@ -25,7 +25,7 @@ export function injectReducer<ReducerDef extends UntypedReducerDef>(
     }
 
     const callReducer = (connection.reducers as any)[reducerName] as (
-      ...p: ParamsType<ReducerDef>
+      ...p: ParamsType<ReducerDecl>
     ) => void;
 
     if (queue.length) {
@@ -40,7 +40,7 @@ export function injectReducer<ReducerDef extends UntypedReducerDef>(
     });
   });
 
-  return (...params: ParamsType<ReducerDef>) => {
+  return (...params: ParamsType<ReducerDecl>) => {
     const state = connState();
     if (!state.isActive) {
       queue.push(params);
@@ -54,7 +54,7 @@ export function injectReducer<ReducerDef extends UntypedReducerDef>(
     }
 
     const callReducer = (connection.reducers as any)[reducerName] as (
-      ...p: ParamsType<ReducerDef>
+      ...p: ParamsType<ReducerDecl>
     ) => void;
 
     return callReducer(...params);
