@@ -753,6 +753,9 @@ jobs:
         with:
           run_install: true
 
+      - name: Check that the SDK name conformance tests match the manifest
+        run: cargo ci sdk-names --check
+
       - name: Run ci lint
         run: cargo ci lint
 

@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 mod module_bindings;
+mod sdk_names;
 pub mod test_handlers;
 
 #[cfg(all(target_arch = "wasm32", feature = "browser"))]

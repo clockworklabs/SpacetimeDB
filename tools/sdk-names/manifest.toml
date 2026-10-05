@@ -1,0 +1,1343 @@
+# The SDK name manifest of proposal 0041 (SDK naming scheme).
+#
+# One entry per role. See README.md for the format, how to add a role or a
+# name, and how the conformance tests are generated from this file. After
+# editing it, run `cargo ci sdk-names` to regenerate the tests.
+
+# Concrete items that fill in the placeholders of generated names, per column,
+# taken from the project each column's generated names are checked against.
+
+# crates/bindings/tests/sdk_names.rs declares this table itself.
+[instances.rust_module]
+Row = "SdkNamesRow"
+
+# sdks/rust/tests/view-client, whose bindings come from modules/sdk-test-view.
+[instances.rust_client]
+Table = "Player"
+Column = "Identity"
+Row = "Player"
+row = "player"
+
+# crates/bindings-typescript/test-app.
+[instances.ts_client]
+Reducer = "CreatePlayer"
+
+# crates/bindings-csharp/Codegen.Tests/fixtures/server.
+[instances.csharp_module]
+Table = "PublicTable"
+
+# sdks/csharp/examples~/regression-tests/client.
+[instances.csharp_client]
+Table = "ExampleData"
+Column = "Id"
+Index = "Indexed"
+Reducer = "Add"
+Procedure = "AuthenticationCapabilities"
+
+# crates/bindings-cpp/tests/compile/cases/indexes/ok_sdk_names.cpp declares this
+# table itself.
+[instances.cpp_module]
+Row = "SdkNamesRow"
+
+# Declarations and definitions
+
+[[role]]
+id = "module.decl.table_body"
+name = "TableBody"
+description = "A table's declaration without its accessor (TypeScript's table(...))"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "TableBody", path = "src/lib/table_body.ts", deprecated = ["TableSchema"] }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Rust, C#, and C++ write a table's accessor inside its declaration, an attribute or macro on its row type, so they have no body type."
+
+[[role]]
+id = "module.decl.table_body.untyped"
+name = "UntypedTableBody"
+description = "The widest table body, used as a generic constraint"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "UntypedTableBody", path = "src/lib/table_body.ts", deprecated = ["UntypedTableSchema"] }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.decl.table"
+name = "TableDecl"
+description = "A table's complete declaration: a table body placed under an accessor in schema({...})"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "TableDecl", path = "src/lib/schema.ts", deprecated = ["TableToSchema"] }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Rust, C#, and C++ declare a table with an attribute or macro on its row type, so they have no declaration type."
+
+[[role]]
+id = "module.decl.table.untyped"
+name = "UntypedTableDecl"
+description = "The widest table declaration, used as a generic constraint"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "UntypedTableDecl", path = "src/lib/table.ts", deprecated = ["UntypedTableDef"] }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.decl.schema"
+name = "SchemaDecl"
+description = "The declarations made in TypeScript's schema({...})"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "SchemaDecl", path = "src/lib/schema.ts", deprecated = ["TablesToSchema"] }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Provisional: proposal 0041's stage rule fixes the Decl suffix, but the rest of the name is still being decided, because schema({...}) holds only tables while the schema also includes functions."
+
+[[role]]
+id = "module.decl.schema.untyped"
+name = "UntypedSchemaDecl"
+description = "The widest schema declaration, used as a generic constraint"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "UntypedSchemaDecl", path = "src/lib/schema.ts", deprecated = ["UntypedSchemaDef"] }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Provisional, as SchemaDecl is."
+
+[[role]]
+id = "server.def.module"
+name = "ModuleDef"
+description = "The server's validated definition of a whole module"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Host-only (spacetimedb_schema::def::ModuleDef). Listed so that no SDK reuses the name for another concept. The TypeScript package's src/lib/schema.ts still defines ModuleDef as a deprecated alias of RawModuleDefSections, its former name for the raw module sections, because the published declarations name it."
+
+[[role]]
+id = "client.decl.module"
+name = "RemoteModuleDecl"
+description = "The client's description of one module: the part it can see"
+rust_module = "none"
+rust_client = { sdk = "RemoteModuleDecl", path = "spacetimedb_sdk::__codegen", deprecated = ["SpacetimeModule"] }
+ts_module = "none"
+ts_client = { sdk = "RemoteModuleDecl", deprecated = ["RemoteModule"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Provisional: proposal 0041's stage rule fixes the Decl suffix, but the rest of the name is still being decided. C# spreads the family over generic parameters of its Base classes, and Unreal over generated subclasses of its Base classes."
+
+[[role]]
+id = "client.decl.module.untyped"
+name = "UntypedRemoteModuleDecl"
+description = "The widest client module declaration, used as a generic constraint"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "UntypedRemoteModuleDecl", path = "src/sdk/spacetime_module.ts", deprecated = ["UntypedRemoteModule"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Provisional, as RemoteModuleDecl is."
+
+[[role]]
+id = "client.decl.module.of"
+name = "RemoteModuleDeclOf"
+description = "The client module declaration of a connection type"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "RemoteModuleDeclOf", deprecated = ["RemoteModuleOf"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Provisional, as RemoteModuleDecl is."
+
+[[role]]
+id = "client.module"
+name = "RemoteModule"
+description = "One specific module, as generated client code names it"
+rust_module = "none"
+rust_client = { generated = "RemoteModule" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "TypeScript bindings hold the module in a constant, REMOTE_MODULE, which they do not export."
+
+# Connection
+
+[[role]]
+id = "client.connection"
+name = "DbConnection"
+description = "A connection to a module"
+rust_module = "none"
+rust_client = { generated = "DbConnection" }
+ts_module = "none"
+ts_client = { generated = "DbConnection", kind = "class" }
+csharp_module = "none"
+csharp_client = { generated = "DbConnection" }
+unreal = { generated = "UDbConnection" }
+cpp_module = "none"
+
+[[role]]
+id = "client.connection.builder"
+name = "DbConnectionBuilder"
+description = "The builder that configures and opens a connection"
+rust_module = "none"
+rust_client = { sdk = "DbConnectionBuilder" }
+ts_module = "none"
+ts_client = { sdk = "DbConnectionBuilder", kind = "class" }
+csharp_module = "none"
+csharp_client = { sdk = "DbConnectionBuilder<DbConnection>" }
+unreal = { generated = "UDbConnectionBuilder" }
+cpp_module = "none"
+
+[[role]]
+id = "client.connection.builder.base"
+name = "DbConnectionBuilderBase"
+description = "The SDK type that generated code builds DbConnectionBuilder from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = { sdk = "UDbConnectionBuilderBase" }
+cpp_module = "none"
+note = "Rust, TypeScript, and C# generate no builder: the generated DbConnection's builder method returns the SDK's DbConnectionBuilder."
+
+[[role]]
+id = "client.connection.interface"
+name = "DbConnection"
+description = "The interface that every generated DbConnection implements"
+rust_module = "none"
+rust_client = { sdk = "DbConnection", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "IDbConnection" }
+unreal = "none"
+cpp_module = "none"
+note = "TypeScript and Unreal derive the generated DbConnection from DbConnectionBase instead."
+
+[[role]]
+id = "client.connection.base"
+name = "DbConnectionBase"
+description = "The SDK type that generated code builds DbConnection from"
+rust_module = "none"
+rust_client = { sdk = "DbContextBase", path = "spacetimedb_sdk::__codegen", deprecated = ["DbContextImpl"] }
+ts_module = "none"
+ts_client = { sdk = "DbConnectionBase", deprecated = ["DbConnectionImpl"], kind = "class" }
+csharp_module = "none"
+csharp_client = { sdk = "DbConnectionBase<DbConnection, Tables, Reducer>" }
+unreal = { sdk = "UDbConnectionBase" }
+cpp_module = "none"
+deviations = { rust_client = "It backs the connection and every generated context, so it is named after the DbContext trait." }
+
+[[role]]
+id = "client.db_context"
+name = "DbContext"
+description = "The interface shared by a connection and its contexts"
+rust_module = "none"
+rust_client = { sdk = "DbContext" }
+ts_module = "none"
+ts_client = { sdk = "DbContext" }
+csharp_module = "none"
+csharp_client = { sdk = "IDbContext<DbView, RemoteReducers, SubscriptionBuilder_, RemoteProcedures>" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.remote_db_context"
+name = "RemoteDbContext"
+description = "The shared context interface for one module's generated types"
+rust_module = "none"
+rust_client = { generated = "RemoteDbContext" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { generated = "IRemoteDbContext" }
+unreal = { generated = "FContextBase" }
+cpp_module = "none"
+deviations = { unreal = "Unreal renders the interface as a generated base struct, which every generated context derives from and the connection does not; reflected USTRUCT types cannot be aliased, so it is renamed at the next major version." }
+
+# Client views of tables, reducers, and procedures
+
+[[role]]
+id = "client.tables"
+name = "RemoteTables"
+description = "The client's view of a module's tables (conn.db)"
+rust_module = "none"
+rust_client = { generated = "RemoteTables" }
+ts_module = "none"
+ts_client = { sdk = "RemoteTables", path = "src/sdk/db_view.ts", deprecated = ["ClientDbView"] }
+csharp_module = "none"
+csharp_client = { generated = "RemoteTables" }
+unreal = { generated = "URemoteTables" }
+cpp_module = "none"
+note = "The Rust SDK traits DbContext and RemoteModuleDecl call their associated type for this role DbView. An associated type cannot be aliased, so it is renamed at the next major version."
+
+[[role]]
+id = "client.tables.base"
+name = "RemoteTablesBase"
+description = "The SDK type that generated code builds RemoteTables from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "RemoteTablesBase" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.reducers"
+name = "RemoteReducers"
+description = "The client's view of a module's reducers (conn.reducers)"
+rust_module = "none"
+rust_client = { generated = "RemoteReducers" }
+ts_module = "none"
+ts_client = { sdk = "RemoteReducers", path = "src/sdk/reducers.ts", deprecated = ["ReducersView"] }
+csharp_module = "none"
+csharp_client = { generated = "RemoteReducers" }
+unreal = { generated = "URemoteReducers" }
+cpp_module = "none"
+note = "The Rust SDK traits DbContext and RemoteModuleDecl call their associated type for this role Reducers. An associated type cannot be aliased, so it is renamed at the next major version."
+
+[[role]]
+id = "client.procedures"
+name = "RemoteProcedures"
+description = "The client's view of a module's procedures (conn.procedures)"
+rust_module = "none"
+rust_client = { generated = "RemoteProcedures" }
+ts_module = "none"
+ts_client = { sdk = "RemoteProcedures", path = "src/sdk/procedures.ts", deprecated = ["ProceduresView"] }
+csharp_module = "none"
+csharp_client = { generated = "RemoteProcedures" }
+unreal = { generated = "URemoteProcedures" }
+cpp_module = "none"
+note = "The Rust SDK traits DbContext and RemoteModuleDecl call their associated type for this role Procedures. An associated type cannot be aliased, so it is renamed at the next major version."
+
+[[role]]
+id = "client.reducer"
+name = "Reducer"
+description = "One of a module's reducer calls, as a value"
+rust_module = "none"
+rust_client = { generated = "Reducer" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { generated = "Reducer" }
+unreal = { generated = "FReducer" }
+cpp_module = "none"
+
+[[role]]
+id = "client.procedure"
+name = "Procedure"
+description = "One of a module's procedure calls, as a value"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { generated = "Procedure" }
+unreal = { generated = "FProcedure" }
+cpp_module = "none"
+
+# Client contexts and events
+
+[[role]]
+id = "client.context.event"
+name = "EventContext"
+description = "The context passed to a row callback"
+rust_module = "none"
+rust_client = { generated = "EventContext" }
+ts_module = "none"
+ts_client = { generated = "EventContext" }
+csharp_module = "none"
+csharp_client = { generated = "EventContext" }
+unreal = { generated = "FEventContext" }
+cpp_module = "none"
+
+[[role]]
+id = "client.context.reducer_event"
+name = "ReducerEventContext"
+description = "The context passed to a reducer callback"
+rust_module = "none"
+rust_client = { generated = "ReducerEventContext" }
+ts_module = "none"
+ts_client = { generated = "ReducerEventContext" }
+csharp_module = "none"
+csharp_client = { generated = "ReducerEventContext" }
+unreal = { generated = "FReducerEventContext" }
+cpp_module = "none"
+
+[[role]]
+id = "client.context.procedure_event"
+name = "ProcedureEventContext"
+description = "The context passed to a procedure callback"
+rust_module = "none"
+rust_client = { generated = "ProcedureEventContext" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { generated = "ProcedureEventContext" }
+unreal = { generated = "FProcedureEventContext" }
+cpp_module = "none"
+deviations = { ts_client = "Procedure calls return a Promise, so generated bindings define no procedure callback context." }
+
+[[role]]
+id = "client.context.subscription_event"
+name = "SubscriptionEventContext"
+description = "The context passed to a subscription callback"
+rust_module = "none"
+rust_client = { generated = "SubscriptionEventContext" }
+ts_module = "none"
+ts_client = { generated = "SubscriptionEventContext" }
+csharp_module = "none"
+csharp_client = { generated = "SubscriptionEventContext" }
+unreal = { generated = "FSubscriptionEventContext" }
+cpp_module = "none"
+
+[[role]]
+id = "client.context.error"
+name = "ErrorContext"
+description = "The context passed to an error callback"
+rust_module = "none"
+rust_client = { generated = "ErrorContext" }
+ts_module = "none"
+ts_client = { generated = "ErrorContext" }
+csharp_module = "none"
+csharp_client = { generated = "ErrorContext" }
+unreal = { generated = "FErrorContext" }
+cpp_module = "none"
+
+[[role]]
+id = "client.context.event.base"
+name = "EventContextBase"
+description = "The SDK type that generated code builds EventContext from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "EventContextBase", deprecated = ["EventContextInterface"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+note = "Rust and C# generated contexts implement an interface instead (client.context.event.interface). Unreal's generated contexts all derive from the generated FContextBase (client.remote_db_context); nothing uses the SDK's FEventContextBase."
+
+[[role]]
+id = "client.context.reducer_event.base"
+name = "ReducerEventContextBase"
+description = "The SDK type that generated code builds ReducerEventContext from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "ReducerEventContextBase", deprecated = ["ReducerEventContextInterface"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.context.procedure_event.base"
+name = "ProcedureEventContextBase"
+description = "The SDK type that generated code builds ProcedureEventContext from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "ProcedureEventContextBase", path = "src/sdk/event_context.ts", deprecated = ["ProcedureEventContextInterface"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.context.subscription_event.base"
+name = "SubscriptionEventContextBase"
+description = "The SDK type that generated code builds SubscriptionEventContext from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "SubscriptionEventContextBase", deprecated = ["SubscriptionEventContextInterface"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = { sdk = "FSubscriptionEventContextBase" }
+cpp_module = "none"
+note = "Unreal's SDK passes this untyped context to the generated subscription handle, which replaces it with the generated SubscriptionEventContext, a subclass of the generated FContextBase."
+
+[[role]]
+id = "client.context.error.base"
+name = "ErrorContextBase"
+description = "The SDK type that generated code builds ErrorContext from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "ErrorContextBase", deprecated = ["ErrorContextInterface"] }
+csharp_module = "none"
+csharp_client = "none"
+unreal = { sdk = "FErrorContextBase" }
+cpp_module = "none"
+note = "Unreal's SDK passes this untyped context to the generated subscription handle, which builds the generated ErrorContext, a subclass of the generated FContextBase, from its error."
+
+[[role]]
+id = "client.context.event.interface"
+name = "EventContext"
+description = "The interface that every generated EventContext implements"
+rust_module = "none"
+rust_client = { sdk = "EventContext", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "IEventContext" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.context.reducer_event.interface"
+name = "ReducerEventContext"
+description = "The interface that every generated ReducerEventContext implements"
+rust_module = "none"
+rust_client = { sdk = "ReducerEventContext", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "IReducerEventContext" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.context.procedure_event.interface"
+name = "ProcedureEventContext"
+description = "The interface that every generated ProcedureEventContext implements"
+rust_module = "none"
+rust_client = { sdk = "ProcedureEventContext", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "IProcedureEventContext" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.context.subscription_event.interface"
+name = "SubscriptionEventContext"
+description = "The interface that every generated SubscriptionEventContext implements"
+rust_module = "none"
+rust_client = { sdk = "SubscriptionEventContext", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "ISubscriptionEventContext" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.context.error.interface"
+name = "ErrorContext"
+description = "The interface that every generated ErrorContext implements"
+rust_module = "none"
+rust_client = { sdk = "ErrorContext", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "IErrorContext" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "client.event"
+name = "Event"
+description = "A record of what caused a callback"
+rust_module = "none"
+rust_client = { sdk = "Event" }
+ts_module = "none"
+ts_client = { sdk = "Event" }
+csharp_module = "none"
+csharp_client = { sdk = "Event<R>" }
+unreal = { generated = "F{Module}Event" }
+cpp_module = "none"
+
+[[role]]
+id = "client.reducer_event"
+name = "ReducerEvent"
+description = "A record of one reducer call"
+rust_module = "none"
+rust_client = { sdk = "ReducerEvent" }
+ts_module = "none"
+ts_client = { sdk = "ReducerEvent" }
+csharp_module = "none"
+csharp_client = { sdk = "ReducerEvent<R>" }
+unreal = { generated = "F{Module}ReducerEvent" }
+cpp_module = "none"
+
+[[role]]
+id = "client.procedure_event"
+name = "ProcedureEvent"
+description = "A record of one procedure call"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "ProcedureEvent" }
+unreal = { generated = "F{Module}ProcedureEvent" }
+cpp_module = "none"
+
+[[role]]
+id = "client.reducer_status"
+description = "How a reducer call ended"
+rust_module = "none"
+rust_client = { sdk = "Status" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "Status" }
+unreal = { sdk = "FSpacetimeDBStatus" }
+cpp_module = "none"
+note = "TypeScript's ReducerEvent carries the wire type ReducerOutcome, with different variants, which the package does not export."
+
+# Client tables and indexes
+
+[[role]]
+id = "client.table_handle"
+name = "{Table}TableHandle"
+description = "A client handle to one table"
+rust_module = "none"
+rust_client = { generated = "{Table}TableHandle" }
+ts_module = "none"
+ts_client = { sdk = "TableHandle", deprecated = ["ClientTable"] }
+csharp_module = "none"
+csharp_client = { generated = "RemoteTables.{Table}Handle" }
+unreal = { generated = "U{Table}Table" }
+cpp_module = "none"
+deviations = { csharp_client = "C# has no type aliases; renamed at the next major version.", unreal = "Reflected UCLASS types cannot be aliased; renamed at the next major version." }
+
+[[role]]
+id = "client.table_handle.base"
+name = "TableHandleBase"
+description = "The SDK type or trait that every client table handle builds on"
+rust_module = "none"
+rust_client = { sdk = "Table" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "RemoteTableHandle<EventContext, Row>" }
+unreal = { sdk = "URemoteTable" }
+cpp_module = "none"
+deviations = { rust_client = "A trait that generated handles implement. Not renamed yet; a hidden re-export would keep Table working.", csharp_client = "C# has no type aliases; renamed at the next major version.", unreal = "Reflected UCLASS types cannot be aliased; renamed at the next major version." }
+note = "TypeScript's SDK TableHandle (client.table_handle) serves every table, so TypeScript needs no base."
+
+[[role]]
+id = "client.table_handle.with_primary_key"
+name = "TableHandleWithPrimaryKey"
+description = "The operations of a client table handle whose table has a primary key"
+rust_module = "none"
+rust_client = { sdk = "TableWithPrimaryKey" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+deviations = { rust_client = "Not renamed yet; a hidden re-export would keep TableWithPrimaryKey working." }
+
+[[role]]
+id = "client.table_handle.event"
+name = "EventTableHandleBase"
+description = "The SDK type or trait that every client handle to an event table builds on"
+rust_module = "none"
+rust_client = { sdk = "EventTable" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "RemoteEventTableHandle<EventContext, Row>" }
+unreal = "none"
+cpp_module = "none"
+deviations = { rust_client = "A trait that generated handles implement. Not renamed yet; a hidden re-export would keep EventTable working.", csharp_client = "C# has no type aliases; renamed at the next major version." }
+
+[[role]]
+id = "client.index.unique"
+name = "{Table}{Column}UniqueIndex"
+description = "A client handle to one unique index"
+rust_module = "none"
+rust_client = { generated = "{Table}{Column}Unique" }
+ts_module = "none"
+ts_client = { sdk = "ReadonlyUniqueIndex", path = "src/lib/indexes.ts" }
+csharp_module = "none"
+csharp_client = { generated = "RemoteTables.{Table}Handle.{Column}UniqueIndex" }
+unreal = { generated = "U{Table}{Column}UniqueIndex" }
+cpp_module = "none"
+deviations = { rust_client = "Generated per-item names are renamed at the next major version.", ts_client = "TypeScript generates no type per index; every client unique index has the SDK's ReadonlyUniqueIndex type.", csharp_client = "Nested in the table handle, so it omits the table name; C# renames wait for the next major version." }
+
+[[role]]
+id = "client.index.ranged"
+name = "{Table}{Index}RangedIndex"
+description = "A client handle to one B-tree index"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "ReadonlyRangedIndex", path = "src/lib/indexes.ts" }
+csharp_module = "none"
+csharp_client = { generated = "RemoteTables.{Table}Handle.{Index}Index" }
+unreal = { generated = "U{Table}{Index}Index" }
+cpp_module = "none"
+deviations = { ts_client = "TypeScript generates no type per index; every client B-tree index has the SDK's ReadonlyRangedIndex type.", csharp_client = "Nested in the table handle as {Index}Index, without the table name or Ranged; C# renames wait for the next major version.", unreal = "Reflected UCLASS types cannot be aliased; renamed at the next major version." }
+note = "The Rust client generates handles only for unique indexes."
+
+# Subscriptions
+
+[[role]]
+id = "subscription.builder"
+name = "SubscriptionBuilder"
+description = "Configures and starts a subscription"
+rust_module = "none"
+rust_client = { sdk = "SubscriptionBuilder", path = "spacetimedb_sdk::__codegen" }
+ts_module = "none"
+ts_client = { generated = "SubscriptionBuilder", kind = "class" }
+csharp_module = "none"
+csharp_client = { generated = "SubscriptionBuilder" }
+unreal = { generated = "USubscriptionBuilder" }
+cpp_module = "none"
+
+[[role]]
+id = "subscription.builder.base"
+name = "SubscriptionBuilderBase"
+description = "The SDK type that generated code builds SubscriptionBuilder from"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { sdk = "SubscriptionBuilderBase", deprecated = ["SubscriptionBuilderImpl"], kind = "class" }
+csharp_module = "none"
+csharp_client = "none"
+unreal = { sdk = "USubscriptionBuilderBase" }
+cpp_module = "none"
+
+[[role]]
+id = "subscription.handle"
+name = "SubscriptionHandle"
+description = "Manages one active subscription"
+rust_module = "none"
+rust_client = { generated = "SubscriptionHandle" }
+ts_module = "none"
+ts_client = { generated = "SubscriptionHandle" }
+csharp_module = "none"
+csharp_client = { generated = "SubscriptionHandle" }
+unreal = { generated = "USubscriptionHandle" }
+cpp_module = "none"
+
+[[role]]
+id = "subscription.handle.interface"
+name = "SubscriptionHandle"
+description = "The interface of every subscription handle"
+rust_module = "none"
+rust_client = { sdk = "SubscriptionHandle" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "ISubscriptionHandle" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "subscription.handle.base"
+name = "SubscriptionHandleBase"
+description = "The SDK type that generated code builds SubscriptionHandle from"
+rust_module = "none"
+rust_client = { sdk = "SubscriptionHandleBase", path = "spacetimedb_sdk::__codegen", deprecated = ["SubscriptionHandleImpl"] }
+ts_module = "none"
+ts_client = { sdk = "SubscriptionHandleBase", deprecated = ["SubscriptionHandleImpl"], kind = "class" }
+csharp_module = "none"
+csharp_client = { sdk = "SubscriptionHandleBase<SubscriptionEventContext, ErrorContext>" }
+unreal = { sdk = "USubscriptionHandleBase" }
+cpp_module = "none"
+
+# Query builder
+
+[[role]]
+id = "query.builder"
+name = "QueryBuilder"
+description = "The typed query builder, the entry point to a module's tables"
+rust_module = { sdk = "QueryBuilder" }
+rust_client = { sdk = "QueryBuilder", path = "spacetimedb_sdk::__codegen" }
+ts_module = { sdk = "QueryBuilder" }
+ts_client = { sdk = "QueryBuilder" }
+csharp_module = { generated = "QueryBuilder" }
+csharp_client = { generated = "QueryBuilder" }
+unreal = { generated = "FQueryBuilder" }
+cpp_module = { sdk = "QueryBuilder" }
+
+[[role]]
+id = "query.cols"
+name = "{Row}Cols"
+description = "The columns of one table in the query builder"
+rust_module = { generated = "{Row}Cols" }
+rust_client = { generated = "{Row}Cols", path = "{row}_type" }
+ts_module = { sdk = "RowExpr" }
+ts_client = { sdk = "RowExpr" }
+csharp_module = { generated = "{Table}Cols" }
+csharp_client = { generated = "{Table}Cols" }
+unreal = { generated = "F{Row}Cols" }
+cpp_module = { generated = "{Row}_query_builder_cols" }
+deviations = { ts_module = "TypeScript generates no type per table; every table's columns have the SDK's RowExpr type.", ts_client = "TypeScript generates no type per table; every table's columns have the SDK's RowExpr type.", csharp_module = "Keyed by table accessor rather than row type; C# renames wait for the next major version.", csharp_client = "Keyed by table accessor rather than row type; C# renames wait for the next major version.", cpp_module = "Not renamed yet; the struct macro pastes the row type and _query_builder_cols." }
+note = "Unreal keys by row type only when one table uses the row type, and by table otherwise, as in F{Table}Cols."
+
+[[role]]
+id = "query.ix_cols"
+name = "{Row}IxCols"
+description = "The indexed columns of one table in the query builder"
+rust_module = { generated = "{Row}IxCols" }
+rust_client = { generated = "{Row}IxCols", path = "{row}_type" }
+ts_module = { sdk = "IndexedRowExpr" }
+ts_client = { sdk = "IndexedRowExpr" }
+csharp_module = { generated = "{Table}IxCols" }
+csharp_client = { generated = "{Table}IxCols" }
+unreal = { generated = "F{Row}IxCols" }
+cpp_module = { generated = "{Row}_query_builder_ix_cols" }
+deviations = { ts_module = "TypeScript generates no type per table; every table's indexed columns have the SDK's IndexedRowExpr type.", ts_client = "TypeScript generates no type per table; every table's indexed columns have the SDK's IndexedRowExpr type.", csharp_module = "Keyed by table accessor rather than row type; C# renames wait for the next major version.", csharp_client = "Keyed by table accessor rather than row type; C# renames wait for the next major version.", cpp_module = "Not renamed yet; the struct macro pastes the row type and _query_builder_ix_cols." }
+note = "Unreal keys by row type only when one table uses the row type, and by table otherwise, as in F{Table}IxCols."
+
+[[role]]
+id = "query.table"
+description = "The query source for one table"
+rust_module = { sdk = "Table", path = "spacetimedb::query_builder" }
+rust_client = { sdk = "Table", path = "spacetimedb_sdk::__codegen::__query_builder" }
+ts_module = { sdk = "TableRef" }
+ts_client = { sdk = "TableRef" }
+csharp_module = { sdk = "Table<TRow, TCols, TIxCols>" }
+csharp_client = { sdk = "Table<TRow, TCols, TIxCols>" }
+unreal = { sdk = "Table" }
+cpp_module = { sdk = "Table<TRow, TCols, TIxCols>", path = "SpacetimeDB::query_builder" }
+
+[[role]]
+id = "query.query"
+name = "Query"
+description = "A typed query, as a view returns it or a subscription takes it"
+rust_module = { sdk = "Query" }
+rust_client = { sdk = "Query", path = "spacetimedb_sdk::__codegen::__query_builder" }
+ts_module = { sdk = "Query" }
+ts_client = { sdk = "Query" }
+csharp_module = { sdk = "IQuery<TRow>" }
+csharp_client = { sdk = "IQuery<TRow>" }
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "query.raw_query"
+name = "RawQuery"
+description = "A built query of known row type"
+rust_module = { sdk = "RawQuery" }
+rust_client = { sdk = "RawQuery", path = "spacetimedb_sdk::__codegen::__query_builder" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = { sdk = "RawQuery" }
+cpp_module = { sdk = "RawQuery<TRow>", path = "SpacetimeDB::query_builder" }
+
+[[role]]
+id = "query.col"
+description = "One column in a query expression"
+rust_module = { sdk = "Col", path = "spacetimedb::query_builder" }
+rust_client = { sdk = "Col", path = "spacetimedb_sdk::__codegen::__query_builder" }
+ts_module = { sdk = "ColumnExpression", kind = "class" }
+ts_client = { sdk = "ColumnExpression", kind = "class" }
+csharp_module = { sdk = "Col<TRow, TValue>" }
+csharp_client = { sdk = "Col<TRow, TValue>" }
+unreal = { sdk = "Col" }
+cpp_module = { sdk = "Col<TRow, TValue>", path = "SpacetimeDB::query_builder" }
+
+[[role]]
+id = "query.ix_col"
+description = "One indexed column in a query expression"
+rust_module = { sdk = "IxCol", path = "spacetimedb::query_builder" }
+rust_client = { sdk = "IxCol", path = "spacetimedb_sdk::__codegen::__query_builder" }
+ts_module = "none"
+ts_client = "none"
+csharp_module = { sdk = "IxCol<TRow, TValue>" }
+csharp_client = { sdk = "IxCol<TRow, TValue>" }
+unreal = { sdk = "IxCol" }
+cpp_module = { sdk = "IxCol<TRow, TValue>", path = "SpacetimeDB::query_builder" }
+
+[[role]]
+id = "query.bool_expr"
+description = "A boolean query expression"
+rust_module = { sdk = "BoolExpr", path = "spacetimedb::query_builder" }
+rust_client = { sdk = "BoolExpr", path = "spacetimedb_sdk::__codegen::__query_builder" }
+ts_module = { sdk = "BooleanExpr", kind = "class" }
+ts_client = { sdk = "BooleanExpr", kind = "class" }
+csharp_module = { sdk = "BoolExpr<TRow>" }
+csharp_client = { sdk = "BoolExpr<TRow>" }
+unreal = { sdk = "BoolExpr" }
+cpp_module = { sdk = "BoolExpr<TRow>", path = "SpacetimeDB::query_builder" }
+
+# Module contexts
+
+[[role]]
+id = "module.context.reducer"
+name = "ReducerContext"
+description = "The context passed to a reducer"
+rust_module = { sdk = "ReducerContext" }
+rust_client = "none"
+ts_module = { sdk = "ReducerContext", deprecated = ["ReducerCtx"] }
+ts_client = "none"
+csharp_module = { generated = "ReducerContext" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ReducerContext" }
+
+[[role]]
+id = "module.context.procedure"
+name = "ProcedureContext"
+description = "The context passed to a procedure"
+rust_module = { sdk = "ProcedureContext" }
+rust_client = "none"
+ts_module = { sdk = "ProcedureContext", deprecated = ["ProcedureCtx"] }
+ts_client = "none"
+csharp_module = { generated = "ProcedureContext" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ProcedureContext" }
+
+[[role]]
+id = "module.context.view"
+name = "ViewContext"
+description = "The context passed to a view"
+rust_module = { sdk = "ViewContext" }
+rust_client = "none"
+ts_module = { sdk = "ViewContext", deprecated = ["ViewCtx"] }
+ts_client = "none"
+csharp_module = { generated = "ViewContext" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ViewContext" }
+
+[[role]]
+id = "module.context.anonymous_view"
+name = "AnonymousViewContext"
+description = "The context passed to an anonymous view"
+rust_module = { sdk = "AnonymousViewContext" }
+rust_client = "none"
+ts_module = { sdk = "AnonymousViewContext", deprecated = ["AnonymousViewCtx"] }
+ts_client = "none"
+csharp_module = { generated = "AnonymousViewContext" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "AnonymousViewContext" }
+
+[[role]]
+id = "module.context.tx"
+name = "TxContext"
+description = "The context passed to a procedure's transaction"
+rust_module = { sdk = "TxContext" }
+rust_client = "none"
+ts_module = { sdk = "TxContext", deprecated = ["TransactionCtx"] }
+ts_client = "none"
+csharp_module = { generated = "ProcedureTxContext" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "TxContext" }
+deviations = { csharp_module = "C# has no type aliases; renamed at the next major version." }
+
+[[role]]
+id = "module.context.auth"
+name = "AuthContext"
+description = "The caller's authentication, from ctx.sender_auth()"
+rust_module = { sdk = "AuthContext", deprecated = ["AuthCtx"] }
+rust_client = "none"
+ts_module = { sdk = "AuthContext", deprecated = ["AuthCtx"] }
+ts_client = "none"
+csharp_module = { sdk = "AuthCtx" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "AuthContext", deprecated = ["AuthCtx"] }
+deviations = { csharp_module = "C# has no type aliases; renamed at the next major version." }
+
+[[role]]
+id = "module.context.http_handler"
+name = "HandlerContext"
+description = "The context passed to an HTTP handler"
+rust_module = { sdk = "HandlerContext", path = "spacetimedb::http", cfg = 'feature = "unstable"' }
+rust_client = "none"
+ts_module = { sdk = "HandlerContext" }
+ts_client = "none"
+csharp_module = { generated = "HandlerContext" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "HandlerContext" }
+
+[[role]]
+id = "module.jwt_claims"
+name = "JwtClaims"
+description = "The claims of the caller's JSON Web Token"
+rust_module = { sdk = "JwtClaims" }
+rust_client = "none"
+ts_module = { sdk = "JwtClaims" }
+ts_client = "none"
+csharp_module = { sdk = "JwtClaims" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "JwtClaims" }
+
+[[role]]
+id = "module.db_context"
+name = "DbContextBase"
+description = "The base of the module contexts that carry ctx.db"
+rust_module = { deprecated = ["DbContext"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = { sdk = "DbContext<DbView>" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+deviations = { csharp_module = "C# has no type aliases; renamed at the next major version." }
+note = "Rust deprecates its DbContext trait in favor of the capability traits below."
+
+[[role]]
+id = "module.context_trait.db_read"
+name = "ContextDbRead"
+description = "A context that can read the database"
+rust_module = { sdk = "ContextDbRead", deprecated = ["CtxDbRead"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.db_write"
+name = "ContextDbWrite"
+description = "A context that can write the database"
+rust_module = { sdk = "ContextDbWrite", deprecated = ["CtxDbWrite"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.with_sender"
+name = "ContextWithSender"
+description = "A context that knows its caller"
+rust_module = { sdk = "ContextWithSender", deprecated = ["CtxWithSender"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.with_timestamp"
+name = "ContextWithTimestamp"
+description = "A context that knows the time of the call"
+rust_module = { sdk = "ContextWithTimestamp", deprecated = ["CtxWithTimestamp"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.with_sender_auth"
+name = "ContextWithSenderAuth"
+description = "A context that knows its caller's authentication"
+rust_module = { sdk = "ContextWithSenderAuth", deprecated = ["CtxWithSenderAuth"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.with_tx_management"
+name = "ContextWithTxManagement"
+description = "A context that can run transactions"
+rust_module = { sdk = "ContextWithTxManagement", deprecated = ["CtxWithTxManagement"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.with_rng"
+name = "ContextWithRng"
+description = "A context that provides a random number generator"
+rust_module = { sdk = "ContextWithRng", deprecated = ["CtxWithRng"], cfg = 'feature = "rand08"' }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.context_trait.with_http"
+name = "ContextWithHttp"
+description = "A context that can make HTTP requests"
+rust_module = { sdk = "ContextWithHttp", deprecated = ["CtxWithHttp"] }
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+# Module database view, table handles, and indexes
+
+[[role]]
+id = "module.db"
+name = "DbView"
+description = "The database as a module function sees it (ctx.db)"
+rust_module = { sdk = "DbView", deprecated = ["Local"] }
+rust_client = "none"
+ts_module = { sdk = "DbView" }
+ts_client = "none"
+csharp_module = { generated = "Local" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "DbView", deprecated = ["DatabaseContext"] }
+deviations = { csharp_module = "C# has no type aliases; renamed at the next major version." }
+
+[[role]]
+id = "module.db.read_only"
+name = "ReadOnlyDbView"
+description = "The database as a view sees it"
+rust_module = { sdk = "ReadOnlyDbView", deprecated = ["LocalReadOnly"] }
+rust_client = "none"
+ts_module = { sdk = "ReadonlyDbView", path = "src/server/db_view.ts" }
+ts_client = "none"
+csharp_module = { generated = "LocalReadOnly", path = "SpacetimeDB.Internal" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ReadOnlyDbView", deprecated = ["ReadOnlyDatabaseContext"] }
+deviations = { csharp_module = "C# has no type aliases; renamed at the next major version." }
+
+[[role]]
+id = "module.table_handle"
+name = "TableHandle"
+description = "A module handle to one table"
+rust_module = { sdk = "Table" }
+rust_client = "none"
+ts_module = { sdk = "TableHandle", path = "src/lib/table.ts", deprecated = ["Table"] }
+ts_client = "none"
+csharp_module = { generated = "{Table}", path = "SpacetimeDB.Internal.TableHandles" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "TableAccessor<T>" }
+deviations = { rust_module = "Not renamed yet; a hidden re-export would keep the trait name Table working.", csharp_module = "C# has no type aliases; renamed at the next major version.", cpp_module = "Not renamed yet; a deprecated alias template (template<typename T> using) would keep the old name working." }
+
+[[role]]
+id = "module.table_handle.read_only"
+name = "ReadOnlyTableHandle"
+description = "A module handle to one table, as a view sees it"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "ReadonlyTableHandle", path = "src/lib/table.ts", deprecated = ["ReadonlyTable"] }
+ts_client = "none"
+csharp_module = { generated = "{Table}ReadOnly", path = "SpacetimeDB.Internal.ViewHandles" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ReadOnlyTableAccessor<T>" }
+deviations = { rust_module = "Rust has no read-only table trait; the table macro generates a {accessor}__ViewHandle per table.", csharp_module = "C# has no type aliases; renamed at the next major version.", cpp_module = "Not renamed yet; a deprecated alias template (template<typename T> using) would keep the old name working." }
+
+[[role]]
+id = "module.index.unique"
+name = "UniqueIndex"
+description = "A module handle to a unique index"
+rust_module = { sdk = "UniqueIndex", deprecated = ["UniqueColumn"] }
+rust_client = "none"
+ts_module = { sdk = "UniqueIndex", path = "src/lib/indexes.ts" }
+ts_client = "none"
+csharp_module = { sdk = "UniqueIndex<Handle, Row, T, RW>", path = "SpacetimeDB.Internal" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "TypedUniqueAccessor<TableType, FieldType>" }
+deviations = { cpp_module = "Not renamed yet; a deprecated alias template (template<typename T> using) would keep the old name working." }
+
+[[role]]
+id = "module.index.unique.read_only"
+name = "ReadOnlyUniqueIndex"
+description = "A module handle to a unique index, as a view sees it"
+rust_module = { sdk = "ReadOnlyUniqueIndex", deprecated = ["UniqueColumnReadOnly"] }
+rust_client = "none"
+ts_module = { sdk = "ReadonlyUniqueIndex", path = "src/lib/indexes.ts" }
+ts_client = "none"
+csharp_module = { sdk = "ReadOnlyUniqueIndex<Handle, Row, T, RW>", path = "SpacetimeDB.Internal" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ReadOnlyUniqueAccessor<TableType, FieldType>" }
+deviations = { cpp_module = "Not renamed yet; a deprecated alias template (template<typename T> using) would keep the old name working." }
+
+[[role]]
+id = "module.index.point"
+name = "PointIndex"
+description = "A module handle to an index that filters by a value"
+rust_module = { sdk = "PointIndex" }
+rust_client = "none"
+ts_module = { sdk = "PointIndex", path = "src/lib/indexes.ts" }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.index.point.read_only"
+name = "ReadOnlyPointIndex"
+description = "A module handle to an index that filters by a value, as a view sees it"
+rust_module = { sdk = "ReadOnlyPointIndex", deprecated = ["PointIndexReadOnly"] }
+rust_client = "none"
+ts_module = { sdk = "ReadonlyPointIndex", path = "src/lib/indexes.ts" }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+
+[[role]]
+id = "module.index.ranged"
+name = "RangedIndex"
+description = "A module handle to an index that filters by a range"
+rust_module = { sdk = "RangedIndex" }
+rust_client = "none"
+ts_module = { sdk = "RangedIndex", path = "src/lib/indexes.ts" }
+ts_client = "none"
+csharp_module = { sdk = "IndexBase<Row>", path = "SpacetimeDB.Internal" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "TypedIndexedAccessor<TableType, FieldType>" }
+deviations = { csharp_module = "C# has no ranged-index type: a generated B-tree index handle derives from IndexBase<Row>, the base of every index handle, unique ones included.", cpp_module = "Not renamed yet; a deprecated alias template (template<typename T> using) would keep the old name working." }
+
+[[role]]
+id = "module.index.ranged.read_only"
+name = "ReadOnlyRangedIndex"
+description = "A module handle to an index that filters by a range, as a view sees it"
+rust_module = { sdk = "ReadOnlyRangedIndex", deprecated = ["RangedIndexReadOnly"] }
+rust_client = "none"
+ts_module = { sdk = "ReadonlyRangedIndex", path = "src/lib/indexes.ts" }
+ts_client = "none"
+csharp_module = { sdk = "ReadOnlyIndexBase<Row>", path = "SpacetimeDB.Internal" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "ReadOnlyIndexedAccessor<TableType, FieldType>" }
+deviations = { csharp_module = "C# has no ranged-index type: a generated read-only B-tree index handle derives from ReadOnlyIndexBase<Row>, the base of every read-only index handle, unique ones included.", cpp_module = "Not renamed yet; a deprecated alias template (template<typename T> using) would keep the old name working." }
+
+# Items that spell the product name
+
+[[role]]
+id = "module.host_error"
+description = "The base of the errors that a failed host call raises"
+rust_module = "none"
+rust_client = "none"
+ts_module = { sdk = "SpacetimeHostError" }
+ts_client = "none"
+csharp_module = { sdk = "StdbException" }
+csharp_client = "none"
+unreal = "none"
+cpp_module = "none"
+deviations = { ts_module = "Spells the product name Spacetime, which the scheme spells SpacetimeDB.", csharp_module = "Abbreviates the product name, which the scheme never abbreviates; C# has no type aliases, so it is renamed at the next major version." }
+note = "Rust host calls return their errors, such as Errno, rather than raise them."
+
+[[role]]
+id = "module.rng"
+description = "The random number generator that a module context provides"
+rust_module = { sdk = "StdbRng", cfg = 'feature = "rand08"' }
+rust_client = "none"
+ts_module = { sdk = "Random" }
+ts_client = "none"
+csharp_module = "none"
+csharp_client = "none"
+unreal = "none"
+cpp_module = { sdk = "StdbRng" }
+deviations = { rust_module = "Abbreviates the product name, which the scheme never abbreviates. Not renamed yet; a deprecated type alias would keep StdbRng working.", cpp_module = "Abbreviates the product name, which the scheme never abbreviates. Not renamed yet; a deprecated using alias would keep StdbRng working." }
+note = "C# contexts expose System.Random."
+
+[[role]]
+id = "client.godot_update_manager"
+name = "SpacetimeDBUpdateManager"
+description = "The Godot node that advances every connection each frame"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = "none"
+csharp_module = "none"
+csharp_client = { sdk = "STDBUpdateManager", unchecked = "Defined only in Godot builds (#if GODOT), which CI does not compile." }
+unreal = "none"
+cpp_module = "none"
+deviations = { csharp_client = "Abbreviates the product name, which the scheme never abbreviates; C# has no type aliases, so it is renamed at the next major version." }
+note = "Unity builds use SpacetimeDBNetworkManager for the same job."
+
+# Calls
+
+[[role]]
+id = "call.args.reducer"
+name = "{Reducer}Args"
+description = "The arguments of one reducer call"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { generated = "{Reducer}Params", path = "types/reducers" }
+csharp_module = "none"
+csharp_client = { generated = "Reducer.{Reducer}" }
+unreal = { generated = "F{Reducer}Args" }
+cpp_module = "none"
+deviations = { rust_client = "Generated as a pub(super) {Reducer}Args, which users cannot name.", ts_client = "Generated per-item names are renamed at the next major version.", csharp_client = "The reducer's variant class of Reducer holds its arguments; C# renames wait for the next major version." }
+
+[[role]]
+id = "call.args.procedure"
+name = "{Procedure}Args"
+description = "The arguments of one procedure call"
+rust_module = "none"
+rust_client = "none"
+ts_module = "none"
+ts_client = { generated = "{Procedure}Args", path = "types/procedures", unchecked = "The TypeScript test app defines no procedures." }
+csharp_module = "none"
+csharp_client = { generated = "Procedure.{Procedure}Args" }
+unreal = { generated = "F{Procedure}Args" }
+cpp_module = "none"
+deviations = { rust_client = "Generated as a pub(super) {Procedure}Args, which users cannot name." }

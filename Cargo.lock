@@ -1088,6 +1088,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-sdk-names"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "serde",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "ci-smoketest-checks"
 version = "0.1.0"
 

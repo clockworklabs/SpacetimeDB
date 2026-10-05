@@ -93,6 +93,7 @@ members = [
   "tools/ci/commands/check-release-deps",
   "tools/ci/commands/llm-benchmark-summary",
   "tools/ci/commands/cache-warm",
+  "tools/ci/commands/sdk-names",
   "tools/ci/common",
   "tools/keynote-bench-harness",
   "tools/license-check",

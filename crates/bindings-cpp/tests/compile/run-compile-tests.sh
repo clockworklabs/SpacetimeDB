@@ -134,6 +134,7 @@ else
     declare -a CASE_NAMES=(
         "ok_multi_column_range_prefixes"
         "ok_autoinc_same_line"
+        "ok_sdk_names"
         "error_multi_column_range_not_terminal"
     )
 
@@ -142,6 +143,9 @@ else
 
     CASE_EXPECTATION["ok_autoinc_same_line"]="success"
     CASE_SOURCE["ok_autoinc_same_line"]="$SCRIPT_DIR/cases/indexes/ok_autoinc_same_line.cpp"
+
+    CASE_EXPECTATION["ok_sdk_names"]="success"
+    CASE_SOURCE["ok_sdk_names"]="$SCRIPT_DIR/cases/indexes/ok_sdk_names.cpp"
 
     CASE_EXPECTATION["error_multi_column_range_not_terminal"]="failure"
     CASE_MARKER["error_multi_column_range_not_terminal"]="Range<T> in a multi-column index filter must be the final supplied element"

@@ -21,6 +21,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-lint",
     },
     Command {
+        path: &["sdk-names"],
+        package: "ci-sdk-names",
+    },
+    Command {
         path: &["module-latest-deps"],
         package: "ci-module-latest-deps",
     },
