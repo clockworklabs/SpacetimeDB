@@ -2430,6 +2430,21 @@ impl ModuleHost {
         .map_err(Into::into)
     }
 
+    async fn call_reducer_with_params_tx_offset(
+        &self,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        call_instance!(
+            self,
+            reducer_name,
+            params,
+            |p, inst| inst.call_reducer_with_tx_offset(p),
+            |p, inst| inst.call_reducer_with_tx_offset(p).await,
+        )
+        .map_err(Into::into)
+    }
+
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
         let log_message = match err {
             ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
@@ -2497,6 +2512,29 @@ impl ModuleHost {
             reducer_name,
             args,
             async |call| self.call_reducer_with_params(&call.name, call.params).await,
+        )
+        .await
+    }
+
+    pub async fn call_reducer_with_tx_offset(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        self.with_reducer_call(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+            async |call| self.call_reducer_with_params_tx_offset(&call.name, call.params).await,
         )
         .await
     }

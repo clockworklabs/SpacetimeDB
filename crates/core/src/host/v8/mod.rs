@@ -85,7 +85,9 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{
+    InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, ReducerCallResultWithTxOffset, Scheduler,
+};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -500,6 +502,13 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
+    pub(in crate::host) async fn call_reducer_with_tx_offset(
+        &self,
+        params: CallReducerParams,
+    ) -> ReducerCallResultWithTxOffset {
+        self.request(CallReducerWithTxOffsetRequest { params }).await
+    }
+
     pub(in crate::host) async fn call_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
@@ -650,6 +659,12 @@ js_main_request! {
     CallReducerRequest {
         params: CallReducerParams,
     } => "call_reducer", ReducerCallResult, CallReducer
+}
+
+js_main_request! {
+    CallReducerWithTxOffsetRequest {
+        params: CallReducerParams,
+    } => "call_reducer", ReducerCallResultWithTxOffset, CallReducerWithTxOffset
 }
 
 js_main_request! {
@@ -838,6 +853,11 @@ enum JsMainWorkerRequest {
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
         reply_tx: JsReplyTx<ReducerCallResult>,
+        params: CallReducerParams,
+    },
+    /// See [`JsMainInstance::call_reducer_with_tx_offset`].
+    CallReducerWithTxOffset {
+        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
@@ -1445,6 +1465,12 @@ fn handle_main_worker_request(
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
                 let (res, trapped) = call_reducer(None, params);
                 (res.result, trapped)
+            })
+        }
+        JsMainWorkerRequest::CallReducerWithTxOffset { reply_tx, params } => {
+            handle_worker_request("call_reducer", reply_tx, || {
+                let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                call_reducer(None, params)
             })
         }
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {

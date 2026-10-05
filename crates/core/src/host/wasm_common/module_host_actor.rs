@@ -518,6 +518,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    pub(in crate::host) fn call_reducer_with_tx_offset(
+        &mut self,
+        params: CallReducerParams,
+    ) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset_inner(None, params);
+        self.trapped = trapped;
+        res
+    }
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -570,7 +579,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     ) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx_offset_inner(tx, params);
         let (res, trapped) = init_database(replica_ctx, module_def, program, environment, call_reducer);
         self.trapped = trapped;
         res
@@ -620,7 +629,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx_offset(
+    fn call_reducer_with_tx_offset_inner(
         &mut self,
         tx: Option<MutTxId>,
         params: CallReducerParams,

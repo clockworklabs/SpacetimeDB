@@ -99,6 +99,20 @@ pub struct CallParams {
     reducer: String,
 }
 
+#[derive(Deserialize)]
+pub struct CallFromDatabaseQuery {
+    /// The sender outbox table that owns this stream.
+    outbox_table_id: u32,
+    /// Dense, one-based sequence number within (sender, receiver, outbox table).
+    seq: u64,
+    /// Highest contiguous sequence whose result the sender has already retired.
+    #[serde(default)]
+    results_received_through: u64,
+    /// Signature hash from the sender's receiver bindings.
+    #[serde(default)]
+    signature_hash: Option<String>,
+}
+
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
 const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
 
@@ -227,6 +241,75 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             }
             Err(e) => Err((e.0, e.1).into()),
         }
+    };
+
+    with_connection(module, caller_auth, caller_identity, fut).await
+}
+
+/// Call a reducer on behalf of another database.
+///
+/// This is the host-side receiver transport for async IDC. It accepts the
+/// proposal-shaped delivery metadata and waits for reducer durability before
+/// acknowledging the sender.
+pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Path(CallParams { reducer }): Path<CallParams>,
+    Query(query): Query<CallFromDatabaseQuery>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    body: Bytes,
+) -> axum::response::Result<impl IntoResponse> {
+    if content_type != headers::ContentType::octet_stream() {
+        return Err((StatusCode::UNSUPPORTED_MEDIA_TYPE, "Expected application/octet-stream").into());
+    }
+    if query.seq == 0 {
+        return Err((StatusCode::BAD_REQUEST, "IDC seq must start at 1").into());
+    }
+
+    let caller_identity = auth.claims.identity;
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let owner_identity = database.owner_identity;
+    let module = find_database_module(&worker_ctx, &database).await?;
+
+    let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+        let durable_offset = module.durable_tx_offset();
+        let result = module
+            .call_reducer_with_tx_offset(
+                caller_identity,
+                Some(connection_id),
+                None,
+                None,
+                None,
+                &reducer,
+                FunctionArgs::Bsatn(body),
+            )
+            .await
+            .map_err(|e| map_idc_reducer_error(e, &reducer))?;
+
+        if let Some(mut durable_offset) = durable_offset {
+            let tx_offset = result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+        }
+
+        debug!(
+            "IDC delivery accepted: sender={}, receiver={}, outbox_table_id={}, seq={}, results_received_through={}, signature_hash={:?}",
+            caller_identity,
+            owner_identity,
+            query.outbox_table_id,
+            query.seq,
+            query.results_received_through,
+            query.signature_hash,
+        );
+
+        let (status, body) = idc_reducer_outcome_response(&owner_identity, &reducer, result.result.outcome);
+        Ok((
+            status,
+            TypedHeader(SpacetimeEnergyUsed(result.result.execution_budget_used)),
+            TypedHeader(SpacetimeExecutionDurationMicros(result.result.execution_duration)),
+            body,
+        )
+            .into_response())
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
@@ -438,6 +521,37 @@ fn reducer_outcome_response(
             (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
     }
+}
+
+fn idc_reducer_outcome_response(
+    owner_identity: &Identity,
+    reducer: &str,
+    outcome: ReducerOutcome,
+) -> (StatusCode, Box<str>) {
+    match outcome {
+        ReducerOutcome::Committed => (StatusCode::OK, "".into()),
+        ReducerOutcome::Failed(errmsg) => (StatusCode::UNPROCESSABLE_ENTITY, *errmsg),
+        ReducerOutcome::BudgetExceeded => {
+            log::info!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Module energy budget exhausted.".into(),
+            )
+        }
+    }
+}
+
+fn map_idc_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
+    let status = match e {
+        ReducerCallError::Args(_)
+        | ReducerCallError::NoSuchReducer
+        | ReducerCallError::ScheduleReducerNotFound
+        | ReducerCallError::LifecycleReducer(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        ReducerCallError::NoSuchModule(_) | ReducerCallError::WorkerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    log::debug!("Error while invoking IDC reducer {reducer}: {e:#}");
+    (status, format!("{:#}", anyhow::anyhow!(e)))
 }
 
 pub(crate) fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
@@ -1667,6 +1781,8 @@ pub struct DatabaseRoutes<S> {
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_procedure_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/call-from-database/:reducer
+    pub call_from_database_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/environment
@@ -1716,6 +1832,7 @@ where
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_procedure_post: post(call::<S>),
+            call_from_database_post: post(call_from_database::<S>),
             schema_get: get(schema::<S>),
             environment_get: get(environment_metadata::<S>),
             environment_put: put(environment_set::<S>),
@@ -1751,6 +1868,7 @@ where
             .route("/names", self.names_post)
             .route("/names", self.names_put)
             .route("/call/:reducer", self.call_reducer_procedure_post)
+            .route("/call-from-database/:reducer", self.call_from_database_post)
             .route("/schema", self.schema_get)
             .route("/environment", self.environment_get)
             .route("/environment", self.environment_put)
