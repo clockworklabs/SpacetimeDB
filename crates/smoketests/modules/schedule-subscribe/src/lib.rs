@@ -121,8 +121,11 @@ pub fn failing_reducer(_ctx: &ReducerContext, _arg: FailingScheduledTable) -> Re
 #[spacetimedb::reducer]
 pub fn capped_self_update(ctx: &ReducerContext, arg: CappedScheduledTable) {
     log::info!("CappedSelfUpdate");
-    ctx.db.capped_scheduled_table().scheduled_id().update(CappedScheduledTable {
-        n: arg.n.saturating_add(1).min(10),
-        ..arg
-    });
+    ctx.db
+        .capped_scheduled_table()
+        .scheduled_id()
+        .update(CappedScheduledTable {
+            n: arg.n.saturating_add(1).min(10),
+            ..arg
+        });
 }
