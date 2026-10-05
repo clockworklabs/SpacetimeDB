@@ -97,6 +97,10 @@ function decodedResponseBody(body: Buffer, contentEncoding: string | string[] | 
 
 function responseUsage(body: Buffer, contentEncoding: string | string[] | undefined = undefined): JsonRecord | null {
   const values: JsonRecord[] = [];
+  const tokenCount = (value: unknown): boolean => typeof value === 'number'
+    && Number.isSafeInteger(value) && value >= 0;
+  const completeUsage = (value: unknown): boolean => isRecord(value)
+    && tokenCount(value.input_tokens) && tokenCount(value.output_tokens);
   let serverBlocks = false;
   const add = (value: unknown): void => {
     if (!isRecord(value)) return;
@@ -111,9 +115,12 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
   try { text = decodedResponseBody(body, contentEncoding).toString('utf8'); }
   catch { return null; }
   try {
-    add(JSON.parse(text));
+    const message: unknown = JSON.parse(text);
+    if (!isRecord(message) || !completeUsage(message.usage)) return null;
+    add(message);
   } catch {
     let sawError = false;
+    let sawInitialUsage = false;
     let sawFinalUsage = false;
     let sawMessageStop = false;
     let parseError = false;
@@ -125,8 +132,11 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
         try {
           const event = JSON.parse(data);
           if (isRecord(event) && event.type === 'error') sawError = true;
+          if (isRecord(event) && event.type === 'message_start' && isRecord(event.message)) {
+            sawInitialUsage = completeUsage(event.message.usage);
+          }
           if (isRecord(event) && event.type === 'message_delta' && isRecord(event.usage)) {
-            sawFinalUsage = true;
+            sawFinalUsage = tokenCount(event.usage.output_tokens);
           }
           if (isRecord(event) && event.type === 'message_stop') sawMessageStop = true;
           add(event);
@@ -135,9 +145,15 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
     });
     try { parser.feed(`${text}\n\n`); }
     catch { parseError = true; }
-    if (parseError || sawError || !sawFinalUsage || !sawMessageStop) return null;
+    if (parseError || sawError || !sawInitialUsage || !sawFinalUsage || !sawMessageStop) return null;
   }
-  if (values.length === 0) return null;
+  // Missing or malformed usage must use the broker's estimate, not an exact zero.
+  // Delta input/cache counts and message cache fields may be absent or null.
+  if (values.some(value => ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']
+    .some(field => value[field] != null && !tokenCount(value[field]))
+    || (value.cache_creation != null && (!isRecord(value.cache_creation)
+      || !tokenCount(value.cache_creation.ephemeral_5m_input_tokens)
+      || !tokenCount(value.cache_creation.ephemeral_1h_input_tokens))))) return null;
   const number = (field: string): number => Math.max(0, ...values.map(value => Number(value[field]) || 0));
   const cacheWrite = (field: string): number => Math.max(0, ...values.map(value =>
     isRecord(value.cache_creation) ? Number(value.cache_creation[field]) || 0 : 0));

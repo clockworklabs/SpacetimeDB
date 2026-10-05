@@ -620,7 +620,7 @@ test('a provider the broker never reached costs nothing and can be waited out; a
   } finally { await close(dropping); rmSync(root, { recursive: true, force: true }); }
 });
 
-test('credential broker estimates a settled request without exact provider usage', async () => {
+test('credential broker estimates a settled request without exact provider usage', async t => {
   const errorStream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}',
     '',
@@ -628,40 +628,69 @@ test('credential broker estimates a settled request without exact provider usage
     'data: {"type":"error","error":{"type":"api_error","message":"connection lost"}}',
     '',
   ].join('\n');
-  for (const { upstreamBody, upstreamHeaders, isError } of [
-    { upstreamBody: '{"ok":true}', upstreamHeaders: {}, isError: false },
-    { upstreamBody: errorStream, upstreamHeaders: { 'content-type': 'text/event-stream' }, isError: true },
+  const incompleteStreams = [
+    { start: { output_tokens: 0 }, final: { output_tokens: 100 } },
+    { start: { input_tokens: 100, output_tokens: 0 }, final: {} },
+    { start: { input_tokens: 100, output_tokens: 0 }, final: { output_tokens: '100' } },
+  ].map(({ start, final }) => [
+    `data: ${JSON.stringify({ type: 'message_start', message: { usage: start } })}`,
+    '',
+    `data: ${JSON.stringify({ type: 'message_delta', usage: final })}`,
+    '',
+    'data: {"type":"message_stop"}',
+    '',
+  ].join('\n'));
+  for (const { name, upstreamBody, upstreamHeaders, isError } of [
+    { name: 'absent usage', upstreamBody: '{"ok":true}', upstreamHeaders: {}, isError: false },
+    { name: 'error stream', upstreamBody: errorStream, upstreamHeaders: { 'content-type': 'text/event-stream' }, isError: true },
+    ...[
+      {},
+      { input_tokens: 100 },
+      { output_tokens: 100 },
+      ...[-1, '100', null, 0.5, Number.MAX_SAFE_INTEGER + 1].flatMap(value => [
+        { input_tokens: value, output_tokens: 100 },
+        { input_tokens: 100, output_tokens: value },
+      ]),
+      { input_tokens: 100, output_tokens: 100, cache_read_input_tokens: '50' },
+      { input_tokens: 100, output_tokens: 100, cache_creation_input_tokens: -1 },
+      { input_tokens: 100, output_tokens: 100, cache_creation: {} },
+    ].map(usage => ({ name: `invalid usage ${JSON.stringify(usage)}`,
+      upstreamBody: JSON.stringify({ usage }), upstreamHeaders: {}, isError: false })),
+    ...incompleteStreams.map((upstreamBody, index) => ({ name: `incomplete stream ${index + 1}`,
+      upstreamBody, upstreamHeaders: { 'content-type': 'text/event-stream' }, isError: false })),
   ]) {
-    const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-estimated-ledger-test-'));
-    const ledgerPath = join(root, 'ledger.json');
-    try {
-      await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
-        const response = await send(brokerPort, {
-          headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' },
-          body: '{"model":"test-model","max_tokens":1000}',
-        });
-        assert.equal(response.status, 200);
-        const ledger = readCredentialBrokerLedger(ledgerPath,
-          { model: 'test-model', maxBudgetUsd: 1 });
-        assert.equal(ledger.complete, true);
-        assert.equal(ledger.estimatedBillableRequests, 1);
-        assert.deepEqual(ledger.estimatedByReason, { ...NO_ESTIMATES, 'no-usage': 1 });
-        // The request was charged its ceiling, so the receipt is an upper bound
-        // and says so; the session it belongs to stays valid.
-        const reconciled = reconcileCredentialBrokerReceipt({ ledger,
-          cliResult: { type: 'result', is_error: isError, total_cost_usd: 0, usage: ZERO_RAW_USAGE },
-          model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-        assert.equal(reconciled.receipt.error, null);
-        assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
-        assert.equal(reconciled.receipt.reconciled, true);
-        assert.equal(reconciled.receipt.exact, false);
-        assert.equal(reconciled.receipt.estimatedRequests, 1);
-        assert.deepEqual(reconciled.receipt.estimatedByReason, { ...NO_ESTIMATES, 'no-usage': 1 });
-        assert.equal(reconciled.receipt.costUsd, ledger.spentUsd);
-        assert.ok(reconciled.receipt.costUsd > 0);
-        if (!isError) assert.equal(reconciled.receipt.calculatedCostUsd, 0);
-      }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES, upstreamHeaders, upstreamBody });
-    } finally { rmSync(root, { recursive: true, force: true }); }
+    await t.test(name, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-estimated-ledger-test-'));
+      const ledgerPath = join(root, 'ledger.json');
+      try {
+        await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+          const response = await send(brokerPort, {
+            headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' },
+            body: '{"model":"test-model","max_tokens":1000}',
+          });
+          assert.equal(response.status, 200);
+          const ledger = readCredentialBrokerLedger(ledgerPath,
+            { model: 'test-model', maxBudgetUsd: 1 });
+          assert.equal(ledger.complete, true);
+          assert.equal(ledger.estimatedBillableRequests, 1);
+          assert.deepEqual(ledger.estimatedByReason, { ...NO_ESTIMATES, 'no-usage': 1 });
+          // The request was charged its ceiling, so the receipt is an upper bound
+          // and says so; the session it belongs to stays valid.
+          const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+            cliResult: { type: 'result', is_error: isError, total_cost_usd: 0, usage: ZERO_RAW_USAGE },
+            model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+          assert.equal(reconciled.receipt.error, null);
+          assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
+          assert.equal(reconciled.receipt.reconciled, true);
+          assert.equal(reconciled.receipt.exact, false);
+          assert.equal(reconciled.receipt.estimatedRequests, 1);
+          assert.deepEqual(reconciled.receipt.estimatedByReason, { ...NO_ESTIMATES, 'no-usage': 1 });
+          assert.equal(reconciled.receipt.costUsd, ledger.spentUsd);
+          assert.ok(reconciled.receipt.costUsd > 0);
+          if (!isError) assert.equal(reconciled.receipt.calculatedCostUsd, 0);
+        }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES, upstreamHeaders, upstreamBody });
+      } finally { rmSync(root, { recursive: true, force: true }); }
+    });
   }
 });
 
@@ -672,7 +701,7 @@ test('streamed provider usage produces a reconciled campaign-priced receipt', as
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":50,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":10}}}}',
     '',
     'data: {"type":"message_delta",',
-    'data: "usage":{"output_tokens":100}}',
+    'data: "usage":{"input_tokens":null,"output_tokens":100,"cache_read_input_tokens":null,"cache_creation_input_tokens":null}}',
     '',
     'data: {"type":"message_stop"}',
     '',
@@ -695,6 +724,8 @@ test('streamed provider usage produces a reconciled campaign-priced receipt', as
             cache_creation_input_tokens: 30 } },
         model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
       assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
+      assert.equal(reconciled.receipt.exact, true);
+      assert.equal(reconciled.receipt.estimatedRequests, 0);
       assert.equal(reconciled.receipt.costUsd, 0.00195);
       assert.equal(reconciled.receipt.calculatedCostUsd, 0.00195);
       assert.equal(reconciled.receipt.cliCostUsd, 0.002925);
