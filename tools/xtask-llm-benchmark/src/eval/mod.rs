@@ -1,5 +1,6 @@
 pub mod defaults;
 pub mod lang;
+pub mod scenario;
 pub mod scorers;
 pub mod spec;
 mod sql_fmt;
