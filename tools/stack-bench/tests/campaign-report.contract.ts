@@ -157,6 +157,32 @@ test('report read model keeps invalid evidence separate and computes declared di
   /summary\.nonsense is unknown/);
 });
 
+test('target delivery keeps deadline stops in the assigned population', () => {
+  const plan = examplePlan();
+  let state = createCampaignState(plan, { now: created });
+  const runs = new Map<string, BenchmarkRun>();
+  // Keep one condition on one stack: one delivered app and two deadline stops.
+  const chosen = state.attempts[0]!.plan.stack;
+  state.attempts = state.attempts.filter(attempt => attempt.plan.stack === chosen);
+  assert.equal(state.attempts.length, 3);
+  for (let i = 0; i < 3; i++) {
+    const next = claimNextAttempt(state, { now: created, admissionId: 'delivery-admission' });
+    assert(next.claim);
+    const result = i === 0 ? run('delivered', next.claim.attempt, { score: 10, max: 10, first: 10 }) : null;
+    if (result) runs.set(next.claim.executionId, result);
+    state = finishCampaignExecution(next.state, next.claim.executionId,
+      { exitCode: i === 0 ? 0 : 1, timedOut: i !== 0, run: result }, { now: created });
+  }
+  const report = buildCampaignReport(plan, state, (_attempt, execution) => runs.get(execution.id)!);
+  const condition = report.conditions[0]!;
+  assert.equal(condition.metrics.finalScoreRate?.center, 1, 'conditional score still describes the measured app');
+  assert.deepEqual(condition.targetDelivery, { passedAttempts: 1, assignedAttempts: 3, rate: 0.333333 });
+  assert.equal(condition.sample.invalidAttempts, 2);
+  assert.match(renderCampaignHtml(report), /1\/3 assigned/);
+  assert.match(campaignReportCsv(report)['conditions.csv']!, /"1","3","0.333333"/);
+  assert.doesNotThrow(() => validateCampaignReport(report));
+});
+
 test('seeded campaign reports identify parent work excluded from continuation cost', () => {
   const plan = examplePlan();
   const state = createCampaignState(plan, { now: created });

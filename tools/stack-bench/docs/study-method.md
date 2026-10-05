@@ -87,12 +87,14 @@ Report infrastructure contention separately from application defects. If
 capacity changes between study batches, retain batch identity and report results
 by batch.
 
-Before collection, choose a common per-attempt cap from observed usage plus a
-stated headroom allowance. The maximum campaign authorization is attempts
-multiplied by that cap, plus any explicitly authorized retries. Report the cap
-and actual spend. An attempt that reaches the cap stops, is recorded as "Cost cap
-reached", and is excluded from comparison; it is not permission to increase the
-cap mid-study. Frequent cap stops mean the headroom was too small.
+Before collection, set a common per-attempt cap well above observed usage. The
+cap guards against runaway spend. It is not a study condition. The maximum
+campaign authorization is attempts multiplied by that cap, plus any explicitly
+authorized retries. Report the cap and actual spend. An attempt that reaches the
+cap stops and is recorded as "Cost cap reached". Raise the cap and rerun it. The
+stopped attempt stays in its campaign's assigned population for full-target
+delivery. Exclude its incomplete score from completed-only score and cost
+distributions; do not invent failed check results.
 
 ## Freeze the method before the main batch
 
@@ -148,7 +150,7 @@ evidence-based attribution; timing alone is not a harness failure class.
 | Feature completion | Fully passed dependency nodes / selected nodes. A node with an unfinished guarantee is not fully complete. |
 | Build checkpoints | Show each measured progressive build. For repair cohorts, separate pre-repair and repaired checkpoints and include all repair cost. |
 | Feature and depth reach | Show nodes started, passed, failed, and blocked at each graph depth out of all assigned attempts. A reached depth need not mean all its nodes passed. |
-| Full target delivery | Fraction of assigned attempts that passed the complete target; show exclusions separately. |
+| Full target delivery | Recorded complete targets / all assigned attempts. Stops, exclusions and pending attempts stay in the denominator and are shown separately. An unfinished campaign reports delivery so far, not a final success rate. Qualification status still applies. |
 | API-equivalent cost | Use receipt status and frozen rates; distinguish exact, upper-bound, and unknown. It is not a subscription invoice. |
 | Token usage | Separate ordinary input, output, cache reads, and cache writes; retain receipt-level cache-write durations. |
 | Time | Show end-to-end wall time, planned pause time, and execution duration separately. Campaign timeout excludes verified planned depth pauses; provider waits still consume the allowance. Retain the raw timestamps. |

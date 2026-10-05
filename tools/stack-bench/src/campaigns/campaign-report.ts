@@ -39,7 +39,7 @@ import type { HistoricalProviderContinuation, ProviderWaitSummary }
   from '../agents/provider-continuation-audit.js';
 import { readCampaignProviderWaitHistory } from './campaign-provider-continuation.js';
 
-export const CAMPAIGN_REPORT_SCHEMA_VERSION = 7;
+export const CAMPAIGN_REPORT_SCHEMA_VERSION = 8;
 
 interface RunCheck {
   executionId: string;
@@ -163,6 +163,7 @@ interface CampaignReportCondition {
     invalidExecutionRate: number;
   };
   metrics: Record<string, MetricSummary>;
+  targetDelivery: { passedAttempts: number; assignedAttempts: number; rate: number };
   spend: CampaignSpend;
   firstBuildObservations: {
     sample: { selectedAttempts: number; measuredAttempts: number };
@@ -595,6 +596,8 @@ CampaignReportCondition[] {
   const metricNames = reportMetricNames(policy);
   return [...groups.entries()].map(([key, attempts]) => {
     const completed = attempts.filter(attempt => attempt.status === 'completed');
+    const delivered = completed.filter(attempt => attempt.executions.at(-1)?.outcome === 'passed'
+      && attempt.metrics?.finalScoreRate === 1).length;
     const executions = attempts.flatMap(attempt => attempt.executions);
     const invalidExecutions = executions.filter(execution => execution.status === 'invalid').length;
     const observedAttempts = completed.filter((attempt): attempt is CampaignReportAttempt & {
@@ -619,6 +622,8 @@ CampaignReportCondition[] {
         executions: executions.length, invalidExecutions,
         invalidExecutionRate: executions.length
           ? Number((invalidExecutions / executions.length).toFixed(6)) : 0 },
+      targetDelivery: { passedAttempts: delivered, assignedAttempts: attempts.length,
+        rate: Number((delivered / attempts.length).toFixed(6)) },
       metrics: { ...Object.fromEntries(metricNames.map(metric => [metric,
         summarize(completed.map(attempt => attempt.metrics?.[metric]), policy.dispersion)])),
       invalidAttemptRate: { n: attempts.length,
@@ -768,7 +773,7 @@ export function validateCampaignReport(input: unknown): CampaignReport {
   for (const [index, row] of report.conditions.entries()) {
     const at = `campaign report.conditions[${index}]`;
     exactFields(row, new Set(['key', 'stack', 'agent', 'condition', 'sample', 'metrics', 'spend',
-      'firstBuildObservations']), at);
+      'firstBuildObservations', 'targetDelivery']), at);
     exactFields(row.condition, new Set(['id', 'contentSha256', 'requested']),
       `${at}.condition`);
     if (typeof row.stack !== 'string' || !row.stack
@@ -1069,6 +1074,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
       ...(grading.status === 'pending'
         ? ['Grading qualification is pending. Treat these scores as provisional.'] : []),
       'Statistics describe only the exact scope and conditions recorded above.',
+      'Score and cost distributions describe completed eligible attempts only. Target delivery counts recorded complete targets over every assigned attempt, including stops and exclusions. Pending attempts have not yet delivered; missing evidence is not an application failure.',
       'Score rates are passed points over all selected points; the questline average weighs every questline equally and is a secondary view.',
       'Check completion counts passed checks over the full selected scope, separately from weighted scores. Missing checkpoints cannot establish a cost/completion curve.',
       'Failed checks are observations, not a count of independent bugs. Findings describe symptoms; confirmed root causes require review of the retained evidence.',
@@ -1115,7 +1121,8 @@ export function renderCampaignHtml(report: CampaignReport,
   const rows = report.conditions.map(condition => `<tr><td>${escape(condition.stack)}</td>`
     + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}${condition.agent.providerRoute ? ` / ${escape(condition.agent.providerRoute)}` : ''}</td>`
     + `<td>${escape(condition.condition.id)}</td>`
-    + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}</td>`
+      + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}`
+      + `<br><small>Target delivered: ${condition.targetDelivery.passedAttempts}/${condition.targetDelivery.assignedAttempts} assigned</small></td>`
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
     + `<td>${escape(formatMetric(report.policy.primaryMetric,
       condition.metrics[report.policy.primaryMetric]?.center))}`
@@ -1315,6 +1322,16 @@ export function campaignReportCsv(report: CampaignReport): Record<string, string
     return `"${text.replaceAll('"', '""')}"`;
   }).join(',')).join('\r\n') + '\r\n';
   return {
+    'conditions.csv': csv([
+      ['stack', 'agentAdapter', 'model', 'conditionId', 'conditionSha256',
+        'targetPassedAttempts', 'assignedAttempts', 'targetDeliveryRate',
+        'completedAttempts', 'invalidAttempts', 'pendingAttempts'],
+      ...report.conditions.map(condition => [condition.stack, condition.agent.adapter,
+        condition.agent.model, condition.condition.id, condition.condition.contentSha256,
+        condition.targetDelivery.passedAttempts, condition.targetDelivery.assignedAttempts,
+        condition.targetDelivery.rate, condition.sample.completedAttempts,
+        condition.sample.invalidAttempts, condition.sample.pendingAttempts]),
+    ]),
     'attempts.csv': csv([
       ['campaignId', 'campaignSha256', 'conditionId', 'conditionSha256', 'agentAdapter', 'levels',
         'attempt', 'stack', 'model', 'repetition', 'status', 'selectedChecks', 'diagnosticPassedChecks',
