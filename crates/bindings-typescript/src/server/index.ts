@@ -4,6 +4,7 @@ export {
   type InferSchema,
   type ModuleExport,
   type ModuleSettings,
+  type SubmoduleMount,
 } from './schema';
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';

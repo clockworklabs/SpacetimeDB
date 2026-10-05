@@ -96,6 +96,112 @@ describe('schema submodules', () => {
     ]);
   });
 
+  it('sends the accessor key as the source namespace and lets the host derive the canonical name', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const authLib = { default: authSchema };
+
+    const consumer = schema({ myAuth: authLib });
+    const raw = consumer.buildRawModuleDefV10({});
+
+    // The key is the accessor namespace. It is sent verbatim as the source name,
+    // and the host applies the case conversion policy (`myAuth` -> `my_auth`),
+    // so no explicit namespace mapping is emitted here.
+    const submodules = raw.sections.find(s => s.tag === 'Submodules')?.value;
+    expect(submodules?.map(s => s.namespace)).toEqual(['myAuth']);
+    const explicitNames =
+      raw.sections.find(s => s.tag === 'ExplicitNames')?.value.entries ?? [];
+    expect(explicitNames.filter(e => e.tag === 'Namespace')).toEqual([]);
+
+    // The runtime keeps addressing the submodule by its accessor name.
+    expect(consumer.submoduleDispatchInfos[0].namespace).toBe('myAuth');
+  });
+
+  it('pins the canonical namespace with a `{ name, module }` mount', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const cleanExpiredSessions = authSchema.reducer(() => {});
+    const authLib = { default: authSchema, cleanExpiredSessions };
+
+    const consumer = schema({
+      myAuth: { name: 'myAuth', module: authLib },
+    });
+    const raw = consumer.buildRawModuleDefV10({});
+
+    const submodules = raw.sections.find(s => s.tag === 'Submodules')?.value;
+    expect(submodules?.map(s => s.namespace)).toEqual(['myAuth']);
+
+    const explicitNames =
+      raw.sections.find(s => s.tag === 'ExplicitNames')?.value.entries ?? [];
+    expect(explicitNames.filter(e => e.tag === 'Namespace')).toEqual([
+      {
+        tag: 'Namespace',
+        value: { sourceName: 'myAuth', canonicalName: 'myAuth' },
+      },
+    ]);
+
+    // The mounted module's exports are still registered through the wrapper.
+    const info = consumer.submoduleDispatchInfos[0];
+    expect(info.namespace).toBe('myAuth');
+    expect(info.reducerDefs.map(r => r.sourceName)).toEqual([
+      'cleanExpiredSessions',
+    ]);
+    expect(info.tables[0].accessorName).toBe('sessions');
+  });
+
+  it('accepts a `{ module }` mount without a name', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const authLib = { default: authSchema };
+
+    const consumer = schema({ myAuth: { module: authLib } });
+    const raw = consumer.buildRawModuleDefV10({});
+
+    const submodules = raw.sections.find(s => s.tag === 'Submodules')?.value;
+    expect(submodules?.map(s => s.namespace)).toEqual(['myAuth']);
+    const explicitNames =
+      raw.sections.find(s => s.tag === 'ExplicitNames')?.value.entries ?? [];
+    expect(explicitNames.filter(e => e.tag === 'Namespace')).toEqual([]);
+  });
+
+  it('rejects a named mount whose module is a default import', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+
+    expect(() =>
+      schema({
+        myAuth: { name: 'myAuth', module: authSchema as any },
+      })
+    ).toThrow(/looks like a default import/);
+  });
+
+  it('rejects a named mount with an empty name', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const authLib = { default: authSchema };
+
+    expect(() =>
+      schema({
+        myAuth: { name: '', module: authLib },
+      })
+    ).toThrow(/invalid `name`/);
+  });
+
   it('rejects default-import style submodules with a clear error', () => {
     const sessions = table(
       { name: 'sessions' },

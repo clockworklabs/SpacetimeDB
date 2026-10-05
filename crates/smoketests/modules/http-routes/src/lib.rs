@@ -66,9 +66,22 @@ fn teapot(_ctx: &mut HandlerContext, _req: Request) -> Response {
         .expect("response builder should not fail")
 }
 
+#[spacetimedb::http::handler]
+fn tx_auth(ctx: &mut HandlerContext, _req: Request) -> Response {
+    let auth = ctx.with_tx(|tx| {
+        format!(
+            "internal={} jwt={}",
+            tx.sender_auth().is_internal(),
+            tx.sender_auth().has_jwt()
+        )
+    });
+    Response::new(Body::from_bytes(auth))
+}
+
 #[spacetimedb::http::router]
 fn router() -> Router {
     Router::new()
+        .get("/tx-auth", tx_auth)
         .get("/get", get_simple)
         .post("/post", post_insert)
         .get("/count", get_count)

@@ -1,11 +1,16 @@
 //! Resolve explicit overrides without fetching stored secrets.
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fmt;
 
 pub(super) use crate::schema_extract::{inspect, read_program};
+use crate::util::ResponseExt;
 use anyhow::Context;
+use headers::HeaderMapExt;
 use serde_json::Value;
-use spacetimedb_lib::environment::EnvironmentSchema;
+use spacetimedb_client_api_messages::name::EnvironmentPublishError;
+use spacetimedb_client_api_messages::publish::SpacetimeEnvironmentRemove;
+use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentSchema};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
@@ -26,14 +31,13 @@ pub(super) struct Resolved {
     pub values: BTreeMap<String, String>,
     pub sources: BTreeMap<String, Source>,
 }
-impl Resolved {
-    pub fn display(&self) -> String {
-        use std::fmt::Write;
-        let mut output = String::new();
+
+impl fmt::Display for Resolved {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (name, source) in &self.sources {
-            let _ = writeln!(output, "Environment {name} ({source})");
+            writeln!(f, "Environment {name} ({source})")?;
         }
-        output
+        Ok(())
     }
 }
 
@@ -88,7 +92,7 @@ pub(super) async fn publish_only(
     options: &super::EnvironmentOptions,
 ) -> anyhow::Result<()> {
     use crate::util::{add_auth_header_opt, get_auth_header, y_or_n};
-    use spacetimedb_client_api_messages::publish::{EnvironmentMetadata, PublishRequest, CONTENT_TYPE};
+    use spacetimedb_client_api_messages::publish::EnvironmentMetadata;
 
     let host = config.get_host_url(server)?;
     let server_url = reqwest::Url::parse(&host)?;
@@ -106,52 +110,44 @@ pub(super) async fn publish_only(
         const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') },
     )
     .to_string();
-    let url = format!("{host}/v1/database/{encoded}");
+    let url = format!("{host}/v1/database/{encoded}/environment");
     // Neither credentials nor publish bodies may be forwarded to redirect destinations.
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let response = add_auth_header_opt(client.get(format!("{url}/environment")), &auth)
-        .send()
-        .await?;
-    anyhow::ensure!(
-        response.status().is_success(),
-        "Cannot read environment schema: HTTP {}",
-        response.status()
-    );
-    let metadata: EnvironmentMetadata = response.json().await.context("Invalid environment metadata")?;
+    let response = add_auth_header_opt(client.get(&url), &auth).send().await?;
+    let metadata: EnvironmentMetadata = response
+        .json_or_error()
+        .await
+        .context("failed to fetch environment schema")?;
     let schema = EnvironmentSchema::new(metadata.declarations)?;
     let resolved = resolve(&schema, input, |key| std::env::var_os(key))?;
     options.validate_values(&resolved.values)?;
-    print!("{}", resolved.display());
-    let request = PublishRequest {
-        module: None,
-        environment: resolved.values,
-        environment_remove: options.remove.clone(),
-        environment_replace: options.replace,
-        expected_module_version: Some(metadata.module_version),
+    print!("{}", resolved);
+    let request = if let EnvironmentRemove::All = options.remove {
+        client.put(url)
+    } else {
+        client.patch(url)
     };
-    let response = add_auth_header_opt(client.put(url), &auth)
-        .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
-        .body(request.encode()?)
-        .send()
-        .await?;
-    anyhow::ensure!(
-        response.status().is_success(),
-        "Environment publish failed with HTTP {}",
-        response.status()
-    );
-    match response
-        .json::<spacetimedb_client_api_messages::name::PublishResult>()
-        .await
-        .map_err(|_| anyhow::anyhow!("Invalid publish response"))?
-    {
-        spacetimedb_client_api_messages::name::PublishResult::Success { database_identity, .. } => {
-            println!("Updated environment for database {database_identity}");
+    let mut request = add_auth_header_opt(request, &auth)
+        .query(&[("expected_module_hash", &metadata.module_hash)])
+        .json(&resolved.values)
+        .build()?;
+    if let EnvironmentRemove::Keys(_) = options.remove {
+        request
+            .headers_mut()
+            .typed_insert(SpacetimeEnvironmentRemove(options.remove.clone()));
+    }
+    let res = client.execute(request).await?;
+    let response: Result<(), EnvironmentPublishError> = res.json_or_error().await?;
+    match response {
+        Ok(()) => {
+            println!("Successfully updated environment");
             Ok(())
         }
-        spacetimedb_client_api_messages::name::PublishResult::PermissionDenied { .. } => {
-            anyhow::bail!("Permission denied publishing environment values")
+        Err(EnvironmentPublishError::MissingRequiredEnvironment { keys }) => {
+            anyhow::bail!("Missing required environment variable(s) {keys:?}")
         }
+        Err(EnvironmentPublishError::VersionConflict(e)) => anyhow::bail!(e),
     }
 }

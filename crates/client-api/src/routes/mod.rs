@@ -1,5 +1,7 @@
 use axum::routing::MethodRouter;
+use headers::Header;
 use http::header;
+use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
 use tower_http::cors;
 
 use crate::{Authorization, ControlStateDelegate, NodeDelegate};
@@ -81,12 +83,55 @@ where
         .route("/ping", root_routes.ping_get)
         .merge(extra);
 
-    let cors = cors::CorsLayer::new()
-        .allow_headers([header::AUTHORIZATION, header::ACCEPT, header::CONTENT_TYPE])
-        .allow_methods(cors::Any)
-        .allow_origin(cors::Any);
-
     axum::Router::new()
-        .nest("/v1", router.layer(cors))
+        .nest("/v1", router.layer(cors_layer()))
         .nest("/internal", internal::router())
+}
+
+/// Browsers may call the `/v1` API from any origin. Requests authenticate with an explicit
+/// bearer token rather than cookies, so every header the API reads must be allowed here.
+fn cors_layer() -> cors::CorsLayer {
+    cors::CorsLayer::new()
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::ACCEPT,
+            header::CONTENT_TYPE,
+            SpacetimeEnvironment::name().clone(),
+            SpacetimeEnvironmentRemove::name().clone(),
+        ])
+        .allow_methods(cors::Any)
+        .allow_origin(cors::Any)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use http::{Method, Request};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn cors_preflight_allows_environment_headers() {
+        let app = axum::Router::new()
+            .route("/environment", axum::routing::patch(|| async {}))
+            .layer(cors_layer());
+        let request = Request::builder()
+            .method(Method::OPTIONS)
+            .uri("/environment")
+            .header(header::ORIGIN, "https://example.com")
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "PATCH")
+            .header(
+                header::ACCESS_CONTROL_REQUEST_HEADERS,
+                "authorization, content-type, spacetime-environment, spacetime-environment-remove",
+            )
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        let allowed = response.headers()[header::ACCESS_CONTROL_ALLOW_HEADERS]
+            .to_str()
+            .unwrap();
+        for name in ["spacetime-environment", "spacetime-environment-remove"] {
+            assert!(allowed.split(',').any(|h| h.trim() == name), "{name} not in {allowed}");
+        }
+    }
 }

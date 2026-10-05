@@ -28,6 +28,8 @@ Install SpacetimeDB as the new user:
 sudo -u spacetimedb bash -c 'curl -sSf https://install.spacetimedb.com | sh -s -- --root-dir /stdb --yes'
 ```
 
+Because this installation uses `--root-dir /stdb`, include `--root-dir /stdb` when invoking `spacetime` for this installation. Otherwise, the CLI looks in its default directories rather than `/stdb`. The service and update commands below include the option for this reason.
+
 ## Step 2: Create a Systemd Service for SpacetimeDB
 
 To ensure SpacetimeDB runs on startup, create a systemd service file:

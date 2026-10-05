@@ -416,7 +416,7 @@ impl Lang for UnrealCpp<'_> {
         let name = type_ref_name(self.module_prefix, module, typ.ty);
         let filename = format!(
             "Source/{}/Public/ModuleBindings/Types/{}Type.g.h",
-            self.module_name, &name
+            self.module_name, name
         );
         let code: String = match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::PlainEnum(plain_enum) => autogen_cpp_enum(&name, plain_enum),

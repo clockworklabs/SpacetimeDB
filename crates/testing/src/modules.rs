@@ -16,6 +16,7 @@ use spacetimedb::util::jobs::JobCores;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
+use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentUpdate};
 use spacetimedb_lib::http as st_http;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
@@ -96,16 +97,16 @@ impl ModuleHandle {
                 DatabaseDef {
                     database_identity: self.db_identity,
                     program_bytes,
-                    environment,
-                    environment_remove: Vec::new(),
-                    environment_replace: true,
-                    expected_module_version: None,
                     num_replicas: None,
                     host_type,
                     parent: None,
                     organization: None,
                 },
                 MigrationPolicy::Compatible,
+                EnvironmentUpdate {
+                    values: environment,
+                    remove: EnvironmentRemove::All,
+                },
             )
             .await?
             .ok_or_else(|| anyhow::anyhow!("expected an update to the existing database"))
@@ -423,16 +424,13 @@ impl CompiledModule {
             DatabaseDef {
                 database_identity: db_identity,
                 program_bytes: self.program_bytes(),
-                environment,
-                environment_remove: Vec::new(),
-                environment_replace: false,
-                expected_module_version: None,
                 num_replicas: None,
                 host_type: self.host_type,
                 parent: None,
                 organization: None,
             },
             MigrationPolicy::Compatible,
+            environment.into(),
         )
         .await
         .unwrap();

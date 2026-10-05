@@ -14,6 +14,7 @@ use spacetimedb::config::{CertificateAuthority, MetadataFile, ModuleHttpConfig, 
 use spacetimedb::db;
 use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
+use spacetimedb::host::module_host::UpdateEnvironmentResult;
 use spacetimedb::host::{DiskStorage, HostController, HostRuntimeConfig, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
@@ -30,6 +31,8 @@ use spacetimedb_client_api_messages::name::{
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
+use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentUpdate};
+use spacetimedb_lib::Hash;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
@@ -277,26 +280,18 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         publisher: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
         policy: MigrationPolicy,
+        environment: EnvironmentUpdate,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
-        let update = spacetimedb_lib::environment::EnvironmentUpdate {
-            values: spec.environment,
-            remove: spec.environment_remove,
-            replace: spec.environment_replace,
-        };
-        update.validate()?;
         // standalone does not support replication.
         let num_replicas = 1;
 
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                anyhow::ensure!(
-                    !spec.program_bytes.is_empty() && spec.expected_module_version.is_none(),
-                    "initial publication requires a module and cannot require an existing version"
-                );
-                let environment = update.resulting_values(&Default::default())?;
+                anyhow::ensure!(!spec.program_bytes.is_empty(), "initial publication requires a module");
+                let environment = environment.values;
                 let program = Program::from_bytes(spec.host_type.into(), &spec.program_bytes[..]);
 
                 let database = Database {
@@ -347,51 +342,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         spec.host_type,
                         spec.program_bytes.to_vec().into(),
                         policy,
-                        update,
-                        spec.expected_module_version,
+                        environment,
                     )
                     .await?;
                 if update_result.was_successful() {
-                    let replicas = self.control_db.get_replicas_by_database(database_id)?;
-                    let desired_replicas = num_replicas as usize;
-                    if desired_replicas == 0 {
-                        log::info!("Decommissioning all replicas of database {database_identity}");
-                        for instance in replicas {
-                            self.delete_replica(instance.id).await?;
-                        }
-                    } else if desired_replicas > replicas.len() {
-                        let n = desired_replicas - replicas.len();
-                        log::info!(
-                            "Scaling up database {} from {} to {} replicas",
-                            database_identity,
-                            replicas.len(),
-                            n
-                        );
-                        for _ in 0..n {
-                            self.insert_replica(Replica {
-                                id: 0,
-                                database_id,
-                                node_id: 0,
-                                leader: false,
-                            })
-                            .await?;
-                        }
-                    } else if desired_replicas < replicas.len() {
-                        let n = replicas.len() - desired_replicas;
-                        log::info!(
-                            "Scaling down database {} from {} to {} replicas",
-                            database_identity,
-                            replicas.len(),
-                            n
-                        );
-                        for instance in replicas.into_iter().filter(|instance| !instance.leader).take(n) {
-                            self.delete_replica(instance.id).await?;
-                        }
-                    } else {
-                        log::debug!(
-                            "Desired replica count {desired_replicas} for database {database_identity} already satisfied"
-                        );
-                    }
+                    self.scale_replicas(database_id, &database_identity, num_replicas)
+                        .await?;
                 }
 
                 anyhow::Ok(Some(update_result))
@@ -443,7 +399,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(())
     }
 
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+    async fn reset_database(
+        &self,
+        caller_identity: &Identity,
+        spec: DatabaseResetDef,
+        environment: EnvironmentMap,
+    ) -> anyhow::Result<()> {
         let previous = self
             .control_db
             .get_database_by_identity(&spec.database_identity)?
@@ -453,12 +414,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             "database ownership changed before reset"
         );
         let previous = self.control_db.with_initialization_generation(previous)?;
-        let environment = spacetimedb_lib::environment::EnvironmentUpdate {
-            values: spec.environment,
-            remove: spec.environment_remove,
-            replace: spec.environment_replace,
-        }
-        .resulting_values(&Default::default())?;
         let mut database = previous.clone();
         let program = match spec.program_bytes {
             Some(bytes) => {
@@ -548,6 +503,86 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
         };
         self.control_db.set_database_lock(database_identity, locked)?;
+        Ok(())
+    }
+
+    async fn update_environment(
+        &self,
+        publisher: &Identity,
+        database_identity: &Identity,
+        environment: EnvironmentUpdate,
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
+            anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
+        };
+
+        // standalone does not support replication.
+        let num_replicas = 1;
+
+        anyhow::ensure!(
+            database.owner_identity == *publisher,
+            "database ownership changed before publication"
+        );
+        let database_id = database.id;
+
+        let leader = self.leader(database_id).await?;
+        let update_result = leader
+            .update_environment(database, environment, expected_module_hash)
+            .await?;
+        if update_result.was_successful() {
+            self.scale_replicas(database_id, database_identity, num_replicas)
+                .await?;
+        }
+
+        anyhow::Ok(update_result)
+    }
+}
+
+impl StandaloneEnv {
+    async fn scale_replicas(
+        &self,
+        database_id: u64,
+        database_identity: &Identity,
+        desired_replicas: usize,
+    ) -> anyhow::Result<()> {
+        let replicas = self.control_db.get_replicas_by_database(database_id)?;
+        if desired_replicas == 0 {
+            log::info!("Decommissioning all replicas of database {database_identity}");
+            for instance in replicas {
+                self.delete_replica(instance.id).await?;
+            }
+        } else if desired_replicas > replicas.len() {
+            let n = desired_replicas - replicas.len();
+            log::info!(
+                "Scaling up database {} from {} to {} replicas",
+                database_identity,
+                replicas.len(),
+                n
+            );
+            for _ in 0..n {
+                self.insert_replica(Replica {
+                    id: 0,
+                    database_id,
+                    node_id: 0,
+                    leader: false,
+                })
+                .await?;
+            }
+        } else if desired_replicas < replicas.len() {
+            let n = replicas.len() - desired_replicas;
+            log::info!(
+                "Scaling down database {} from {} to {} replicas",
+                database_identity,
+                replicas.len(),
+                n
+            );
+            for instance in replicas.into_iter().filter(|instance| !instance.leader).take(n) {
+                self.delete_replica(instance.id).await?;
+            }
+        } else {
+            log::debug!("Desired replica count {desired_replicas} for database {database_identity} already satisfied");
+        }
         Ok(())
     }
 }

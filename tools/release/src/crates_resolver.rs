@@ -72,9 +72,9 @@ pub fn get_crate_deps(crate_name: &String, manifest_map: &HashMap<String, PathBu
     // Look up the crate in the manifest map
     let cargo_toml_path = manifest_map
         .get(crate_name)
-        .with_context(|| format!("Crate '{}' not found in cargo metadata", &crate_name))?;
+        .with_context(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
 
-    println!("\nChecking crate '{}'...", &crate_name);
+    println!("\nChecking crate '{}'...", crate_name);
 
     let deps = find_spacetimedb_dependencies(cargo_toml_path)?;
     if !deps.is_empty() {

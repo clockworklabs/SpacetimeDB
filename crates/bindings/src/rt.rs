@@ -5,7 +5,8 @@ use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
-    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
+    RawModuleDefV10Builder,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -929,7 +930,7 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
 pub trait EnvironmentValue: Sized {
     const OPTIONAL: bool;
 
-    fn constraint() -> spacetimedb_lib::environment::EnvVarType;
+    fn constraint() -> RawEnvVarTypeV10;
 
     /// Decode a checked host result. Errors must identify only the key, never its value.
     fn from_environment(value: Option<String>, key: &str) -> Self;
@@ -947,8 +948,8 @@ pub trait RequiredEnvironmentValue: EnvironmentValue {}
 impl EnvironmentValue for String {
     const OPTIONAL: bool = false;
 
-    fn constraint() -> spacetimedb_lib::environment::EnvVarType {
-        spacetimedb_lib::environment::EnvVarType::String
+    fn constraint() -> RawEnvVarTypeV10 {
+        RawEnvVarTypeV10::String
     }
 
     fn from_environment(value: Option<String>, key: &str) -> Self {
@@ -961,7 +962,7 @@ impl RequiredEnvironmentValue for String {}
 impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
     const OPTIONAL: bool = true;
 
-    fn constraint() -> spacetimedb_lib::environment::EnvVarType {
+    fn constraint() -> RawEnvVarTypeV10 {
         T::constraint()
     }
 
@@ -983,9 +984,7 @@ mod string_environment_value_sealed {
     message = "`#[env(values(...))]` requires `String` or `Option<String>`; map enum variants with `#[env(value = \"...\")]` instead"
 )]
 pub trait StringEnvironmentValue: EnvironmentValue + string_environment_value_sealed::Sealed {
-    fn with_constraint(
-        constraint: spacetimedb_lib::environment::EnvVarType,
-    ) -> spacetimedb_lib::environment::EnvVarType {
+    fn with_constraint(constraint: RawEnvVarTypeV10) -> RawEnvVarTypeV10 {
         constraint
     }
 }
@@ -995,7 +994,7 @@ impl StringEnvironmentValue for Option<String> {}
 
 /// Register declarative ENV metadata without reading any environment values.
 #[doc(hidden)]
-pub fn register_environment(declarations: fn() -> Vec<spacetimedb_lib::environment::EnvironmentDeclaration>) {
+pub fn register_environment(declarations: fn() -> Vec<RawEnvironmentDeclarationV10>) {
     register_describer(move |module| {
         module.inner.add_environment(declarations());
     });
@@ -1067,7 +1066,6 @@ extern "C" fn __describe_module__(description: BytesSink) {
     }
 
     // Serialize the module to bsatn.
-    module.inner.ensure_environment();
     let module_def = module.inner.finish();
     let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
