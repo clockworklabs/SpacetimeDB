@@ -308,6 +308,11 @@ macro_rules! declare_tests_with_suffix {
                 make_test("reconnect-different-connection-id").run();
             }
 
+            #[test]
+            fn reconnect_preserves_token() {
+                make_test("reconnect-preserves-token").run();
+            }
+
             pub(super) fn make_connect_disconnect_test() -> Test {
                 const CONNECT_DISCONNECT_CLIENT: &str =
                     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect_disconnect_client");
