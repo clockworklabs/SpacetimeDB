@@ -1,5 +1,5 @@
 import { schema, table, t } from 'spacetimedb/server';
-import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
+import type { InferSchema, ReducerContext } from 'spacetimedb/server';
 
 const sale = table({ name: 'sale', public: true }, {
   id: t.u64().primaryKey(), category: t.string(), amount: t.i64(),
@@ -10,7 +10,7 @@ const categoryTotal = table({ name: 'category_total', public: true }, {
 const spacetimedb = schema({ sale, categoryTotal });
 export default spacetimedb;
 
-type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+type Ctx = ReducerContext<InferSchema<typeof spacetimedb>>;
 
 function addToTotal(ctx: Ctx, category: string, amount: bigint) {
   const total = ctx.db.categoryTotal.category.find(category);

@@ -14,7 +14,7 @@ import {
   type ParamsAsObject,
   type ParamsObj,
   type Reducer,
-  type ReducerCtx,
+  type ReducerContext,
 } from '../lib/reducers';
 import {
   ModuleContext,
@@ -362,7 +362,7 @@ export class Schema<S extends UntypedSchemaDecl>
    * @param {Params} params - An object defining the parameters that the reducer accepts.
    *                          Each key-value pair represents a parameter name and its corresponding
    *                          {@link TypeBuilder} or {@link ColumnBuilder}.
-   * @param {(ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void} fn - The reducer function itself.
+   * @param {(ctx: ReducerContext<S>, payload: ParamsAsObject<Params>) => void} fn - The reducer function itself.
    *   - `ctx`: The reducer context, providing access to `sender`, `timestamp`, `connection_id`, and `db`.
    *   - `payload`: An object containing the arguments passed to the reducer, typed according to `params`.
    *

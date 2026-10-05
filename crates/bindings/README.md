@@ -233,7 +233,7 @@ The resulting type is used to store rows of the table. It is normal struct type.
 
 ```no_run
 # #[cfg(target_arch = "wasm32")] mod demo {
-use spacetimedb::{table, reducer, ReducerContext, Table, UniqueColumn};
+use spacetimedb::{table, reducer, ReducerContext, Table, UniqueIndex};
 
 /// A `Person` is a row of the table `person`.
 #[table(accessor = person, public)]
@@ -271,11 +271,11 @@ fn do_something(ctx: &ReducerContext) {
     // If we update it:
     example_person.name = "Joanna Average".to_string();
     // Our copy is now updated, but the database's copy is UNCHANGED.
-    // To push our change through, we can call `UniqueColumn::update()`:
+    // To push our change through, we can call `UniqueIndex::update()`:
     example_person = person.id().update(example_person);
     // Now the database and our copy are in sync again.
     
-    // We can also delete the row in the database using `UniqueColumn::delete()`.
+    // We can also delete the row in the database using `UniqueIndex::delete()`.
     person.id().delete(&example_person.id);
 }
 # }
@@ -362,7 +362,7 @@ pub struct Citizen {
 
 Every row in the table `Person` must have unique entries in the `id`, `ssn`, and `email` columns. Attempting to insert multiple `Person`s with the same `id`, `ssn`, or `email` will fail. (Either via panic, with [`Table::insert`], or via a `Result::Err`, with [`Table::try_insert`].)
 
-Any `#[unique]` or `#[primary_key]` column supports getting a [`UniqueColumn`] from a [`ReducerContext`] using:
+Any `#[unique]` or `#[primary_key]` column supports getting a [`UniqueIndex`] from a [`ReducerContext`] using:
 
 ```text
 ctx.db.{table}().{unique_column}()
@@ -374,10 +374,10 @@ For example,
 ctx.db.person().ssn()
 ```
 
-[`UniqueColumn`] provides:
-- [`UniqueColumn::find`]
-- [`UniqueColumn::delete`]
-- [`UniqueColumn::update`]
+[`UniqueIndex`] provides:
+- [`UniqueIndex::find`]
+- [`UniqueIndex::delete`]
+- [`UniqueIndex::update`]
 <!-- TODO: "current limitations" try_update -->
 
 Notice that updating a row is only possible if a row has a unique column -- there is no `update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
@@ -542,8 +542,8 @@ Reducers have access to a special [`ReducerContext`] parameter. This parameter a
 
 Yes, that's the case. Dammit. TODO: check if this changes someday.
 
-To see all of the available methods on `ctx.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::Local` struct in the generated documentation. This will be at the path:
-- `[your_project_directory]/target/doc/spacetimedb/struct.Local.html`
+To see all of the available methods on `ctx.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::DbView` struct in the generated documentation. This will be at the path:
+- `[your_project_directory]/target/doc/spacetimedb/struct.DbView.html`
 -->
 
 #### The `log` crate

@@ -9,20 +9,35 @@ export {
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
-export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
+export type {
+  Reducer,
+  ReducerContext,
+  ReducerCtx,
+  JwtClaims,
+  AuthContext,
+  AuthCtx,
+} from '../lib/reducers';
 export type { ReducerExport } from './reducers';
 export { type DbView } from './db_view';
 export * from './query';
 export type { TableDeclOf, TableNamesOf } from '../lib/schema';
 export type {
+  ProcedureContext,
   ProcedureCtx,
+  TxContext,
   TransactionCtx,
   ProcedureExport,
 } from './procedures';
 export { toCamelCase } from '../lib/util';
 export type { Uuid } from '../lib/uuid';
 export type { Random } from './rng';
-export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views';
+export type {
+  ViewExport,
+  ViewContext,
+  ViewCtx,
+  AnonymousViewContext,
+  AnonymousViewCtx,
+} from './views';
 export { Range, type Bound } from './range';
 export {
   Headers,

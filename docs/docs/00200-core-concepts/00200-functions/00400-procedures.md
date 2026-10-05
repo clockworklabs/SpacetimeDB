@@ -126,7 +126,7 @@ SPACETIMEDB_PROCEDURE(uint64_t, add_two_numbers, ProcedureContext ctx, uint32_t 
 
 Unlike reducers, procedures don't automatically run in database transactions.
 This means there's no `ctx.db` field to access the database.
-Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
+Instead, procedure code must manage transactions explicitly with `ProcedureContext.withTx`.
 
 ```typescript
 const myTable = table(
@@ -148,15 +148,15 @@ export const insertAValue = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.
 })
 ```
 
-`ProcedureCtx.withTx` takes a function of `(ctx: TransactionCtx) => T`.
-Within that function, the `TransactionCtx` can be used to access the database
-[in all the same ways as a `ReducerCtx`](./00300-reducers/00400-reducer-context.md)
+`ProcedureContext.withTx` takes a function of `(ctx: TxContext) => T`.
+Within that function, the `TxContext` can be used to access the database
+[in all the same ways as a `ReducerContext`](./00300-reducers/00400-reducer-context.md)
 When the function returns, the transaction will be committed,
 and its changes to the database state will become permanent and be broadcast to clients.
 If the function throws an error, the transaction will be rolled back, and its changes will be discarded.
 
 :::warning
-The function passed to `ProcedureCtx.withTx` may be invoked multiple times,
+The function passed to `ProcedureContext.withTx` may be invoked multiple times,
 possibly seeing a different version of the database state each time.
 
 If invoked more than once with reference to the same database state,
@@ -423,7 +423,7 @@ For non-bool return types, `try_with_tx` always commits the transaction. To abor
 <TabItem value="typescript" label="TypeScript">
 
 Functions passed to
-[`ProcedureCtx.withTx`](#accessing-the-database)
+[`ProcedureContext.withTx`](#accessing-the-database)
 may return a value, and that value will be returned to the calling procedure.
 
 Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.

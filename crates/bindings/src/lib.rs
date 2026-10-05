@@ -60,9 +60,11 @@ pub use spacetimedb_lib::ViewPrimaryKeyColumn;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
-    AutoIncOverflow, PointIndex, PointIndexReadOnly, RangedIndex, RangedIndexReadOnly, Table, TryInsertError,
-    UniqueColumn, UniqueColumnReadOnly, UniqueConstraintViolation,
+    AutoIncOverflow, PointIndex, RangedIndex, ReadOnlyPointIndex, ReadOnlyRangedIndex, ReadOnlyUniqueIndex, Table,
+    TryInsertError, UniqueConstraintViolation, UniqueIndex,
 };
+#[allow(deprecated)]
+pub use table::{PointIndexReadOnly, RangedIndexReadOnly, UniqueColumn, UniqueColumnReadOnly};
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
@@ -191,13 +193,13 @@ pub use spacetimedb_bindings_macro::settings;
 ///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has an extra method that allows getting a
-///     // corresponding `spacetimedb::UniqueColumn`.
-///     let by_username: spacetimedb::UniqueColumn<_, String, _> = user.id();
+///     // corresponding `spacetimedb::UniqueIndex`.
+///     let by_username: spacetimedb::UniqueIndex<_, String, _> = user.id();
 ///     by_username.delete(&"test_user".to_string());
 /// }
 /// ```
 ///
-/// See [`Table`], [`RangedIndex`], and [`UniqueColumn`] for more information on the methods available on these types.
+/// See [`Table`], [`RangedIndex`], and [`UniqueIndex`] for more information on the methods available on these types.
 ///
 /// # Browsing generated documentation
 ///
@@ -315,19 +317,19 @@ pub use spacetimedb_bindings_macro::settings;
 ///
 /// Creates an unique constraint and index for the annotated field.
 ///
-/// You can [`find`](crate::UniqueColumn::find), [`update`](crate::UniqueColumn::update),
-/// and [`delete`](crate::UniqueColumn::delete) rows by their unique columns.
-/// This is encapsulated in the struct [`UniqueColumn`].
+/// You can [`find`](crate::UniqueIndex::find), [`update`](crate::UniqueIndex::update),
+/// and [`delete`](crate::UniqueIndex::delete) rows by their unique columns.
+/// This is encapsulated in the struct [`UniqueIndex`].
 ///
 /// For a table *table* and a column *column*, use:
 /// ```text
 /// ctx.db.{table}().{column}()`
 /// ```
-/// to get a [`UniqueColumn`] from a [`ReducerContext`].
+/// to get a [`UniqueIndex`] from a [`ReducerContext`].
 ///
 /// For example:
 /// ```ignore
-/// let by_username: spacetimedb::UniqueColumn<_, String, _> = ctx.db.user().username();
+/// let by_username: spacetimedb::UniqueIndex<_, String, _> = ctx.db.user().username();
 /// ```
 ///
 /// When there is a unique column constraint on the table, insertion can fail if a uniqueness constraint is violated.
@@ -392,7 +394,7 @@ pub use spacetimedb_bindings_macro::settings;
 /// Creates a single-column index with the specified algorithm.
 ///
 /// It is an error to specify this attribute together with `#[unique]`.
-/// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueColumn`] struct instead of the
+/// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueIndex`] struct instead of the
 /// [`RangedIndex`] struct.
 ///
 /// The created index has the same name as the column.
@@ -423,13 +425,13 @@ pub use spacetimedb_bindings_macro::settings;
 /// [`RangedIndex`].
 ///
 /// For each field  with a `#[unique]` or `#[primary_key]` annotation,
-/// add a method to `{name}Handle` for getting a corresponding [`UniqueColumn`].
+/// add a method to `{name}Handle` for getting a corresponding [`UniqueIndex`].
 ///
 /// The following pseudocode illustrates the general idea. Curly braces are used to indicate templated
 /// names.
 ///
 /// ```ignore
-/// use spacetimedb::{RangedIndex, UniqueColumn, Table, DbView};
+/// use spacetimedb::{RangedIndex, UniqueIndex, Table, DbView};
 ///
 /// // This generated struct is hidden and cannot be directly accessed.
 /// struct {name}__TableHandle { /* ... */ };
@@ -450,7 +452,7 @@ pub use spacetimedb_bindings_macro::settings;
 /// // Once looked up, it can be used to look up indexes.
 /// impl {name}Handle {
 ///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
-///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
+///     fn {field}(&self) -> UniqueIndex<_, {F}, _> { /* ... */ };
 ///
 ///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
 ///     fn {index}(&self) -> RangedIndex<_, {(F1, ..., FN)}, _>;
@@ -994,7 +996,7 @@ impl Environment {
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub env: Environment,
-    pub db: LocalReadOnly,
+    pub db: ReadOnlyDbView,
     pub from: QueryBuilder,
 }
 
@@ -1002,7 +1004,7 @@ impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
             env: Environment::default(),
-            db: LocalReadOnly {},
+            db: ReadOnlyDbView {},
             from: QueryBuilder {},
         }
     }
@@ -1013,7 +1015,7 @@ impl Default for AnonymousViewContext {
 pub struct ViewContext {
     pub env: Environment,
     sender: Identity,
-    pub db: LocalReadOnly,
+    pub db: ReadOnlyDbView,
     pub from: QueryBuilder,
 }
 
@@ -1022,7 +1024,7 @@ impl ViewContext {
         Self {
             sender,
             env: Environment::default(),
-            db: LocalReadOnly {},
+            db: ReadOnlyDbView {},
             from: QueryBuilder {},
         }
     }
@@ -1066,7 +1068,7 @@ pub struct ReducerContext {
     /// including `init` and scheduled reducers.
     connection_id: Option<ConnectionId>,
 
-    sender_auth: AuthCtx,
+    sender_auth: AuthContext,
 
     /// Allows accessing the local database attached to a module.
     ///
@@ -1104,7 +1106,7 @@ pub struct ReducerContext {
     /// # }
     /// ```
     /// See the [`#[table]`](macro@crate::table) macro for more information.
-    pub db: Local,
+    pub db: DbView,
 
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
@@ -1119,11 +1121,11 @@ impl ReducerContext {
     pub fn __dummy() -> Self {
         Self {
             env: Environment::default(),
-            db: Local {},
+            db: DbView {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
-            sender_auth: AuthCtx::internal(),
+            sender_auth: AuthContext::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1132,14 +1134,14 @@ impl ReducerContext {
     }
 
     #[doc(hidden)]
-    fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+    fn new(db: DbView, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
             env: Environment::default(),
             db,
             sender,
             timestamp,
             connection_id,
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthContext::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1161,7 +1163,7 @@ impl ReducerContext {
     }
 
     /// Returns the authorization information for the caller of this reducer.
-    pub fn sender_auth(&self) -> &AuthCtx {
+    pub fn sender_auth(&self) -> &AuthContext {
         &self.sender_auth
     }
 
@@ -1284,10 +1286,10 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        let mut tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
+        let mut tx = ReducerContext::new(crate::DbView {}, identity, connection_id, timestamp);
         if is_http_handler {
             // HTTP requests have no connection ID, but are not host-originated calls.
-            tx.sender_auth = AuthCtx::new(false, || None);
+            tx.sender_auth = AuthContext::new(false, || None);
         }
         let tx = TxContext(tx);
 
@@ -1569,57 +1571,57 @@ pub trait DbContext {
     ///
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
-    fn db_read_only(&self) -> &LocalReadOnly;
+    fn db_read_only(&self) -> &ReadOnlyDbView;
 }
 
 #[allow(deprecated)]
 impl DbContext for AnonymousViewContext {
-    type DbView = LocalReadOnly;
+    type DbView = ReadOnlyDbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         &self.db
     }
 }
 
 #[allow(deprecated)]
 impl DbContext for ReducerContext {
-    type DbView = Local;
+    type DbView = DbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         self.db.get_read_only()
     }
 }
 
 #[allow(deprecated)]
 impl DbContext for TxContext {
-    type DbView = Local;
+    type DbView = DbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         self.db.get_read_only()
     }
 }
 
 #[allow(deprecated)]
 impl DbContext for ViewContext {
-    type DbView = LocalReadOnly;
+    type DbView = ReadOnlyDbView;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
 
-    fn db_read_only(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &ReadOnlyDbView {
         &self.db
     }
 }
@@ -1633,11 +1635,14 @@ impl DbContext for ViewContext {
 /// The `#[table]` macro uses the trait system to add table accessors to this type.
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
-pub struct Local {}
+pub struct DbView {}
 
-impl Local {
-    fn get_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+#[deprecated(note = "renamed to `DbView`")]
+pub type Local = DbView;
+
+impl DbView {
+    fn get_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
@@ -1649,30 +1654,30 @@ impl Local {
 /// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
 /// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
 pub trait CtxDbRead {
-    fn db_read_only(&self) -> &LocalReadOnly;
+    fn db_read_only(&self) -> &ReadOnlyDbView;
 }
 
 impl CtxDbRead for TxContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
 impl CtxDbRead for ReducerContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
 impl CtxDbRead for ViewContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
 impl CtxDbRead for AnonymousViewContext {
-    fn db_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+    fn db_read_only(&self) -> &ReadOnlyDbView {
+        &ReadOnlyDbView {}
     }
 }
 
@@ -1684,18 +1689,18 @@ impl CtxDbRead for AnonymousViewContext {
 /// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
 /// as the context's `db` field provides the same access.
 pub trait CtxDbWrite: CtxDbRead {
-    fn db(&self) -> &Local;
+    fn db(&self) -> &DbView;
 }
 
 impl CtxDbWrite for TxContext {
-    fn db(&self) -> &Local {
-        &Local {}
+    fn db(&self) -> &DbView {
+        &DbView {}
     }
 }
 
 impl CtxDbWrite for ReducerContext {
-    fn db(&self) -> &Local {
-        &Local {}
+    fn db(&self) -> &DbView {
+        &DbView {}
     }
 }
 
@@ -1773,7 +1778,7 @@ impl CtxWithTimestamp for HandlerContext {
     }
 }
 
-/// Contexts which can retrieve the current [`AuthCtx`].
+/// Contexts which can retrieve the current [`AuthContext`].
 ///
 /// This trait is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from reducers and procedures.
@@ -1781,17 +1786,17 @@ impl CtxWithTimestamp for HandlerContext {
 /// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
 /// this trait is not necessary, as the context's sender_auth method provides the same access.
 pub trait CtxWithSenderAuth {
-    fn sender_auth(&self) -> &AuthCtx;
+    fn sender_auth(&self) -> &AuthContext;
 }
 
 impl CtxWithSenderAuth for ReducerContext {
-    fn sender_auth(&self) -> &AuthCtx {
+    fn sender_auth(&self) -> &AuthContext {
         self.sender_auth()
     }
 }
 
 impl CtxWithSenderAuth for TxContext {
-    fn sender_auth(&self) -> &AuthCtx {
+    fn sender_auth(&self) -> &AuthContext {
         self.0.sender_auth()
     }
 }
@@ -1930,7 +1935,7 @@ impl CtxWithHttp for ProcedureContext {
     }
 }
 
-/// The [JWT] of an [`AuthCtx`].
+/// The [JWT] of an [`AuthContext`].
 ///
 /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
 #[non_exhaustive]
@@ -1942,47 +1947,50 @@ pub struct JwtClaims {
 
 /// Authentication information for the caller of a reducer.
 #[derive(Clone)]
-pub struct AuthCtx {
+pub struct AuthContext {
     is_internal: bool,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
     jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
-impl AuthCtx {
-    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
+#[deprecated(note = "renamed to `AuthContext`")]
+pub type AuthCtx = AuthContext;
+
+impl AuthContext {
+    /// Creates an [`AuthContext`] both for cases where there's a [`ConnectionId`]
     /// and for when there isn't.
     fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
         conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
     }
 
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
-        AuthCtx {
+        AuthContext {
             is_internal,
             jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
 
-    /// Creates an [`AuthCtx`] for an internal call, with no [JWT].
+    /// Creates an [`AuthContext`] for an internal call, with no [JWT].
     /// This represents a scheduled reducer.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    pub fn internal() -> AuthCtx {
+    pub fn internal() -> AuthContext {
         Self::new(true, || None)
     }
 
-    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
+    /// Creates an [`AuthContext`] using the json claims from a [JWT].
     /// This can be used to write unit tests.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
+    pub fn from_jwt_payload(jwt_payload: String) -> AuthContext {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    /// Creates an [`AuthContext`] that reads the [JWT] for the given connection id.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
+    fn from_connection_id(connection_id: ConnectionId) -> AuthContext {
         Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
     }
 
@@ -1992,7 +2000,7 @@ impl AuthCtx {
     }
 
     /// Checks if there is a [JWT] without loading it.
-    /// If [`AuthCtx::is_internal`] returns true, this will return false.
+    /// If [`AuthContext::is_internal`] returns true, this will return false.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
@@ -2065,9 +2073,12 @@ impl JwtClaims {
         &self.payload
     }
 }
-/// The read-only version of [`Local`]
+/// The read-only version of [`DbView`]
 #[non_exhaustive]
-pub struct LocalReadOnly {}
+pub struct ReadOnlyDbView {}
+
+#[deprecated(note = "renamed to `ReadOnlyDbView`")]
+pub type LocalReadOnly = ReadOnlyDbView;
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
@@ -2201,9 +2212,31 @@ mod tests {
           "picture": "https://lh3.googleusercontent.com/a-/profile.jpg"
         }
         "#;
+        // Use the deprecated `AuthCtx` name to check that the alias still resolves.
+        #[allow(deprecated)]
         let auth = AuthCtx::from_jwt_payload(example_payload.to_string());
         let audience = auth.jwt().unwrap().audience();
         assert_eq!(audience.len(), 1);
         assert_eq!(audience, &["my-project-id".to_string()]);
+    }
+
+    // Each deprecated name must stay an alias of the type that replaced it.
+    #[allow(deprecated, dead_code, clippy::type_complexity)]
+    fn deprecated_aliases_are_identical<'a, Tbl: Table, T, Col, Idx: table::Index>(
+        a: &'a Local,
+        b: &'a LocalReadOnly,
+        c: &'a UniqueColumn<Tbl, T, Col>,
+        d: &'a UniqueColumnReadOnly<Tbl, T, Col>,
+        e: &'a PointIndexReadOnly<Tbl, T, Idx>,
+        f: &'a RangedIndexReadOnly<Tbl, T, Idx>,
+    ) -> (
+        &'a DbView,
+        &'a ReadOnlyDbView,
+        &'a UniqueIndex<Tbl, T, Col>,
+        &'a ReadOnlyUniqueIndex<Tbl, T, Col>,
+        &'a ReadOnlyPointIndex<Tbl, T, Idx>,
+        &'a ReadOnlyRangedIndex<Tbl, T, Idx>,
+    ) {
+        (a, b, c, d, e, f)
     }
 }
