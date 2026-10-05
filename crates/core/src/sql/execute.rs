@@ -4,7 +4,7 @@ use std::time::Duration;
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::FunctionBudget;
 use crate::error::DBError;
-use crate::estimation::{check_row_limit, estimate_rows_scanned};
+use crate::estimation::{check_row_limit, estimate_rows_scanned, RowLimitError};
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallResult, ViewOutcome,
     WasmInstance,
@@ -188,7 +188,11 @@ fn run_inner<I: WasmInstance>(
                 )?;
                 Ok(plan)
             })
-            .map_err(SqlExecutionError::internal)?;
+            .map_err(|error| match error.downcast::<RowLimitError>() {
+                Ok(error @ RowLimitError::Exceeded { .. }) => SqlExecutionError::client(error),
+                Ok(RowLimitError::Db(error)) => SqlExecutionError::internal(error),
+                Err(error) => SqlExecutionError::internal(error),
+            })?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -445,6 +449,35 @@ pub(crate) mod tests {
         assert!(
             matches!(&error, SqlExecutionError::Client(_)),
             "a user-caused unique constraint violation should be Client, got {error:?}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn row_limit_exceeded_is_a_client_error() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            for i in 0..5u8 {
+                insert(&db, tx, table_id, &product!(i))?;
+            }
+            Ok(())
+        })?;
+        let (_subs, runtime) = ModuleSubscriptions::for_test_new_runtime(db.db.clone());
+
+        let server = Identity::from_claims("issuer", "server");
+        let client = Identity::from_claims("issuer", "client");
+        let execute = |sql: &str, auth: AuthCtx| {
+            runtime.block_on(run(db.db.clone(), sql.to_string(), auth, None, None, &mut vec![]))
+        };
+
+        execute("SET row_limit = 4", AuthCtx::new(server, server)).expect("the owner should set the row limit");
+        let error = execute("SELECT * FROM T", AuthCtx::new(server, client))
+            .expect_err("scanning 5 rows should exceed a row limit of 4");
+        assert!(
+            matches!(&error, SqlExecutionError::Client(_)),
+            "a query over the row limit should be Client, got {error:?}"
         );
 
         Ok(())

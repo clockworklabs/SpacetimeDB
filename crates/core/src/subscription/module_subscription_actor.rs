@@ -645,6 +645,7 @@ impl ModuleSubscriptions {
             },
             auth,
         )
+        .map_err(DBError::from)
     }
 
     fn remove_failed_subscription(
