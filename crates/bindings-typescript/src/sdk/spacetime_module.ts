@@ -31,3 +31,9 @@ export type UntypedRemoteModuleDecl = RemoteModuleDecl<
 
 /** @deprecated Use `UntypedRemoteModuleDecl` instead. */
 export type UntypedRemoteModule = UntypedRemoteModuleDecl;
+
+/** @deprecated Use `M['tables']` instead. */
+export type SchemaDef<M extends UntypedRemoteModuleDecl> = M['tables'];
+
+/** @deprecated Use `M['reducers']` instead. */
+export type ReducersDef<M extends UntypedRemoteModuleDecl> = M['reducers'];

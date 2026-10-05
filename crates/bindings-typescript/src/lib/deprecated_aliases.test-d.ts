@@ -25,6 +25,8 @@ import type {
   UntypedReducersDef,
 } from '../sdk/reducers';
 import type {
+  ReducersDef,
+  SchemaDef,
   UntypedRemoteModule,
   UntypedRemoteModuleDecl,
 } from '../sdk/spacetime_module';
@@ -41,11 +43,13 @@ import type {
 } from './schema';
 import type { UntypedTableDecl, UntypedTableDef } from './table';
 import type {
+  ScheduleTableForParams,
   TableBody,
-  TableSchema,
+  TableSchedule,
+  UntypedScheduledFunctionExport,
   UntypedTableBody,
-  UntypedTableSchema,
 } from './table_body';
+import type * as table_schema from './table_schema';
 import type { ColumnBuilder } from './type_builders';
 
 type Equals<A, B> =
@@ -90,16 +94,42 @@ type _RemoteModuleOf = Assert<
 type _UntypedRemoteModule = Assert<
   Equals<UntypedRemoteModule, UntypedRemoteModuleDecl>
 >;
+type _SchemaDef = Assert<
+  Equals<SchemaDef<UntypedRemoteModuleDecl>, UntypedRemoteModuleDecl['tables']>
+>;
+type _ReducersDef = Assert<
+  Equals<
+    ReducersDef<UntypedRemoteModuleDecl>,
+    UntypedRemoteModuleDecl['reducers']
+  >
+>;
 type _ModuleDef = Assert<Equals<ModuleDef, RawModuleDefSections>>;
 type UntypedRow = Record<string, ColumnBuilder<any, any, any>>;
 type UntypedIndexes = readonly IndexOpts<string>[];
+// `lib/table_schema` was renamed to `lib/table_body`, but declaration files
+// emitted against older versions can name the old path.
 type _TableSchema = Assert<
   Equals<
-    TableSchema<UntypedRow, UntypedIndexes>,
+    table_schema.TableSchema<UntypedRow, UntypedIndexes>,
     TableBody<UntypedRow, UntypedIndexes>
   >
 >;
-type _UntypedTableSchema = Assert<Equals<UntypedTableSchema, UntypedTableBody>>;
+type _UntypedTableSchema = Assert<
+  Equals<table_schema.UntypedTableSchema, UntypedTableBody>
+>;
+type _TableSchedule = Assert<Equals<table_schema.TableSchedule, TableSchedule>>;
+type _ScheduleTableForParams = Assert<
+  Equals<
+    table_schema.ScheduleTableForParams<Record<string, any>>,
+    ScheduleTableForParams<Record<string, any>>
+  >
+>;
+type _UntypedScheduledFunctionExport = Assert<
+  Equals<
+    table_schema.UntypedScheduledFunctionExport,
+    UntypedScheduledFunctionExport
+  >
+>;
 type _TableToSchema = Assert<
   Equals<
     TableToSchema<'table', UntypedTableBody>,
