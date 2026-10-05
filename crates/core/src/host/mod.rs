@@ -30,7 +30,8 @@ pub use host_controller::{
     ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
 };
 pub use module_host::{
-    InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult,
+    IdcReducerCallError, IdcReducerCallOutcome, InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError,
+    ReducerCallError, UpdateDatabaseResult,
 };
 pub use scheduler::Scheduler;
 

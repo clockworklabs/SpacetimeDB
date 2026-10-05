@@ -4,7 +4,7 @@ use super::module_host::{
 use super::{FunctionArgs, ModuleHost};
 use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
-use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
+use crate::host::wasm_common::module_host_actor::{noop_reducer_success_action, InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::anyhow;
@@ -777,7 +777,7 @@ fn call_scheduled_reducer_with_tx(
     // print their message and backtrace when they occur, so we don't need to do
     // anything with the error payload.
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        inst_common.call_reducer_with_tx(Some(tx), params, inst)
+        inst_common.call_reducer_with_tx(Some(tx), params, inst, noop_reducer_success_action())
     }));
     let reschedule = scheduled.and_then(|(id, row_hash)| {
         delete_scheduled_function_row(

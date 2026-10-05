@@ -61,6 +61,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
+pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
+
+pub(crate) fn noop_reducer_success_action() -> ReducerSuccessAction {
+    Box::new(|_, _| Ok(()))
+}
+
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
     type InstancePre: WasmInstancePre<Instance = Self::Instance>;
@@ -527,6 +533,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    pub(in crate::host) fn call_reducer_with_success_action(
+        &mut self,
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
+    ) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset_inner_with_success_action(None, params, on_success);
+        self.trapped = trapped;
+        res
+    }
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -623,7 +639,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, noop_reducer_success_action())
         });
         (res.result, trapped)
     }
@@ -635,7 +652,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         params: CallReducerParams,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, noop_reducer_success_action())
+        })
+    }
+
+    fn call_reducer_with_tx_offset_inner_with_success_action(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, on_success)
         })
     }
 
@@ -1074,6 +1104,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
+        on_success: ReducerSuccessAction,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
@@ -1195,7 +1226,7 @@ impl InstanceCommon {
         let execution_budget_used = result.stats.execution_budget_used();
         let total_duration = result.stats.total_duration();
 
-        let event = ModuleEvent {
+        let mut event = ModuleEvent {
             timestamp,
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
@@ -1212,8 +1243,16 @@ impl InstanceCommon {
             request_id,
             timer,
         };
+        let mut tx = out.tx;
+        if matches!(event.status, EventStatus::Committed(_)) {
+            if let Err(err) = on_success(&mut tx, &event.reducer_return_value) {
+                event.status = EventStatus::FailedInternal(err.to_string());
+                event.reducer_return_value = None;
+            }
+        }
+
         let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
-            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
+            commit_and_broadcast_event(&info.subscriptions, client, event, tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
