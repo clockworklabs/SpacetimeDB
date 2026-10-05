@@ -3,6 +3,7 @@ use super::module_host::{
 };
 use super::{FunctionArgs, ModuleHost};
 use crate::db::relational_db::RelationalDB;
+use crate::error::DBError;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
@@ -21,7 +22,7 @@ use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
 use spacetimedb_lib::{hash_bytes, Hash, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::bsatn::ToBsatn as _;
+use spacetimedb_sats::bsatn::{EncodeError as BsatnEncodeError, ToBsatn as _};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::table::RowRef;
 use std::panic;
@@ -335,6 +336,34 @@ pub(crate) enum CallScheduledFunctionError {
     NoSuchModule(#[from] NoSuchModule),
 }
 
+#[derive(thiserror::Error, Debug)]
+enum ScheduledFunctionParameterError {
+    #[error("could not read scheduled row: {0}")]
+    Datastore(#[from] DBError),
+    #[error("could not encode scheduled row as BSATN: {0}")]
+    BsatnEncoding(#[from] BsatnEncodeError),
+    #[error("Reducer `{0}` not found")]
+    ReducerNotFound(String),
+    #[error("Procedure `{0}` not found")]
+    ProcedureNotFound(String),
+    #[error(transparent)]
+    InvalidReducerArguments(#[from] InvalidReducerArguments),
+    #[error(transparent)]
+    InvalidProcedureArguments(#[from] InvalidProcedureArguments),
+}
+
+impl ScheduledFunctionParameterError {
+    fn is_internal(&self) -> bool {
+        match self {
+            Self::Datastore(_) | Self::BsatnEncoding(_) => true,
+            Self::ReducerNotFound(_)
+            | Self::ProcedureNotFound(_)
+            | Self::InvalidReducerArguments(_)
+            | Self::InvalidProcedureArguments(_) => false,
+        }
+    }
+}
+
 impl SchedulerActor {
     async fn run(mut self) {
         let mut closing = false;
@@ -568,12 +597,11 @@ fn prepare_scheduled_procedure_call(
         Ok(None) => return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule: None }, false),
         Ok(Some(params)) => params,
         Err(err) => {
-            // All we can do here is log an error.
-            // This can fail because the schedule row could not be read from the datastore,
-            // the row could not be BSATN-encoded, the scheduled function no longer exists,
-            // or its arguments do not match the current function definition.
-            // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
-            log::error!("could not determine scheduled procedure or its parameters: {err:#}");
+            if err.is_internal() {
+                log::error!("could not determine scheduled procedure or its parameters: {err:#}");
+            } else {
+                log::warn!("could not determine scheduled procedure or its parameters: {err:#}");
+            }
             let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
                 delete_scheduled_function_row(
                     module_info,
@@ -638,12 +666,11 @@ fn call_scheduled_reducer_until_done(
         Ok(None) => return (CallScheduledFunctionResult { reschedule: None }, false),
         Ok(Some(params)) => params,
         Err(err) => {
-            // All we can do here is log an error.
-            // This can fail because the schedule row could not be read from the datastore,
-            // the row could not be BSATN-encoded, the scheduled function no longer exists,
-            // or its arguments do not match the current function definition.
-            // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
-            log::error!("could not determine scheduled reducer or its parameters: {err:#}");
+            if err.is_internal() {
+                log::error!("could not determine scheduled reducer or its parameters: {err:#}");
+            } else {
+                log::warn!("could not determine scheduled reducer or its parameters: {err:#}");
+            }
             let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
                 delete_scheduled_function_row(
                     module_info,
@@ -924,7 +951,7 @@ fn reducer_call_params_for_queued_item(
     db: &RelationalDB,
     tx: &MutTxId,
     item: QueueItem,
-) -> anyhow::Result<Option<(Timestamp, Instant, CallReducerParams)>> {
+) -> Result<Option<(Timestamp, Instant, CallReducerParams)>, ScheduledFunctionParameterError> {
     call_params_for_queued_item(module, db, tx, item, function_to_reducer_call_params)
 }
 
@@ -933,7 +960,7 @@ fn procedure_call_params_for_queued_item(
     db: &RelationalDB,
     tx: &MutTxId,
     item: QueueItem,
-) -> anyhow::Result<Option<(Timestamp, Instant, CallProcedureParams)>> {
+) -> Result<Option<(Timestamp, Instant, CallProcedureParams)>, ScheduledFunctionParameterError> {
     call_params_for_queued_item(module, db, tx, item, function_to_procedure_call_params)
 }
 
@@ -947,8 +974,8 @@ fn call_params_for_queued_item<T>(
         &str,
         FunctionArgs,
         Option<Timestamp>,
-    ) -> anyhow::Result<(Timestamp, Instant, T)>,
-) -> anyhow::Result<Option<(Timestamp, Instant, T)>> {
+    ) -> Result<(Timestamp, Instant, T), ScheduledFunctionParameterError>,
+) -> Result<Option<(Timestamp, Instant, T)>, ScheduledFunctionParameterError> {
     Ok(Some(match item {
         QueueItem::Id {
             id,
@@ -979,7 +1006,7 @@ fn function_to_reducer_call_params(
     name: &str,
     args: FunctionArgs,
     at: Option<Timestamp>,
-) -> anyhow::Result<(Timestamp, Instant, CallReducerParams)> {
+) -> Result<(Timestamp, Instant, CallReducerParams), ScheduledFunctionParameterError> {
     let identity = module.database_identity;
 
     // Find the reducer and deserialize the arguments.
@@ -987,7 +1014,7 @@ fn function_to_reducer_call_params(
     // references inside the def are resolved correctly for submodules.
     let module = &module.module_def;
     let Some((id, def, owning)) = module.reducer_by_name_with_module(name) else {
-        return Err(anyhow!("Reducer `{name}` not found"));
+        return Err(ScheduledFunctionParameterError::ReducerNotFound(name.to_owned()));
     };
     let args = args.into_tuple_for_def(owning, def).map_err(InvalidReducerArguments)?;
 
@@ -1000,12 +1027,12 @@ fn function_to_procedure_call_params(
     name: &str,
     args: FunctionArgs,
     at: Option<Timestamp>,
-) -> anyhow::Result<(Timestamp, Instant, CallProcedureParams)> {
+) -> Result<(Timestamp, Instant, CallProcedureParams), ScheduledFunctionParameterError> {
     let identity = module.database_identity;
 
     let module = &module.module_def;
     let Some((id, def, owning)) = module.procedure_by_name_with_module(name) else {
-        return Err(anyhow!("Procedure `{name}` not found"));
+        return Err(ScheduledFunctionParameterError::ProcedureNotFound(name.to_owned()));
     };
     let args = args
         .into_tuple_for_def(owning, def)
@@ -1029,7 +1056,7 @@ fn get_schedule_row_mut<'a>(
     tx: &'a MutTxId,
     db: &'a RelationalDB,
     id: ScheduledFunctionId,
-) -> anyhow::Result<Option<RowRef<'a>>> {
+) -> Result<Option<RowRef<'a>>, DBError> {
     Ok(db
         .iter_by_col_eq_mut(tx, id.table_id, id.id_column, &id.schedule_id.into())?
         .next())
@@ -1060,6 +1087,9 @@ fn read_schedule_at(row: &RowRef<'_>, at_column: ColId) -> anyhow::Result<Schedu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::InvalidFunctionArguments;
+    use spacetimedb_sats::ser::Error as _;
+    use spacetimedb_schema::identifier::Identifier;
 
     fn ts(micros: i64) -> Timestamp {
         Timestamp::from_micros_since_unix_epoch(micros)
@@ -1081,5 +1111,47 @@ mod tests {
     fn next_interval_tick_is_strictly_after_now_on_boundary() {
         let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_300));
         assert_eq!(next, ts(1_400));
+    }
+
+    #[test]
+    fn scheduled_function_parameter_errors_distinguish_internal_from_stale_failures() {
+        let invalid_arguments = || InvalidFunctionArguments {
+            err: anyhow!("invalid arguments"),
+            function_name: Identifier::for_test("scheduled_function").into(),
+        };
+        let errors = [
+            (
+                ScheduledFunctionParameterError::Datastore(DBError::Other(anyhow!("datastore failure"))),
+                true,
+            ),
+            (
+                ScheduledFunctionParameterError::BsatnEncoding(BsatnEncodeError::custom("encoding failure")),
+                true,
+            ),
+            (
+                ScheduledFunctionParameterError::ReducerNotFound("removed_reducer".to_owned()),
+                false,
+            ),
+            (
+                ScheduledFunctionParameterError::ProcedureNotFound("removed_procedure".to_owned()),
+                false,
+            ),
+            (
+                ScheduledFunctionParameterError::InvalidReducerArguments(invalid_arguments().into()),
+                false,
+            ),
+            (
+                ScheduledFunctionParameterError::InvalidProcedureArguments(invalid_arguments().into()),
+                false,
+            ),
+        ];
+
+        for (error, expected_internal) in errors {
+            assert_eq!(
+                error.is_internal(),
+                expected_internal,
+                "unexpected classification for {error}"
+            );
+        }
     }
 }
