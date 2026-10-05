@@ -1428,6 +1428,8 @@ impl Schema for ScheduleSchema {
 pub struct OutboxSchema {
     /// The reducer to invoke on the target database.
     pub remote_reducer: Identifier,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
     /// Hash of the receiver reducer signature as seen by the sender bindings.
     pub signature_hash: Option<String>,
 }

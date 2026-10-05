@@ -475,6 +475,9 @@ impl InstanceEnv {
         if insert_flags.is_scheduler_table {
             self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
+        if insert_flags.is_outbox_table {
+            tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+        }
 
         // Note, we update the metric for bytes written after the insert.
         // This is to capture auto-inc columns.
