@@ -30,6 +30,15 @@
             },
             {
               "actor": "a",
+              "do": "probePasswordBoundary",
+              "impostorActor": "b",
+              "name": "boundary",
+              "password": "long-password-A",
+              "returningActor": "b",
+              "wrongPassword": "long-password-B"
+            },
+            {
+              "actor": "a",
               "do": "armScriptCanary"
             },
             {
