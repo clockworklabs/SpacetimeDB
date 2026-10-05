@@ -147,13 +147,13 @@ export type TableIndexes<TableDecl extends UntypedTableDecl> = {
     ? never
     : K]: ColumnIndex<K, TableDecl['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDecl['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
+  [I in TableDecl['indexes'][number] as I['accessor'] & {}]: TableIndexFromDecl<
     TableDecl,
     I
   >;
 };
 
-type TableIndexFromDef<
+type TableIndexFromDecl<
   TableDecl extends UntypedTableDecl,
   I extends IndexOpts<keyof TableDecl['columns'] & string>,
 > =

@@ -116,10 +116,10 @@ export function tablesToSchema<
 >(ctx: ModuleContext, tables: T): SchemaDecl<T> {
   // `SchemaDecl<T>['tables']` is intentionally readonly in the public type,
   // but we need a mutable builder while materializing it from entries.
-  type MutableTableDefs = {
+  type MutableTableDecls = {
     -readonly [AccName in keyof SchemaDecl<T>['tables']]: SchemaDecl<T>['tables'][AccName];
   };
-  const tableDefs = Object.create(null) as MutableTableDefs;
+  const tableDefs = Object.create(null) as MutableTableDecls;
   for (const [accName, schema] of Object.entries(tables) as [
     keyof T & string,
     T[keyof T & string],

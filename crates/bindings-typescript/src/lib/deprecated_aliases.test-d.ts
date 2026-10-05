@@ -69,6 +69,7 @@ import type {
   UntypedRemoteModule,
   UntypedRemoteModuleDecl,
 } from '../sdk/spacetime_module';
+import type { RowTypeDef, RowTypeOf } from '../angular/injectors/inject-table';
 import type { IndexOpts } from './indexes';
 import type {
   ModuleDef,
@@ -184,6 +185,9 @@ type _TablesToSchema = Assert<
 type _UntypedTableDef = Assert<Equals<UntypedTableDef, UntypedTableDecl>>;
 type _TypedTableDef = Assert<
   Equals<TypedTableDef<UntypedRow>, TypedTableDecl<UntypedRow>>
+>;
+type _RowTypeDef = Assert<
+  Equals<RowTypeDef<UntypedTableDecl>, RowTypeOf<UntypedTableDecl>>
 >;
 type _UntypedSchemaDef = Assert<Equals<UntypedSchemaDef, UntypedSchemaDecl>>;
 type _UntypedReducerDef = Assert<Equals<UntypedReducerDef, UntypedReducerDecl>>;
