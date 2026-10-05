@@ -147,9 +147,11 @@ it part of the product brief, or `observed` to exclude it from the main score.
 
 The **Production-quality app** option adds one line to the request: “Build a
 production-quality application suitable for real users, not a prototype or
-demo.” It is on by default and recorded with the run. It changes the request,
+demo.” It is on by default in New run and recorded with the run. It changes the request,
 not the checks. Compare results with the same setting, or label the difference.
-Plans set `productionQuality: false` to opt out.
+Campaign files must set `productionQuality: true` on each condition to include it.
+An omitted field retains the original unframed request, as does an explicit
+`productionQuality: false`. The paid examples set it explicitly.
 
 ## Stack guidance
 

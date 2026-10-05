@@ -18,7 +18,7 @@ check startup, and read the reported log for build or publish errors.
 the initial publish and bindings; later edits can still fail, so check the log.
 Start the frontend separately. Do not start another watcher or competing publisher.
 
-Use `/deps/spacetime-dev stop` before changing configuration or testing a clean
+Use `/deps/spacetime-dev stop` before changing configuration or checking a clean
 startup, then `start` again when needed. An exited watcher is not restarted
 automatically. Keep `/app/start.sh` able to build and start the complete application
 without this development session. Container cleanup stops the watcher.

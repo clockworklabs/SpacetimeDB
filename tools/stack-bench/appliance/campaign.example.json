@@ -60,6 +60,7 @@
   "conditions": [
     {
       "id": "product-request",
+      "productionQuality": true,
       "guidanceProfile": "neutral",
       "repairPolicy": "scored-only",
       "specifications": {
