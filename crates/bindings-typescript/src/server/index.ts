@@ -4,6 +4,7 @@ export {
   type InferSchema,
   type ModuleExport,
   type ModuleSettings,
+  type SubmoduleMount,
 } from './schema';
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
@@ -34,5 +35,7 @@ export {
 } from './http';
 export type { HandlerContext, HttpHandlerExport } from './http';
 export { ScheduleAt } from '../lib/schedule_at';
+
+export type { Environment } from './environment';
 
 import './polyfills'; // Ensure polyfills are loaded

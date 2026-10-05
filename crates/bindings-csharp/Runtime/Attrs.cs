@@ -1,5 +1,16 @@
 namespace SpacetimeDB
 {
+    /// <summary>Declares the complete environment schema for this module.</summary>
+    [AttributeUsage(AttributeTargets.Struct)]
+    public sealed class EnvAttribute : Attribute { }
+
+    /// <summary>Restricts one declared string to these exact permitted values.</summary>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class EnvValuesAttribute(params string[] values) : Attribute
+    {
+        public string[] Values { get; } = values;
+    }
+
     namespace Internal
     {
         [Flags]
@@ -33,7 +44,7 @@ namespace SpacetimeDB
     /// so that any row permitted by at least one filter is visible.
     ///
     /// The query follows the same syntax as a subscription query.
-    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    /// See the <see href="https://spacetimedb.com/docs/reference/sql">SQL reference</see> for more information.
     ///
     /// This is an experimental feature and subject to change in the future.
     /// </summary>

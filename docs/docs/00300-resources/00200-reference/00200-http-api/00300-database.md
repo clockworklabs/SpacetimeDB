@@ -9,7 +9,7 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 ## At a glance
 
 | Route                                                                                              | Description                                       |
-|----------------------------------------------------------------------------------------------------|---------------------------------------------------|
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | [`POST /v1/database`](#post-v1database)                                                            | Publish a new database given its module code.     |
 | [`PUT /v1/database/:name_or_identity`](#put-v1databasename_or_identity)                            | Publish to a database given its module code.      |
 | [`GET /v1/database/:name_or_identity`](#get-v1databasename_or_identity)                            | Get a JSON description of a database.             |
@@ -21,6 +21,9 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 | [`GET /v1/database/:name_or_identity/subscribe`](#get-v1databasename_or_identitysubscribe)         | Begin a WebSocket connection.                     |
 | [`POST /v1/database/:name_or_identity/call/:reducer`](#post-v1databasename_or_identitycallreducer) | Invoke a reducer OR procedure in a database.      |
 | [`GET /v1/database/:name_or_identity/schema`](#get-v1databasename_or_identityschema)               | Get the schema for a database.                    |
+| [`GET /v1/database/:name_or_identity/environment`](#get-v1databasename_or_identityenvironment)     | Get environment declarations and stored keys.     |
+| [`PUT /v1/database/:name_or_identity/environment`](#put-v1databasename_or_identityenvironment)     | Replace a database's environment.                 |
+| [`PATCH /v1/database/:name_or_identity/environment`](#patch-v1databasename_or_identityenvironment) | Set or delete environment values.                 |
 | [`GET /v1/database/:name_or_identity/logs`](#get-v1databasename_or_identitylogs)                   | Retrieve logs from a database.                    |
 | [`POST /v1/database/:name_or_identity/sql`](#post-v1databasename_or_identitysql)                   | Run a SQL query against a database.               |
 | [`ANY /v1/database/:name_or_identity/route/{*path}`](#any-v1databasename_or_identityroutepath)     | Access database-defined HTTP APIs.                |
@@ -33,15 +36,17 @@ Accessible through the CLI as `spacetime publish`.
 
 #### Optional Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+| Name                           | Value                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Authorization`                | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers).                                                                 |
+| `spacetime-environment`        | One `KEY=VALUE` environment value. Repeat the header for each value. See [Publishing with environment values](#publishing-with-environment-values). |
+| `spacetime-environment-remove` | Stored environment keys to delete, or `*` to replace the whole environment.                                                                         |
 
 If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. This is generally not what you want.
 
 #### Data
 
-A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html).
+A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html). To publish with environment values, see [Publishing with environment values](#publishing-with-environment-values).
 
 #### Returns
 
@@ -68,15 +73,17 @@ Accessible through the CLI as `spacetime publish`.
 
 #### Optional Headers
 
-| Name            | Value                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+| Name                           | Value                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Authorization`                | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers).                                                                 |
+| `spacetime-environment`        | One `KEY=VALUE` environment value. Repeat the header for each value. See [Publishing with environment values](#publishing-with-environment-values). |
+| `spacetime-environment-remove` | Stored environment keys to delete, or `*` to replace the whole environment.                                                                         |
 
 If no `Authorization` header is provided, a new anonymous identity will be created. When updating an existing database, the token must correspond to the database's owner, or the request will be rejected.
 
 #### Data
 
-A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html).
+A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html). To publish with environment values, see [Publishing with environment values](#publishing-with-environment-values).
 
 #### Returns
 
@@ -97,6 +104,136 @@ If a database with the given name exists, but the identity provided in the `Auth
     "name": string
 } }
 ```
+
+### Publishing with environment values
+
+Both publish endpoints accept [environment values](../../../00200-core-concepts/00100-databases/00700-environment-variables.md) in headers, alongside the module in the body. Send one `spacetime-environment` header per value, in the form `KEY=VALUE`:
+
+```
+spacetime-environment: API_KEY=development-only-key
+spacetime-environment: MODE=development
+```
+
+Values are written like shell or `.env` assignments:
+
+- A bare value, such as `API_KEY=abc123`, is taken literally. It cannot contain spaces, tabs, quotes, `,` or `\`.
+- A single-quoted value, such as `GREETING='hello, world'`, is taken literally up to the closing quote. It cannot contain `'`.
+- A double-quoted value, such as `PEM="line1\nline2"`, supports JSON string escapes, as in `.env` files: `\"`, `\\`, `\n`, `\t`, and `\uXXXX` for other control characters and non-ASCII characters, which cannot appear raw in a header.
+
+Unlike a shell, the server does not expand variables. Values that break these rules, such as `GREETING=hello world`, are rejected with `400 Bad Request`. The server also accepts several values in one header, separated by commas outside quotes.
+
+Formally, in [ABNF](https://www.rfc-editor.org/rfc/rfc5234), using the list syntax (`#`) from [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.1):
+
+```text
+spacetime-environment = #assignment
+assignment    = key "=" value
+key           = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+value         = bare / single-quoted / double-quoted
+bare          = *( %x21 / %x23-26 / %x28-2B / %x2D-5B / %x5D-7E )
+                ; visible ASCII except " ' , \
+single-quoted = "'" *( HTAB / %x20-26 / %x28-7E ) "'"
+                ; taken literally
+double-quoted = DQUOTE *( %x20-21 / %x23-5B / %x5D-7E / escape ) DQUOTE
+escape        = "\" ( DQUOTE / "\" / "/" / %x62 / %x66 / %x6E / %x72 / %x74 / %x75 4HEXDIG )
+                ; \" \\ \/ \b \f \n \r \t \uXXXX, lowercase only, as in JSON
+                ; strings (RFC 8259). A \u escape of a UTF-16 high surrogate must be
+                ; followed by one of a low surrogate, and a low surrogate cannot
+                ; appear on its own.
+
+spacetime-environment-remove = #( "*" / key )
+                ; "*" must be the only element
+```
+
+Keys are at most 256 bytes and values at most 8 KiB. A key cannot appear twice across all `spacetime-environment` headers.
+
+Supplied values override stored values with the same key, and stored values that are not supplied are kept. To delete stored values, list their keys in a `spacetime-environment-remove` header, separated by commas (`OLD_KEY, _UNUSED`). To replace the whole environment with only the supplied values, send `spacetime-environment-remove: *`. A key cannot be both supplied and removed.
+
+The server validates the resulting environment against the module's declarations and installs the module and the environment in one transaction. All required values must be present, and every declared value must satisfy its declaration. Invalid updates leave the database unchanged.
+
+If a required value is missing, the server returns `400 Bad Request` with JSON that names the missing key, so clients can prompt for it and retry:
+
+```json
+{
+  "EnvironmentError": { "MissingRequiredEnvironment": { "keys": ["API_KEY"] } }
+}
+```
+
+A reset (`clear=true`) deletes all stored values, so the request must supply every required value again.
+
+For example, to publish a module to a local server with `curl`, export `SPACETIME_TOKEN` with a token authorized to publish, then run:
+
+```bash
+curl --fail-with-body --request PUT \
+  'http://127.0.0.1:3000/v1/database/env-example?host_type=wasm' \
+  --header "Authorization: Bearer $SPACETIME_TOKEN" \
+  --header 'spacetime-environment: API_KEY=development-only-key' \
+  --header 'spacetime-environment: MODE=development' \
+  --data-binary @module.wasm
+```
+
+To change environment values without publishing a module, use [`PUT`](#put-v1databasename_or_identityenvironment) or [`PATCH /v1/database/:name_or_identity/environment`](#patch-v1databasename_or_identityenvironment).
+
+## `GET /v1/database/:name_or_identity/environment`
+
+Get the environment declarations of the database's current module and the keys of its stored values. Values are never returned. Requires a token authorized to update the database.
+
+#### Returns
+
+```typescript
+{
+    "module_hash": string,
+    "declarations": [{
+        "name": string,
+        "optional": boolean,
+        "ty": "String" | { "StringLiteral": string } | { "Union": string[] }
+    }],
+    "stored_keys": string[]
+}
+```
+
+`module_hash` identifies the module the declarations came from. Treat it as an opaque string and pass it unchanged as `expected_module_hash` when updating the environment.
+
+## `PUT /v1/database/:name_or_identity/environment`
+
+Replace the database's whole environment without publishing a module. Stored values that are not supplied are deleted.
+
+#### Query Parameters
+
+| Name                   | Value                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `expected_module_hash` | The `module_hash` from [`GET /environment`](#get-v1databasename_or_identityenvironment). |
+
+#### Data
+
+A JSON object mapping each key to its string value, for example `{"API_KEY": "new-key", "MODE": "production"}`.
+
+#### Returns
+
+On success, returns `200 OK` with `{"Ok": null}`. If the resulting environment does not satisfy the module's declarations, returns `400 Bad Request`, with `{"Err": {"MissingRequiredEnvironment": {"keys": [...]}}}` when a required value is missing. If the database's module no longer has `expected_module_hash`, returns `409 Conflict`; fetch the metadata again before retrying.
+
+## `PATCH /v1/database/:name_or_identity/environment`
+
+Set and delete individual environment values without publishing a module. Stored values that are neither supplied nor removed are kept.
+
+#### Query Parameters
+
+| Name                   | Value                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `expected_module_hash` | The `module_hash` from [`GET /environment`](#get-v1databasename_or_identityenvironment). |
+
+#### Optional Headers
+
+| Name                           | Value                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| `spacetime-environment-remove` | Stored keys to delete, separated by commas. `*` is not accepted; use `PUT` instead. |
+
+#### Data
+
+A JSON object mapping each key to set to its string value. Send `{}` to only delete keys.
+
+#### Returns
+
+The same as [`PUT /environment`](#put-v1databasename_or_identityenvironment).
 
 ## `GET /v1/database/:name_or_identity`
 

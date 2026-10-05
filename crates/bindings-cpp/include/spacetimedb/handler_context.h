@@ -8,6 +8,7 @@
 #include <spacetimedb/abi/FFI.h>
 #include <spacetimedb/bsatn/timestamp.h>
 #include <spacetimedb/bsatn/uuid.h>
+#include <spacetimedb/environment.h>
 #include <spacetimedb/http.h>
 #include <spacetimedb/internal/tx_execution.h>
 #include <spacetimedb/random.h>
@@ -23,6 +24,7 @@ namespace SpacetimeDB {
 
 struct HandlerContext {
     Timestamp timestamp;
+    Environment env;
     HttpClient http;
 
 private:
@@ -66,7 +68,7 @@ public:
                 Identity{},
                 std::nullopt,
                 tx_timestamp,
-                AuthCtx::internal()
+                AuthCtx(false, [] { return std::nullopt; })
             );
         };
         return Internal::with_tx(make_reducer_ctx, body);
@@ -79,7 +81,7 @@ public:
                 Identity{},
                 std::nullopt,
                 tx_timestamp,
-                AuthCtx::internal()
+                AuthCtx(false, [] { return std::nullopt; })
             );
         };
         return Internal::try_with_tx(make_reducer_ctx, body);

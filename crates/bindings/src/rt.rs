@@ -5,7 +5,8 @@ use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
-    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
+    RawModuleDefV10Builder,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -917,6 +918,88 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
     })
 }
 
+/// Implementation support for `#[env]` and `#[derive(EnvironmentValue)]`.
+///
+/// The compiler resolves aliases before selecting metadata and accessors. Custom
+/// implementations must keep their declared constraint and decoding in agreement.
+/// The host independently validates every published string against that constraint.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "environment fields must be `String`, an enum deriving `EnvironmentValue`, or an `Option` of either"
+)]
+pub trait EnvironmentValue: Sized {
+    const OPTIONAL: bool;
+
+    fn constraint() -> RawEnvVarTypeV10;
+
+    /// Decode a checked host result. Errors must identify only the key, never its value.
+    fn from_environment(value: Option<String>, key: &str) -> Self;
+
+    fn get(environment: &crate::Environment, key: &str) -> Self {
+        Self::from_environment(environment.get(key), key)
+    }
+}
+
+/// Required environment types supported by the optional-value implementation.
+/// Derived enums and `String` implement this; `Option<T>` deliberately does not.
+#[doc(hidden)]
+pub trait RequiredEnvironmentValue: EnvironmentValue {}
+
+impl EnvironmentValue for String {
+    const OPTIONAL: bool = false;
+
+    fn constraint() -> RawEnvVarTypeV10 {
+        RawEnvVarTypeV10::String
+    }
+
+    fn from_environment(value: Option<String>, key: &str) -> Self {
+        value.unwrap_or_else(|| panic!("required environment key is missing: {key}"))
+    }
+}
+
+impl RequiredEnvironmentValue for String {}
+
+impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
+    const OPTIONAL: bool = true;
+
+    fn constraint() -> RawEnvVarTypeV10 {
+        T::constraint()
+    }
+
+    fn from_environment(value: Option<String>, key: &str) -> Self {
+        value.map(|value| T::from_environment(Some(value), key))
+    }
+}
+
+mod string_environment_value_sealed {
+    pub trait Sealed {}
+
+    impl Sealed for String {}
+    impl Sealed for Option<String> {}
+}
+
+/// Legacy field-level string constraints cannot override a typed enum's mapping.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "`#[env(values(...))]` requires `String` or `Option<String>`; map enum variants with `#[env(value = \"...\")]` instead"
+)]
+pub trait StringEnvironmentValue: EnvironmentValue + string_environment_value_sealed::Sealed {
+    fn with_constraint(constraint: RawEnvVarTypeV10) -> RawEnvVarTypeV10 {
+        constraint
+    }
+}
+
+impl StringEnvironmentValue for String {}
+impl StringEnvironmentValue for Option<String> {}
+
+/// Register declarative ENV metadata without reading any environment values.
+#[doc(hidden)]
+pub fn register_environment(declarations: fn() -> Vec<RawEnvironmentDeclarationV10>) {
+    register_describer(move |module| {
+        module.inner.add_environment(declarations());
+    });
+}
+
 /// A builder for a module.
 #[derive(Default)]
 pub struct ModuleBuilder {
@@ -1317,6 +1400,13 @@ pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
     }
     read_bytes_source_into(source, &mut buf);
     Some(std::str::from_utf8(&buf).unwrap().to_string())
+}
+
+pub(crate) fn env_get(key: &str) -> Option<String> {
+    let source = sys::env_get(key)?;
+    let mut buf = IterBuf::take();
+    read_bytes_source_into(source, &mut buf);
+    Some(String::from_utf8(buf.to_vec()).expect("host environment values are UTF-8"))
 }
 
 /// Read `source` from the host fully into `buf`.

@@ -13,6 +13,8 @@ External clients can make HTTP requests to routes nested under [`/v1/database/:n
 ***HTTP handlers are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
 :::
 
+Transaction contexts inside HTTP handlers are external: `is_internal()` is false and no JWT is available through the authentication context. SpacetimeDB does not authenticate the `Authorization` header on user-defined routes; handlers must validate any credentials they require.
+
 ## Defining HTTP Handlers
 
 <Tabs groupId="server-language" queryString>
@@ -33,7 +35,7 @@ import { schema, SyncResponse } from "spacetimedb/server";
 const spacetimedb = schema({});
 export default spacetimedb;
 
-export const say_hello = spacetimedb.httpHandler((_ctx, _req) => {
+export const sayHello = spacetimedb.httpHandler((_ctx, _req) => {
     return new SyncResponse("Hello!");
 });
 ```
@@ -146,7 +148,7 @@ import { Router } from "spacetimedb/server";
 
 export const router = spacetimedb.httpRouter(
     new Router()
-        .get("/say-hello", say_hello)
+        .get("/say-hello", sayHello)
 );
 ```
 

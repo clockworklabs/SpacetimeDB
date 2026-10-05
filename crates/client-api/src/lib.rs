@@ -11,13 +11,15 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+use spacetimedb::host::module_host::UpdateEnvironmentResult;
 use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::{ProductTypeElement, ProductValue};
+use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentUpdate};
+use spacetimedb_lib::{Hash, ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use thiserror::Error;
@@ -146,7 +148,8 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::debug!(sql = body);
+        // Environment SQL contains values; routine request logs must omit them.
+        tracing::debug!(sql_bytes = body.len(), "executing SQL");
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
@@ -164,12 +167,14 @@ impl Host {
         )
         .await
         .map_err(|error| match error {
+            // Parser diagnostics can quote values. Return them only to the caller.
             sql::execute::SqlExecutionError::Client(error) => {
-                log::warn!("{error}");
+                log::debug!("SQL request rejected");
                 (StatusCode::BAD_REQUEST, error.to_string())
             }
-            sql::execute::SqlExecutionError::Internal(error) => {
-                log::error!("{error}");
+            // Internal errors can also carry SQL values, so log only that one happened.
+            sql::execute::SqlExecutionError::Internal(_) => {
+                log::error!("SQL request failed with an internal database error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal database error".to_string())
             }
         })?;
@@ -199,15 +204,33 @@ impl Host {
         Ok(json)
     }
 
+    pub async fn environment_metadata(
+        &self,
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
+        self.host_controller.environment_metadata(self.replica_id).await
+    }
+
     pub async fn update(
         &self,
         database: Database,
         host_type: HostType,
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
+            .update_module_host(database, host_type, self.replica_id, program_bytes, policy, environment)
+            .await
+    }
+
+    pub async fn update_environment(
+        &self,
+        database: Database,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        self.host_controller
+            .update_module_environment(database, self.replica_id, environment, expected_module_hash)
             .await
     }
 }
@@ -308,6 +331,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         publisher: &Identity,
         spec: DatabaseDef,
         policy: MigrationPolicy,
+        environment: EnvironmentUpdate,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
@@ -316,7 +340,12 @@ pub trait ControlStateWriteAccess: Send + Sync {
 
     /// Remove all data from a database, and reset it according to the
     /// given [DatabaseResetDef].
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
+    async fn reset_database(
+        &self,
+        caller_identity: &Identity,
+        spec: DatabaseResetDef,
+        environment: EnvironmentMap,
+    ) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -354,6 +383,14 @@ pub trait ControlStateWriteAccess: Send + Sync {
         database_identity: &Identity,
         locked: bool,
     ) -> anyhow::Result<()>;
+
+    async fn update_environment(
+        &self,
+        publisher: &Identity,
+        database_identity: &Identity,
+        environment: EnvironmentUpdate,
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateEnvironmentResult>;
 }
 
 #[async_trait]
@@ -422,8 +459,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         identity: &Identity,
         spec: DatabaseDef,
         policy: MigrationPolicy,
+        environment: EnvironmentUpdate,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec, policy).await
+        (**self).publish_database(identity, spec, policy, environment).await
     }
 
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult> {
@@ -434,8 +472,13 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).delete_database(caller_identity, database_identity).await
     }
 
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
-        (**self).reset_database(caller_identity, spec).await
+    async fn reset_database(
+        &self,
+        caller_identity: &Identity,
+        spec: DatabaseResetDef,
+        environment: EnvironmentMap,
+    ) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec, environment).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -477,6 +520,18 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     ) -> anyhow::Result<()> {
         (**self)
             .set_database_lock(caller_identity, database_identity, locked)
+            .await
+    }
+
+    async fn update_environment(
+        &self,
+        publisher: &Identity,
+        database_identity: &Identity,
+        environment: EnvironmentUpdate,
+        expected_module_hash: Hash,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        (**self)
+            .update_environment(publisher, database_identity, environment, expected_module_hash)
             .await
     }
 }

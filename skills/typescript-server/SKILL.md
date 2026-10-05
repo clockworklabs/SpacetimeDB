@@ -20,7 +20,7 @@ Tables are built with `table()`, bound with `schema()`, and exported as default.
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-const score_record = table(
+const scoreRecord = table(
   { name: 'score_record', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -29,13 +29,13 @@ const score_record = table(
   }
 );
 
-const spacetimedb = schema({ score_record });  // ONE object, not spread args
+const spacetimedb = schema({ scoreRecord });  // ONE object, not spread args
 export default spacetimedb;
 
 export const addRecord = spacetimedb.reducer(
   { value: t.u32() },
   (ctx, { value }) => {
-    ctx.db.score_record.insert({ id: 0n, owner: ctx.sender, value });
+    ctx.db.scoreRecord.insert({ id: 0n, owner: ctx.sender, value });
   }
 );
 ```
@@ -72,9 +72,9 @@ const entity = table(
 );
 ```
 
-Options: `name` (snake_case, recommended), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
+Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`
 
-`ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ score_record })` → `ctx.db.score_record`. Use snake_case keys matching the table `name`. Client codegen converts case; server `ctx.db` does not.
+`ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ scoreRecord })` -> `ctx.db.scoreRecord`. Keep TypeScript identifiers and accessors camelCase. Use explicit `name: 'snake_case'` strings when you need a canonical database name that differs from the TypeScript identifier.
 
 ## Column Types
 
@@ -149,16 +149,16 @@ Reducer args accept any column type, including arrays of custom types: `{ splits
 ## DB Operations
 
 ```typescript
-ctx.db.score_record.insert({ id: 0n, owner: ctx.sender, value: 1 });  // Insert (0n for autoInc)
-ctx.db.score_record.id.find(recordId);                     // Find by PK → row | null
+ctx.db.scoreRecord.insert({ id: 0n, owner: ctx.sender, value: 1 });  // Insert (0n for autoInc)
+ctx.db.scoreRecord.id.find(recordId);                     // Find by PK → row | null
 ctx.db.entity.identity.find(ctx.sender);                   // Find by unique column
 [...ctx.db.post.authorId.filter(authorId)];                // Filter → spread to Array
 [...ctx.db.entity.iter()];                                 // All rows → Array
-ctx.db.score_record.id.update({ ...existing, value: 2 });  // Update (spread + override)
-ctx.db.score_record.id.delete(recordId);                   // Delete by PK
+ctx.db.scoreRecord.id.update({ ...existing, value: 2 });  // Update (spread + override)
+ctx.db.scoreRecord.id.delete(recordId);                   // Delete by PK
 ```
 
-Insert through the table accessor (`ctx.db.score_record.insert(...)`). Primary-key, unique, and index accessors support lookup or mutation of existing rows, but do not have `insert(...)`.
+Insert through the table accessor (`ctx.db.scoreRecord.insert(...)`). Primary-key, unique, and index accessors support lookup or mutation of existing rows, but do not have `insert(...)`.
 
 `insert(...)` returns the inserted row, including database-assigned auto-increment fields.
 
@@ -188,7 +188,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
 function findRecord(ctx: Ctx, id: bigint) {
-  return ctx.db.score_record.id.find(id);
+  return ctx.db.scoreRecord.id.find(id);
 }
 ```
 
@@ -236,18 +236,22 @@ The reducer or procedure referenced by a table's `scheduled` option must be expo
 ```typescript
 import { ScheduleAt } from 'spacetimedb';   // ScheduleAt comes from the root package
 
-const tick_timer = table({
+const tickTimer = table({
   name: 'tick_timer',
-  scheduled: (): any => tick,   // (): any => breaks circular dep
 }, {
-  scheduled_id: t.u64().primaryKey().autoInc(),
-  scheduled_at: t.scheduleAt(),
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
 });
 
 export const tick = spacetimedb.reducer(
-  { timer: tick_timer.rowType },
+  { onSchedule: tickTimer },
+  { timer: tickTimer.rowType },
   (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
 );
+
+// `onSchedule` also works for scheduled procedures whose return type is `t.unit()`.
+// Legacy table-side scheduling, `scheduled: (): any => tick`, still works but is not
+// recommended for new code because it forces a forward reference.
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
 // Repeating: ScheduleAt.interval(60_000_000n)
@@ -354,7 +358,7 @@ TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-
 
 Procedures and handlers open short database transactions with `ctx.withTx(tx => ...)`. Perform network I/O before opening the transaction; only database work belongs inside its callback.
 
-Scheduled procedures use the ordinary scheduled-table shape. Its `scheduled` option references an exported `spacetimedb.procedure(...)` value instead of a reducer, and the procedure accepts the scheduled row as its argument.
+Scheduled procedures use the same `onSchedule` binding as scheduled reducers. The procedure must be exported, return `t.unit()`, and accept the scheduled row as its argument.
 
 Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
 

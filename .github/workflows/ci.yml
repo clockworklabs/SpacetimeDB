@@ -24,7 +24,8 @@ permissions:
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
-    runs-on: spacetimedb-linux
+    # This compares git trees and builds only the small workflow-coordinator helper.
+    runs-on: spacetimedb-linux-small
     permissions:
       actions: write
       contents: read
@@ -107,6 +108,8 @@ jobs:
         run: |
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
             cargo_target_dir="${HOME}/actions-runner/_work/target"
+          elif [[ "${RUNNER_OS}" == "Windows" && -d "C:/actions-runner/_work" ]]; then
+            cargo_target_dir="C:/actions-runner/_work/target"
           else
             # Forward slashes keep the Windows path compatible with Cargo,
             # PowerShell, GitHub Actions, and Git Bash filesystem commands.
@@ -116,15 +119,21 @@ jobs:
 
       - &configure-sccache
         name: Configure sccache
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           if command -v sccache >/dev/null 2>&1; then
+            if [[ "${RUNNER_OS}" == "Windows" ]]; then
+              sccache_bin="C:/sccache/sccache.exe"
+              sccache_dir="C:/actions-runner/_work/sccache"
+            else
+              sccache_bin="$(command -v sccache)"
+              sccache_dir="${HOME}/.cache/sccache"
+            fi
             # sccache cannot cache incremental compilation artifacts, so
             # disable Cargo's incremental mode whenever the wrapper is active.
             echo "CARGO_INCREMENTAL=0" >>"${GITHUB_ENV}"
-            echo "RUSTC_WRAPPER=/usr/local/bin/sccache" >>"${GITHUB_ENV}"
-            echo "SCCACHE_DIR=${HOME}/.cache/sccache" >>"${GITHUB_ENV}"
+            echo "RUSTC_WRAPPER=${sccache_bin}" >>"${GITHUB_ENV}"
+            echo "SCCACHE_DIR=${sccache_dir}" >>"${GITHUB_ENV}"
             echo "SCCACHE_CACHE_SIZE=20G" >>"${GITHUB_ENV}"
           fi
 
@@ -242,13 +251,13 @@ jobs:
 
       - &show-sccache-stats
         name: Show sccache statistics
-        if: always() && runner.os == 'Linux'
+        if: always()
         shell: bash
         run: |
           if command -v sccache >/dev/null 2>&1; then
             sccache --show-stats
           else
-            echo "::notice::sccache is not installed on this Linux runner"
+            echo "::notice::sccache is not installed on this ${RUNNER_OS} runner"
           fi
 
       - name: Upload Cargo timing reports
@@ -560,7 +569,8 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    runs-on: spacetimedb-linux
+    # These no-op jobs only preserve required smoketest check names after CI reuse.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
@@ -759,7 +769,8 @@ jobs:
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
-    runs-on: spacetimedb-linux
+    # This builds a small CI helper and checks changed paths and GitHub reviews.
+    runs-on: spacetimedb-linux-small
     permissions:
       contents: read
       pull-requests: read
@@ -789,6 +800,39 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-codeowners-check
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
+
+  new_script_check:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: New script check
+    runs-on: spacetimedb-linux-small
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Check for new Bash or Python scripts
+        run: |
+          cargo ci other-workflows new-script-check \
+            --base-ref "origin/${{ github.event.pull_request.base.ref }}"
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-new-script-check
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
@@ -824,7 +868,8 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
-    runs-on: spacetimedb-linux
+    # This builds a small CI helper and validates package metadata without compiling the workspace.
+    runs-on: spacetimedb-linux-small
     permissions: read-all
     env:
       RUST_BACKTRACE: full
@@ -855,7 +900,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux }
+          # The Linux update-flow test uses released artifacts and builds only its small CI driver.
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux-small }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
@@ -905,7 +951,8 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    runs-on: spacetimedb-linux
+    # These no-op jobs only preserve required update-flow check names after CI reuse.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Skip duplicate merge queue update test
         run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
@@ -1266,6 +1313,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
+    # The .NET packaging, Godot project build, and integration test make this too heavy for a small runner.
     runs-on: spacetimedb-linux
     env:
       ARTIFACT_SUFFIX: linux
@@ -1368,6 +1416,7 @@ jobs:
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
     runs-on: spacetimedb-linux
     timeout-minutes: 30
     env:
@@ -1391,10 +1440,15 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload update --from-previous-sdk
           # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
-          dotnet workload install wasi-experimental
-          rm global.json
+          # Create temp global.json to target .NET 8 SDK for workload install without
+          # overwriting the repository's .NET 10 global.json, which later C# harness
+          # tests rely on for SDK selection.
+          workload_dir="$(mktemp -d)"
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > "$workload_dir/global.json"
+          (
+            cd "$workload_dir"
+            dotnet workload install wasi-experimental
+          )
 
       - name: Override NuGet packages
         run: |
@@ -1430,6 +1484,9 @@ jobs:
       - *download-build-artifacts
       - *extract-build-artifacts
       - *expose-spacetime-cli
+
+      - name: Run C# SDK harness tests
+        run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
 
       - name: Check quickstart-chat bindings are up to date
         run: |
@@ -1485,7 +1542,8 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    runs-on: spacetimedb-linux
+    # This builds a small CI helper and checks symlink policy without building SpacetimeDB.
+    runs-on: spacetimedb-linux-small
     permissions:
       contents: read
     env:
@@ -1529,7 +1587,8 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
-    runs-on: spacetimedb-linux
+    # This builds a tiny source-scanning helper and does not compile or run smoketests.
+    runs-on: spacetimedb-linux-small
     permissions:
       contents: read
     env:
@@ -1565,6 +1624,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
+    # Building the documentation site nearly saturated a small runner and used substantial memory.
     runs-on: spacetimedb-linux
     env:
       RUST_BACKTRACE: full

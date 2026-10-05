@@ -98,6 +98,9 @@ pub use spacetimedb_bindings_macro::http_router as router;
 #[cfg(feature = "unstable")]
 #[non_exhaustive]
 pub struct HandlerContext {
+    /// Read-only access to this database's environment store.
+    pub env: crate::Environment,
+
     /// The time at which the handler was started.
     pub timestamp: Timestamp,
 
@@ -117,6 +120,7 @@ pub struct HandlerContext {
 impl HandlerContext {
     pub(crate) fn new(timestamp: Timestamp) -> Self {
         Self {
+            env: crate::Environment::default(),
             timestamp,
             http: HttpClient {},
             #[cfg(feature = "rand08")]
@@ -139,12 +143,12 @@ impl HandlerContext {
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, Identity::ZERO, None)
+        with_tx(body, Identity::ZERO, None, true)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, Identity::ZERO, None)
+        try_with_tx(body, Identity::ZERO, None, true)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.

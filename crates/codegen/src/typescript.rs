@@ -228,39 +228,39 @@ impl Lang for TypeScript {
         if !ns_tables.is_empty() || !ns_views.is_empty() {
             writeln!(out);
             writeln!(out, "// Import namespace table schema definitions");
-            for (prefix, _, table) in &ns_tables {
-                let ns_path = submodule_ns_path(prefix);
+            for (_, owning, table) in &ns_tables {
+                let ns_path = submodule_ns_path(owning.accessor_path());
                 let file_stem = table_module_name(&table.accessor_name);
-                let row_type = submodule_row_type_name(prefix, table.accessor_name.deref());
+                let row_type = submodule_row_type_name(owning.accessor_path(), table.accessor_name.deref());
                 writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
             }
-            for (prefix, _, view) in &ns_views {
-                let ns_path = submodule_ns_path(prefix);
+            for (_, owning, view) in &ns_views {
+                let ns_path = submodule_ns_path(owning.accessor_path());
                 let file_stem = table_module_name(&view.accessor_name);
-                let row_type = submodule_row_type_name(prefix, view.accessor_name.deref());
+                let row_type = submodule_row_type_name(owning.accessor_path(), view.accessor_name.deref());
                 writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
             }
         }
         if !ns_reducers.is_empty() {
             writeln!(out);
             writeln!(out, "// Import namespace reducer arg schemas");
-            for (prefix, _, reducer) in &ns_reducers {
+            for (_, owning, reducer) in &ns_reducers {
                 if !is_reducer_invokable(reducer) {
                     continue;
                 }
-                let ns_path = submodule_ns_path(prefix);
+                let ns_path = submodule_ns_path(owning.accessor_path());
                 let module_name = reducer_module_name(&reducer.accessor_name);
-                let args_type = submodule_reducer_args_type_name(prefix, &reducer.accessor_name);
+                let args_type = submodule_reducer_args_type_name(owning.accessor_path(), &reducer.accessor_name);
                 writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}\";");
             }
         }
         if !ns_procedures.is_empty() {
             writeln!(out);
             writeln!(out, "// Import namespace procedure arg schemas");
-            for (prefix, _, procedure) in &ns_procedures {
-                let ns_path = submodule_ns_path(prefix);
+            for (_, owning, procedure) in &ns_procedures {
+                let ns_path = submodule_ns_path(owning.accessor_path());
                 let module_name = procedure_module_name(&procedure.accessor_name);
-                let args_type = submodule_procedure_args_type_name(prefix, &procedure.accessor_name);
+                let args_type = submodule_procedure_args_type_name(owning.accessor_path(), &procedure.accessor_name);
                 writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}\";");
             }
         }
@@ -321,7 +321,7 @@ impl Lang for TypeScript {
         // Namespace tables from submodules
         for (prefix, owning_def, table) in &ns_tables {
             let source_name = submodule_source_name(prefix, table.name.deref());
-            let row_type = submodule_row_type_name(prefix, table.accessor_name.deref());
+            let row_type = submodule_row_type_name(owning_def.accessor_path(), table.accessor_name.deref());
             let type_ref = table.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
             out.indent(1);
@@ -342,7 +342,7 @@ impl Lang for TypeScript {
         // backing table name registered in the database by `create_view_with_prefix`.
         for (prefix, owning_def, view) in &ns_views {
             let source_name = submodule_source_name(prefix, view.name.deref());
-            let row_type = submodule_row_type_name(prefix, view.accessor_name.deref());
+            let row_type = submodule_row_type_name(owning_def.accessor_path(), view.accessor_name.deref());
             let type_ref = view.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
             out.indent(1);
@@ -373,14 +373,18 @@ impl Lang for TypeScript {
             let args_type = reducer_args_type_name(&reducer.accessor_name);
             writeln!(out, "__reducerSchema(\"{}\", {}),", reducer.name, args_type);
         }
-        for (prefix, _, reducer) in &ns_reducers {
+        for (_, owning, reducer) in &ns_reducers {
             if !is_reducer_invokable(reducer) {
                 continue;
             }
             // `reducer.name` is already qualified; do not prefix it again.
             let wire_name = reducer.name.to_string();
-            let args_type = submodule_reducer_args_type_name(prefix, &reducer.accessor_name);
-            writeln!(out, "__reducerSchema(\"{wire_name}\", {args_type}),");
+            let args_type = submodule_reducer_args_type_name(owning.accessor_path(), &reducer.accessor_name);
+            let accessor_key = submodule_accessor_key(owning, &reducer.accessor_name);
+            writeln!(
+                out,
+                "__reducerSchema(\"{wire_name}\", {args_type}, \"{accessor_key}\"),"
+            );
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -400,12 +404,13 @@ impl Lang for TypeScript {
                 procedure.name,
             );
         }
-        for (prefix, _, procedure) in &ns_procedures {
+        for (prefix, owning, procedure) in &ns_procedures {
             let wire_name = format!("{}{}", prefix, procedure.name);
-            let args_type = submodule_procedure_args_type_name(prefix, &procedure.accessor_name);
+            let args_type = submodule_procedure_args_type_name(owning.accessor_path(), &procedure.accessor_name);
+            let accessor_key = submodule_accessor_key(owning, &procedure.accessor_name);
             writeln!(
                 out,
-                "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType),"
+                "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType, \"{accessor_key}\"),"
             );
         }
         out.dedent(1);
@@ -814,8 +819,8 @@ impl Lang for TypeScript {
         // `import { … } from "./types"` imports.
         let mut submodule_namespaces: BTreeMap<String, (NamespacePath, &ModuleDef)> = BTreeMap::new();
         collect_submodule_namespaces(module, &NamespacePath::root(), &mut submodule_namespaces);
-        for (prefix, owning_def) in submodule_namespaces.values() {
-            let ns_path = submodule_ns_path(prefix);
+        for (_, owning_def) in submodule_namespaces.values() {
+            let ns_path = submodule_ns_path(owning_def.accessor_path());
             let filename = format!("{ns_path}/types.ts");
             files.push(generate_types_file_with_path(owning_def, filename));
         }
@@ -1338,7 +1343,8 @@ fn submodule_source_name(namespace: &NamespacePath, canonical_name: &str) -> Str
 
 /// TypeScript import symbol for a submodule namespace table/view row type.
 /// Uses `_` separator to avoid colliding with root tables that share the same PascalCase prefix.
-/// E.g. namespace="lib.", accessor_name="library_table" → "Lib_LibraryTable"
+/// `namespace` is the *accessor* path, since this names a client-side symbol.
+/// E.g. namespace="myLib.", accessor_name="library_table" → "MyLib_LibraryTable"
 fn submodule_row_type_name(namespace: &NamespacePath, accessor_name: &str) -> String {
     let ns_part = namespace.join_segments("_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
@@ -1360,14 +1366,30 @@ fn procedure_module_name(procedure_name: &Identifier) -> String {
     procedure_name.deref().to_case(Case::Snake) + "_procedure"
 }
 
-/// Converts a dot-terminated namespace like `"lib."` or `"lib.sublib."` to a path like `"lib"` or `"lib/sublib"`.
+/// Converts a namespace path like `"lib."` or `"lib.sublib."` to a directory path like `"lib"` or `"lib/sublib"`.
+/// Callers pass the *accessor* path, so generated directories follow the names used in module code.
 fn submodule_ns_path(namespace: &NamespacePath) -> String {
     namespace.join_segments("/")
 }
 
+/// The key under which a submodule reducer or procedure is registered in the SDK's
+/// accessor map. This corresponds to the owning module's accessor path and the camelCase
+/// accessor name, joined by `.`, e.g. `myLib.libInsert`.
+fn submodule_accessor_key(owning: &ModuleDef, accessor_name: &str) -> String {
+    owning
+        .accessor_path()
+        .segments()
+        .iter()
+        .map(|segment| segment.to_string())
+        .chain(std::iter::once(accessor_name.to_case(Case::Camel)))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
 /// TypeScript import symbol for a submodule namespace reducer/procedure.
 /// Uses `_` separator to avoid colliding with root reducers/procedures sharing the same prefix.
-/// E.g. prefix="lib.", accessor_name="library_reducer" → "Lib_LibraryReducer"
+/// `prefix` is the *accessor* path, since this names a client-side symbol.
+/// E.g. prefix="myLib.", accessor_name="library_reducer" → "MyLib_LibraryReducer"
 fn submodule_fn_type_name(prefix: &NamespacePath, accessor_name: &str) -> String {
     let ns_part = prefix.join_segments("_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
@@ -1414,22 +1436,24 @@ fn build_ns_tree<'a>(
     ns_tables: &[(NamespacePath, &'a ModuleDef, &'a TableDef)],
     ns_views: &[(NamespacePath, &'a ModuleDef, &'a ViewDef)],
 ) -> BTreeMap<String, NsTree> {
+    // Object keys follow the accessor path (`tables.myLib.x`), while the query builder keys
+    // are the canonical wire names (`__qb["my_lib.x"]`) that match the tablesSchema entries.
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (prefix, _, table) in ns_tables {
+    for (prefix, owning, table) in ns_tables {
         let source_name = submodule_source_name(prefix, table.name.deref());
         let local = table.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
+        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
                 .insert(rest, source_name, local);
         }
     }
-    for (prefix, _, view) in ns_views {
+    for (prefix, owning, view) in ns_views {
         // Canonical name: must match the tablesSchema key and the DB backing table name.
         let source_name = submodule_source_name(prefix, view.name.deref());
         let local = view.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
+        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
@@ -1454,20 +1478,20 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
 }
 
 /// Build namespace tree for submodule reducers (uses `.` path separator).
-/// `flat_key` matches SDK's `accessorName = toCamelCase(wireName)`.
-/// SDK toCamelCase only splits on `_`/`-`, so `/` is kept verbatim:
-/// `"lib.library_reducer"` → `"lib.libraryReducer"`.  Bracket notation is required.
+/// Object keys follow the accessor path; `flat_key` is the accessor-map key the schema
+/// entry was registered under (see [`submodule_accessor_key`]). It contains dots, so
+/// bracket notation is required.
 fn build_reducer_ns_tree<'a>(
     ns_reducers: &[(NamespacePath, &'a ModuleDef, &'a ReducerDef)],
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (prefix, _, reducer) in ns_reducers {
+    for (_, owning, reducer) in ns_reducers {
         if !is_reducer_invokable(reducer) {
             continue;
         }
-        let flat_key = format!("{}{}", prefix, reducer.accessor_name.deref().to_case(Case::Camel));
+        let flat_key = submodule_accessor_key(owning, &reducer.accessor_name);
         let local = reducer.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
+        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
@@ -1482,10 +1506,10 @@ fn build_procedure_ns_tree<'a>(
     ns_procedures: &[(NamespacePath, &'a ModuleDef, &'a ProcedureDef)],
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (prefix, _, procedure) in ns_procedures {
-        let flat_key = format!("{}{}", prefix, procedure.accessor_name.deref().to_case(Case::Camel));
+    for (_, owning, procedure) in ns_procedures {
+        let flat_key = submodule_accessor_key(owning, &procedure.accessor_name);
         let local = procedure.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
+        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)

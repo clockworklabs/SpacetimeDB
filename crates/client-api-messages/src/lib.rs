@@ -3,4 +3,5 @@
 pub mod energy;
 pub mod http;
 pub mod name;
+pub mod publish;
 pub mod websocket;

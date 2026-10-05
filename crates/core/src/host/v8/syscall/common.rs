@@ -865,9 +865,9 @@ fn call_view(
     fn_ptr: ViewFnPtr,
     sender: Option<Identity>,
 ) -> SysCallResult<ViewReturnData> {
-    let prev_func_type = get_env(scope)?
+    let (prev_func_name, prev_func_type) = get_env(scope)?
         .instance_env
-        .swap_func_type(FuncCallType::View(view_call.clone()));
+        .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
 
     let result = {
         let args = crate::host::ArgsTuple::nullary();
@@ -900,7 +900,9 @@ fn call_view(
         }
     };
 
-    get_env(scope)?.instance_env.swap_func_type(prev_func_type);
+    get_env(scope)?
+        .instance_env
+        .swap_func_context(prev_func_name, prev_func_type);
 
     result.map_err(|err| match err {
         ErrorOrException::Err(err) => TypeError(format!(

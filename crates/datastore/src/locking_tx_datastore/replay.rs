@@ -84,7 +84,7 @@ pub fn apply_history(
         .set((end_tx_offset - start_tx_offset) as _);
 
     log::info!("[{database_identity}] DATABASE: applied transaction history");
-    replay.committed_state().rebuild_state_after_replay(datastore)?;
+    replay.committed_state().rebuild_state_after_replay()?;
     log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
 
     Ok(())
@@ -489,7 +489,7 @@ impl<'cs> ReplayCommittedState<'cs> {
     /// This is necessary because, for example, inserting a row into `st_table`
     /// is not equivalent to calling `create_table`.
     /// There may eventually be better way to do this, but this will have to do for now.
-    pub fn rebuild_state_after_replay(&mut self, datastore: &Locking) -> Result<()> {
+    pub fn rebuild_state_after_replay(&mut self) -> Result<()> {
         // Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
         // initialized newly-created system sequences to `allocation: 4097`,
         // while `committed_state::bootstrap_system_tables` sets `allocation: 4096`.
@@ -514,9 +514,6 @@ impl<'cs> ReplayCommittedState<'cs> {
         self.build_indexes()?;
         self.collect_ephemeral_tables()?;
         self.rebuild_datastore_page_bytes();
-
-        // Figure out where to pick up for each sequence.
-        build_sequence_state(datastore, self)?;
 
         Ok(())
     }
@@ -1073,13 +1070,6 @@ impl<'cs> ReplayCommittedState<'cs> {
 
         Ok(())
     }
-}
-
-pub(super) fn build_sequence_state(datastore: &Locking, cs: &mut CommittedState) -> Result<()> {
-    let sequence_state = cs.build_sequence_state()?;
-    // Reset our sequence state so that they start in the right places.
-    *datastore.sequence_state.lock() = sequence_state;
-    Ok(())
 }
 
 impl StateView for ReplayCommittedState<'_> {
