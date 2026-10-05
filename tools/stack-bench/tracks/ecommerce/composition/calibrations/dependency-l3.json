@@ -37,6 +37,11 @@
         "backend": "convex",
         "id": "ecommerce-reference-convex",
         "sourceSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+      },
+      {
+        "backend": "supabase",
+        "id": "ecommerce-reference-supabase",
+        "sourceSha256": "a6745bd1cc094f22f50490786dc269ea749111b9c1c6e0324cfbe19701a7a6bd"
       }
     ]
   },
@@ -64,6 +69,12 @@
       "path": "grader/mutations/convex-ecommerce.json",
       "sha256": "75283b09624917f0fcaccabd93f3d452dc158e92373ccebe18af708df689509a",
       "referenceId": "ecommerce-reference-convex"
+    },
+    {
+      "backend": "supabase",
+      "path": "grader/mutations/supabase-ecommerce.json",
+      "sha256": "75602a5919cc7726dd6638875af3d0fd76ca65a263b58a0e8942210a5f3c8af3",
+      "referenceId": "ecommerce-reference-supabase"
     }
   ],
   "nullControl": {
@@ -200,7 +211,8 @@
       "mongodb",
       "postgres",
       "spacetime",
-      "convex"
+      "convex",
+      "supabase"
     ],
     "evidence": [],
     "featureCatalog": {
