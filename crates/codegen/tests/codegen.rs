@@ -61,6 +61,201 @@ fn test_typescript_table_handles_are_camel_case() {
     ));
 }
 
+/// The Rust backend writes the client-only forms for what module syntax cannot express yet:
+/// column attributes of only some of the tables that share a row type (proposal 0022's `table = ...`),
+/// and canonical column names that differ from the field names (proposal 0032's `#[name]`).
+/// `sdks/rust/tests/declarations.rs` compiles the same forms.
+#[test]
+fn test_rust_per_table_column_attrs_and_column_names() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v9::btree;
+    use spacetimedb_lib::AlgebraicType;
+
+    let rust = |module: RawModuleDefV10Builder| {
+        let module: ModuleDef = module.finish().try_into().expect("module should validate");
+        generate(&module, &Rust, &CodegenOptions::default())
+            .into_iter()
+            .map(|f| f.code)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let mut module = RawModuleDefV10Builder::new();
+    let row = module.add_algebraic_type(
+        [],
+        "MultiTableRow",
+        AlgebraicType::product([
+            ("name", AlgebraicType::String),
+            ("foo", AlgebraicType::U32),
+            ("bar", AlgebraicType::U32),
+        ]),
+        true,
+    );
+    module
+        .build_table("multi_table_1", row)
+        .with_index(btree(0), "multi_table_1_name_idx_btree", "name")
+        .with_auto_inc_primary_key(1)
+        .with_index(btree(1), "multi_table_1_foo_idx_btree", "foo")
+        .finish();
+    module
+        .build_table("multi_table_2", row)
+        .with_unique_constraint(2)
+        .with_index(btree(2), "multi_table_2_bar_idx_btree", "bar")
+        .finish();
+    module
+        .build_table("multi_table_3", row)
+        .with_primary_key(1)
+        .with_unique_constraint(1)
+        .with_index(btree(1), "multi_table_3_foo_idx_btree", "foo")
+        .finish();
+    let code = rust(module);
+    assert!(
+        code.contains(
+            "#[spacetimedb::table(accessor = multi_table_1, public)]
+#[spacetimedb::table(accessor = multi_table_2, public)]
+#[spacetimedb::table(accessor = multi_table_3, public)]
+pub struct MultiTableRow {
+    #[index(btree, table = multi_table_1)]
+    pub name: String,
+    #[primary_key(table = [multi_table_1, multi_table_3])]
+    #[auto_inc(table = multi_table_1)]
+    pub foo: u32,
+    #[unique(table = multi_table_2)]
+    pub bar: u32,
+}"
+        ),
+        "{code}"
+    );
+
+    let mut module = RawModuleDefV10Builder::new();
+    module.set_case_conversion_policy(CaseConversionPolicy::None);
+    let info = module.add_algebraic_type(
+        [],
+        "PersonInfo",
+        AlgebraicType::product([("ageValue", AlgebraicType::U8)]),
+        true,
+    );
+    let person = module.add_algebraic_type(
+        [],
+        "Person",
+        AlgebraicType::product([
+            ("person_id", AlgebraicType::U32),
+            ("playerRef", AlgebraicType::U32),
+            ("personInfo", AlgebraicType::Ref(info)),
+        ]),
+        true,
+    );
+    module
+        .build_table("person", person)
+        .with_index(btree(1), "person_playerRef_idx_btree", "playerRef")
+        .finish();
+    let code = rust(module);
+    assert!(
+        code.contains(
+            "pub struct Person {
+    pub person_id: u32,
+    #[name(\"playerRef\")]
+    #[index(btree)]
+    pub player_ref: u32,
+    #[name(\"personInfo\")]
+    pub person_info: PersonInfo,
+}"
+        ),
+        "{code}"
+    );
+    assert!(
+        code.contains(
+            "pub struct PersonInfo {
+    #[name(\"ageValue\")]
+    pub age_value: u8,
+}"
+        ),
+        "{code}"
+    );
+}
+
+/// The Rust backend writes columns that other module languages can declare so that the client's `#[table]`
+/// accepts them and gives them the client API that the former Rust backend generated:
+/// it leaves out a default on a primary key, unique or auto-increment column, which `#[table]` rejects;
+/// it declares an index on one column without an accessor on the field, so that the column is in the row's `IxCols`;
+/// and it writes a module type named like one of the SDK's from `self`, so that its unique column has `find`.
+/// `sdks/rust/tests/declarations.rs` compiles the last form.
+#[test]
+fn test_rust_columns_that_rust_modules_cannot_declare() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::db::raw_def::v9::{btree, direct, RawIndexAlgorithm};
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
+
+    let mut module = RawModuleDefV10Builder::new();
+    let timestamp = module.add_algebraic_type(
+        [],
+        "Timestamp",
+        AlgebraicType::simple_enum(["A", "B"].into_iter()),
+        true,
+    );
+    let row = module.add_algebraic_type(
+        [],
+        "Apple",
+        AlgebraicType::product([
+            ("id", AlgebraicType::U64),
+            ("count", AlgebraicType::U16),
+            ("tag", AlgebraicType::String),
+            ("kind", AlgebraicType::U8),
+            ("when", AlgebraicType::Ref(timestamp)),
+            ("seq", AlgebraicType::U32),
+            ("note", AlgebraicType::String),
+        ]),
+        true,
+    );
+    module
+        .build_table("apple", row)
+        .with_primary_key(0)
+        .with_unique_constraint(0)
+        .with_index(btree(0), "apple_id_idx_btree", "id")
+        .with_default_column_value(0, AlgebraicValue::U64(0))
+        .with_unique_constraint(1)
+        .with_index_no_accessor_name(direct(1), "apple_count")
+        .with_default_column_value(1, AlgebraicValue::U16(37))
+        .with_index_no_accessor_name(btree(2), "apple_tag")
+        .with_index_no_accessor_name(RawIndexAlgorithm::Hash { columns: 3.into() }, "apple_kind")
+        .with_index_no_accessor_name(btree([2, 3]), "apple_tag_kind")
+        .with_unique_constraint(4)
+        .with_index(btree(4), "apple_when_idx_btree", "when")
+        .with_column_sequence(5)
+        .with_default_column_value(5, AlgebraicValue::U32(5))
+        .with_default_column_value(6, AlgebraicValue::String("none".into()))
+        .finish();
+    let module: ModuleDef = module.finish().try_into().expect("module should validate");
+    let code = generate(&module, &Rust, &CodegenOptions::default())
+        .into_iter()
+        .map(|f| f.code)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        code.contains(
+            "#[spacetimedb::table(accessor = apple, public)]
+pub struct Apple {
+    #[primary_key]
+    pub id: u64,
+    #[unique]
+    #[index(direct)]
+    pub count: u16,
+    #[index(btree)]
+    pub tag: String,
+    #[index(hash)]
+    pub kind: u8,
+    #[unique]
+    pub when: self::Timestamp,
+    #[auto_inc]
+    pub seq: u32,
+    #[default(\"none\")]
+    pub note: String,
+}"
+        ),
+        "{code}"
+    );
+}
+
 /// A submodule reducer's wire name must be qualified exactly once, with the canonical
 /// namespace, while everything client code touches uses the accessor namespace.
 ///

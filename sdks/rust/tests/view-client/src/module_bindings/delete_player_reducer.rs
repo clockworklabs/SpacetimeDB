@@ -2,67 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk as spacetimedb;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
-pub(super) struct DeletePlayerArgs {
-    pub identity: __sdk::Identity,
-}
-
-impl From<DeletePlayerArgs> for super::Reducer {
-    fn from(args: DeletePlayerArgs) -> Self {
-        Self::DeletePlayer {
-            identity: args.identity,
-        }
-    }
-}
-
-impl __sdk::InModule for DeletePlayerArgs {
-    type Module = super::RemoteModule;
-}
-
-#[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `delete_player`.
-///
-/// Implemented for [`super::RemoteReducers`].
-pub trait delete_player {
-    /// Request that the remote module invoke the reducer `delete_player` to run as soon as possible.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`delete_player:delete_player_then`] to run a callback after the reducer completes.
-    fn delete_player(&self, identity: __sdk::Identity) -> __sdk::Result<()> {
-        self.delete_player_then(identity, |_, _| {})
-    }
-
-    /// Request that the remote module invoke the reducer `delete_player` to run as soon as possible,
-    /// registering `callback` to run when we are notified that the reducer completed.
-    ///
-    /// This method returns immediately, and errors only if we are unable to send the request.
-    /// The reducer will run asynchronously in the future,
-    ///  and its status can be observed with the `callback`.
-    fn delete_player_then(
-        &self,
-        identity: __sdk::Identity,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()>;
-}
-
-impl delete_player for super::RemoteReducers {
-    fn delete_player_then(
-        &self,
-        identity: __sdk::Identity,
-
-        callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
-            + Send
-            + 'static,
-    ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(DeletePlayerArgs { identity }, callback)
-    }
-}
+#[spacetimedb::reducer]
+pub fn delete_player(ctx: &spacetimedb::ReducerContext, identity: spacetimedb::Identity);
