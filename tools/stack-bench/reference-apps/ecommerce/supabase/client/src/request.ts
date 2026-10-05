@@ -8,10 +8,6 @@ const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env
 const hex = (bytes: Uint8Array) => [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
 // Auth identifies accounts by email, which ignores case; the hex form keeps usernames distinct.
 const accountEmail = (username: string) => `${hex(new TextEncoder().encode(username))}@accounts.invalid`;
-// Auth accepts 6 to 72 bytes. Its digest lets every password up to 64 characters count in full.
-async function accountPassword(password: string) {
-  return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))));
-}
 
 function storedSession(): Session | null {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
@@ -83,7 +79,7 @@ export async function authenticate(username: string, password: string, flow: 'si
     throw new Error('Use up to 48 letters, digits, and hyphens');
   }
   if ([...password].length > 64) throw new Error('Use a password of up to 64 characters');
-  const credentials = { email: accountEmail(username), password: await accountPassword(password) };
+  const credentials = { email: accountEmail(username), password };
   const { data, error } = flow === 'signUp'
     ? await supabase.auth.signUp(credentials)
     : await supabase.auth.signInWithPassword(credentials);

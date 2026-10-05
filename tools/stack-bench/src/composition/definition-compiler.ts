@@ -256,6 +256,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
   pressKey: fields({ ...actor, key: nonEmptyString }, settle),
   race: fields({ branches: anyArray, settleMs: nonNegativeNumber }),
   probeSignupClaims: fields({ ...actor, name: nonEmptyString, fields: object, branches: anyArray }),
+  probePasswordBoundary: fields({ ...actor, returningActor: nonEmptyString, impostorActor: nonEmptyString,
+    name: nonEmptyString, password: nonEmptyString, wrongPassword: nonEmptyString }),
   recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString },
     { count: boolean, ...locator, ...within }),
   reload: fields({ ...actor, settleMs: number }, { application: boolean }),

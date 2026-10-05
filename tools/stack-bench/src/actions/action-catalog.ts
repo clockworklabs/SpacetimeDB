@@ -7,6 +7,7 @@ import { RUNTIME_ACTION_IMPLEMENTATIONS } from './runtime-action-executors.js';
 import { confirmCheckout, crashCheckout, expectCrashCheckout } from './crash-action-executors.js';
 import { prepareResponseLoss, loseCheckoutResponse } from './response-loss-action-executors.js';
 import { probeSignupClaims } from './signup-claim-action-executors.js';
+import { probePasswordBoundary } from './password-boundary-action.js';
 import { ACTION_DEFINITIONS, ACTION_IDS,
   compileActionInput } from '../composition/definition-compiler.js';
 import type { ActionId } from '../composition/definition-compiler.js';
@@ -66,6 +67,7 @@ const ACTION_CATEGORY = {
   pressKey: 'browser-interaction',
   race: 'concurrency',
   probeSignupClaims: 'transport',
+  probePasswordBoundary: 'browser-interaction',
   recordNumber: 'browser-observation',
   recordTime: 'timing',
   expectElapsed: 'timing',
@@ -142,6 +144,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   replayAs: ['actors', 'named-actions', 'transport-observation'],
   repeatFormWrite: ['actors', 'named-actions', 'transport-observation', 'browser-interaction'],
   probeSignupClaims: ['actors', 'concurrency', 'browser-interaction'],
+  probePasswordBoundary: ['actors', 'concurrency', 'browser-interaction'],
   forgeWrite: ['actors', 'named-actions', 'transport-observation'],
   startAppServer: ['application-lifecycle'],
   stopAppServer: ['application-lifecycle'],
@@ -152,10 +155,12 @@ const ACTION_SENSITIVITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>>
   signIn: ['credential'],
   signUp: ['credential'],
   probeSignupClaims: ['credential'],
+  probePasswordBoundary: ['credential'],
 };
 
 export const ACTION_IMPLEMENTATIONS = Object.freeze({
   probeSignupClaims,
+  probePasswordBoundary,
   confirmCheckout,
   prepareResponseLoss,
   loseCheckoutResponse,

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "364fd4d5514adac54bf9a5910faa4944d9f273323c46bd2fdee5c3e997b1ef1e",
+  "fixtureSha256": "a6745bd1cc094f22f50490786dc269ea749111b9c1c6e0324cfbe19701a7a6bd",
   "backend": "supabase",
   "track": "ecommerce",
   "note": "Native Supabase selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Restart and crash-recovery controls act through the start-up seed path that every application start runs; reconnect controls act on the real Realtime channel.",
@@ -114,12 +114,27 @@
       "targets": [
         "ecommerce.spec.access-control.account-password.1c"
       ],
-      "desc": "The client derives the Auth password without the typed password, so any password signs in to an account created through the storefront.",
+      "desc": "Every account uses the same Auth password, so an incorrect typed password grants a session.",
       "file": "client/src/request.ts",
       "edits": [
         {
-          "find": "new TextEncoder().encode(password))));",
-          "replace": "new TextEncoder().encode(''))));"
+          "find": "const credentials = { email: accountEmail(username), password };",
+          "replace": "const credentials = { email: accountEmail(username), password: 'same-password-for-everyone' };"
+        }
+      ]
+    },
+    {
+      "id": "password-verification-truncates-utf8",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-password.1c"
+      ],
+      "desc": "Truncate a password before sending it to Auth, so a different suffix signs in instead of being refused.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "const credentials = { email: accountEmail(username), password };",
+          "replace": "const credentials = { email: accountEmail(username), password: new TextDecoder().decode(new TextEncoder().encode(password).slice(0, 72)) };"
         }
       ]
     },

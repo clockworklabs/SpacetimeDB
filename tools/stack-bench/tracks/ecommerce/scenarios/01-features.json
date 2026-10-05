@@ -9,7 +9,7 @@
     {
       "id": 1,
       "name": "Accounts",
-      "actors": ["shopper", "impostor", "password-owner", "password-returning", "password-impostor"],
+      "actors": ["shopper", "impostor", "password-owner", "password-returning", "password-impostor", "password-ordinary", "password-ordinary-returning", "password-ordinary-impostor"],
       "setup": [
         { "do": "signUp", "actor": "shopper", "name": "ann" }
       ],
@@ -43,55 +43,64 @@
           "steps": [
             {
               "do": "signUp",
-              "actor": "password-owner",
-              "name": "password-boundary",
-              "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A"
+              "actor": "password-ordinary",
+              "name": "password-ordinary",
+              "password": "ordinary-password-A"
             },
             {
               "do": "expect",
-              "actor": "password-owner",
+              "actor": "password-ordinary",
               "testid": "current-user",
-              "contains": "password-boundary",
+              "contains": "password-ordinary",
               "within": 6000
             },
             {
               "do": "signIn",
-              "actor": "password-returning",
-              "name": "password-boundary",
-              "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A",
+              "actor": "password-ordinary-returning",
+              "name": "password-ordinary",
+              "password": "ordinary-password-A",
               "awaitSignedIn": false
             },
             {
               "do": "expect",
-              "actor": "password-returning",
+              "actor": "password-ordinary-returning",
               "testid": "current-user",
-              "contains": "password-boundary",
+              "contains": "password-ordinary",
               "within": 10000
             },
             {
               "do": "signIn",
-              "actor": "password-impostor",
-              "name": "password-boundary",
-              "password": "界界界界界界界界界界界界界界界界界界界界界界界界-B",
+              "actor": "password-ordinary-impostor",
+              "name": "password-ordinary",
+              "password": "ordinary-password-B",
               "expectFailure": true
             },
             {
               "do": "expect",
-              "actor": "password-impostor",
+              "actor": "password-ordinary-impostor",
               "testid": "auth-error",
               "within": 6000
             },
             {
               "do": "reload",
-              "actor": "password-impostor",
+              "actor": "password-ordinary-impostor",
               "application": true,
               "settleMs": 1000
             },
             {
               "do": "expect",
-              "actor": "password-impostor",
+              "actor": "password-ordinary-impostor",
               "testid": "current-user",
               "absent": true
+            },
+            {
+              "do": "probePasswordBoundary",
+              "actor": "password-owner",
+              "returningActor": "password-returning",
+              "impostorActor": "password-impostor",
+              "name": "password-boundary",
+              "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A",
+              "wrongPassword": "界界界界界界界界界界界界界界界界界界界界界界界界-B"
             }
           ],
           "statedBy": "signing in with a wrong password fails with a visible error"
