@@ -1,6 +1,6 @@
 import type {
   DbConnectionBuilder,
-  DbConnectionImpl,
+  DbConnectionBase,
 } from '../sdk/db_connection_impl';
 import type { ConnectionState as ManagerConnectionState } from '../sdk/connection_manager';
 
@@ -8,7 +8,7 @@ export const SPACETIMEDB_CONTEXT_KEY = Symbol('spacetimedb');
 
 export type ConnectionState = ManagerConnectionState & {
   /** The live connection, or `null` before it is first established. */
-  getConnection(): DbConnectionImpl<any> | null;
+  getConnection(): DbConnectionBase<any> | null;
   /**
    * Tear down the current connection and reconnect using a fresh builder —
    * typically to apply a new auth token after sign-in or sign-out. The builder

@@ -1,8 +1,8 @@
-import type { DbConnectionImpl } from './db_connection_impl';
+import type { DbConnectionBase } from './db_connection_impl';
 import { INTERNAL_REMOTE_MODULE } from './internal';
 import type {
-  ErrorContextInterface,
-  SubscriptionEventContextInterface,
+  ErrorContextBase,
+  SubscriptionEventContextBase,
 } from './event_context';
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModuleDecl } from './spacetime_module';
@@ -14,14 +14,13 @@ import {
 } from '../lib/query';
 import type { UntypedSchemaDecl } from '../lib/schema';
 
-export class SubscriptionBuilderImpl<
+export class SubscriptionBuilderBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > {
-  #onApplied?: (
-    ctx: SubscriptionEventContextInterface<RemoteModuleDecl>
-  ) => void = undefined;
-  #onError?: (ctx: ErrorContextInterface<RemoteModuleDecl>) => void = undefined;
-  constructor(private db: DbConnectionImpl<RemoteModuleDecl>) {}
+  #onApplied?: (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => void =
+    undefined;
+  #onError?: (ctx: ErrorContextBase<RemoteModuleDecl>) => void = undefined;
+  constructor(private db: DbConnectionBase<RemoteModuleDecl>) {}
 
   /**
    * Registers `callback` to run when this query is successfully added to our subscribed set,
@@ -39,8 +38,8 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onApplied(
-    cb: (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void
-  ): SubscriptionBuilderImpl<RemoteModuleDecl> {
+    cb: (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => void
+  ): SubscriptionBuilderBase<RemoteModuleDecl> {
     this.#onApplied = cb;
     return this;
   }
@@ -66,8 +65,8 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onError(
-    cb: (ctx: ErrorContextInterface<RemoteModuleDecl>) => void
-  ): SubscriptionBuilderImpl<RemoteModuleDecl> {
+    cb: (ctx: ErrorContextBase<RemoteModuleDecl>) => void
+  ): SubscriptionBuilderBase<RemoteModuleDecl> {
     this.#onError = cb;
     return this;
   }
@@ -90,10 +89,10 @@ export class SubscriptionBuilderImpl<
    */
   subscribe(
     query_sql: string | RowTypedQuery<any, any>
-  ): SubscriptionHandleImpl<RemoteModuleDecl>;
+  ): SubscriptionHandleBase<RemoteModuleDecl>;
   subscribe(
     query_sql: Array<string | RowTypedQuery<any, any>>
-  ): SubscriptionHandleImpl<RemoteModuleDecl>;
+  ): SubscriptionHandleBase<RemoteModuleDecl>;
   /**
    * @param queryFn - Receives the query builder for all tables (root and namespaced), e.g.
    *   `tables => tables.players.build()` or, for a submodule table,
@@ -103,14 +102,14 @@ export class SubscriptionBuilderImpl<
     queryFn: (
       tables: NamespacedQueryBuilder<RemoteModuleDecl & UntypedSchemaDecl>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
-  ): SubscriptionHandleImpl<RemoteModuleDecl>;
+  ): SubscriptionHandleBase<RemoteModuleDecl>;
   subscribe(
     query_sql:
       | string
       | RowTypedQuery<any, any>
       | Array<string | RowTypedQuery<any, any>>
       | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
-  ): SubscriptionHandleImpl<RemoteModuleDecl> {
+  ): SubscriptionHandleBase<RemoteModuleDecl> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
       const tables = this.db.getFromBuilder<
@@ -129,7 +128,7 @@ export class SubscriptionBuilderImpl<
       if (isRowTypedQuery(q)) return toSql(q);
       throw new Error('Subscriptions must be SQL strings or typed queries');
     });
-    return new SubscriptionHandleImpl(
+    return new SubscriptionHandleBase(
       this.db,
       queryStrings,
       this.#onApplied,
@@ -163,6 +162,13 @@ export class SubscriptionBuilderImpl<
   }
 }
 
+/** @deprecated Use `SubscriptionBuilderBase` instead. */
+export type SubscriptionBuilderImpl<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = SubscriptionBuilderBase<RemoteModuleDecl>;
+/** @deprecated Use `SubscriptionBuilderBase` instead. */
+export const SubscriptionBuilderImpl = SubscriptionBuilderBase;
+
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
 export class SubscriptionManager<
@@ -171,13 +177,13 @@ export class SubscriptionManager<
   subscriptions: Map<
     number,
     {
-      handle: SubscriptionHandleImpl<RemoteModuleDecl>;
+      handle: SubscriptionHandleBase<RemoteModuleDecl>;
       emitter: EventEmitter<SubscribeEvent>;
     }
   > = new Map();
 }
 
-export class SubscriptionHandleImpl<
+export class SubscriptionHandleBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > {
   #querySetId: number;
@@ -188,19 +194,14 @@ export class SubscriptionHandleImpl<
     new EventEmitter();
 
   constructor(
-    private db: DbConnectionImpl<RemoteModuleDecl>,
+    private db: DbConnectionBase<RemoteModuleDecl>,
     querySql: string[],
-    onApplied?: (
-      ctx: SubscriptionEventContextInterface<RemoteModuleDecl>
-    ) => void,
-    onError?: (
-      ctx: ErrorContextInterface<RemoteModuleDecl>,
-      error: Error
-    ) => void
+    onApplied?: (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => void,
+    onError?: (ctx: ErrorContextBase<RemoteModuleDecl>, error: Error) => void
   ) {
     this.#emitter.on(
       'applied',
-      (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => {
+      (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => {
         this.#activeState = true;
         if (onApplied) {
           onApplied(ctx);
@@ -209,7 +210,7 @@ export class SubscriptionHandleImpl<
     );
     this.#emitter.on(
       'error',
-      (ctx: ErrorContextInterface<RemoteModuleDecl>, error: Error) => {
+      (ctx: ErrorContextBase<RemoteModuleDecl>, error: Error) => {
         this.#activeState = false;
         this.#endedState = true;
         if (onError) {
@@ -237,7 +238,7 @@ export class SubscriptionHandleImpl<
     this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
-      (_ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => {
+      (_ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => {
         this.#endedState = true;
         this.#activeState = false;
       }
@@ -255,7 +256,7 @@ export class SubscriptionHandleImpl<
    * @param onEnd - Callback to run upon successful unsubscribe.
    */
   unsubscribeThen(
-    onEnd: (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void
+    onEnd: (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => void
   ): void {
     if (this.#endedState) {
       throw new Error('Subscription has already ended');
@@ -267,7 +268,7 @@ export class SubscriptionHandleImpl<
     this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
-      (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => {
+      (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => {
         this.#endedState = true;
         this.#activeState = false;
         onEnd(ctx);
@@ -297,3 +298,10 @@ export class SubscriptionHandleImpl<
     return this.#activeState;
   }
 }
+
+/** @deprecated Use `SubscriptionHandleBase` instead. */
+export type SubscriptionHandleImpl<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = SubscriptionHandleBase<RemoteModuleDecl>;
+/** @deprecated Use `SubscriptionHandleBase` instead. */
+export const SubscriptionHandleImpl = SubscriptionHandleBase;

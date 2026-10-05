@@ -11,17 +11,17 @@ namespace SpacetimeDB {
 /**
  * @brief Read-only database context for views
  * 
- * ReadOnlyDatabaseContext provides a read-only interface to the database
+ * ReadOnlyDbView provides a read-only interface to the database
  * for use in views. It prevents all mutation operations at compile-time.
  * 
- * Key differences from DatabaseContext:
+ * Key differences from DbView:
  * - No insert/update/delete operations
  * - No direct table iteration (prevents inefficient full table scans)
  * - Table data accessible ONLY through indexed field accessors
  * - Enforces efficient query patterns using indexes
  * 
- * This is a completely separate type from DatabaseContext (no inheritance)
- * to match Rust's LocalReadOnly vs Local pattern.
+ * This is a completely separate type from DbView (no inheritance)
+ * to match Rust's ReadOnlyDbView vs DbView pattern.
  * 
  * Example usage:
  * @code
@@ -35,7 +35,7 @@ namespace SpacetimeDB {
  * }
  * @endcode
  */
-class ReadOnlyDatabaseContext {
+class ReadOnlyDbView {
 public:
     // Generic table accessor method (type-only, requires explicit table name later)
     template<typename T>
@@ -102,6 +102,8 @@ public:
             field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
 };
+
+using ReadOnlyDatabaseContext [[deprecated("renamed to ReadOnlyDbView")]] = ReadOnlyDbView;
 
 } // namespace SpacetimeDB
 

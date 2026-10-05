@@ -153,7 +153,7 @@ class JwtClaimsImpl implements JwtClaims {
   }
 }
 
-class AuthCtxImpl implements AuthContext {
+class AuthContextImpl implements AuthContext {
   public readonly isInternal: boolean;
 
   // Source of the JWT payload string, if there is one.
@@ -201,7 +201,7 @@ class AuthCtxImpl implements AuthContext {
 
   /** Create a context representing internal (non-user) requests. */
   static internal(): AuthContext {
-    return new AuthCtxImpl({
+    return new AuthContextImpl({
       isInternal: true,
       jwtSource: () => null,
       senderIdentity: Identity.zero(),
@@ -214,13 +214,13 @@ class AuthCtxImpl implements AuthContext {
     sender: Identity
   ): AuthContext {
     if (connectionId === null) {
-      return new AuthCtxImpl({
+      return new AuthContextImpl({
         isInternal: false,
         jwtSource: () => null,
         senderIdentity: sender,
       });
     }
-    return new AuthCtxImpl({
+    return new AuthContextImpl({
       isInternal: false,
       jwtSource: () => {
         const payloadBuf = sys.get_jwt_payload(connectionId.__connection_id__);
@@ -235,7 +235,7 @@ class AuthCtxImpl implements AuthContext {
 
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
-export const ReducerCtxImpl = class ReducerCtx<
+export const ReducerContextImpl = class ReducerCtx<
   SchemaDecl extends UntypedSchemaDecl,
 > implements IReducerContext<SchemaDecl>
 {
@@ -296,7 +296,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   get senderAuth() {
-    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+    return (this.#senderAuth ??= AuthContextImpl.fromSystemTables(
       this.connectionId,
       this.sender
     ));
@@ -324,6 +324,9 @@ export const ReducerCtxImpl = class ReducerCtx<
     return Uuid.fromCounterV7(counter, this.timestamp, bytes);
   }
 };
+
+/** @deprecated Use `ReducerContextImpl` instead. */
+export const ReducerCtxImpl = ReducerContextImpl;
 
 /**
  * Call into a user function `fn` - the backtrace from an exception thrown in
@@ -428,7 +431,7 @@ class ModuleHooksImpl implements ModuleHooks {
   #consumerAnonViewCount: number;
   #consumerViewCount: number;
   /** Cache the `ReducerContext` object to avoid allocating anew for every reducer call. */
-  #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
+  #reducerCtx_: InstanceType<typeof ReducerContextImpl> | undefined;
   /** Per-submodule alias ctx maps, cached lazily (parallel to #flatSubmodules). */
   #submoduleAsViews_: (object | undefined)[] = [];
 
@@ -510,7 +513,7 @@ class ModuleHooksImpl implements ModuleHooks {
   }
 
   get #reducerCtx() {
-    return (this.#reducerCtx_ ??= new ReducerCtxImpl(
+    return (this.#reducerCtx_ ??= new ReducerContextImpl(
       Identity.zero(),
       Timestamp.UNIX_EPOCH,
       null,
@@ -581,7 +584,7 @@ class ModuleHooksImpl implements ModuleHooks {
     }
 
     const ctx = this.#reducerCtx;
-    ReducerCtxImpl.reset(
+    ReducerContextImpl.reset(
       ctx,
       senderIdentity,
       new Timestamp(timestamp),
@@ -815,7 +818,7 @@ class HandlerContextImpl<S extends UntypedSchemaDecl = UntypedSchemaDecl>
   withTx<T>(body: (ctx: any) => T): T {
     const dispatches = this.#dispatches;
     return runWithTx(timestamp => {
-      const tx = new ReducerCtxImpl(
+      const tx = new ReducerContextImpl(
         Identity.zero(),
         timestamp,
         null,
@@ -856,7 +859,7 @@ function buildDbViewForDispatch(
 }
 
 function buildAliasCtx(
-  parent: InstanceType<typeof ReducerCtxImpl>,
+  parent: InstanceType<typeof ReducerContextImpl>,
   dispatch: SubmoduleDispatchInfo,
   namePrefix: string
 ): object {
@@ -896,7 +899,7 @@ function buildAliasCtx(
 }
 
 function buildAliasCtxMap(
-  parent: InstanceType<typeof ReducerCtxImpl>,
+  parent: InstanceType<typeof ReducerContextImpl>,
   dispatches: SubmoduleDispatchInfo[],
   parentPrefix: string
 ): object {
@@ -939,7 +942,7 @@ function buildHandlerAliasCtx(
     as: subAs,
     withTx(body: any) {
       return runWithTx((ts: Timestamp) => {
-        const tx = new ReducerCtxImpl(
+        const tx = new ReducerContextImpl(
           Identity.zero(),
           ts,
           null,
@@ -1026,7 +1029,7 @@ function buildProcedureAliasCtx(
     as: subAs,
     withTx(body: any) {
       return runWithTx((ts: Timestamp) => {
-        const tx = new ReducerCtxImpl(
+        const tx = new ReducerContextImpl(
           parent.sender,
           ts,
           parent.connectionId,
@@ -1066,7 +1069,7 @@ export function buildProcedureAliasCtxMap(
 /** Builds and assigns reducer-style alias views onto a freshly created TxContext.
  *  Must be called while inside a transaction (after sys.procedure_start_mut_tx). */
 export function assignTxAliasViews(
-  tx: InstanceType<typeof ReducerCtxImpl>,
+  tx: InstanceType<typeof ReducerContextImpl>,
   dispatches: SubmoduleDispatchInfo[],
   parentPrefix = ''
 ): void {

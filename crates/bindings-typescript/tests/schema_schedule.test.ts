@@ -17,7 +17,7 @@ vi.mock('../src/server/runtime', () => ({
   makeHooks: () => ({}),
   callUserFunction: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
     fn(...args),
-  ReducerCtxImpl: class {},
+  ReducerContextImpl: class {},
   runWithTx: () => undefined,
   sys: {},
 }));

@@ -29,8 +29,8 @@
  */
 import type {
   DbConnectionBuilder,
-  DbConnectionImpl,
-  ErrorContextInterface,
+  DbConnectionBase,
+  ErrorContextBase,
 } from './db_connection_impl';
 import type { Identity } from '../lib/identity';
 import { ConnectionId } from '../lib/connection_id';
@@ -62,7 +62,7 @@ export function connectionManagerReconnectDelayMs(attempt: number): number {
 }
 
 type ManagedConnection = {
-  connection?: DbConnectionImpl<any>;
+  connection?: DbConnectionBase<any>;
   builder?: DbConnectionBuilder<any>;
   refCount: number;
   state: ConnectionState;
@@ -70,9 +70,9 @@ type ManagedConnection = {
   pendingRelease: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
-  onConnect?: (conn: DbConnectionImpl<any>) => void;
-  onDisconnect?: (ctx: ErrorContextInterface<any>, error?: Error) => void;
-  onConnectError?: (ctx: ErrorContextInterface<any>, error: Error) => void;
+  onConnect?: (conn: DbConnectionBase<any>) => void;
+  onDisconnect?: (ctx: ErrorContextBase<any>, error?: Error) => void;
+  onConnectError?: (ctx: ErrorContextBase<any>, error: Error) => void;
 };
 
 function defaultState(): ConnectionState {
@@ -158,7 +158,7 @@ class ConnectionManagerImpl {
 
   /**
    * If `managed` holds a connection whose socket has entered CLOSING/CLOSED
-   * without a clean `onclose` (see {@link DbConnectionImpl.isSocketClosed}),
+   * without a clean `onclose` (see {@link DbConnectionBase.isSocketClosed}),
    * for example because it was torn down while the tab was frozen, tear it down
    * and build a fresh one immediately, resetting backoff.
    */
@@ -269,7 +269,7 @@ class ConnectionManagerImpl {
     };
   }
 
-  #attachCallbacks<T extends DbConnectionImpl<any>>(
+  #attachCallbacks<T extends DbConnectionBase<any>>(
     managed: ManagedConnection,
     builder: DbConnectionBuilder<T>
   ): void {
@@ -281,7 +281,7 @@ class ConnectionManagerImpl {
 
   #detachCallbacks(
     managed: ManagedConnection,
-    connection: DbConnectionImpl<any>
+    connection: DbConnectionBase<any>
   ): void {
     if (managed.onConnect) {
       connection.removeOnConnect(managed.onConnect as any);
@@ -316,7 +316,7 @@ class ConnectionManagerImpl {
    * Pass `resumeSession: false` when the caller is deliberately changing
    * identity — see {@link rebuild} — so the builder's own token wins.
    */
-  #buildManagedConnection<T extends DbConnectionImpl<any>>(
+  #buildManagedConnection<T extends DbConnectionBase<any>>(
     managed: ManagedConnection,
     builder: DbConnectionBuilder<T>,
     { resumeSession = true }: { resumeSession?: boolean } = {}
@@ -388,7 +388,7 @@ class ConnectionManagerImpl {
    * @param builder - Connection builder to create the connection if needed
    * @returns The managed connection instance
    */
-  retain<T extends DbConnectionImpl<any>>(
+  retain<T extends DbConnectionBase<any>>(
     key: string,
     builder: DbConnectionBuilder<T>
   ): T {
@@ -432,7 +432,7 @@ class ConnectionManagerImpl {
    * @param key - Unique identifier for the connection (use getKey to generate)
    * @param builder - Fresh connection builder; its handlers are rewired into the pool
    */
-  rebuild<T extends DbConnectionImpl<any>>(
+  rebuild<T extends DbConnectionBase<any>>(
     key: string,
     builder: DbConnectionBuilder<T>
   ): T | null {
@@ -533,7 +533,7 @@ class ConnectionManagerImpl {
     return this.#connections.get(key)?.state;
   }
 
-  getConnection<T extends DbConnectionImpl<any>>(key: string): T | null {
+  getConnection<T extends DbConnectionBase<any>>(key: string): T | null {
     return (this.#connections.get(key)?.connection as T | undefined) ?? null;
   }
 }

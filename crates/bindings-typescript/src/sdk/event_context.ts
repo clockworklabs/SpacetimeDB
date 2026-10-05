@@ -5,10 +5,9 @@ import type { ReducerEvent } from './reducer_event.ts';
 import type { ReducerEventInfo } from './reducers.ts';
 import type { UntypedRemoteModuleDecl } from './spacetime_module.ts';
 
-export type UntypedEventContext =
-  EventContextInterface<UntypedRemoteModuleDecl>;
+export type UntypedEventContext = EventContextBase<UntypedRemoteModuleDecl>;
 
-export interface EventContextInterface<
+export interface EventContextBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > extends DbContext<RemoteModuleDecl> {
   /** Enum with variants for all possible events. */
@@ -20,7 +19,7 @@ export interface EventContextInterface<
   >;
 }
 
-export interface ReducerEventContextInterface<
+export interface ReducerEventContextBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > extends DbContext<RemoteModuleDecl> {
   /** Enum with variants for all possible events. */
@@ -33,22 +32,50 @@ export interface ReducerEventContextInterface<
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ProcedureEventContextInterface<
+export interface ProcedureEventContextBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > extends DbContext<RemoteModuleDecl> {
   /** No event is provided */
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface SubscriptionEventContextInterface<
+export interface SubscriptionEventContextBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > extends DbContext<RemoteModuleDecl> {
   /** No event is provided **/
 }
 
-export interface ErrorContextInterface<
+export interface ErrorContextBase<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
 > extends DbContext<RemoteModuleDecl> {
   /** Enum with variants for all possible events. */
   event?: Error;
 }
+
+/** @deprecated Use `EventContextBase` instead. */
+export type EventContextInterface<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = EventContextBase<RemoteModuleDecl>;
+
+/** @deprecated Use `ReducerEventContextBase` instead. */
+export type ReducerEventContextInterface<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = ReducerEventContextBase<RemoteModuleDecl>;
+
+/**
+ * @deprecated Use `ProcedureEventContextBase` instead. Kept so that
+ * declaration files emitted against older versions of the SDK keep resolving.
+ */
+export type ProcedureEventContextInterface<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = ProcedureEventContextBase<RemoteModuleDecl>;
+
+/** @deprecated Use `SubscriptionEventContextBase` instead. */
+export type SubscriptionEventContextInterface<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = SubscriptionEventContextBase<RemoteModuleDecl>;
+
+/** @deprecated Use `ErrorContextBase` instead. */
+export type ErrorContextInterface<
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = ErrorContextBase<RemoteModuleDecl>;

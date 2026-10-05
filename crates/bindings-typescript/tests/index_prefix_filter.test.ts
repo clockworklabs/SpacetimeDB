@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // `runtime.ts` and `procedures.ts` form an import cycle (procedures extends
-// runtime's ReducerCtxImpl). Vitest's loader evaluates the cycle in an order
+// runtime's ReducerContextImpl). Vitest's loader evaluates the cycle in an order
 // that leaves the base class undefined. runtime only needs `callProcedure`, and
 // not on the table-view path under test, so stub procedures to break the cycle.
 vi.mock('../src/server/procedures', () => ({

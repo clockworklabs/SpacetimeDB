@@ -32,8 +32,8 @@ export function schema<const H extends Record<string, UntypedTableBody>>(
 
 type HasAccessor = { accessorName: PropertyKey };
 
-export type ConvertToAccessorMap<TableDefs extends readonly HasAccessor[]> = {
-  [Tbl in TableDefs[number] as Tbl['accessorName']]: Tbl;
+export type ConvertToAccessorMap<TableDecls extends readonly HasAccessor[]> = {
+  [Tbl in TableDecls[number] as Tbl['accessorName']]: Tbl;
 };
 
 export function convertToAccessorMap<T extends readonly HasAccessor[]>(

@@ -58,7 +58,7 @@ TEST_CASE(optional_reader_matches_canonical_bsatn_tags_and_preserves_following_b
 
 TEST_CASE(jwt_source_reads_all_chunks_including_final_exhausted_bytes) {
     payload = "{\"padding\":\"" + std::string(8192, 'x') + "\",\"sub\":\"last\"}";
-    auto ctx = AuthCtx::from_connection_id(ConnectionId(5), Identity{});
+    auto ctx = AuthContext::from_connection_id(ConnectionId(5), Identity{});
     ASSERT_TRUE(ctx.has_jwt());
     ASSERT_EQ(std::string("last"), ctx.get_jwt()->subject());
     ASSERT_EQ(payload.size(), payload_offset);
@@ -66,7 +66,7 @@ TEST_CASE(jwt_source_reads_all_chunks_including_final_exhausted_bytes) {
 
 TEST_CASE(jwt_source_keeps_final_bytes_from_a_single_read) {
     payload = R"({"sub":"short"})";
-    auto ctx = AuthCtx::from_connection_id(ConnectionId(5), Identity{});
+    auto ctx = AuthContext::from_connection_id(ConnectionId(5), Identity{});
     ASSERT_TRUE(ctx.has_jwt());
     ASSERT_EQ(std::string("short"), ctx.get_jwt()->subject());
     ASSERT_EQ(payload.size(), payload_offset);

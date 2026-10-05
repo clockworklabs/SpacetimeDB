@@ -4,12 +4,12 @@ import type { ParamsObj } from '../lib/reducers';
 import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
-import type { SubscriptionEventContextInterface } from './event_context';
+import type { SubscriptionEventContextBase } from './event_context';
 import type { UntypedRemoteModuleDecl } from './spacetime_module';
 
 export type SubscriptionEventCallback<
   RemoteModuleDecl extends UntypedRemoteModuleDecl,
-> = (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void;
+> = (ctx: SubscriptionEventContextBase<RemoteModuleDecl>) => void;
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
@@ -20,7 +20,7 @@ type ReducersViewLoose = {
   [k: string]: (params: any) => Promise<void>;
 };
 
-export type ReducersView<RemoteModuleDecl> = IfAny<
+export type RemoteReducers<RemoteModuleDecl> = IfAny<
   RemoteModuleDecl,
   ReducersViewLoose,
   RemoteModuleDecl extends UntypedRemoteModuleDecl
@@ -31,6 +31,12 @@ export type ReducersView<RemoteModuleDecl> = IfAny<
       }
     : never
 >;
+
+/**
+ * @deprecated Use `RemoteReducers` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type ReducersView<RemoteModuleDecl> = RemoteReducers<RemoteModuleDecl>;
 
 export type ReducerEventInfo<
   Name extends string = string,

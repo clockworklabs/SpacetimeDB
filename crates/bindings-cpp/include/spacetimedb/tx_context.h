@@ -55,7 +55,7 @@ public:
     // In Rust, Deref makes tx.db work the same as ctx.db
     // In C++, we explicitly expose references where possible and provide
     // accessors for fields exposed as methods on ReducerContext.
-    DatabaseContext& db;
+    DbView& db;
     const Environment& env;
     const Timestamp& timestamp;
     const std::optional<ConnectionId>& connection_id;
@@ -70,7 +70,7 @@ public:
     
     // Access to ReducerContext methods
     Identity sender() const { return ctx_.sender(); }
-    const AuthCtx& sender_auth() const { return ctx_.sender_auth(); }
+    const AuthContext& sender_auth() const { return ctx_.sender_auth(); }
     Identity database_identity() const { return ctx_.database_identity(); }
     [[deprecated("Use database_identity() instead.")]]
     Identity identity() const { return database_identity(); }

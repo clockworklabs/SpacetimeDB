@@ -6,14 +6,14 @@ import {
   ConnectionManager,
 } from '../src/sdk/connection_manager.ts';
 
-type ErrorContextInterface = {
+type ErrorContextBase = {
   isActive: boolean;
 };
 
 class MockConnection {
   isActive = false;
   identity = undefined;
-  // A real DbConnectionImpl is constructed with the builder's token and keeps
+  // A real DbConnectionBase is constructed with the builder's token and keeps
   // it in this field, so the mock takes it the same way.
   token: string | undefined;
   connectionId = ConnectionId.random();
@@ -26,10 +26,10 @@ class MockConnection {
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
+    (ctx: ErrorContextBase, error?: Error) => void
   >();
   #onConnectErrorCallbacks = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
+    (ctx: ErrorContextBase, error: Error) => void
   >();
 
   disconnect(): void {
@@ -40,7 +40,7 @@ class MockConnection {
     this.disconnected = true;
     this.isActive = false;
     for (const cb of this.#onDisconnectCallbacks) {
-      cb(this as unknown as ErrorContextInterface);
+      cb(this as unknown as ErrorContextBase);
     }
   }
 
@@ -48,14 +48,12 @@ class MockConnection {
     this.#onConnectCallbacks.delete(cb);
   }
 
-  removeOnDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
-  ): void {
+  removeOnDisconnect(cb: (ctx: ErrorContextBase, error?: Error) => void): void {
     this.#onDisconnectCallbacks.delete(cb);
   }
 
   removeOnConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): void {
     this.#onConnectErrorCallbacks.delete(cb);
   }
@@ -90,14 +88,14 @@ class MockConnection {
   simulateDisconnect(error?: Error): void {
     this.isActive = false;
     for (const cb of this.#onDisconnectCallbacks) {
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this as unknown as ErrorContextBase, error);
     }
   }
 
   simulateConnectError(error: Error): void {
     this.isActive = false;
     for (const cb of this.#onConnectErrorCallbacks) {
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this as unknown as ErrorContextBase, error);
     }
   }
 
@@ -106,13 +104,13 @@ class MockConnection {
   }
 
   registerOnDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
+    cb: (ctx: ErrorContextBase, error?: Error) => void
   ): void {
     this.#onDisconnectCallbacks.add(cb);
   }
 
   registerOnConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): void {
     this.#onConnectErrorCallbacks.add(cb);
   }
@@ -132,10 +130,10 @@ class MockBuilder {
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
+    (ctx: ErrorContextBase, error?: Error) => void
   >();
   #onConnectErrorCallbacks = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
+    (ctx: ErrorContextBase, error: Error) => void
   >();
 
   withToken(token?: string): MockBuilder {
@@ -171,7 +169,7 @@ class MockBuilder {
   }
 
   onDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
+    cb: (ctx: ErrorContextBase, error?: Error) => void
   ): MockBuilder {
     this.#onDisconnectCallbacks.add(cb);
     for (const connection of this.connections) {
@@ -181,7 +179,7 @@ class MockBuilder {
   }
 
   onConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): MockBuilder {
     this.#onConnectErrorCallbacks.add(cb);
     for (const connection of this.connections) {
@@ -675,7 +673,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
   // Precedence rule: whatever the live session settled on outranks the token
   // the builder was constructed with. Today a real client only adopts a
   // server-issued token when it presented none (see the `!this.token` guard in
-  // `DbConnectionImpl#processServerMessage`), so the rotation below is
+  // `DbConnectionBase#processServerMessage`), so the rotation below is
   // hypothetical — it pins the rule for any future support for rotation.
   test("the session token takes precedence over the builder's own token", () => {
     const key = nextKey();

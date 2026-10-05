@@ -1552,7 +1552,7 @@ impl ProcedureContext {
 }
 
 /// A handle on a database with a particular table schema.
-#[deprecated(note = "Use the capability based traits (CtxDbRead, CtxDbWrite) instead!")]
+#[deprecated(note = "Use the capability based traits (ContextDbRead, ContextDbWrite) instead!")]
 pub trait DbContext {
     /// A view into the tables of a database.
     ///
@@ -1653,29 +1653,29 @@ impl DbView {
 ///
 /// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
 /// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
-pub trait CtxDbRead {
+pub trait ContextDbRead {
     fn db_read_only(&self) -> &ReadOnlyDbView;
 }
 
-impl CtxDbRead for TxContext {
+impl ContextDbRead for TxContext {
     fn db_read_only(&self) -> &ReadOnlyDbView {
         &ReadOnlyDbView {}
     }
 }
 
-impl CtxDbRead for ReducerContext {
+impl ContextDbRead for ReducerContext {
     fn db_read_only(&self) -> &ReadOnlyDbView {
         &ReadOnlyDbView {}
     }
 }
 
-impl CtxDbRead for ViewContext {
+impl ContextDbRead for ViewContext {
     fn db_read_only(&self) -> &ReadOnlyDbView {
         &ReadOnlyDbView {}
     }
 }
 
-impl CtxDbRead for AnonymousViewContext {
+impl ContextDbRead for AnonymousViewContext {
     fn db_read_only(&self) -> &ReadOnlyDbView {
         &ReadOnlyDbView {}
     }
@@ -1688,17 +1688,17 @@ impl CtxDbRead for AnonymousViewContext {
 ///
 /// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
 /// as the context's `db` field provides the same access.
-pub trait CtxDbWrite: CtxDbRead {
+pub trait ContextDbWrite: ContextDbRead {
     fn db(&self) -> &DbView;
 }
 
-impl CtxDbWrite for TxContext {
+impl ContextDbWrite for TxContext {
     fn db(&self) -> &DbView {
         &DbView {}
     }
 }
 
-impl CtxDbWrite for ReducerContext {
+impl ContextDbWrite for ReducerContext {
     fn db(&self) -> &DbView {
         &DbView {}
     }
@@ -1711,29 +1711,29 @@ impl CtxDbWrite for ReducerContext {
 ///
 /// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`],
 /// this trait is not necessary, as the context's inherent `sender` method provides the same access.
-pub trait CtxWithSender {
+pub trait ContextWithSender {
     fn sender(&self) -> Identity;
 }
 
-impl CtxWithSender for ViewContext {
+impl ContextWithSender for ViewContext {
     fn sender(&self) -> Identity {
         self.sender
     }
 }
 
-impl CtxWithSender for ReducerContext {
+impl ContextWithSender for ReducerContext {
     fn sender(&self) -> Identity {
         self.sender
     }
 }
 
-impl CtxWithSender for TxContext {
+impl ContextWithSender for TxContext {
     fn sender(&self) -> Identity {
         self.0.sender
     }
 }
 
-impl CtxWithSender for ProcedureContext {
+impl ContextWithSender for ProcedureContext {
     fn sender(&self) -> Identity {
         self.sender
     }
@@ -1749,30 +1749,30 @@ impl CtxWithSender for ProcedureContext {
 #[cfg_attr(feature = "unstable", doc = ", [`HandlerContext`]")]
 /// or [`TxContext`],
 /// this trait is not necessary, as the context's `timestamp` field provides the same access.
-pub trait CtxWithTimestamp {
+pub trait ContextWithTimestamp {
     fn timestamp(&self) -> Timestamp;
 }
 
-impl CtxWithTimestamp for ReducerContext {
+impl ContextWithTimestamp for ReducerContext {
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
 }
 
-impl CtxWithTimestamp for TxContext {
+impl ContextWithTimestamp for TxContext {
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
 }
 
-impl CtxWithTimestamp for ProcedureContext {
+impl ContextWithTimestamp for ProcedureContext {
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
 }
 
 #[cfg(feature = "unstable")]
-impl CtxWithTimestamp for HandlerContext {
+impl ContextWithTimestamp for HandlerContext {
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
@@ -1785,17 +1785,17 @@ impl CtxWithTimestamp for HandlerContext {
 ///
 /// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
 /// this trait is not necessary, as the context's sender_auth method provides the same access.
-pub trait CtxWithSenderAuth {
+pub trait ContextWithSenderAuth {
     fn sender_auth(&self) -> &AuthContext;
 }
 
-impl CtxWithSenderAuth for ReducerContext {
+impl ContextWithSenderAuth for ReducerContext {
     fn sender_auth(&self) -> &AuthContext {
         self.sender_auth()
     }
 }
 
-impl CtxWithSenderAuth for TxContext {
+impl ContextWithSenderAuth for TxContext {
     fn sender_auth(&self) -> &AuthContext {
         self.0.sender_auth()
     }
@@ -1810,12 +1810,12 @@ impl CtxWithSenderAuth for TxContext {
 #[cfg_attr(feature = "unstable", doc = "[`HandlerContext`] or")]
 /// [`ProcedureContext`],
 /// this trait is not necessary, as the context's methods provide the same access.
-pub trait CtxWithTxManagement {
+pub trait ContextWithTxManagement {
     fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T;
     fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E>;
 }
 
-impl CtxWithTxManagement for ProcedureContext {
+impl ContextWithTxManagement for ProcedureContext {
     fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
         self.with_tx(body)
     }
@@ -1826,7 +1826,7 @@ impl CtxWithTxManagement for ProcedureContext {
 }
 
 #[cfg(feature = "unstable")]
-impl CtxWithTxManagement for HandlerContext {
+impl ContextWithTxManagement for HandlerContext {
     fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
         self.with_tx(body)
     }
@@ -1846,7 +1846,7 @@ impl CtxWithTxManagement for HandlerContext {
 /// [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
 /// this trait is not necessary, as the context's methods provide the same access.
 #[cfg(feature = "rand08")]
-pub trait CtxWithRng {
+pub trait ContextWithRng {
     fn rng(&self) -> &StdbRng;
     fn random<T>(&self) -> T
     where
@@ -1854,7 +1854,7 @@ pub trait CtxWithRng {
 }
 
 #[cfg(feature = "rand08")]
-impl CtxWithRng for ProcedureContext {
+impl ContextWithRng for ProcedureContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
     }
@@ -1868,7 +1868,7 @@ impl CtxWithRng for ProcedureContext {
 }
 
 #[cfg(all(feature = "unstable", feature = "rand08"))]
-impl CtxWithRng for HandlerContext {
+impl ContextWithRng for HandlerContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
     }
@@ -1882,7 +1882,7 @@ impl CtxWithRng for HandlerContext {
 }
 
 #[cfg(feature = "rand08")]
-impl CtxWithRng for ReducerContext {
+impl ContextWithRng for ReducerContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
     }
@@ -1896,7 +1896,7 @@ impl CtxWithRng for ReducerContext {
 }
 
 #[cfg(feature = "rand08")]
-impl CtxWithRng for TxContext {
+impl ContextWithRng for TxContext {
     fn rng(&self) -> &StdbRng {
         self.0.rng()
     }
@@ -1918,22 +1918,42 @@ impl CtxWithRng for TxContext {
 #[cfg_attr(feature = "unstable", doc = "or [`HandlerContext`],")]
 /// this trait is not necessary,
 /// as the context's `http` field provides the same access.
-pub trait CtxWithHttp {
+pub trait ContextWithHttp {
     fn http(&self) -> &HttpClient;
 }
 
 #[cfg(feature = "unstable")]
-impl CtxWithHttp for HandlerContext {
+impl ContextWithHttp for HandlerContext {
     fn http(&self) -> &HttpClient {
         &self.http
     }
 }
 
-impl CtxWithHttp for ProcedureContext {
+impl ContextWithHttp for ProcedureContext {
     fn http(&self) -> &HttpClient {
         &self.http
     }
 }
+
+// The capability traits' former names. Rust has no trait aliases, and
+// `#[deprecated]` has no effect on a re-export.
+#[doc(hidden)]
+pub use ContextDbRead as CtxDbRead;
+#[doc(hidden)]
+pub use ContextDbWrite as CtxDbWrite;
+#[doc(hidden)]
+pub use ContextWithHttp as CtxWithHttp;
+#[cfg(feature = "rand08")]
+#[doc(hidden)]
+pub use ContextWithRng as CtxWithRng;
+#[doc(hidden)]
+pub use ContextWithSender as CtxWithSender;
+#[doc(hidden)]
+pub use ContextWithSenderAuth as CtxWithSenderAuth;
+#[doc(hidden)]
+pub use ContextWithTimestamp as CtxWithTimestamp;
+#[doc(hidden)]
+pub use ContextWithTxManagement as CtxWithTxManagement;
 
 /// The [JWT] of an [`AuthContext`].
 ///
@@ -2238,5 +2258,38 @@ mod tests {
         &'a ReadOnlyRangedIndex<Tbl, T, Idx>,
     ) {
         (a, b, c, d, e, f)
+    }
+
+    // Each former name of a capability trait must stay a re-export of the trait that replaced it.
+    #[allow(dead_code)]
+    fn context_trait_reexports_are_identical<C>()
+    where
+        C: CtxDbRead
+            + CtxDbWrite
+            + CtxWithSender
+            + CtxWithTimestamp
+            + CtxWithSenderAuth
+            + CtxWithTxManagement
+            + CtxWithHttp,
+    {
+        fn requires_new_names<C>()
+        where
+            C: ContextDbRead
+                + ContextDbWrite
+                + ContextWithSender
+                + ContextWithTimestamp
+                + ContextWithSenderAuth
+                + ContextWithTxManagement
+                + ContextWithHttp,
+        {
+        }
+        requires_new_names::<C>();
+    }
+
+    #[cfg(feature = "rand08")]
+    #[allow(dead_code)]
+    fn rng_context_trait_reexport_is_identical<C: CtxWithRng>() {
+        fn requires_new_name<C: ContextWithRng>() {}
+        requires_new_name::<C>();
     }
 }

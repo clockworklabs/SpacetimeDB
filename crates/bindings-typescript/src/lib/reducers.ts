@@ -23,8 +23,7 @@ export type ParamsObj = Record<
 /**
  * Helper to convert a ParamsObj or RowObj into an object type
  */
-export type ParamsAsObject<ParamDef extends ParamsObj> =
-  InferTypeOfRow<ParamDef>;
+export type ParamsAsObject<Params extends ParamsObj> = InferTypeOfRow<Params>;
 
 /**
  * Defines a SpacetimeDB reducer function.

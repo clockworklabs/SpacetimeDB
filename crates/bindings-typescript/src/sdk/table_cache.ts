@@ -2,7 +2,7 @@ import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
 import { deepEqual, type ComparablePrimitive } from '../';
-import type { EventContextInterface } from './index.ts';
+import type { EventContextBase } from './index.ts';
 import type { RowType, TableIndexes, UntypedTableDecl } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';
 import type { UntypedRemoteModuleDecl } from './spacetime_module.ts';
@@ -264,7 +264,7 @@ export class TableCacheImpl<
 
   applyOperations = (
     operations: Operation<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>[],
-    ctx: EventContextInterface<RemoteModuleDecl>
+    ctx: EventContextBase<RemoteModuleDecl>
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
 
@@ -352,7 +352,7 @@ export class TableCacheImpl<
   };
 
   update = (
-    ctx: EventContextInterface<RemoteModuleDecl>,
+    ctx: EventContextBase<RemoteModuleDecl>,
     rowId: ComparablePrimitive,
     newRow: RowType<TableDeclOf<RemoteModuleDecl, TableName>>,
     refCountDelta: number = 0
@@ -400,7 +400,7 @@ export class TableCacheImpl<
   };
 
   insert = (
-    ctx: EventContextInterface<RemoteModuleDecl>,
+    ctx: EventContextBase<RemoteModuleDecl>,
     operation: Operation<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>,
     count: number = 1
   ): PendingCallback | undefined => {
@@ -423,7 +423,7 @@ export class TableCacheImpl<
   };
 
   delete = (
-    ctx: EventContextInterface<RemoteModuleDecl>,
+    ctx: EventContextBase<RemoteModuleDecl>,
     operation: Operation<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>,
     count: number = 1
   ): PendingCallback | undefined => {
@@ -469,7 +469,7 @@ export class TableCacheImpl<
    */
   onInsert = (
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void => {
@@ -493,7 +493,7 @@ export class TableCacheImpl<
    */
   onDelete = (
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void => {
@@ -517,7 +517,7 @@ export class TableCacheImpl<
    */
   onUpdate = (
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       oldRow: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
@@ -532,7 +532,7 @@ export class TableCacheImpl<
    */
   removeOnInsert = (
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void => {
@@ -546,7 +546,7 @@ export class TableCacheImpl<
    */
   removeOnDelete = (
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void
   ): void => {
@@ -560,7 +560,7 @@ export class TableCacheImpl<
    */
   removeOnUpdate = (
     cb: (
-      ctx: EventContextInterface<RemoteModuleDecl>,
+      ctx: EventContextBase<RemoteModuleDecl>,
       oldRow: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>,
       row: Prettify<RowType<TableDeclOf<RemoteModuleDecl, TableName>>>
     ) => void

@@ -17,9 +17,13 @@ import { INTERNAL_REMOTE_MODULE } from './internal.ts';
 import { type DbContext } from './db_context.ts';
 import type { Event } from './event.ts';
 import {
+  type ErrorContextBase,
   type ErrorContextInterface,
+  type EventContextBase,
   type EventContextInterface,
+  type ReducerEventContextBase,
   type ReducerEventContextInterface,
+  type SubscriptionEventContextBase,
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
@@ -43,7 +47,9 @@ import {
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
 import {
+  SubscriptionBuilderBase,
   SubscriptionBuilderImpl,
+  SubscriptionHandleBase,
   SubscriptionHandleImpl,
   SubscriptionManager,
   type SubscribeEvent,
@@ -52,13 +58,13 @@ import { stdbLogger, stringify } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
   ReducerEventInfo,
-  ReducersView,
+  RemoteReducers,
   SubscriptionEventCallback,
 } from './reducers.ts';
-import type { ClientDbView } from './db_view.ts';
+import type { RemoteTables } from './db_view.ts';
 import type { RowType, UntypedTableDecl } from '../lib/table.ts';
 import type { UntypedSchemaDecl } from '../lib/schema';
-import type { ProceduresView } from './procedures.ts';
+import type { RemoteProcedures } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
 import { InternalError, SenderError } from '../lib/errors.ts';
@@ -78,23 +84,29 @@ import {
 
 export {
   DbConnectionBuilder,
+  SubscriptionBuilderBase,
   SubscriptionBuilderImpl,
+  SubscriptionHandleBase,
   SubscriptionHandleImpl,
   type TableCache,
   type Event,
 };
 
 export type RemoteModuleDeclOf<C> =
-  C extends DbConnectionImpl<infer RM> ? RM : never;
+  C extends DbConnectionBase<infer RM> ? RM : never;
 
 /** @deprecated Use `RemoteModuleDeclOf` instead. */
 export type RemoteModuleOf<C> = RemoteModuleDeclOf<C>;
 
 export type {
   DbContext,
+  EventContextBase,
   EventContextInterface,
+  ReducerEventContextBase,
   ReducerEventContextInterface,
+  SubscriptionEventContextBase,
   SubscriptionEventContextInterface,
+  ErrorContextBase,
   ErrorContextInterface,
   ReducerEvent,
 };
@@ -171,7 +183,7 @@ const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 const WS_READY_STATE_CLOSING = 2;
 const WS_READY_STATE_CLOSED = 3;
 
-export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
+export class DbConnectionBase<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   implements DbContext<RemoteModuleDecl>
 {
   /**
@@ -242,17 +254,17 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
    * The accessor field to access the tables in the database and associated
    * callback functions.
    */
-  db: ClientDbView<RemoteModuleDecl>;
+  db: RemoteTables<RemoteModuleDecl>;
 
   /**
    * The accessor field to access the reducers in the database.
    */
-  reducers: ReducersView<RemoteModuleDecl>;
+  reducers: RemoteReducers<RemoteModuleDecl>;
 
   /**
    * The accessor field to access the procedures in the database.
    */
-  procedures: ProceduresView<RemoteModuleDecl>;
+  procedures: RemoteProcedures<RemoteModuleDecl>;
 
   /**
    * The `ConnectionId` of the connection to to the database.
@@ -298,7 +310,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   #messageReader = new BinaryReader(new Uint8Array());
   #rowListReader = new BinaryReader(new Uint8Array());
   #clientFrameEncoder = new BinaryWriter(1024);
-  #boundSubscriptionBuilder!: () => SubscriptionBuilderImpl<RemoteModuleDecl>;
+  #boundSubscriptionBuilder!: () => SubscriptionBuilderBase<RemoteModuleDecl>;
   #boundDisconnect!: () => void;
 
   // These fields are not part of the public API, but in a pinch you
@@ -442,11 +454,11 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
 
   #getNextRequestId = () => this.#requestId++;
 
-  #makeDbView(): ClientDbView<RemoteModuleDecl> {
-    const view = Object.create(null) as ClientDbView<RemoteModuleDecl>;
+  #makeDbView(): RemoteTables<RemoteModuleDecl> {
+    const view = Object.create(null) as RemoteTables<RemoteModuleDecl>;
 
     for (const tbl of Object.values(this.#sourceNameToTableDef)) {
-      // ClientDbView uses this name verbatim
+      // RemoteTables uses this name verbatim
       const key = tbl.accessorName;
       Object.defineProperty(view, key, {
         enumerable: true,
@@ -458,7 +470,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
     return view;
   }
 
-  #makeReducers(def: RemoteModuleDecl): ReducersView<RemoteModuleDecl> {
+  #makeReducers(def: RemoteModuleDecl): RemoteReducers<RemoteModuleDecl> {
     const out: Record<string, unknown> = {};
 
     for (const reducer of def.reducers) {
@@ -485,10 +497,10 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
       };
     }
 
-    return out as ReducersView<RemoteModuleDecl>;
+    return out as RemoteReducers<RemoteModuleDecl>;
   }
 
-  #makeProcedures(def: RemoteModuleDecl): ProceduresView<RemoteModuleDecl> {
+  #makeProcedures(def: RemoteModuleDecl): RemoteProcedures<RemoteModuleDecl> {
     const out: Record<string, unknown> = {};
 
     const writer = new BinaryWriter(1024);
@@ -517,7 +529,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
       };
     }
 
-    return out as ProceduresView<RemoteModuleDecl>;
+    return out as RemoteProcedures<RemoteModuleDecl>;
   }
 
   #makeEventContext(
@@ -527,7 +539,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
         InferTypeOfParams<RemoteModuleDecl['reducers'][number]['params']>
       >
     >
-  ): EventContextInterface<RemoteModuleDecl> {
+  ): EventContextBase<RemoteModuleDecl> {
     return {
       db: this.db,
       reducers: this.reducers,
@@ -545,8 +557,8 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   // Do not remove this function, or shoot yourself in the foot please.
   // It's not clear what would be a better way to do this at this exact
   // moment.
-  subscriptionBuilder = (): SubscriptionBuilderImpl<RemoteModuleDecl> => {
-    return new SubscriptionBuilderImpl(this);
+  subscriptionBuilder = (): SubscriptionBuilderBase<RemoteModuleDecl> => {
+    return new SubscriptionBuilderBase(this);
   };
 
   getFromBuilder<
@@ -558,7 +570,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   }
 
   registerSubscription(
-    handle: SubscriptionHandleImpl<RemoteModuleDecl>,
+    handle: SubscriptionHandleBase<RemoteModuleDecl>,
     handleEmitter: EventEmitter<
       SubscribeEvent,
       SubscriptionEventCallback<RemoteModuleDecl>
@@ -886,7 +898,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
 
   #applyTableUpdates(
     tableUpdates: CacheTableUpdate<UntypedTableDecl>[],
-    eventContext: EventContextInterface<RemoteModuleDecl>
+    eventContext: EventContextBase<RemoteModuleDecl>
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
     for (const tableUpdate of tableUpdates) {
@@ -908,7 +920,7 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
   }
 
   #applyTransactionUpdates(
-    eventContext: EventContextInterface<RemoteModuleDecl>,
+    eventContext: EventContextBase<RemoteModuleDecl>,
     tu: TransactionUpdate
   ): PendingCallback[] {
     const allUpdates: CacheTableUpdate<UntypedTableDecl>[] = [];
@@ -1399,51 +1411,57 @@ export class DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl>
 
   private on(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   private off(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
   private onConnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connect', callback);
   }
 
   private onDisconnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   private onConnectError(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
   removeOnConnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
   removeOnDisconnect(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
   removeOnConnectError(
-    callback: (ctx: DbConnectionImpl<RemoteModuleDecl>, ...args: any[]) => void
+    callback: (ctx: DbConnectionBase<RemoteModuleDecl>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }
 }
+
+/** @deprecated Use `DbConnectionBase` instead. */
+export type DbConnectionImpl<RemoteModuleDecl extends UntypedRemoteModuleDecl> =
+  DbConnectionBase<RemoteModuleDecl>;
+/** @deprecated Use `DbConnectionBase` instead. */
+export const DbConnectionImpl = DbConnectionBase;

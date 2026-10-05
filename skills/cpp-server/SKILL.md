@@ -164,7 +164,7 @@ ctx.timestamp          // Invocation timestamp
 ctx.connection_id      // std::optional<ConnectionId>
 ctx.identity()         // Module's own identity
 ctx.rng()              // Deterministic RNG
-ctx.sender_auth()      // AuthCtx with JWT claims
+ctx.sender_auth()      // AuthContext with JWT claims
 ```
 
 ## Scheduled Tables

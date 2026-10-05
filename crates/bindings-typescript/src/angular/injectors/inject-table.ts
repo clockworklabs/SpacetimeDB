@@ -16,15 +16,19 @@ import {
   getQueryAccessorName,
   getQueryWhereClause,
 } from '../../lib/query';
-import type { EventContextInterface } from '../../sdk';
+import type { EventContextBase } from '../../sdk';
 import type { UntypedRemoteModuleDecl } from '../../sdk/spacetime_module';
 
-export type RowTypeDef<TableDecl extends UntypedTableDecl> = Prettify<
+export type RowTypeOf<TableDecl extends UntypedTableDecl> = Prettify<
   RowType<TableDecl>
 >;
 
+/** @deprecated Use `RowTypeOf` instead. */
+export type RowTypeDef<TableDecl extends UntypedTableDecl> =
+  RowTypeOf<TableDecl>;
+
 export interface TableRows<TableDecl extends UntypedTableDecl> {
-  rows: readonly RowTypeDef<TableDecl>[];
+  rows: readonly RowTypeOf<TableDecl>[];
   isLoading: boolean;
 }
 
@@ -88,7 +92,7 @@ function classifyMembership(
  */
 export function injectTable<TableDecl extends UntypedTableDecl>(
   query: Query<TableDecl>,
-  callbacks?: InjectTableCallbacks<RowTypeDef<TableDecl>>
+  callbacks?: InjectTableCallbacks<RowTypeOf<TableDecl>>
 ): Signal<TableRows<TableDecl>> {
   assertInInjectionContext(injectTable);
 
@@ -109,7 +113,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
   // Note: this code is mostly derived from the React useTable implementation
   // in order to keep behavior consistent across frameworks.
 
-  const computeSnapshot = (): readonly RowTypeDef<TableDecl>[] => {
+  const computeSnapshot = (): readonly RowTypeOf<TableDecl>[] => {
     const state = connState();
     if (!state.isActive) {
       return [];
@@ -125,10 +129,10 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     if (whereExpr) {
       return Array.from(table.iter()).filter(row =>
         evaluateBooleanExpr(whereExpr, row as Record<string, any>)
-      ) as RowTypeDef<TableDecl>[];
+      ) as RowTypeOf<TableDecl>[];
     }
 
-    return Array.from(table.iter()) as RowTypeDef<TableDecl>[];
+    return Array.from(table.iter()) as RowTypeOf<TableDecl>[];
   };
 
   const updateSnapshot = () => {
@@ -152,7 +156,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     const table = connection.db[accessorName];
 
     const onInsert = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
@@ -168,7 +172,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     };
 
     const onDelete = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
@@ -184,7 +188,7 @@ export function injectTable<TableDecl extends UntypedTableDecl>(
     };
 
     const onUpdate = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       oldRow: any,
       newRow: any
     ) => {

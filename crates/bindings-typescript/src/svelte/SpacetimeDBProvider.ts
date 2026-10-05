@@ -2,7 +2,7 @@ import { setContext, onDestroy } from 'svelte';
 import { writable, type Writable } from 'svelte/store';
 import {
   DbConnectionBuilder,
-  type DbConnectionImpl,
+  type DbConnectionBase,
 } from '../sdk/db_connection_impl';
 import { ConnectionId } from '../lib/connection_id';
 import {
@@ -29,7 +29,7 @@ import {
  * carrying the new token.
  */
 export function createSpacetimeDBProvider<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 >(
   connectionBuilder: DbConnectionBuilder<DbConnection>
 ): Writable<ConnectionState> {

@@ -475,7 +475,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 
 - `database_identity() -> Identity` - Get the module's identity
 - `rng() -> StdbRng&` - Get the random number generator (deterministic and reproducible)
-- `sender_auth() -> const AuthCtx&` - Get authorization context for the caller (includes JWT claims and internal call detection)
+- `sender_auth() -> const AuthContext&` - Get authorization context for the caller (includes JWT claims and internal call detection)
 
 :::note
 C++ uses the `std::optional` type for the `connection_id` to represent values that may not be present. The `rng()` method returns a deterministic random number generator that is seeded consistently across all nodes.

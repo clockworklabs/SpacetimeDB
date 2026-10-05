@@ -1,6 +1,6 @@
 import {
   DbConnectionBuilder,
-  type DbConnectionImpl,
+  type DbConnectionBase,
 } from '../sdk/db_connection_impl';
 import * as React from 'react';
 import { SpacetimeDBContext } from './useSpacetimeDB';
@@ -12,14 +12,14 @@ import {
 } from '../sdk/connection_manager';
 
 export interface SpacetimeDBProviderProps<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 > {
   connectionBuilder: DbConnectionBuilder<DbConnection>;
   children?: React.ReactNode;
 }
 
 export function SpacetimeDBProvider<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 >({
   connectionBuilder,
   children,

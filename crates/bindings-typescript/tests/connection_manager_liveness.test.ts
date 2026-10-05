@@ -7,12 +7,12 @@ import { connectionManagerReconnectDelayMs } from '../src/sdk/connection_manager
 // its constructor, so each test installs minimal DOM stubs and re-imports the
 // module to get a fresh singleton bound to those stubs.
 
-type ErrorContextInterface = { isActive: boolean };
+type ErrorContextBase = { isActive: boolean };
 
 class MockConnection {
   isActive = false;
   identity = undefined;
-  // A real DbConnectionImpl is constructed with the builder's token and keeps
+  // A real DbConnectionBase is constructed with the builder's token and keeps
   // it in this field, so the mock takes it the same way.
   token: string | undefined;
   connectionId = ConnectionId.random();
@@ -23,12 +23,8 @@ class MockConnection {
   socketClosed = false;
 
   #onConnect = new Set<(conn: MockConnection) => void>();
-  #onDisconnect = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
-  >();
-  #onConnectError = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
-  >();
+  #onDisconnect = new Set<(ctx: ErrorContextBase, error?: Error) => void>();
+  #onConnectError = new Set<(ctx: ErrorContextBase, error: Error) => void>();
 
   get isSocketClosed(): boolean {
     return this.socketClosed;
@@ -43,13 +39,11 @@ class MockConnection {
   removeOnConnect(cb: (conn: MockConnection) => void): void {
     this.#onConnect.delete(cb);
   }
-  removeOnDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
-  ): void {
+  removeOnDisconnect(cb: (ctx: ErrorContextBase, error?: Error) => void): void {
     this.#onDisconnect.delete(cb);
   }
   removeOnConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): void {
     this.#onConnectError.delete(cb);
   }
@@ -76,7 +70,7 @@ class MockConnection {
   simulateDisconnect(error?: Error): void {
     this.isActive = false;
     for (const cb of this.#onDisconnect)
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this as unknown as ErrorContextBase, error);
   }
 }
 
@@ -87,12 +81,8 @@ class MockBuilder {
   token: string | undefined;
 
   #onConnect = new Set<(conn: MockConnection) => void>();
-  #onDisconnect = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
-  >();
-  #onConnectError = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
-  >();
+  #onDisconnect = new Set<(ctx: ErrorContextBase, error?: Error) => void>();
+  #onConnectError = new Set<(ctx: ErrorContextBase, error: Error) => void>();
 
   withToken(token?: string): MockBuilder {
     this.token = token;
@@ -117,14 +107,14 @@ class MockBuilder {
     return this;
   }
   onDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
+    cb: (ctx: ErrorContextBase, error?: Error) => void
   ): MockBuilder {
     this.#onDisconnect.add(cb);
     for (const c of this.connections) c.register('disconnect', cb);
     return this;
   }
   onConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (ctx: ErrorContextBase, error: Error) => void
   ): MockBuilder {
     this.#onConnectError.add(cb);
     for (const c of this.connections) c.register('connectError', cb);

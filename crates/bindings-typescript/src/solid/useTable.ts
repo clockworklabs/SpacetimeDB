@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, createMemo, createComputed } from 'solid-js';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import { type EventContextInterface } from '../sdk/db_connection_impl';
+import { type EventContextBase } from '../sdk/db_connection_impl';
 import type { UntypedRemoteModuleDecl } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDecl } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
@@ -131,7 +131,7 @@ export function useTable<TableDecl extends UntypedTableDecl>(
     const table = connection.db[accessorName()];
 
     const onInsert = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr() && !evaluateBooleanExpr(whereExpr()!, row)) {
@@ -145,7 +145,7 @@ export function useTable<TableDecl extends UntypedTableDecl>(
     };
 
     const onDelete = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr() && !evaluateBooleanExpr(whereExpr()!, row)) {
@@ -159,7 +159,7 @@ export function useTable<TableDecl extends UntypedTableDecl>(
     };
 
     const onUpdate = (
-      ctx: EventContextInterface<UntypedRemoteModuleDecl>,
+      ctx: EventContextBase<UntypedRemoteModuleDecl>,
       oldRow: any,
       newRow: any
     ) => {

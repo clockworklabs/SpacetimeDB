@@ -1,10 +1,23 @@
 import type {
   ClientTable,
+  DbConnectionBase,
   DbConnectionImpl,
+  ErrorContextBase,
+  ErrorContextInterface,
+  EventContextBase,
+  EventContextInterface,
+  ReducerEventContextBase,
+  ReducerEventContextInterface,
   RemoteModule,
   RemoteModuleDecl,
   RemoteModuleDeclOf,
   RemoteModuleOf,
+  SubscriptionBuilderBase,
+  SubscriptionBuilderImpl,
+  SubscriptionEventContextBase,
+  SubscriptionEventContextInterface,
+  SubscriptionHandleBase,
+  SubscriptionHandleImpl,
   TableDeclOf,
   TableDefByName,
   TableDefForTableName,
@@ -29,23 +42,34 @@ import type {
   ViewCtx,
 } from '../server';
 import type {
+  ProcedureEventContextBase,
+  ProcedureEventContextInterface,
+} from '../sdk/event_context';
+import type {
+  ProceduresView,
+  RemoteProcedures,
   UntypedProcedureDecl,
   UntypedProcedureDef,
   UntypedProceduresDecl,
   UntypedProceduresDef,
 } from '../sdk/procedures';
 import type {
+  ReducersView,
+  RemoteReducers,
   UntypedReducerDecl,
   UntypedReducerDef,
   UntypedReducersDecl,
   UntypedReducersDef,
 } from '../sdk/reducers';
+import type { ClientDbView, RemoteTables } from '../sdk/db_view';
+import type { ReducerContextImpl, ReducerCtxImpl } from '../server/runtime';
 import type {
   ReducersDef,
   SchemaDef,
   UntypedRemoteModule,
   UntypedRemoteModuleDecl,
 } from '../sdk/spacetime_module';
+import type { RowTypeDef, RowTypeOf } from '../angular/injectors/inject-table';
 import type { IndexOpts } from './indexes';
 import type {
   ModuleDef,
@@ -88,7 +112,7 @@ type _RemoteModule = Assert<
 type _RemoteModuleOf = Assert<
   Equals<
     RemoteModuleOf<
-      DbConnectionImpl<
+      DbConnectionBase<
         RemoteModuleDecl<
           UntypedSchemaDecl,
           UntypedReducersDecl,
@@ -97,7 +121,7 @@ type _RemoteModuleOf = Assert<
       >
     >,
     RemoteModuleDeclOf<
-      DbConnectionImpl<
+      DbConnectionBase<
         RemoteModuleDecl<
           UntypedSchemaDecl,
           UntypedReducersDecl,
@@ -162,6 +186,9 @@ type _UntypedTableDef = Assert<Equals<UntypedTableDef, UntypedTableDecl>>;
 type _TypedTableDef = Assert<
   Equals<TypedTableDef<UntypedRow>, TypedTableDecl<UntypedRow>>
 >;
+type _RowTypeDef = Assert<
+  Equals<RowTypeDef<UntypedTableDecl>, RowTypeOf<UntypedTableDecl>>
+>;
 type _UntypedSchemaDef = Assert<Equals<UntypedSchemaDef, UntypedSchemaDecl>>;
 type _UntypedReducerDef = Assert<Equals<UntypedReducerDef, UntypedReducerDecl>>;
 type _UntypedReducersDef = Assert<
@@ -212,4 +239,82 @@ type _ClientTable = Assert<
     ClientTable<UntypedRemoteModuleDecl, TableNamesOf<UntypedRemoteModuleDecl>>,
     TableHandle<UntypedRemoteModuleDecl, TableNamesOf<UntypedRemoteModuleDecl>>
   >
+>;
+type _DbConnectionImpl = Assert<
+  Equals<
+    DbConnectionImpl<UntypedRemoteModuleDecl>,
+    DbConnectionBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _DbConnectionImplValue = Assert<
+  Equals<typeof DbConnectionImpl, typeof DbConnectionBase>
+>;
+type _SubscriptionBuilderImpl = Assert<
+  Equals<
+    SubscriptionBuilderImpl<UntypedRemoteModuleDecl>,
+    SubscriptionBuilderBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _SubscriptionBuilderImplValue = Assert<
+  Equals<typeof SubscriptionBuilderImpl, typeof SubscriptionBuilderBase>
+>;
+type _SubscriptionHandleImpl = Assert<
+  Equals<
+    SubscriptionHandleImpl<UntypedRemoteModuleDecl>,
+    SubscriptionHandleBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _SubscriptionHandleImplValue = Assert<
+  Equals<typeof SubscriptionHandleImpl, typeof SubscriptionHandleBase>
+>;
+type _EventContextInterface = Assert<
+  Equals<
+    EventContextInterface<UntypedRemoteModuleDecl>,
+    EventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ReducerEventContextInterface = Assert<
+  Equals<
+    ReducerEventContextInterface<UntypedRemoteModuleDecl>,
+    ReducerEventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ProcedureEventContextInterface = Assert<
+  Equals<
+    ProcedureEventContextInterface<UntypedRemoteModuleDecl>,
+    ProcedureEventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _SubscriptionEventContextInterface = Assert<
+  Equals<
+    SubscriptionEventContextInterface<UntypedRemoteModuleDecl>,
+    SubscriptionEventContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ErrorContextInterface = Assert<
+  Equals<
+    ErrorContextInterface<UntypedRemoteModuleDecl>,
+    ErrorContextBase<UntypedRemoteModuleDecl>
+  >
+>;
+type _ClientDbView = Assert<
+  Equals<
+    ClientDbView<UntypedRemoteModuleDecl>,
+    RemoteTables<UntypedRemoteModuleDecl>
+  >
+>;
+type _ReducersView = Assert<
+  Equals<
+    ReducersView<UntypedRemoteModuleDecl>,
+    RemoteReducers<UntypedRemoteModuleDecl>
+  >
+>;
+type _ProceduresView = Assert<
+  Equals<
+    ProceduresView<UntypedRemoteModuleDecl>,
+    RemoteProcedures<UntypedRemoteModuleDecl>
+  >
+>;
+type _ReducerCtxImpl = Assert<
+  Equals<typeof ReducerCtxImpl, typeof ReducerContextImpl>
 >;

@@ -980,7 +980,7 @@ fn fetch_and_process(ctx: &mut ProcedureContext, url: String) -> Result<(), Stri
 Procedures in C++ are currently unstable. To use them, add `#define SPACETIMEDB_UNSTABLE_FEATURES` before including the SpacetimeDB header.
 :::
 
-In C++, `TxContext` and `ReducerContext` share the same database API, so it’s common to move shared logic into a helper that takes a `DatabaseContext&` and call it from both the reducer and the procedure.
+In C++, `TxContext` and `ReducerContext` share the same database API, so it’s common to move shared logic into a helper that takes a `DbView&` and call it from both the reducer and the procedure.
 
 ```cpp
 #define SPACETIMEDB_UNSTABLE_FEATURES
@@ -994,7 +994,7 @@ SPACETIMEDB_STRUCT(ProcessedItem, id)
 SPACETIMEDB_TABLE(ProcessedItem, processed_item_proc, Public)
 FIELD_PrimaryKey(processed_item_proc, id)
 
-static void process_item_logic(DatabaseContext& db, uint64_t item_id) {
+static void process_item_logic(DbView& db, uint64_t item_id) {
     db[processed_item_proc].insert(ProcessedItem{item_id});
 }
 

@@ -9,8 +9,8 @@ import {
 } from 'vue';
 import {
   DbConnectionBuilder,
-  type DbConnectionImpl,
-  type ErrorContextInterface,
+  type DbConnectionBase,
+  type ErrorContextBase,
   type RemoteModuleDeclOf,
 } from '../sdk/db_connection_impl';
 import { ConnectionId } from '../lib/connection_id';
@@ -20,21 +20,21 @@ import {
 } from './connection_state';
 
 export interface SpacetimeDBProviderProps<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 > {
   connectionBuilder: DbConnectionBuilder<DbConnection>;
 }
 
-let connRef: DbConnectionImpl<any> | null = null;
+let connRef: DbConnectionBase<any> | null = null;
 let cleanupTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-function setupConnection<DbConnection extends DbConnectionImpl<any>>(
+function setupConnection<DbConnection extends DbConnectionBase<any>>(
   connectionBuilder: DbConnectionBuilder<DbConnection>
 ): {
   state: ConnectionState;
   cleanup: () => void;
 } {
-  const getConnection = <T extends DbConnectionImpl<any>>() =>
+  const getConnection = <T extends DbConnectionBase<any>>() =>
     connRef as T | null;
 
   const state = reactive<ConnectionState>({
@@ -50,11 +50,11 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
 
   let onConnectCallback: ((conn: DbConnection) => void) | null = null;
   let onDisconnectCallback:
-    | ((ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>) => void)
+    | ((ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>) => void)
     | null = null;
   let onConnectErrorCallback:
     | ((
-        ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+        ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
         err: Error
       ) => void)
     | null = null;
@@ -78,13 +78,13 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
     };
 
     onDisconnectCallback = (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>
     ) => {
       state.isActive = ctx.isActive;
     };
 
     onConnectErrorCallback = (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
       err: Error
     ) => {
       state.isActive = ctx.isActive;
@@ -150,7 +150,7 @@ export const SpacetimeDBProvider = defineComponent({
 });
 
 export function useSpacetimeDBProvider<
-  DbConnection extends DbConnectionImpl<any>,
+  DbConnection extends DbConnectionBase<any>,
 >(connectionBuilder: DbConnectionBuilder<DbConnection>): ConnectionState {
   const { state } = setupConnection(connectionBuilder);
   return state;

@@ -1,8 +1,8 @@
-import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
+import { DbConnectionBase, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type {
   DbConnectionConfig,
-  ErrorContextInterface,
+  ErrorContextBase,
   Identity,
   RemoteModuleDeclOf,
 } from '../';
@@ -12,13 +12,13 @@ import type { WebSocketFactory } from './ws';
 
 /**
  * The database client connection to a SpacetimeDB server.
- * NOTE: DbConnectionImpl<any> is used here because UntypedRemoteModuleDecl causes
+ * NOTE: DbConnectionBase<any> is used here because UntypedRemoteModuleDecl causes
  * variance issues with function paramters, and the end user will never be
  * constructing a DbConnectionBuilder directly since it's code generated. We will
  * always have a concrete RemoteModuleDecl type in those cases. Even if they user
  * did do this, they would just lose type safety on the RemoteModuleDecl.
  */
-export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
+export class DbConnectionBuilder<DbConnection extends DbConnectionBase<any>> {
   #uri?: URL;
   #nameOrAddress?: string;
   #identity?: Identity;
@@ -193,7 +193,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    */
   onConnectError(
     callback: (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
       error: Error
     ) => void
   ): this {
@@ -230,7 +230,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    */
   onDisconnect(
     callback: (
-      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
+      ctx: ErrorContextBase<RemoteModuleDeclOf<DbConnection>>,
       error?: Error | undefined
     ) => void
   ): this {

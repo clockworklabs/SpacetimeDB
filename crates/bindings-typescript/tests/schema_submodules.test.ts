@@ -13,7 +13,7 @@ vi.mock('../src/server/runtime', () => ({
   callProcedure: () => new Uint8Array(),
   callUserFunction: (fn: (...args: any[]) => any, ...args: any[]) =>
     fn(...args),
-  ReducerCtxImpl: class {},
+  ReducerContextImpl: class {},
   sys: {
     row_iter_bsatn_close: () => {},
   },
