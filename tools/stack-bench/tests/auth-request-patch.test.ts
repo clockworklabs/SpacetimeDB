@@ -695,7 +695,7 @@ test('credential patches can replace the located password without guessing its k
   assert.throws(() => patchAuthRequest({}, 'customer', 'secret', {}), /request change/);
 });
 
-test('Convex credential probes preserve the live socket and require its matching response', async () => {
+test('Convex credential probes preserve the live socket and require its matching response', async t => {
   // Use the WebSocket server bundled with the pinned Playwright dependency.
   const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
   const server = createServer((_req, res) => res.end('<body>auth</body>')).listen(0, '127.0.0.1');
@@ -704,11 +704,16 @@ test('Convex credential probes preserve the live socket and require its matching
   const ws = new wsServer({ server });
   const received: unknown[] = [];
   let effects = 0;
-  let mode: 'accept' | 'reject' | 'disconnect' = 'accept';
+  let mode: 'accept' | 'reject' | 'disconnect' | 'held' = 'accept';
+  const held: { request: { type: string; requestId: number; args: Record<string, unknown>[] };
+    send(frame: object): void; close(): void }[] = [];
   ws.on('connection', (socket: { on(event: string, callback: (data: Buffer) => void): void;
     send(data: string): void; close(): void }) => socket.on('message', raw => {
     const request = JSON.parse(String(raw)); received.push(request);
     if (mode === 'disconnect') { socket.close(); return; }
+    if (mode === 'held') {
+      held.push({ request, send: frame => socket.send(JSON.stringify(frame)), close: () => socket.close() }); return;
+    }
     socket.send(JSON.stringify({ type: `${request.type}Response`, requestId: request.requestId + 1, success: mode !== 'accept', result: null }));
     const accepted = mode === 'accept';
     setTimeout(() => {
@@ -771,6 +776,76 @@ test('Convex credential probes preserve the live socket and require its matching
       received.length = 0;
       await page.context().close();
       assert(sentFrames > 0, 'routing must preserve passive request observation');
+    }
+    mode = 'held';
+    for (const variant of ['completion', 'inventory', 'missing', 'two-sockets', 'selected-patch'] as const) {
+      await t.test(`overlapping writes: ${variant}`, async () => {
+        held.length = 0;
+        const page = await browser.newPage();
+        await installAuthWebSocketCapture(page); await page.goto(url);
+        await page.evaluate(async twoSockets => {
+          const sockets = Array.from({ length: twoSockets ? 2 : 1 }, () =>
+            new WebSocket(location.origin.replace('http:', 'ws:') + '/api/1.0.0/sync'));
+          Object.assign(window, { fixtureSockets: sockets });
+          await Promise.all(sockets.map(socket => new Promise(resolve => socket.addEventListener('open', resolve, { once: true }))));
+        }, variant === 'two-sockets');
+        const submit = () => page.evaluate(() => {
+          const sockets = (window as unknown as { fixtureSockets: WebSocket[] }).fixtureSockets;
+          sockets[0]!.send(JSON.stringify({ type: 'Action', requestId: 20, udfPath: 'auth:signup',
+            args: [{ username: 'customer', password: 'secret' }] }));
+          sockets.at(-1)!.send(JSON.stringify({ type: 'Mutation', requestId: sockets.length === 2 ? 20 : 21,
+            udfPath: 'profile:create', args: [{ username: 'customer' }] }));
+        });
+        const reply = (index: number, success = true) => {
+          const write = held[index]!;
+          write.send({ type: `${write.request.type}Response`, requestId: write.request.requestId, success });
+        };
+        const waitForBoth = async () => {
+          for (let n = 0; n < 100 && held.length < 2; n++) await new Promise(resolve => setTimeout(resolve, 10));
+          assert.equal(held.length, 2, 'the observer must forward both overlapping writes');
+          // Separate sockets can reach the server in either order.
+          held.sort((left, right) => left.request.type.localeCompare(right.request.type));
+        };
+        const capture = variant === 'inventory' || variant === 'selected-patch'
+          ? withAuthWriteInventory(page, submit) : withWriteCompletion(page, submit);
+        // Handle rejection at once; close the browser even if an assertion fails.
+        const observed = capture.then(value => ({ value }), error => ({ error }));
+        try {
+          await waitForBoth();
+          held[0]!.send({ type: 'ActionResponse', requestId: 999, success: true });
+          held[0]!.send({ type: 'MutationResponse', requestId: 20, success: true });
+          reply(1);
+          assert.equal(await Promise.race([observed.then(() => 'settled'),
+            new Promise<string>(resolve => setTimeout(() => resolve('pending'), 75))]), 'pending',
+          'an unrelated or later response cannot complete the earlier write');
+          if (variant === 'missing') {
+            held[0]!.close();
+            const result = await observed;
+            assert('error' in result && result.error instanceof ActionInconclusive);
+          } else {
+            reply(0);
+            const result = await observed;
+            assert('value' in result);
+            assert.equal(result.value.writes.length, 2);
+            if (variant === 'selected-patch') {
+              const baseline = result.value.writes;
+              held.length = 0;
+              const probe = withAuthWriteTarget(page, { writes: baseline, index: 0 }, () =>
+                withAuthRequestPatch(page, 'customer', 'secret', { fields: { role: 'admin' } }, submit));
+              const patched = probe.then(value => ({ value }), error => ({ error }));
+              await waitForBoth();
+              assert.equal(held[0]!.request.args[0]!.role, 'admin');
+              assert.equal(held[1]!.request.args[0]!.role, undefined);
+              reply(1, false); reply(0, true);
+              const outcome = await patched;
+              assert('value' in outcome);
+              assert.equal(outcome.value.requestPatch.success, true, 'only the selected request supplies the patch receipt');
+            }
+          }
+          t.diagnostic(JSON.stringify({ fixture: 'convex-overlap', variant, forwarded: held.map(x => x.request.requestId),
+            expected: variant === 'missing' ? 'inconclusive' : 'complete', cleanup: 'page closed in finally' }));
+        } finally { await page.context().close(); await observed; }
+      });
     }
     mode = 'accept';
     const page = await browser.newPage();

@@ -114,9 +114,9 @@ type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha
 type SocketPatch = {
   captureAll?: boolean;
   nativeCapture?: boolean;
-  change(body: unknown): ReturnType<typeof patchAuthRequest>;
-  receipt(value: PatchReceipt): void;
-  fail(): void;
+  change(body: unknown, request: object): ReturnType<typeof patchAuthRequest>;
+  receipt(value: PatchReceipt, request: object): void;
+  fail(request?: object): void;
 };
 const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
 
@@ -134,44 +134,56 @@ export async function installAuthWebSocketCapture(page: Page): Promise<void> {
   }));
   await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
     const server = client.connectToServer();
-    let awaiting: { owner: SocketPatch; id: number; type: string; changed: NonNullable<ReturnType<typeof patchAuthRequest>> } | undefined;
+    const awaiting = new Map<number, { owner: SocketPatch; request: object; type: string;
+      changed: NonNullable<ReturnType<typeof patchAuthRequest>> }>();
     client.onMessage(data => {
       let message: Record<string, unknown> | undefined;
       try { message = JSON.parse(String(data)); } catch { /* unrelated frame */ }
       const owner = state.active;
       if (owner && message && ['Mutation', 'Action'].includes(String(message.type))) {
+        const request = {};
         try {
-          const changed = owner.change(message);
+          const changed = owner.change(message, request);
           if (changed || owner.captureAll) {
-            if (!Number.isSafeInteger(message.requestId) || awaiting) { owner.fail(); return; }
-            awaiting = { owner, id: message.requestId as number, type: `${message.type}Response`,
-              changed: changed ?? { body: String(data), shape: 'captured' } };
+            const id = message.requestId as number;
+            if (!Number.isSafeInteger(id) || awaiting.has(id)) {
+              owner.fail(request);
+              const previous = awaiting.get(id);
+              previous?.owner.fail(previous.request);
+              awaiting.delete(id);
+            } else awaiting.set(id, { owner, request, type: `${message.type}Response`,
+              changed: changed ?? { body: String(data), shape: 'captured' } });
             server.send(changed?.body ?? data);
             return;
           }
-        } catch { owner.fail(); return; }
+        } catch { owner.fail(request); return; }
       }
       server.send(data);
     });
     server.onMessage(data => {
-      if (awaiting) {
+      if (awaiting.size) {
         let message: Record<string, unknown> | undefined;
         try { message = JSON.parse(String(data)); } catch { /* unrelated frame */ }
-        if (message?.type === awaiting.type && message.requestId === awaiting.id) {
-          const { owner, changed } = awaiting;
-          if (typeof message.success !== 'boolean') owner.fail();
+        const pending = awaiting.get(message?.requestId as number);
+        if (pending && message?.type === pending.type) {
+          const { owner, request, changed } = pending;
+          if (typeof message.success !== 'boolean') owner.fail(request);
           else owner.receipt({ shape: changed.shape, success: message.success,
-            transport: 'convex-websocket', bodySha256: createHash('sha256').update(changed.body).digest('hex') });
-          awaiting = undefined;
+            transport: 'convex-websocket', bodySha256: createHash('sha256').update(changed.body).digest('hex') }, request);
+          awaiting.delete(message.requestId as number);
         }
       }
       client.send(data);
     });
+    const failPending = () => {
+      for (const { owner, request } of awaiting.values()) owner.fail(request);
+      awaiting.clear();
+    };
     client.onClose(async (code, reason) => {
-      awaiting?.owner.fail(); await server.close({ code, reason }).catch(() => awaiting?.owner.fail());
+      failPending(); await server.close({ code, reason }).catch(failPending);
     });
     server.onClose(async (code, reason) => {
-      awaiting?.owner.fail(); await client.close({ code, reason }).catch(() => awaiting?.owner.fail());
+      failPending(); await client.close({ code, reason }).catch(failPending);
     });
   });
 }
@@ -403,20 +415,24 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
   }, (receipt, changed) => { if (changed) recordPatch(receipt); }, fail, completionOnly);
   const sockets = socketPatches.get(page);
   if (sockets?.active) { native?.dispose(); throw new Error('Authentication request capture is already active'); }
-  let socketFinish: (() => void) | undefined, socketTimer: ReturnType<typeof setTimeout> | undefined;
-  let socketChanged = false;
+  const socketRequests = new Map<object, { finish(): void; timer: ReturnType<typeof setTimeout>; changed: boolean }>();
+  const finishSocket = (request: object) => {
+    const pending = socketRequests.get(request);
+    if (pending) { clearTimeout(pending.timer); pending.finish(); socketRequests.delete(request); }
+    return pending;
+  };
   if (sockets) sockets.active = {
     captureAll: true, nativeCapture: Boolean(native),
-    change(body) {
+    change(body, request) {
       if (stopped) return null;
       const message = body as { type?: unknown; udfPath?: unknown; args?: unknown };
       const args = message.args;
       const target = visit({ transport: 'convex-websocket',
         destination: hash(JSON.stringify([message.type, message.udfPath])), shape: hash(JSON.stringify(valueShape(args))) });
       pending.push(new Promise<void>(resolve => {
-        socketFinish = resolve; socketTimer = setTimeout(() => { fail(); resolve(); }, 10_000);
+        const timer = setTimeout(() => { fail(); finishSocket(request); }, 10_000);
+        socketRequests.set(request, { finish: resolve, timer, changed: target });
       }));
-      socketChanged = target;
       if (!target) return null;
       const located = patchAuthRequest(body, probe!.username, probe!.password, probe!.patch);
       if (located) return located;
@@ -426,8 +442,12 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
       const changed = patchWriteFields(args[0], probe!.patch);
       return { body: JSON.stringify({ ...message, args: [changed.value] }), shape: 'convex-args-object' };
     },
-    receipt(value) { if (socketChanged) recordPatch(value); clearTimeout(socketTimer); socketFinish?.(); },
-    fail() { fail(); clearTimeout(socketTimer); socketFinish?.(); },
+    receipt(value, request) { if (finishSocket(request)?.changed) recordPatch(value); },
+    fail(request) {
+      fail();
+      if (request) finishSocket(request);
+      else for (const pending of socketRequests.keys()) finishSocket(pending);
+    },
   };
   if (writeStops.has(page)) { native?.dispose(); throw new Error('Authentication write inventory is already active'); }
   const socketIo = socketIoAuthCapture(page)?.activate({
@@ -553,7 +573,7 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
     if (submissionFailure) throw submissionFailure;
     return { result: result as T, writes, requestPatch };
   } finally {
-    clearTimeout(socketTimer);
+    for (const request of socketRequests.keys()) finishSocket(request);
     writeStops.delete(page);
     if (sockets) sockets.active = undefined;
     native?.dispose();
