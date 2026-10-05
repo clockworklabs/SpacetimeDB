@@ -10,7 +10,7 @@ import {
   type Infer as __Infer,
 } from '../../../src/index';
 
-export default __t.row({
-  identity: __t.identity().primaryKey(),
-  username: __t.string(),
+export default __t.row('User', {
+  identity: __t.identity().primaryKey().name('identity'),
+  username: __t.string().name('username'),
 });

@@ -8,7 +8,7 @@ use replace_spacetimedb::{replace_in_tree, ReplaceOptions};
 struct Args {
     /// Directory to process (recursively).
     target_dir: String,
-    /// Replacement string for 'spacetimedb' in index files.
+    /// Replacement string for 'spacetimedb' in the top-level index.ts and module.ts.
     index_replacement: String,
     /// Replacement string for 'spacetimedb' in other files.
     other_replacement: String,

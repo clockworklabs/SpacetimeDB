@@ -41,8 +41,8 @@ fn main() -> anyhow::Result<()> {
     generate(&module, &typescript::TypeScript, &CodegenOptions::default())
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
-            // Skip the index.ts since we don't need it.
-            if filename == "index.ts" {
+            // Skip the index.ts and module.ts since we don't need them.
+            if filename == "index.ts" || filename == "module.ts" {
                 return Ok(());
             }
             // We don't need the convenience types.

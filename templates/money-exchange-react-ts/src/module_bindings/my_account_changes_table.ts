@@ -11,12 +11,12 @@ import {
 } from 'spacetimedb';
 import { ChangeDirection } from './types';
 
-export default __t.row({
-  id: __t.u64(),
+export default __t.row('AccountChange', {
+  id: __t.u64().primaryKey().name('id'),
   accountIdentity: __t.identity().name('account_identity'),
   counterpartyIdentity: __t.identity().name('counterparty_identity'),
   get direction() {
-    return ChangeDirection;
+    return ChangeDirection.name('direction');
   },
   amountCents: __t.u64().name('amount_cents'),
   createdAt: __t.timestamp().name('created_at'),

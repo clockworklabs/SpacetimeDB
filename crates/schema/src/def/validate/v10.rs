@@ -87,7 +87,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let environment = validate_environment(&def);
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
-    let case_policy = def.case_conversion_policy().into();
+    let case_conversion_policy = def.case_conversion_policy();
+    let case_policy = case_conversion_policy.into();
     let explicit_names = def
         .explicit_names()
         .cloned()
@@ -335,6 +336,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_handlers,
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
+        case_conversion_policy,
         submodules,
         environment,
     };
@@ -2928,6 +2930,25 @@ mod tests {
         );
         assert_eq!(schedule.at_column, 1.into());
         assert_eq!(schedule.function_kind, FunctionKind::Reducer);
+    }
+
+    /// Converting a `ModuleDef` back to a raw def and validating it again, as the CLI does to
+    /// extract a schema, must keep `CaseConversionPolicy::None` and the names it derives.
+    #[test]
+    fn none_policy_round_trips_through_raw_def() {
+        let (mut builder, _) = make_case_conversion_builder();
+        builder.set_case_conversion_policy(CaseConversionPolicy::None);
+        let def: ModuleDef = builder.finish().try_into().expect("valid module");
+
+        let check = |def: &ModuleDef| {
+            assert_eq!(def.case_conversion_policy(), CaseConversionPolicy::None);
+            let table = def.table("FruitBasket").expect("table keeps its source name");
+            assert_eq!(&*table.columns[1].name, "fruitName");
+            assert!(table.indexes.contains_key("FruitBasket_BasketId_fruitName_idx_btree"));
+        };
+        check(&def);
+        let raw: RawModuleDefV10 = def.into();
+        check(&raw.try_into().expect("round-tripped def should validate"));
     }
 
     #[test]

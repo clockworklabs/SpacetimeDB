@@ -10,7 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  id: __t.i32().primaryKey(),
+export default __t.row("Config", {
+  id: __t.i32().primaryKey().name("id"),
   worldSize: __t.i64().name("world_size"),
 });

@@ -101,9 +101,15 @@ pub fn replace_in_tree(
             .unwrap_or_else(|| Path::new(""));
         let depth = rel_parent.components().count();
 
-        // Decide which replacement to use for this file
-        let is_index_ts = depth == 0 && path.file_name().and_then(|n| n.to_str()) == Some("index.ts");
-        let repl = if is_index_ts {
+        // Decide which replacement to use for this file.
+        // `module.ts` imports `schema` and `table`, which, like the client API in `index.ts`,
+        // only the package index exports.
+        let uses_index_replacement = depth == 0
+            && matches!(
+                path.file_name().and_then(|n| n.to_str()),
+                Some("index.ts" | "module.ts")
+            );
+        let repl = if uses_index_replacement {
             replacement_index_ts
         } else {
             replacement_other_ts
@@ -141,13 +147,13 @@ pub fn replace_in_tree(
         let updated = re_double.replace_all(&updated1, format!("}} from \"{}\"", repl));
 
         if options.dry_run {
-            let which = if is_index_ts { "index.ts" } else { "*.ts" };
+            let which = if uses_index_replacement { "index.ts" } else { "*.ts" };
             println!("[dry-run] {} ({} matches, rule: {})", path.display(), matches, which);
         } else if let Err(err) = fs::write(path, updated.as_ref()) {
             eprintln!("write error {}: {err}", path.display());
             continue;
         } else {
-            let which = if is_index_ts { "index.ts" } else { "*.ts" };
+            let which = if uses_index_replacement { "index.ts" } else { "*.ts" };
             println!("✔ {} ({} matches, rule: {})", path.display(), matches, which);
         }
 
