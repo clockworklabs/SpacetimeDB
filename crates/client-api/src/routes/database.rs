@@ -38,8 +38,8 @@ use spacetimedb::host::module_host::{
 };
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
+use spacetimedb::host::{IdcReducerCallError, IdcReducerCallOutcome, ProcedureCallError, ReducerCallError};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
-use spacetimedb::host::{ProcedureCallError, ReducerCallError};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
@@ -49,6 +49,7 @@ use spacetimedb_client_api_messages::name::{
     PublishResult,
 };
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{http as st_http, ConnectionId};
@@ -275,22 +276,17 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
     let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
         let durable_offset = module.durable_tx_offset();
         let result = module
-            .call_reducer_with_tx_offset(
+            .call_idc_reducer(
                 caller_identity,
                 Some(connection_id),
-                None,
-                None,
-                None,
                 &reducer,
                 FunctionArgs::Bsatn(body),
+                query.outbox_table_id,
+                query.seq,
+                query.results_received_through,
             )
             .await
-            .map_err(|e| map_idc_reducer_error(e, &reducer))?;
-
-        if let Some(mut durable_offset) = durable_offset {
-            let tx_offset = result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
-            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
-        }
+            .map_err(|e| map_idc_call_error(e, &reducer))?;
 
         debug!(
             "IDC delivery accepted: sender={}, receiver={}, outbox_table_id={}, seq={}, results_received_through={}, signature_hash={:?}",
@@ -302,14 +298,28 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
             query.signature_hash,
         );
 
-        let (status, body) = idc_reducer_outcome_response(&owner_identity, &reducer, result.result.outcome);
-        Ok((
-            status,
-            TypedHeader(SpacetimeEnergyUsed(result.result.execution_budget_used)),
-            TypedHeader(SpacetimeExecutionDurationMicros(result.result.execution_duration)),
-            body,
-        )
-            .into_response())
+        match result {
+            IdcReducerCallOutcome::Applied(result) => {
+                if let Some(mut durable_offset) = durable_offset {
+                    let tx_offset = result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+                    durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+                }
+
+                let (status, body) = idc_reducer_outcome_response(&owner_identity, &reducer, result.result.outcome);
+                Ok((
+                    status,
+                    TypedHeader(SpacetimeEnergyUsed(result.result.execution_budget_used)),
+                    TypedHeader(SpacetimeExecutionDurationMicros(result.result.execution_duration)),
+                    body,
+                )
+                    .into_response())
+            }
+            IdcReducerCallOutcome::Replayed(outcome) => {
+                let (status, body) = idc_stored_outcome_response(outcome.result_status, outcome.result_payload);
+                Ok((status, body).into_response())
+            }
+            IdcReducerCallOutcome::AlreadyRetired => Ok((StatusCode::ALREADY_REPORTED, "").into_response()),
+        }
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
@@ -552,6 +562,28 @@ fn map_idc_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, Str
 
     log::debug!("Error while invoking IDC reducer {reducer}: {e:#}");
     (status, format!("{:#}", anyhow::anyhow!(e)))
+}
+
+fn idc_stored_outcome_response(result_status: StInboundMsgResultStatus, result_payload: Bytes) -> (StatusCode, Bytes) {
+    match result_status {
+        StInboundMsgResultStatus::Ok => (StatusCode::OK, result_payload),
+        StInboundMsgResultStatus::Err => (StatusCode::UNPROCESSABLE_ENTITY, result_payload),
+        StInboundMsgResultStatus::AlreadyRetired => (StatusCode::ALREADY_REPORTED, Bytes::new()),
+    }
+}
+
+fn map_idc_call_error(e: IdcReducerCallError, reducer: &str) -> (StatusCode, String) {
+    match e {
+        IdcReducerCallError::Reducer(e) => map_idc_reducer_error(e, reducer),
+        IdcReducerCallError::OutOfOrder { .. } => {
+            log::debug!("IDC delivery for reducer {reducer} is not ready yet: {e:#}");
+            (StatusCode::TOO_EARLY, e.to_string())
+        }
+        IdcReducerCallError::Datastore(e) => {
+            log::debug!("Error while recording IDC delivery for reducer {reducer}: {e:#}");
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"))
+        }
+    }
 }
 
 pub(crate) fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
