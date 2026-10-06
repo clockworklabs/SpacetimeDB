@@ -138,7 +138,7 @@ public partial class ReconnectTests
 
     private sealed class Handle : SubscriptionHandleBase<Context, Context>
     {
-        internal Handle(Connection conn, string query = "SELECT * FROM keyed") : base(conn, null, null, [query]) { }
+        internal Handle(Connection conn, string query = "SELECT * FROM keyed", Action<Context>? onApplied = null) : base(conn, onApplied, null, [query]) { }
     }
 
     private sealed class TrackingHandle : ISubscriptionHandle
@@ -736,6 +736,45 @@ public partial class ReconnectTests
         Establish(conn);
         Assert.Empty(conn.Socket.Sent);
         Assert.Empty(conn.Db.Keyed.Iter());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PendingSubscriptionCanBeCancelledBeforeItApplies(bool automatic)
+    {
+        using var conn = Create(automatic);
+        Establish(conn);
+        var applied = 0;
+        var ended = 0;
+        var handle = new Handle(conn, onApplied: _ => applied++);
+        var subscribe = Assert.Single(conn.Socket.Sent.OfType<ClientMessage.Subscribe>()).Subscribe_;
+        handle.UnsubscribeThen(_ => ended++);
+        Assert.Throws<Exception>(() => handle.Unsubscribe());
+        Assert.Empty(conn.Socket.Sent.OfType<ClientMessage.Unsubscribe>());
+        conn.Socket.Receive(new ServerMessage.SubscribeApplied(new(subscribe.RequestId, subscribe.QuerySetId, Query("keyed"))));
+        Pump(conn, () => conn.Socket.Sent.OfType<ClientMessage.Unsubscribe>().Any());
+        Assert.Equal(0, applied);
+        Assert.False(handle.IsEnded);
+        var unsubscribe = Assert.Single(conn.Socket.Sent.OfType<ClientMessage.Unsubscribe>()).Unsubscribe_;
+        conn.Socket.Receive(new ServerMessage.UnsubscribeApplied(new(unsubscribe.RequestId, unsubscribe.QuerySetId, Query("keyed"))));
+        Pump(conn, () => handle.IsEnded);
+        Assert.Equal(1, ended);
+        Assert.Throws<Exception>(() => handle.Unsubscribe());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExplicitDisconnectNotifiesOnce(bool automatic)
+    {
+        using var conn = Create(automatic);
+        Establish(conn);
+        conn.Disconnect();
+        conn.Disconnect();
+        Assert.Equal(("disconnect", null, null), Assert.Single(conn.Events));
+        Assert.False(conn.IsActive);
+        Assert.False(conn.IsReconnecting);
     }
 
     [Fact]
