@@ -22,14 +22,15 @@ use crate::{
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
+        StInboundMsgFields, StInboundMsgResultStatus, StInboundMsgRow, StInboundStreamFields, StInboundStreamRow,
         StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields, StOutboundMsgRow,
         StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StRowLevelSecurityFields,
         StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
         StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
         INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID,
-        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID,
-        ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INBOUND_MSG_ID, ST_INBOUND_STREAM_ID,
+        ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -38,6 +39,7 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
+use bytes::Bytes;
 use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
 use rand_core::RngCore;
@@ -3491,6 +3493,93 @@ impl MutTxId {
         }
         let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity, stream)?;
         self.insert_st_outbound_msg(stream_id, msg_id, seq)
+    }
+
+    fn st_inbound_stream_row(&self, sender: Identity, stream_id: u64) -> Result<Option<StInboundStreamRow>> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id]);
+        self.iter_by_col_eq(
+            ST_INBOUND_STREAM_ID,
+            col_list![StInboundStreamFields::SenderIdentity, StInboundStreamFields::StreamId],
+            &key,
+        )?
+        .map(StInboundStreamRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    pub fn inbound_idc_applied_prefix(&self, sender: Identity, stream_id: u64) -> Result<u64> {
+        Ok(self
+            .st_inbound_stream_row(sender, stream_id)?
+            .map_or(0, |row| row.applied_prefix))
+    }
+
+    pub fn inbound_idc_outcome(&self, sender: Identity, stream_id: u64, seq: u64) -> Result<Option<StInboundMsgRow>> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, seq]);
+        self.iter_by_col_eq(
+            ST_INBOUND_MSG_ID,
+            col_list![
+                StInboundMsgFields::SenderIdentity,
+                StInboundMsgFields::StreamId,
+                StInboundMsgFields::Seq
+            ],
+            &key,
+        )?
+        .map(StInboundMsgRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    pub fn record_inbound_idc_outcome(
+        &mut self,
+        sender: Identity,
+        stream_id: u64,
+        seq: u64,
+        result_status: StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        if let Some(row) = self.st_inbound_stream_row(sender, stream_id)? {
+            self.delete_by_row_value(ST_INBOUND_STREAM_ID, &row.clone().into())?;
+        }
+        self.insert_via_serialize_bsatn(
+            ST_INBOUND_STREAM_ID,
+            &StInboundStreamRow {
+                sender_identity: IdentityViaU256(sender),
+                stream_id,
+                applied_prefix: seq,
+            },
+        )?;
+
+        if let Some(row) = self.inbound_idc_outcome(sender, stream_id, seq)? {
+            self.delete_by_row_value(ST_INBOUND_MSG_ID, &row.clone().into())?;
+        }
+        self.insert_via_serialize_bsatn(
+            ST_INBOUND_MSG_ID,
+            &StInboundMsgRow {
+                sender_identity: IdentityViaU256(sender),
+                stream_id,
+                seq,
+                result_status,
+                result_payload,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn trim_inbound_idc_outcomes(&mut self, sender: Identity, stream_id: u64, ack_prefix: u64) -> Result<()> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id]);
+        let rows = self
+            .iter_by_col_eq(
+                ST_INBOUND_MSG_ID,
+                col_list![StInboundMsgFields::SenderIdentity, StInboundMsgFields::StreamId],
+                &key,
+            )?
+            .map(StInboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        let rows = rows.into_iter().filter(|row| row.seq <= ack_prefix);
+        for row in rows {
+            self.delete_by_row_value(ST_INBOUND_MSG_ID, &row.into())?;
+        }
+        Ok(())
     }
 
     /// Insert a row, encoded in BSATN, into a table.
