@@ -5,7 +5,7 @@ import type {
   UseSuspenseQueryOptions,
   UseSuspenseQueryResult,
 } from '@tanstack/react-query';
-import type { UntypedTableDef, RowType } from '../lib/table';
+import type { UntypedTableDecl, RowType } from '../lib/table';
 import type { Query } from '../lib/query';
 import { spacetimeDBQuery } from './SpacetimeDBQueryClient';
 
@@ -29,20 +29,20 @@ export type UseSpacetimeDBSuspenseQueryResult<T> = [
 //   useSpacetimeDBQuery(tables.person)
 //   useSpacetimeDBQuery(tables.user.where(r => r.online.eq(true)))
 //   useSpacetimeDBQuery(condition ? tables.user : 'skip')
-export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
-  queryOrSkip: Query<TableDef> | 'skip',
+export function useSpacetimeDBQuery<TableDecl extends UntypedTableDecl>(
+  queryOrSkip: Query<TableDecl> | 'skip',
   // any useQuery option (e.g. enabled, refetchInterval, select, placeholderData),
   // except queryKey, queryFn, and meta (managed internally)
   options?: Omit<
     UseQueryOptions<
-      RowType<TableDef>[],
+      RowType<TableDecl>[],
       Error,
-      RowType<TableDef>[],
+      RowType<TableDecl>[],
       readonly ['spacetimedb', string, string]
     >,
     'queryKey' | 'queryFn' | 'meta'
   >
-): UseSpacetimeDBQueryResult<RowType<TableDef>> {
+): UseSpacetimeDBQueryResult<RowType<TableDecl>> {
   const queryOptions =
     queryOrSkip === 'skip'
       ? spacetimeDBQuery('skip')
@@ -51,7 +51,7 @@ export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
   const query = useQuery({
     ...queryOptions,
     ...options,
-  } as UseQueryOptions<RowType<TableDef>[], Error>);
+  } as UseQueryOptions<RowType<TableDecl>[], Error>);
 
   return [query.data ?? [], query.isPending, query];
 }
@@ -60,24 +60,24 @@ export function useSpacetimeDBQuery<TableDef extends UntypedTableDef>(
 // Instead of returning a loading boolean, this hook suspends the component
 // until data is ready, a parent <Suspense fallback={…}> handles the loading UI.
 // does not support 'skip' because useSuspenseQuery must always resolve
-export function useSpacetimeDBSuspenseQuery<TableDef extends UntypedTableDef>(
-  query: Query<TableDef>,
+export function useSpacetimeDBSuspenseQuery<TableDecl extends UntypedTableDecl>(
+  query: Query<TableDecl>,
   options?: Omit<
     UseSuspenseQueryOptions<
-      RowType<TableDef>[],
+      RowType<TableDecl>[],
       Error,
-      RowType<TableDef>[],
+      RowType<TableDecl>[],
       readonly ['spacetimedb', string, string]
     >,
     'queryKey' | 'queryFn' | 'meta'
   >
-): UseSpacetimeDBSuspenseQueryResult<RowType<TableDef>> {
+): UseSpacetimeDBSuspenseQueryResult<RowType<TableDecl>> {
   const queryOptions = spacetimeDBQuery(query);
 
   const q = useSuspenseQuery({
     ...queryOptions,
     ...options,
-  } as UseSuspenseQueryOptions<RowType<TableDef>[], Error>);
+  } as UseSuspenseQueryOptions<RowType<TableDecl>[], Error>);
 
   return [q.data, false, q];
 }

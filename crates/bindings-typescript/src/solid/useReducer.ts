@@ -1,17 +1,17 @@
 import { createEffect } from 'solid-js';
-import type { UntypedReducerDef } from '../sdk/reducers';
+import type { UntypedReducerDecl } from '../sdk/reducers';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import type { ParamsType } from '../sdk';
 
-export function useReducer<ReducerDef extends UntypedReducerDef>(
-  reducerDef: ReducerDef
-): (...params: ParamsType<ReducerDef>) => Promise<void> {
+export function useReducer<ReducerDecl extends UntypedReducerDecl>(
+  reducerDef: ReducerDecl
+): (...params: ParamsType<ReducerDecl>) => Promise<void> {
   const { getConnection, isActive } = useSpacetimeDB();
   const reducerName = reducerDef.accessorName;
 
   // Holds calls made before the connection exists
   const queue: {
-    params: ParamsType<ReducerDef>;
+    params: ParamsType<ReducerDecl>;
     resolve: () => void;
     reject: (err: unknown) => void;
   }[] = [];
@@ -24,7 +24,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     if (!conn) return;
 
     const fn = (conn.reducers as any)[reducerName] as (
-      ...p: ParamsType<ReducerDef>
+      ...p: ParamsType<ReducerDecl>
     ) => Promise<void>;
 
     if (queue.length) {
@@ -35,7 +35,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     }
   });
 
-  return (...params: ParamsType<ReducerDef>) => {
+  return (...params: ParamsType<ReducerDecl>) => {
     const conn = getConnection();
     if (!conn) {
       return new Promise<void>((resolve, reject) => {
@@ -43,7 +43,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
       });
     }
     const fn = (conn.reducers as any)[reducerName] as (
-      ...p: ParamsType<ReducerDef>
+      ...p: ParamsType<ReducerDecl>
     ) => Promise<void>;
     return fn(...params);
   };

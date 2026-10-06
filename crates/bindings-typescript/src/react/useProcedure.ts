@@ -1,23 +1,23 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { UntypedProcedureDef } from '../sdk/procedures';
+import type { UntypedProcedureDecl } from '../sdk/procedures';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import type {
   ProcedureParamsType,
   ProcedureReturnType,
 } from '../sdk/type_utils';
 
-export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
-  procedureDef: ProcedureDef
+export function useProcedure<ProcedureDecl extends UntypedProcedureDecl>(
+  procedureDef: ProcedureDecl
 ): (
-  ...params: ProcedureParamsType<ProcedureDef>
-) => Promise<ProcedureReturnType<ProcedureDef>> {
+  ...params: ProcedureParamsType<ProcedureDecl>
+) => Promise<ProcedureReturnType<ProcedureDecl>> {
   const { getConnection, isActive } = useSpacetimeDB();
   const procedureName = procedureDef.accessorName;
 
   // Holds calls made before the connection exists
   const queueRef = useRef<
     {
-      params: ProcedureParamsType<ProcedureDef>;
+      params: ProcedureParamsType<ProcedureDecl>;
       resolve: (val: any) => void;
       reject: (err: unknown) => void;
     }[]
@@ -30,8 +30,8 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
       return;
     }
     const fn = (conn.procedures as any)[procedureName] as (
-      ...p: ProcedureParamsType<ProcedureDef>
-    ) => Promise<ProcedureReturnType<ProcedureDef>>;
+      ...p: ProcedureParamsType<ProcedureDecl>
+    ) => Promise<ProcedureReturnType<ProcedureDecl>>;
     if (queueRef.current.length) {
       const pending = queueRef.current.splice(0);
       for (const item of pending) {
@@ -41,18 +41,18 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
   }, [getConnection, procedureName, isActive]);
 
   return useCallback(
-    (...params: ProcedureParamsType<ProcedureDef>) => {
+    (...params: ProcedureParamsType<ProcedureDecl>) => {
       const conn = getConnection();
       if (!conn) {
-        return new Promise<ProcedureReturnType<ProcedureDef>>(
+        return new Promise<ProcedureReturnType<ProcedureDecl>>(
           (resolve, reject) => {
             queueRef.current.push({ params, resolve, reject });
           }
         );
       }
       const fn = (conn.procedures as any)[procedureName] as (
-        ...p: ProcedureParamsType<ProcedureDef>
-      ) => Promise<ProcedureReturnType<ProcedureDef>>;
+        ...p: ProcedureParamsType<ProcedureDecl>
+      ) => Promise<ProcedureReturnType<ProcedureDecl>>;
       return fn(...params);
     },
     [getConnection, procedureName]

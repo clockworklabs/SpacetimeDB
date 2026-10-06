@@ -3,7 +3,7 @@ import type { DbView } from '../server/db_view';
 import type { Random } from '../server/rng';
 import type { ConnectionId } from './connection_id';
 import type { Identity } from './identity';
-import { type UntypedSchemaDef } from './schema';
+import { type UntypedSchemaDecl } from './schema';
 import { type Timestamp } from './timestamp';
 import {
   ColumnBuilder,
@@ -52,7 +52,7 @@ export type ParamsAsObject<ParamDef extends ParamsObj> =
  * );
  * ```
  */
-export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
+export type Reducer<S extends UntypedSchemaDecl, Params extends ParamsObj> = (
   ctx: ReducerCtx<S>,
   payload: ParamsAsObject<Params>
 ) => void;
@@ -99,27 +99,28 @@ export interface JwtClaims {
   readonly fullPayload: JsonObject;
 }
 
-export type AliasViews<SchemaDef extends UntypedSchemaDef> = SchemaDef extends {
-  namespaces: infer NS extends Record<string, UntypedSchemaDef>;
-}
-  ? { readonly [K in keyof NS]: ReducerCtx<NS[K]> }
-  : {};
+export type AliasViews<SchemaDecl extends UntypedSchemaDecl> =
+  SchemaDecl extends {
+    namespaces: infer NS extends Record<string, UntypedSchemaDecl>;
+  }
+    ? { readonly [K in keyof NS]: ReducerCtx<NS[K]> }
+    : {};
 
 /**
  * Reducer context parametrized by the inferred Schema
  */
-export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
+export type ReducerCtx<SchemaDecl extends UntypedSchemaDecl> = Readonly<{
   sender: Identity;
   databaseIdentity: Identity;
   /** @deprecated Use `databaseIdentity` instead. */
   identity: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
-  db: DbView<SchemaDef>;
-  env: EnvironmentFor<SchemaDef>;
+  db: DbView<SchemaDecl>;
+  env: EnvironmentFor<SchemaDecl>;
   senderAuth: AuthCtx;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
   random: Random;
-  as: AliasViews<SchemaDef>;
+  as: AliasViews<SchemaDecl>;
 }>;

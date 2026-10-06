@@ -13,6 +13,7 @@ export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';
 export { type DbView } from './db_view';
 export * from './query';
+export type { TableDeclOf, TableNamesOf } from '../lib/schema';
 export type {
   ProcedureCtx,
   TransactionCtx,

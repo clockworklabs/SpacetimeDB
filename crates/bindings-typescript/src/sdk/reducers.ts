@@ -5,11 +5,11 @@ import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
 import type { SubscriptionEventContextInterface } from './event_context';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModuleDecl } from './spacetime_module';
 
 export type SubscriptionEventCallback<
-  RemoteModule extends UntypedRemoteModule,
-> = (ctx: SubscriptionEventContextInterface<RemoteModule>) => void;
+  RemoteModuleDecl extends UntypedRemoteModuleDecl,
+> = (ctx: SubscriptionEventContextInterface<RemoteModuleDecl>) => void;
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
@@ -20,12 +20,12 @@ type ReducersViewLoose = {
   [k: string]: (params: any) => Promise<void>;
 };
 
-export type ReducersView<RemoteModule> = IfAny<
-  RemoteModule,
+export type ReducersView<RemoteModuleDecl> = IfAny<
+  RemoteModuleDecl,
   ReducersViewLoose,
-  RemoteModule extends UntypedRemoteModule
+  RemoteModuleDecl extends UntypedRemoteModuleDecl
     ? {
-        [K in RemoteModule['reducers'][number] as K['accessorName']]: (
+        [K in RemoteModuleDecl['reducers'][number] as K['accessorName']]: (
           params: InferTypeOfParams<K['params']>
         ) => Promise<void>;
       }
@@ -40,31 +40,43 @@ export type ReducerEventInfo<
   args: Args;
 };
 
-export type UntypedReducerDef = {
+export type UntypedReducerDecl = {
   name: string;
   accessorName: string;
   params: ParamsObj;
   paramsType: ProductType;
 };
 
-export type UntypedReducersDef = {
-  reducers: readonly UntypedReducerDef[];
+export type UntypedReducersDecl = {
+  reducers: readonly UntypedReducerDecl[];
 };
 
-class Reducers<ReducersDef extends UntypedReducersDef> {
-  reducersType: ReducersDef;
+/**
+ * @deprecated Use `UntypedReducerDecl` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedReducerDef = UntypedReducerDecl;
+
+/**
+ * @deprecated Use `UntypedReducersDecl` instead. Kept so that declaration files
+ * emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedReducersDef = UntypedReducersDecl;
+
+class Reducers<ReducersDecl extends UntypedReducersDecl> {
+  reducersType: ReducersDecl;
 
   constructor(handles: readonly ReducerSchema<any, any, any>[]) {
-    this.reducersType = reducersToSchema(handles) as ReducersDef;
+    this.reducersType = reducersToSchema(handles) as ReducersDecl;
   }
 }
 
 /**
- * Helper type to convert an array of TableSchema into a schema definition
+ * Helper type to convert an array of ReducerSchema into a schema definition
  */
 type ReducersToSchema<T extends readonly ReducerSchema<any, any, any>[]> = {
   reducers: {
-    /** @type {UntypedReducerDef} */
+    /** @type {UntypedReducerDecl} */
     readonly [i in keyof T]: {
       name: T[i]['reducerName'];
       accessorName: T[i]['accessorName'];

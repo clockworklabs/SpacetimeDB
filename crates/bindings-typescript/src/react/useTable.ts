@@ -8,8 +8,8 @@ import {
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
+import type { UntypedRemoteModuleDecl } from '../sdk/spacetime_module';
+import type { RowType, UntypedTableDecl } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
   type Query,
@@ -64,11 +64,11 @@ function classifyMembership(
  * );
  * ```
  */
-export function useTable<TableDef extends UntypedTableDef>(
-  query: Query<TableDef>,
-  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [readonly Prettify<RowType<TableDef>>[], boolean] {
-  type UseTableRowType = RowType<TableDef>;
+export function useTable<TableDecl extends UntypedTableDecl>(
+  query: Query<TableDecl>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDecl>>>
+): [readonly Prettify<RowType<TableDecl>>[], boolean] {
+  type UseTableRowType = RowType<TableDecl>;
   const enabled = callbacks?.enabled ?? true;
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
@@ -153,7 +153,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       }
 
       const onInsert = (
-        ctx: EventContextInterface<UntypedRemoteModule>,
+        ctx: EventContextInterface<UntypedRemoteModuleDecl>,
         row: any
       ) => {
         if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
@@ -168,7 +168,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       };
 
       const onDelete = (
-        ctx: EventContextInterface<UntypedRemoteModule>,
+        ctx: EventContextInterface<UntypedRemoteModuleDecl>,
         row: any
       ) => {
         if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
@@ -183,7 +183,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       };
 
       const onUpdate = (
-        ctx: EventContextInterface<UntypedRemoteModule>,
+        ctx: EventContextInterface<UntypedRemoteModuleDecl>,
         oldRow: any,
         newRow: any
       ) => {

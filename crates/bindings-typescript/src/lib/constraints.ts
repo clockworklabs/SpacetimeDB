@@ -1,18 +1,18 @@
-import type { table, UntypedTableDef } from './table';
+import type { table, UntypedTableDecl } from './table';
 import type { ColumnMetadata } from './type_builders';
 
 /**
  * A helper type to determine if all columns in an index are unique.
  */
 export type AllUnique<
-  TableDef extends UntypedTableDef,
-  Columns extends ReadonlyArray<keyof TableDef['columns']>,
+  TableDecl extends UntypedTableDecl,
+  Columns extends ReadonlyArray<keyof TableDecl['columns']>,
 > = Columns extends readonly [
-  infer Head extends keyof TableDef['columns'],
-  ...infer Tail extends ReadonlyArray<keyof TableDef['columns']>,
+  infer Head extends keyof TableDecl['columns'],
+  ...infer Tail extends ReadonlyArray<keyof TableDecl['columns']>,
 ]
-  ? ColumnIsUnique<TableDef['columns'][Head]['columnMetadata']> extends true
-    ? AllUnique<TableDef, Tail>
+  ? ColumnIsUnique<TableDecl['columns'][Head]['columnMetadata']> extends true
+    ? AllUnique<TableDecl, Tail>
     : false
   : true;
 

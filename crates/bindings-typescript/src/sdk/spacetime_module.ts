@@ -1,28 +1,39 @@
-import type { UntypedProceduresDef } from './procedures';
-import type { UntypedSchemaDef } from '../lib/schema';
-import type { UntypedReducersDef } from './reducers';
+import type { UntypedProceduresDecl } from './procedures';
+import type { UntypedSchemaDecl } from '../lib/schema';
+import type { UntypedReducersDecl } from './reducers';
 
-export type RemoteModule<
-  SchemaDef extends UntypedSchemaDef,
-  ReducersDef extends UntypedReducersDef,
-  ProceduresDef extends UntypedProceduresDef,
+export type RemoteModuleDecl<
+  SchemaDecl extends UntypedSchemaDecl,
+  ReducersDecl extends UntypedReducersDecl,
+  ProceduresDecl extends UntypedProceduresDecl,
   CLI extends string = string,
-> = SchemaDef &
-  ReducersDef &
-  ProceduresDef & {
+> = SchemaDecl &
+  ReducersDecl &
+  ProceduresDecl & {
     versionInfo: {
       cliVersion: CLI;
     };
   };
 
-export type UntypedRemoteModule = RemoteModule<
-  UntypedSchemaDef,
-  UntypedReducersDef,
-  UntypedProceduresDef
+/** @deprecated Use `RemoteModuleDecl` instead. */
+export type RemoteModule<
+  SchemaDecl extends UntypedSchemaDecl,
+  ReducersDecl extends UntypedReducersDecl,
+  ProceduresDecl extends UntypedProceduresDecl,
+  CLI extends string = string,
+> = RemoteModuleDecl<SchemaDecl, ReducersDecl, ProceduresDecl, CLI>;
+
+export type UntypedRemoteModuleDecl = RemoteModuleDecl<
+  UntypedSchemaDecl,
+  UntypedReducersDecl,
+  UntypedProceduresDecl
 >;
 
-export type SchemaDef<RemoteModule extends UntypedRemoteModule> =
-  RemoteModule['tables'];
+/** @deprecated Use `UntypedRemoteModuleDecl` instead. */
+export type UntypedRemoteModule = UntypedRemoteModuleDecl;
 
-export type ReducersDef<RemoteModule extends UntypedRemoteModule> =
-  RemoteModule['reducers'];
+/** @deprecated Use `M['tables']` instead. */
+export type SchemaDef<M extends UntypedRemoteModuleDecl> = M['tables'];
+
+/** @deprecated Use `M['reducers']` instead. */
+export type ReducersDef<M extends UntypedRemoteModuleDecl> = M['reducers'];

@@ -1,17 +1,17 @@
 import { shallowRef, watch, onUnmounted } from 'vue';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import type { UntypedReducerDef } from '../sdk/reducers';
+import type { UntypedReducerDecl } from '../sdk/reducers';
 import type { ParamsType } from '../sdk';
 
-export function useReducer<ReducerDef extends UntypedReducerDef>(
-  reducerDef: ReducerDef
-): (...params: ParamsType<ReducerDef>) => Promise<void> {
+export function useReducer<ReducerDecl extends UntypedReducerDecl>(
+  reducerDef: ReducerDecl
+): (...params: ParamsType<ReducerDecl>) => Promise<void> {
   const conn = useSpacetimeDB();
   const reducerName = reducerDef.accessorName;
 
   const queueRef = shallowRef<
     {
-      params: ParamsType<ReducerDef>;
+      params: ParamsType<ReducerDecl>;
       resolve: () => void;
       reject: (err: unknown) => void;
     }[]
@@ -24,7 +24,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
       if (!connection) return;
 
       const fn = (connection.reducers as any)[reducerName] as (
-        ...p: ParamsType<ReducerDef>
+        ...p: ParamsType<ReducerDecl>
       ) => Promise<void>;
       if (queueRef.value.length) {
         const pending = queueRef.value.splice(0);
@@ -40,7 +40,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     stopWatch();
   });
 
-  return (...params: ParamsType<ReducerDef>) => {
+  return (...params: ParamsType<ReducerDecl>) => {
     const connection = conn.getConnection();
     if (!connection) {
       return new Promise<void>((resolve, reject) => {
@@ -48,7 +48,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
       });
     }
     const fn = (connection.reducers as any)[reducerName] as (
-      ...p: ParamsType<ReducerDef>
+      ...p: ParamsType<ReducerDecl>
     ) => Promise<void>;
     return fn(...params);
   };

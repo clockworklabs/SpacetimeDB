@@ -1,4 +1,4 @@
-import type { RowType, table, UntypedTableDef } from './table';
+import type { RowType, table, UntypedTableDecl } from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
 import { Range } from '../server/range';
@@ -42,24 +42,24 @@ export type IndexColumns<I extends IndexOpts<any>> = I extends {
  * A type representing the indexes defined on a table.
  */
 export type Indexes<
-  TableDef extends UntypedTableDef,
-  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+  TableDecl extends UntypedTableDecl,
+  I extends Record<string, UntypedIndex<keyof TableDecl['columns'] & string>>,
 > = {
-  [k in keyof I]: Index<TableDef, I[k]>;
+  [k in keyof I]: Index<TableDecl, I[k]>;
 };
 
 /**
  * Check whether every column in an index is a primary key column.
  */
 type AllColumnsPrimaryKey<
-  TableDef extends UntypedTableDef,
+  TableDecl extends UntypedTableDecl,
   Columns extends readonly string[],
 > = Columns extends readonly [
-  infer Head extends keyof TableDef['columns'] & string,
+  infer Head extends keyof TableDecl['columns'] & string,
   ...infer Tail extends readonly string[],
 ]
-  ? TableDef['columns'][Head]['columnMetadata'] extends { isPrimaryKey: true }
-    ? AllColumnsPrimaryKey<TableDef, Tail>
+  ? TableDecl['columns'][Head]['columnMetadata'] extends { isPrimaryKey: true }
+    ? AllColumnsPrimaryKey<TableDecl, Tail>
     : false
   : true;
 
@@ -69,26 +69,26 @@ type AllColumnsPrimaryKey<
  * Unique indexes on primary key columns additionally support `update`.
  */
 export type Index<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
 > = I['unique'] extends true
-  ? AllColumnsPrimaryKey<TableDef, I['columns']> extends true
-    ? UniqueIndex<TableDef, I> & {
-        update(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
+  ? AllColumnsPrimaryKey<TableDecl, I['columns']> extends true
+    ? UniqueIndex<TableDecl, I> & {
+        update(row: Prettify<RowType<TableDecl>>): Prettify<RowType<TableDecl>>;
       }
-    : UniqueIndex<TableDef, I>
+    : UniqueIndex<TableDecl, I>
   : I['algorithm'] extends 'hash'
-    ? PointIndex<TableDef, I>
-    : RangedIndex<TableDef, I>;
+    ? PointIndex<TableDecl, I>
+    : RangedIndex<TableDecl, I>;
 
 /**
  * A type representing a collection of read-only indexes defined on a table.
  */
 export type ReadonlyIndexes<
-  TableDef extends UntypedTableDef,
-  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+  TableDecl extends UntypedTableDecl,
+  I extends Record<string, UntypedIndex<keyof TableDecl['columns'] & string>>,
 > = {
-  [k in keyof I]: ReadonlyIndex<TableDef, I[k]>;
+  [k in keyof I]: ReadonlyIndex<TableDecl, I[k]>;
 };
 
 /**
@@ -97,22 +97,22 @@ export type ReadonlyIndexes<
  * This type only exposes read-only operations.
  */
 export type ReadonlyIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
 > = I['unique'] extends true
-  ? ReadonlyUniqueIndex<TableDef, I>
+  ? ReadonlyUniqueIndex<TableDecl, I>
   : I['algorithm'] extends 'hash'
-    ? ReadonlyPointIndex<TableDef, I>
-    : ReadonlyRangedIndex<TableDef, I>;
+    ? ReadonlyPointIndex<TableDecl, I>
+    : ReadonlyRangedIndex<TableDecl, I>;
 
 /**
  * A type representing a read-only unique index on a database table.
  */
 export type ReadonlyUniqueIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
 > = {
-  find(colVal: IndexVal<TableDef, I>): RowType<TableDef> | null;
+  find(colVal: IndexVal<TableDecl, I>): RowType<TableDecl> | null;
 };
 
 /**
@@ -120,22 +120,22 @@ export type ReadonlyUniqueIndex<
  * Unique indexes enforce that the indexed columns contain unique values.
  */
 export interface UniqueIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> extends ReadonlyUniqueIndex<TableDef, I> {
-  delete(colVal: IndexVal<TableDef, I>): boolean;
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
+> extends ReadonlyUniqueIndex<TableDecl, I> {
+  delete(colVal: IndexVal<TableDecl, I>): boolean;
 }
 
 /**
  * A type representing a read-only point index on a database table.
  */
 export interface ReadonlyPointIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
 > {
   filter(
-    point: IndexVal<TableDef, I>
-  ): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
+    point: IndexVal<TableDecl, I>
+  ): IteratorObject<Prettify<RowType<TableDecl>>, undefined>;
 }
 
 /**
@@ -143,22 +143,22 @@ export interface ReadonlyPointIndex<
  * Point indexes allow for exact match queries on the indexed columns.
  */
 export interface PointIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> extends ReadonlyPointIndex<TableDef, I> {
-  delete(point: IndexVal<TableDef, I>): number;
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
+> extends ReadonlyPointIndex<TableDecl, I> {
+  delete(point: IndexVal<TableDecl, I>): number;
 }
 
 /**
  * A type representing a read-only ranged index on a database table.
  */
 export interface ReadonlyRangedIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
 > {
   filter(
-    range: IndexScanRangeBounds<TableDef, I>
-  ): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
+    range: IndexScanRangeBounds<TableDecl, I>
+  ): IteratorObject<Prettify<RowType<TableDecl>>, undefined>;
 }
 
 /**
@@ -166,10 +166,10 @@ export interface ReadonlyRangedIndex<
  * Ranged indexes allow for range queries on the indexed columns.
  */
 export interface RangedIndex<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> extends ReadonlyRangedIndex<TableDef, I> {
-  delete(range: IndexScanRangeBounds<TableDef, I>): number;
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
+> extends ReadonlyRangedIndex<TableDecl, I> {
+  delete(range: IndexScanRangeBounds<TableDecl, I>): number;
 }
 
 /**
@@ -177,23 +177,23 @@ export interface RangedIndex<
  * This type constructs a tuple of the types of the columns that make up the index.
  */
 export type IndexVal<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = CollapseTuple<_IndexVal<TableDef, I['columns']>>;
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
+> = CollapseTuple<_IndexVal<TableDecl, I['columns']>>;
 
 /**
  * A helper type to extract the types of the columns that make up an index.
  */
 type _IndexVal<
-  TableDef extends UntypedTableDef,
+  TableDecl extends UntypedTableDecl,
   Columns extends readonly string[],
 > = Columns extends readonly [
   infer Head extends string,
   ...infer Tail extends readonly string[],
 ]
   ? [
-      TableDef['columns'][Head]['typeBuilder']['type'],
-      ..._IndexVal<TableDef, Tail>,
+      TableDecl['columns'][Head]['typeBuilder']['type'],
+      ..._IndexVal<TableDecl, Tail>,
     ]
   : [];
 
@@ -203,9 +203,9 @@ type _IndexVal<
  * It supports omitting trailing columns if the index is multi-column.
  */
 export type IndexScanRangeBounds<
-  TableDef extends UntypedTableDef,
-  I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = _IndexScanRangeBounds<_IndexVal<TableDef, I['columns']>>;
+  TableDecl extends UntypedTableDecl,
+  I extends UntypedIndex<keyof TableDecl['columns'] & string>,
+> = _IndexScanRangeBounds<_IndexVal<TableDecl, I['columns']>>;
 
 /**
  * A helper type to define the bounds for scanning an index.

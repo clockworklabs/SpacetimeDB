@@ -1,12 +1,12 @@
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModuleDecl } from './spacetime_module';
 import type { ClientTable } from './client_table';
 import type { Values } from '../lib/type_util';
 
 /**
  * A type representing a client-side database view, mapping table names to their corresponding client Table handles.
  */
-export type ClientDbView<RemoteModule extends UntypedRemoteModule> = {
+export type ClientDbView<RemoteModuleDecl extends UntypedRemoteModuleDecl> = {
   readonly [TblName in Values<
-    RemoteModule['tables']
-  >['accessorName']]: ClientTable<RemoteModule, TblName>;
+    RemoteModuleDecl['tables']
+  >['accessorName']]: ClientTable<RemoteModuleDecl, TblName>;
 };

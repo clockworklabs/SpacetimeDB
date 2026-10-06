@@ -6,7 +6,7 @@ import type {
 } from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { coerceParams, toCamelCase, type CoerceParams } from '../lib/util';
-import type { UntypedRemoteModule } from './spacetime_module';
+import type { UntypedRemoteModuleDecl } from './spacetime_module';
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
@@ -17,39 +17,51 @@ type ProceduresViewLoose = {
   [k: string]: (params: any) => Promise<any>;
 };
 
-export type ProceduresView<RemoteModule> = IfAny<
-  RemoteModule,
+export type ProceduresView<RemoteModuleDecl> = IfAny<
+  RemoteModuleDecl,
   ProceduresViewLoose,
-  RemoteModule extends UntypedRemoteModule
+  RemoteModuleDecl extends UntypedRemoteModuleDecl
     ? // x: camelCase(name)
       {
-        [K in RemoteModule['procedures'][number] as K['accessorName']]: (
+        [K in RemoteModuleDecl['procedures'][number] as K['accessorName']]: (
           params: InferTypeOfParams<K['params']>
         ) => Promise<Infer<K['returnType']>>;
       }
     : never
 >;
 
-export type UntypedProcedureDef = {
+export type UntypedProcedureDecl = {
   name: string;
   accessorName: string;
   params: CoerceParams<ParamsObj>;
   returnType: TypeBuilder<any, any>;
 };
 
-export type UntypedProceduresDef = {
-  procedures: readonly UntypedProcedureDef[];
+export type UntypedProceduresDecl = {
+  procedures: readonly UntypedProcedureDecl[];
 };
 
-export function procedures<const H extends readonly UntypedProcedureDef[]>(
+/**
+ * @deprecated Use `UntypedProcedureDecl` instead. Kept so that declaration
+ * files emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedProcedureDef = UntypedProcedureDecl;
+
+/**
+ * @deprecated Use `UntypedProceduresDecl` instead. Kept so that declaration
+ * files emitted against older versions of the SDK keep resolving.
+ */
+export type UntypedProceduresDef = UntypedProceduresDecl;
+
+export function procedures<const H extends readonly UntypedProcedureDecl[]>(
   ...handles: H
 ): { procedures: H };
 
-export function procedures<const H extends readonly UntypedProcedureDef[]>(
+export function procedures<const H extends readonly UntypedProcedureDecl[]>(
   handles: H
 ): { procedures: H };
 
-export function procedures<const H extends readonly UntypedProcedureDef[]>(
+export function procedures<const H extends readonly UntypedProcedureDecl[]>(
   ...args: [H] | H
 ): { procedures: H } {
   const procedures = (
@@ -58,7 +70,7 @@ export function procedures<const H extends readonly UntypedProcedureDef[]>(
   return { procedures };
 }
 
-type ProcedureDef<
+type ProcedureDecl<
   Name extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
@@ -80,7 +92,7 @@ export function procedureSchema<
   params: Params,
   returnType: ReturnType,
   accessorName?: AccessorName
-): ProcedureDef<ProcedureName, Params, ReturnType, AccessorName> {
+): ProcedureDecl<ProcedureName, Params, ReturnType, AccessorName> {
   return {
     name,
     accessorName: accessorName ?? (toCamelCase(name) as AccessorName),

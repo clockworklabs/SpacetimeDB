@@ -5,7 +5,7 @@ import type {
   HttpVersion,
   MethodOrAny,
 } from '../lib/autogen/types';
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedSchemaDecl } from '../lib/schema';
 import type { Timestamp } from '../lib/timestamp';
 import type { Uuid } from '../lib/uuid';
 import type { TransactionCtx } from './procedures';
@@ -212,14 +212,16 @@ export class Request {
   }
 }
 
-export type HandlerAliasViews<SchemaDef extends UntypedSchemaDef> =
-  SchemaDef extends {
-    namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+export type HandlerAliasViews<SchemaDecl extends UntypedSchemaDecl> =
+  SchemaDecl extends {
+    namespaces: infer NS extends Record<string, UntypedSchemaDecl>;
   }
     ? { readonly [K in keyof NS]: HandlerContext<NS[K]> }
     : {};
 
-export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
+export interface HandlerContext<
+  S extends UntypedSchemaDecl = UntypedSchemaDecl,
+> {
   readonly env: EnvironmentFor<S>;
   readonly timestamp: Timestamp;
   readonly http: HttpClient;
@@ -231,13 +233,13 @@ export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
   newUuidV7(): Uuid;
 }
 
-export type HandlerFn<S extends UntypedSchemaDef = UntypedSchemaDef> = (
+export type HandlerFn<S extends UntypedSchemaDecl = UntypedSchemaDecl> = (
   ctx: HandlerContext<S>,
   req: Request
 ) => SyncResponse;
 
 export interface HttpHandlerExport<
-  S extends UntypedSchemaDef = UntypedSchemaDef,
+  S extends UntypedSchemaDecl = UntypedSchemaDecl,
 > extends HandlerFn<S>,
     ModuleExport {
   [httpHandlerFn]: HandlerFn<S>;
@@ -360,7 +362,7 @@ export class Router {
   }
 }
 
-export function makeHttpHandlerExport<S extends UntypedSchemaDef>(
+export function makeHttpHandlerExport<S extends UntypedSchemaDecl>(
   ctx: SchemaInner,
   opts: HttpHandlerOpts | undefined,
   fn: HandlerFn<S>
@@ -379,7 +381,7 @@ export function makeHttpHandlerExport<S extends UntypedSchemaDef>(
         exportedHttpHandlerObjects.add(handlerExport);
         registerHttpHandler(ctx, exportName, fn, opts);
         ctx.httpHandlerExports.set(
-          handlerExport as HttpHandlerExport<UntypedSchemaDef>,
+          handlerExport as HttpHandlerExport<UntypedSchemaDecl>,
           exportName
         );
       },
@@ -400,7 +402,7 @@ export function makeHttpRouterExport(
   };
 }
 
-function registerHttpHandler<S extends UntypedSchemaDef>(
+function registerHttpHandler<S extends UntypedSchemaDecl>(
   ctx: SchemaInner,
   exportName: string,
   fn: HandlerFn<S>,
@@ -423,5 +425,5 @@ function registerHttpHandler<S extends UntypedSchemaDef>(
     Object.defineProperty(fn, 'name', { value: exportName, writable: false });
   }
 
-  ctx.httpHandlers.push(fn as HandlerFn<UntypedSchemaDef>);
+  ctx.httpHandlers.push(fn as HandlerFn<UntypedSchemaDecl>);
 }

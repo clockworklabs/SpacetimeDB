@@ -2,8 +2,8 @@ import { onDestroy } from 'svelte';
 import { writable, get, type Readable } from 'svelte/store';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import type { EventContextInterface } from '../sdk/db_connection_impl';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
+import type { UntypedRemoteModuleDecl } from '../sdk/spacetime_module';
+import type { RowType, UntypedTableDecl } from '../lib/table';
 import type { Prettify } from '../lib/type_util';
 import {
   type BooleanExpr,
@@ -47,11 +47,11 @@ function classifyMembership(
  * @param callbacks - Optional callbacks for row insert, delete, and update events.
  * @returns A tuple of [rows, isReady].
  */
-export function useTable<TableDef extends UntypedTableDef>(
-  query: Query<TableDef>,
-  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [Readable<readonly Prettify<RowType<TableDef>>[]>, Readable<boolean>] {
-  type Row = RowType<TableDef>;
+export function useTable<TableDecl extends UntypedTableDecl>(
+  query: Query<TableDecl>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDecl>>>
+): [Readable<readonly Prettify<RowType<TableDecl>>[]>, Readable<boolean>] {
+  type Row = RowType<TableDecl>;
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
   const querySql = toSql(query);
@@ -100,7 +100,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!table) return;
 
     const onInsert = (
-      eventCtx: EventContextInterface<UntypedRemoteModule>,
+      eventCtx: EventContextInterface<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
@@ -116,7 +116,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     };
 
     const onDelete = (
-      eventCtx: EventContextInterface<UntypedRemoteModule>,
+      eventCtx: EventContextInterface<UntypedRemoteModuleDecl>,
       row: any
     ) => {
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
@@ -132,7 +132,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     };
 
     const onUpdate = (
-      eventCtx: EventContextInterface<UntypedRemoteModule>,
+      eventCtx: EventContextInterface<UntypedRemoteModuleDecl>,
       oldRow: any,
       newRow: any
     ) => {

@@ -11,7 +11,7 @@ import {
   DbConnectionBuilder,
   type DbConnectionImpl,
   type ErrorContextInterface,
-  type RemoteModuleOf,
+  type RemoteModuleDeclOf,
 } from '../sdk/db_connection_impl';
 import { ConnectionId } from '../lib/connection_id';
 import {
@@ -50,11 +50,11 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
 
   let onConnectCallback: ((conn: DbConnection) => void) | null = null;
   let onDisconnectCallback:
-    | ((ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>) => void)
+    | ((ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>) => void)
     | null = null;
   let onConnectErrorCallback:
     | ((
-        ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+        ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
         err: Error
       ) => void)
     | null = null;
@@ -78,13 +78,13 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
     };
 
     onDisconnectCallback = (
-      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>
+      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>
     ) => {
       state.isActive = ctx.isActive;
     };
 
     onConnectErrorCallback = (
-      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      ctx: ErrorContextInterface<RemoteModuleDeclOf<DbConnection>>,
       err: Error
     ) => {
       state.isActive = ctx.isActive;

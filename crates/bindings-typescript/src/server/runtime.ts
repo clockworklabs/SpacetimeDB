@@ -51,12 +51,12 @@ import {
   type JwtClaims,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDecl } from '../lib/schema';
 import {
   type RowType,
   type Table,
   type TableMethods,
-  type UntypedTableDef,
+  type UntypedTableDecl,
 } from '../lib/table';
 import { bsatnBaseSize, hasOwn } from '../lib/util';
 import {
@@ -236,8 +236,8 @@ class AuthCtxImpl implements AuthCtx {
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
-  SchemaDef extends UntypedSchemaDef,
-> implements IReducerCtx<SchemaDef>
+  SchemaDecl extends UntypedSchemaDecl,
+> implements IReducerCtx<SchemaDecl>
 {
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
@@ -246,9 +246,9 @@ export const ReducerCtxImpl = class ReducerCtx<
   sender: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
-  db: DbView<SchemaDef>;
-  readonly env = environment as EnvironmentFor<SchemaDef>;
-  as: AliasViews<SchemaDef>;
+  db: DbView<SchemaDecl>;
+  readonly env = environment as EnvironmentFor<SchemaDecl>;
+  as: AliasViews<SchemaDecl>;
 
   constructor(
     sender: Identity,
@@ -261,8 +261,8 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
-    this.db = dbView as unknown as DbView<SchemaDef>;
-    this.as = asViews as AliasViews<SchemaDef>;
+    this.db = dbView as unknown as DbView<SchemaDecl>;
+    this.as = asViews as AliasViews<SchemaDecl>;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -378,7 +378,7 @@ type FlatSubmoduleDispatch = {
   anonViewFns: AnonViews;
   viewFns: Views;
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
-  schemaTables: Record<string, UntypedTableDef>;
+  schemaTables: Record<string, UntypedTableDecl>;
   typespace: Typespace;
   dbView_: DbView<any> | undefined;
   queryBuilder_: QueryBuilder<any> | undefined;
@@ -462,7 +462,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const rootTables = Object.values(this.#schema.schemaType.tables).map(
       table => [
         table.accessorName,
-        makeTableView(this.#schema.typespace, table.tableDef),
+        makeTableView(this.#schema.typespace, table.rawDef),
       ]
     );
     const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [
@@ -774,7 +774,7 @@ class ModuleHooksImpl implements ModuleHooks {
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
 
-class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
+class HandlerContextImpl<S extends UntypedSchemaDecl = UntypedSchemaDecl>
   implements HandlerContext<S>
 {
   readonly env = environment as EnvironmentFor<S>;

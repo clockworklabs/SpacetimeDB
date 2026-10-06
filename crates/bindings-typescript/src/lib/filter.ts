@@ -1,4 +1,4 @@
-import type { RowType, UntypedTableDef } from './table';
+import type { RowType, UntypedTableDecl } from './table';
 import { Timestamp } from './timestamp';
 import { Uuid } from './uuid';
 
@@ -130,9 +130,9 @@ function parenthesize(s: string): string {
   return `(${s})`;
 }
 
-export function toString<TableDef extends UntypedTableDef>(
-  tableDef: TableDef,
-  expr: Expr<ColumnsFromRow<RowType<TableDef>>>
+export function toString<TableDecl extends UntypedTableDecl>(
+  tableDef: TableDecl,
+  expr: Expr<ColumnsFromRow<RowType<TableDecl>>>
 ): string {
   switch (expr.type) {
     case 'eq': {

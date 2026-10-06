@@ -19,10 +19,10 @@ import {
 import {
   ModuleContext,
   tableToSchema,
-  type TablesToSchema,
-  type UntypedSchemaDef,
+  type SchemaDecl,
+  type UntypedSchemaDecl,
 } from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
+import type { UntypedTableBody } from '../lib/table_body';
 import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
 import { hasOwn } from '../lib/util';
 import {
@@ -62,7 +62,7 @@ import {
   type ValidateViewPrimaryKey,
   type Views,
 } from './views';
-import type { UntypedTableDef } from '../lib/table';
+import type { UntypedTableDecl } from '../lib/table';
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.
@@ -86,12 +86,12 @@ export type SubmoduleDispatchInfo = {
   typespace: Typespace;
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
   /** The submodule's own schemaType tables, used to build namespace-scoped query builders. */
-  schemaTables: Record<string, UntypedTableDef>;
+  schemaTables: Record<string, UntypedTableDecl>;
   subDispatches: SubmoduleDispatchInfo[];
 };
 
 export class SchemaInner<
-  S extends UntypedSchemaDef = UntypedSchemaDef,
+  S extends UntypedSchemaDecl = UntypedSchemaDecl,
 > extends ModuleContext {
   schemaType: S;
   exportsRegistered = false;
@@ -108,8 +108,8 @@ export class SchemaInner<
    * Used for resolving scheduled table targets.
    */
   functionExports: Map<UntypedScheduledFunctionExport, string> = new Map();
-  tableSourceNames: Map<UntypedTableSchema, string[]> = new Map();
-  httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
+  tableSourceNames: Map<UntypedTableBody, string[]> = new Map();
+  httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDecl>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
@@ -223,14 +223,14 @@ export class SchemaInner<
 }
 
 type PendingSchedule = {
-  table: UntypedTableSchema;
+  table: UntypedTableBody;
   tableName?: string;
   scheduleAtCol?: number;
   reducer?: () => UntypedScheduledFunctionExport;
   functionName?: string;
 };
 type PendingHttpRoute = {
-  handler: HttpHandlerExport<UntypedSchemaDef>;
+  handler: HttpHandlerExport<UntypedSchemaDecl>;
   method: MethodOrAny;
   path: string;
 };
@@ -269,11 +269,12 @@ type PendingHttpRoute = {
 // TODO(cloutiertyler): It might be nice to have a way to access the types
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
-export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
+export class Schema<S extends UntypedSchemaDecl>
+  implements ModuleDefaultExport
+{
   #ctx: SchemaInner<S>;
 
   constructor(ctx: SchemaInner<S>) {
-    // TODO: TableSchema and TableDef should really be unified
     this.#ctx = ctx;
   }
 
@@ -340,7 +341,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         typespace: this.#ctx.moduleDef.typespace,
         tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
           accessorName: t.accessorName,
-          tableDef: t.tableDef,
+          tableDef: t.rawDef,
         })),
         schemaTables: this.#ctx.schemaType.tables,
         subDispatches: [...this.#ctx.submoduleDispatchInfos],
@@ -733,8 +734,8 @@ function checkExportContext(exp: ModuleExport, schema: SchemaInner) {
 /**
  * Extracts the inferred schema type from a Schema instance
  */
-export type InferSchema<SchemaDef extends Schema<any>> =
-  SchemaDef extends Schema<infer S> ? S : never;
+export type InferSchema<SchemaDecl extends Schema<any>> =
+  SchemaDecl extends Schema<infer S> ? S : never;
 
 /**
  * Creates a schema from table definitions
@@ -793,12 +794,12 @@ export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
     module: M;
   };
 
-type SchemaEntry = UntypedTableSchema | SubmoduleNamespace | SubmoduleMount;
+type SchemaEntry = UntypedTableBody | SubmoduleNamespace | SubmoduleMount;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
+  [K in keyof H as H[K] extends UntypedTableBody ? K : never]: Extract<
     H[K],
-    UntypedTableSchema
+    UntypedTableBody
   >;
 };
 
@@ -813,19 +814,20 @@ type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as [SubmoduleOfEntry<H[K]>] extends [never]
     ? never
     : K]: SubmoduleOfEntry<H[K]> extends {
-    default: Schema<infer S extends UntypedSchemaDef>;
+    default: Schema<infer S extends UntypedSchemaDecl>;
   }
     ? S
     : never;
 };
 
-type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
-  TablesToSchema<ExtractTableEntries<H>> & {
-    namespaces: ExtractSubmoduleSchemas<H>;
-  };
+type SchemaDeclForEntries<H extends Record<string, SchemaEntry>> = SchemaDecl<
+  ExtractTableEntries<H>
+> & {
+  namespaces: ExtractSubmoduleSchemas<H>;
+};
 
-function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
-  return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
+function isUntypedTableSchema(x: unknown): x is UntypedTableBody {
+  return typeof x === 'object' && x !== null && hasOwn(x, 'buildRawDef');
 }
 
 function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
@@ -846,7 +848,7 @@ function isSubmoduleMount(x: unknown): x is SubmoduleMount {
     x !== null &&
     hasOwn(x, 'module') &&
     !hasOwn(x, 'default') &&
-    !hasOwn(x, 'tableDef')
+    !hasOwn(x, 'buildRawDef')
   );
 }
 
@@ -921,8 +923,8 @@ export function schema<
 >(
   entries: H,
   moduleSettings?: ModuleSettings<E>
-): Schema<SchemaDefForEntries<H> & { env: E }> {
-  const ctx = new SchemaInner<SchemaDefForEntries<H> & { env: E }>(ctx => {
+): Schema<SchemaDeclForEntries<H> & { env: E }> {
+  const ctx = new SchemaInner<SchemaDeclForEntries<H> & { env: E }>(ctx => {
     ctx.moduleDef.environment = environmentDeclarations(
       moduleSettings?.env ?? {}
     );
@@ -931,7 +933,7 @@ export function schema<
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
     }
 
-    const tableSchemas: Record<string, UntypedTableDef> = {};
+    const tableSchemas: Record<string, UntypedTableDecl> = {};
     for (const [accName, entry] of Object.entries(entries)) {
       const mount = resolveSubmoduleEntry(accName, entry);
       if (mount !== undefined) {
@@ -956,8 +958,11 @@ export function schema<
       }
 
       const table = entry;
-      const tableDef = table.tableDef(ctx, accName);
+      const tableDef = table.buildRawDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+      // The placed table is a copy of the table body, and it can also be an
+      // onSchedule target, so register it under its one source name too.
+      ctx.tableSourceNames.set(tableSchemas[accName], [tableDef.sourceName]);
       const tableSourceNames = ctx.tableSourceNames.get(table);
       if (tableSourceNames === undefined) {
         ctx.tableSourceNames.set(table, [tableDef.sourceName]);
@@ -986,7 +991,7 @@ export function schema<
     return {
       tables: tableSchemas,
       env: moduleSettings?.env ?? {},
-    } as SchemaDefForEntries<H> & { env: E };
+    } as SchemaDeclForEntries<H> & { env: E };
   });
 
   return new Schema(ctx);

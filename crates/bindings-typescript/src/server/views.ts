@@ -9,7 +9,7 @@ import {
 import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDecl } from '../lib/schema';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -36,7 +36,7 @@ import {
 export type ViewExport<ViewFn> = ViewFn & ModuleExport;
 
 export function makeViewExport<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
   F extends ViewFn<S, Params, Ret>,
@@ -58,7 +58,7 @@ export function makeViewExport<
 }
 
 export function makeAnonViewExport<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
   F extends AnonymousViewFn<S, Params, Ret>,
@@ -79,14 +79,14 @@ export function makeAnonViewExport<
   return viewExport;
 }
 
-export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
+export type ViewCtx<S extends UntypedSchemaDecl> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
   env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
 
-export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
+export type AnonymousViewCtx<S extends UntypedSchemaDecl> = Readonly<{
   db: ReadonlyDbView<S>;
   env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
@@ -164,7 +164,7 @@ export type ValidateViewPrimaryKey<Ret extends ViewReturnTypeBuilder> =
 //   | RowTypedQuery<FlattenedArray<Infer<Ret>>>;
 
 export type ViewFn<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 > =
@@ -175,7 +175,7 @@ export type ViewFn<
     ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
 
 export type AnonymousViewFn<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 > =
@@ -196,7 +196,7 @@ export type ViewReturnTypeBuilder =
     >;
 
 export function registerView<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 >(
@@ -217,7 +217,7 @@ export function registerView<
 }
 
 export function registerAnonymousView<
-  S extends UntypedSchemaDef,
+  S extends UntypedSchemaDecl,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 >(
