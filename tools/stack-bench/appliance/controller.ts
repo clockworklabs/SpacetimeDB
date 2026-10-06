@@ -98,6 +98,8 @@ export function controllerChildEnvironment(source: NodeJS.ProcessEnv = process.e
     'openrouter-api-key': ['STACK_BENCH_OPENROUTER_API_KEY_FILE', 'OPENROUTER_API_KEY_FILE'],
     'openai-api-key': ['STACK_BENCH_OPENAI_API_KEY_FILE', 'OPENAI_API_KEY_FILE'],
     'openai-account': ['STACK_BENCH_CODEX_AUTH_FILE', 'CODEX_AUTH_FILE'],
+    'xai-api-key': ['STACK_BENCH_XAI_API_KEY_FILE', 'XAI_API_KEY_FILE'],
+    'grok-account': ['STACK_BENCH_GROK_AUTH_FILE', 'GROK_AUTH_FILE'],
   };
   // Named jobs select per attempt. Keep the legacy default available without
   // clearing credentials belonging to other providers.

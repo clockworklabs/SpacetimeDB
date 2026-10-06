@@ -104,8 +104,8 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
       + rate('cacheWrite5m', '5-minute cache write') + rate('cacheWrite1h', '1-hour cache write')
       + rate('cacheRead', 'Cache read') + input('pricingSource', 'Pricing source (URL)', 'url')
       + field('Pricing checked on', `<input name="custom-${index}-pricingCapturedAt" type="date" value="${esc(value?.pricingCapturedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10))}">`)
-      + (adapter === 'codex' || adapter === 'openrouter'
-        ? input('maxOutputTokens', adapter === 'codex' ? 'Documented model maximum output tokens' : 'Maximum output tokens', 'number')
+      + (adapter === 'codex' || adapter === 'openrouter' || adapter === 'grok-build'
+        ? input('maxOutputTokens', adapter === 'openrouter' ? 'Maximum output tokens' : 'Documented model maximum output tokens', 'number')
           + input('outputLimitSource', 'Output limit source (URL)', 'url') : '')
       + (adapter === 'openrouter' ? input('providerRoute', 'Provider route') : '')
       + '</div></details>';

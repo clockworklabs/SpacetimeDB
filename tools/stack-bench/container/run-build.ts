@@ -35,6 +35,7 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CON
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 import { CODING_PROVIDERS, parseCodingProvider } from './coding-providers.js';
+import { ensureFreshGrokLogin } from '../src/agents/grok-login.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
 
@@ -156,6 +157,12 @@ const apiKey = process.env.STACK_BENCH_AGENT_API_KEY
   ?? process.env[codingProvider.apiKeyEnvironment] ?? '';
 let auth = null;
 if (!prepareOnly) {
+  // A SuperGrok token lasts hours and rotates on refresh: renew the shared sign-in
+  // so this session's snapshot outlives the session.
+  if (provider === 'xai' && !apiKey && process.env.GROK_AUTH_FILE) {
+    try { await ensureFreshGrokLogin(process.env.GROK_AUTH_FILE, CODING_SESSION_TIMEOUT_MS + 15 * 60_000); }
+    catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
+  }
   try { auth = resolveContainerAuth({ provider, apiKey, env: process.env, credentialsPath: codingProvider.credentialPath }); }
   catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 }

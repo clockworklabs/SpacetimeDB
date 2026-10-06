@@ -36,6 +36,13 @@ ENV DISABLE_AUTOUPDATER=1
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION} \
     && claude --version
 RUN npm install -g @openai/codex@${CODEX_VERSION} && codex --version
+# xAI's installer does not verify the download, so the binary is checked here.
+ARG GROK_VERSION=1.0.46
+ARG GROK_SHA256=41626a53292324140b92556b9d42ff5542e3dcd04aff85eafb8689dd4adb44fc
+ENV GROK_DISABLE_AUTOUPDATER=1
+RUN curl -fsSL "https://x.ai/cli/grok-${GROK_VERSION}-linux-x86_64.gz" | gzip -dc > /usr/local/bin/grok \
+    && echo "${GROK_SHA256}  /usr/local/bin/grok" | sha256sum -c - \
+    && chmod 0755 /usr/local/bin/grok && grok --version
 
 # The coding session can change the app and its own temporary state. It does
 # not run as root, so it cannot change the system or harness control files.

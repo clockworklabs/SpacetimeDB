@@ -96,3 +96,24 @@ test('simultaneous account assignments keep independent secrets and drift checks
     assert.deepEqual(source, { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry, ANTHROPIC_API_KEY: 'ambient' });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a Grok sign-in profile stays pinned to its account while its tokens rotate', () => {
+  const root = mkdtempSync(join(tmpdir(), 'credential-profiles-grok-'));
+  try {
+    const secretFile = join(root, 'grok_auth');
+    const registry = join(root, 'profiles.json');
+    const login = (key: string, principal = 'user-1') => JSON.stringify({ 'https://auth.x.ai::client': { key,
+      refresh_token: `refresh-${key}`, expires_at: '2026-10-06T23:00:00Z', principal_id: principal,
+      oidc_issuer: 'https://auth.x.ai', oidc_client_id: 'client' } });
+    writeFileSync(secretFile, login('first'));
+    writeFileSync(registry, JSON.stringify({ grok: { provider: 'xai', mode: 'subscription-token', secretFile, version: 'v1' } }));
+    const selected = resolveExecutionCredentials('grok-build', 'a', { default: 'grok' },
+      { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry, XAI_API_KEY: 'ambient' });
+    assert.equal(selected.env.GROK_AUTH_FILE, secretFile);
+    assert.equal(selected.env.XAI_API_KEY, undefined);
+    writeFileSync(secretFile, login('refreshed'));
+    assert.equal(readPinnedExecutionCredential(selected.env)!.secret, login('refreshed'));
+    writeFileSync(secretFile, login('other', 'user-2'));
+    assert.throws(() => readPinnedExecutionCredential(selected.env), /changed after admission/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

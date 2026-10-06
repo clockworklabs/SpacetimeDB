@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readGrokLogin } from '../src/agents/grok-login.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
 import { stackReleaseImages } from '../src/stacks/stack-identities.js';
@@ -73,6 +74,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_OPENROUTER_API_KEY_FILE=${root}/secrets/openrouter_api_key`,
     `STACK_BENCH_OPENAI_API_KEY_FILE=${root}/secrets/openai_api_key`,
     `STACK_BENCH_CODEX_AUTH_FILE=${root}/secrets/codex_auth`,
+    `STACK_BENCH_GROK_AUTH_FILE=${root}/secrets/grok_auth`,
     'STACK_BENCH_RELEASE_MANIFEST=',
     '',
   ].join('\n');
@@ -80,13 +82,16 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
 
 export function writeStateSecret(name: string | undefined, input: string,
   root = '/state'): void {
-  if (!['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key', 'codex_auth'].includes(name ?? '')) {
-    throw new Error('secret name must be claude_subscription_token, anthropic_api_key, openai_api_key, openrouter_api_key, codex_auth');
+  if (!['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key', 'codex_auth',
+    'xai_api_key', 'grok_auth'].includes(name ?? '')) {
+    throw new Error('secret name must be claude_subscription_token, anthropic_api_key, openai_api_key, openrouter_api_key, '
+      + 'codex_auth, xai_api_key, grok_auth');
   }
   let value = input.trim();
-  if (name === 'codex_auth') {
+  if (name === 'codex_auth' || name === 'grok_auth') {
     try { value = JSON.stringify(JSON.parse(value)); }
-    catch { throw new Error('codex_auth must be valid JSON from Codex account login'); }
+    catch { throw new Error(`${name} must be valid JSON from the agent's account login`); }
+    if (name === 'grok_auth') readGrokLogin(value);
   }
   if (!value || /[\r\n]/.test(value)) {
     throw new Error('secret must be one non-empty line');

@@ -202,7 +202,7 @@ export function credentialReady(
   exists: (path: string) => boolean,
 ): CredentialStatus {
   const environment = adapter.apiKeyEnvironmentVariable;
-  if (adapter.provider === 'openai' || adapter.provider === 'openrouter') {
+  if (adapter.provider === 'openai' || adapter.provider === 'openrouter' || adapter.provider === 'xai') {
     try {
       const keyFile = environment ? env[`${environment}_FILE`]?.trim() : undefined;
       const directKey = environment ? env[environment]?.trim() : undefined;
@@ -211,7 +211,8 @@ export function credentialReady(
         apiKey: directKey ?? (keyFile ? readFileSync(keyFile, 'utf8').trim() : ''),
         exists: path => exists(String(path)) });
       return { ok: true, mode: auth.mode, kind: auth.mode === 'api-key' ? 'api-key' : 'account-token-snapshot',
-        source: auth.mode === 'api-key' ? `selected:${environment}` : 'secret-file:CODEX_AUTH_FILE' };
+        source: auth.mode === 'api-key' ? `selected:${environment}`
+          : `secret-file:${adapter.provider === 'xai' ? 'GROK_AUTH_FILE' : 'CODEX_AUTH_FILE'}` };
     } catch (error) {
       return { ok: false, source: null, reason: error instanceof Error ? error.message : 'Invalid provider credentials' };
     }
@@ -465,7 +466,8 @@ export function runPreflight(
     ? 'Select exactly one credential mode.'
     : `Set ${[auth.environment, ...(auth.credentialEnvironments ?? [])].filter(Boolean).join(' or ')}`
       + ` or install one of: ${(auth.files ?? []).join(', ')}`,
-  auth.mode && (agent?.provider === 'openai' || agent?.provider === 'openrouter') ? { provider: agent.provider, mode: auth.mode,
+  auth.mode && (agent?.provider === 'openai' || agent?.provider === 'openrouter' || agent?.provider === 'xai')
+    ? { provider: agent.provider, mode: auth.mode,
     origin: `https://${brokerHostname({ provider: agent.provider, mode: auth.mode })}` } : undefined);
 
   mkdirSync(request.resultsDir, { recursive: true });
@@ -710,7 +712,7 @@ export function runPreflight(
 
   if (request.smoke && imageId) {
     const marker = `.preflight-container-${process.pid}-${Math.random().toString(16).slice(2)}`;
-    const providerDestinations = agent?.provider === 'openai'
+    const providerDestinations = agent?.provider === 'openai' || agent?.provider === 'xai'
       ? auth.mode ? [`https://${brokerHostname({ provider: agent.provider, mode: auth.mode })}`] : []
       : agent?.outboundDestinations ?? [];
     const destinations = [...new Set([...BUILD_OUTBOUND_DESTINATIONS, ...providerDestinations])].sort();

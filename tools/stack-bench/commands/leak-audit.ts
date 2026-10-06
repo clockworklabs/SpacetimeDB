@@ -8,6 +8,7 @@ import { parseArgs } from 'node:util';
 import { CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
 import { transcriptDirectories } from '../src/agents/transcript-archive.js';
 import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
+import { GROK_AUDIT_TOOLS, grokTranscriptDirectory } from '../src/agents/grok-protocol.js';
 
 const norm = (value: unknown): string => String(value ?? '')
   .replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
@@ -138,9 +139,17 @@ interface TranscriptContent {
 }
 
 // Feed both CLIs through the same path, network, and refusal checks.
+// Grok Build reports its own tool names; audit them as the Claude tools they match.
+function grokContent(part: TranscriptContent): TranscriptContent {
+  const tool = part.type === 'tool_use' ? GROK_AUDIT_TOOLS[part.name ?? ''] : undefined;
+  if (!tool) return part;
+  const input = part.input as Record<string, string | undefined> | undefined;
+  return { ...part, name: tool.name, input: tool.path ? { ...part.input, file_path: input?.[tool.path] } : part.input };
+}
+
 function transcriptContent(event: Record<string, unknown>): TranscriptContent[] {
   const message = event.message as { content?: TranscriptContent[] } | undefined;
-  if (Array.isArray(message?.content)) return message.content;
+  if (Array.isArray(message?.content)) return message.content.map(grokContent);
   if (event.type !== 'item.started' && event.type !== 'item.completed') return [];
   const item = event.item as { id?: string; type?: string; command?: string;
     aggregated_output?: string; exit_code?: number; status?: string;
@@ -268,9 +277,9 @@ for (const root of roots) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       if (e.isDirectory()) {
-        // Codex native rollouts are agent-writable; audit controller event logs only.
-        if (!/node_modules/.test(p)
-          && root !== codexTranscriptDirectory(requestedApp)) stack.push(p);
+        // Codex and Grok native sessions are agent-writable; audit controller event logs only.
+        if (!/node_modules/.test(p) && root !== codexTranscriptDirectory(requestedApp)
+          && root !== grokTranscriptDirectory(requestedApp)) stack.push(p);
         continue;
       }
       if (!/\.jsonl$/.test(e.name)) continue;

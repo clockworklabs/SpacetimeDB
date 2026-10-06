@@ -1465,3 +1465,38 @@ test('a Docker broker treats a missing or stale controller heartbeat as controll
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a SuperGrok broker signs chat proxy calls itself and forwards account reads unbilled', async () => {
+  const completed = `event: response.completed\ndata: ${JSON.stringify({ type: 'response.completed', response: {
+    object: 'response', status: 'completed', model: 'grok-4.6',
+    usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 40 }, output_tokens: 10 } } })}\n\n`;
+  const call = (sessionToken: string, payload: Record<string, unknown>) => ({ path: '/v1/responses',
+    headers: { authorization: `Bearer ${sessionToken}`, 'x-xai-token-auth': 'claimed', 'content-type': 'application/json' },
+    body: JSON.stringify(payload) });
+  await withBroker('subscription-token', async ({ brokerPort, sessionToken, credential, seen, stats }) => {
+    const reads = { authorization: `Bearer ${sessionToken}` };
+    assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user', headers: reads, body: '' })).status, 200);
+    assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/conversations', headers: reads, body: '' })).status, 404);
+    assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user', body: '' })).status, 401);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', input: [] }))).status, 400,
+      'a model call must declare the output cap the reservation prices');
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 1000, input: [] }))).status, 200);
+    assert.deepEqual(seen.map(request => [request.method, request.url]), [['GET', '/v1/user'], ['POST', '/v1/responses']]);
+    for (const request of seen) {
+      assert.equal(request.headers.authorization, `Bearer ${credential}`);
+      assert.equal(request.headers['x-xai-token-auth'], 'xai-grok-cli');
+    }
+    await waitFor(() => stats().completedBillableRequests === 1);
+    assert.equal(stats().billableRequests, 1, 'account reads are not provider spend');
+  }, { provider: 'xai', model: 'grok-4.6', maxOutputTokens: 128_000, upstreamBody: completed,
+    upstreamHeaders: { 'content-type': 'text/event-stream' }, maxBudgetUsd: 10,
+    pricingRates: { input: 2, output: 6, cacheRead: 0.5, cacheWrite5m: 2, cacheWrite1h: 2 } });
+  await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {
+    assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user',
+      headers: { authorization: `Bearer ${sessionToken}` }, body: '' })).status, 404, 'an API key has no session service');
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 1000, input: [] }))).status, 200);
+    assert.equal(seen[0]!.headers.authorization, `Bearer ${credential}`);
+    assert.equal(seen[0]!.headers['x-xai-token-auth'], undefined);
+    assert.equal(seen[0]!.headers['x-api-key'], undefined);
+  }, { provider: 'xai', model: 'grok-4.6', maxOutputTokens: 128_000 });
+});

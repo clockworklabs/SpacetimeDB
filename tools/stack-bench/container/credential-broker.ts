@@ -23,6 +23,7 @@ import type { BrokerConfig, EstimateReason, PricingRates, UnpricedReason }
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
+const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade'];
 export type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 type JsonRecord = Record<string, unknown>;
 export interface BrokerStats {
@@ -153,6 +154,25 @@ export function createCredentialBroker(configInput: unknown, {
       return;
     }
     const path = requestPath(request.url);
+    if (request.method === 'GET' && path !== null && protocol.readPaths?.has(path)) {
+      // An account or configuration read: forwarded with the credential, outside the spend ledger.
+      const headers = protocol.headers(request);
+      for (const name of [...HOP_BY_HOP, 'content-length']) delete headers[name];
+      const read = requestUpstream({ protocol: destination.protocol, hostname: destination.hostname, port: destination.port,
+        method: 'GET', path: protocol.upstreamPath(path + new URL(request.url ?? '', 'http://credential-broker.invalid').search),
+        headers }, upstreamResponse => {
+        writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        upstreamResponse.on('data', (chunk: Buffer) => {
+          if (!responseOpen()) return;
+          try { response.write(chunk); } catch { response.destroy(); }
+        });
+        upstreamResponse.on('end', () => endResponse());
+        upstreamResponse.once('error', () => { if (responseOpen()) response.destroy(); });
+      });
+      read.on('error', () => { writeHead(502, { 'content-type': 'text/plain' }); endResponse('upstream request failed'); });
+      read.end();
+      return;
+    }
     if (request.method !== 'POST' || path === null || !protocol.allowedPaths.has(path)) {
       recordFailure(acceptedRequests + 1, { category: 'request', status: 404, code: 'broker-path' });
       recordLedger();
@@ -245,8 +265,7 @@ export function createCredentialBroker(configInput: unknown, {
         recordLedger();
       };
       const headers = protocol.headers(request);
-      for (const name of ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer',
-        'transfer-encoding', 'upgrade']) delete headers[name];
+      for (const name of HOP_BY_HOP) delete headers[name];
       const forwardedBody = Buffer.from(JSON.stringify(payload));
       headers['content-length'] = String(forwardedBody.length);
       const upstreamRequest = requestUpstream({

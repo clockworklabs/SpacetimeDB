@@ -2,12 +2,13 @@ import { readPinnedExecutionCredential } from '../src/agents/credential-profiles
 import { existsSync, readFileSync } from 'node:fs';
 import type { PathLike } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { readGrokLogin } from '../src/agents/grok-login.js';
 
 export const SUBSCRIPTION_TOKEN_ENVIRONMENT = 'CLAUDE_CODE_OAUTH_TOKEN';
 export const LEGACY_SUBSCRIPTION_TOKEN_TARGET = '/run/secrets/claude-code-oauth-token';
 
 export type ContainerAuth = {
-  provider?: 'anthropic' | 'openai' | 'openrouter';
+  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
   accountId?: string;
   mode: 'api-key' | 'subscription-token';
   credential: string;
@@ -16,7 +17,7 @@ export type ContainerAuth = {
 type ReadTextFile = (path: PathLike | number, encoding: BufferEncoding) => string;
 
 export interface ResolveContainerAuthOptions {
-  provider?: 'anthropic' | 'openai' | 'openrouter';
+  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
   apiKey?: string;
   env?: NodeJS.ProcessEnv;
   credentialsPath?: string;
@@ -36,6 +37,15 @@ export function resolveContainerAuth({ provider = 'anthropic', apiKey = '', env 
       if (String(path) !== pinned.secretFile) throw new Error('Pinned credential file does not match invocation');
       return pinned.secret;
     };
+  }
+  if (provider === 'xai') {
+    const authFile = env.GROK_AUTH_FILE?.trim();
+    if (apiKey && authFile) throw new Error('use only one of xAI API-key and Grok sign-in authentication');
+    if (apiKey) return { provider, mode: 'api-key', credential: apiKey };
+    if (!authFile || !isAbsolute(authFile)) throw new Error('xAI requires an API key or an absolute GROK_AUTH_FILE');
+    if (!exists(authFile)) throw new Error('GROK_AUTH_FILE does not exist');
+    // run-build refreshes the sign-in before taking this snapshot for a session.
+    return { provider, mode: 'subscription-token', credential: readGrokLogin(read(authFile, 'utf8')).token };
   }
   if (provider === 'openrouter') {
     if (!apiKey) throw new Error('OpenRouter requires an API key');

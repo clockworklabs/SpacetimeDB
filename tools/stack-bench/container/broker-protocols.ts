@@ -186,6 +186,8 @@ export interface RequestPricing {
 interface BrokerProtocol {
   hostname: string;
   allowedPaths: Set<string>;
+  // GET paths forwarded with the credential and never billed: account and configuration reads.
+  readPaths?: Set<string>;
   upstreamPath(path: string): string;
   billable(path: string): boolean;
   headers(request: IncomingMessage): OutgoingHttpHeaders;
@@ -345,6 +347,7 @@ function responsesRequestFeature(payload: JsonRecord): UnpricedReason | null {
 export function brokerHostname({ provider, mode }: Pick<BrokerConfig, 'provider' | 'mode'>): string {
   if (!provider || provider === 'anthropic') return 'api.anthropic.com';
   if (provider === 'openrouter') return 'openrouter.ai';
+  if (provider === 'xai') return mode === 'subscription-token' ? 'cli-chat-proxy.grok.com' : 'api.x.ai';
   return mode === 'subscription-token' ? 'chatgpt.com' : 'api.openai.com';
 }
 
@@ -360,6 +363,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     outputLimit: payload => payload.max_tokens as number,
     responseUsage,
   };
+  if (config.provider === 'xai') return grokProtocol(config);
   const router = config.provider === 'openrouter';
   if (router && (!/^[a-z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(config.model)
     || config.model.startsWith('openrouter/') || /(?:^|[-/])latest$/.test(config.model))) {
@@ -428,6 +432,48 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     },
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,
+    responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
+    responseRejection: responsesRejection,
+  };
+}
+
+// The reads Grok Build makes against its session service before and between model calls.
+const GROK_READ_PATHS = new Set(['/v1/login-config', '/v1/user', '/v1/settings', '/v1/models', '/v1/bundle/archive',
+  '/v1/subagents/bundle', '/v1/feedback/config']);
+
+// A SuperGrok sign-in reaches the CLI chat proxy, which also needs the CLI's token marker;
+// an API key reaches the public API. Both speak the Responses API, and every request
+// declares the output cap the reservation prices.
+function grokProtocol(config: BrokerConfig): BrokerProtocol {
+  const account = config.mode === 'subscription-token';
+  return {
+    hostname: brokerHostname(config),
+    allowedPaths: new Set(['/v1/responses']),
+    ...(account ? { readPaths: GROK_READ_PATHS } : {}),
+    upstreamPath: path => path,
+    billable: path => path === '/v1/responses',
+    headers: request => {
+      const headers = upstreamHeaders(request, config);
+      delete headers['x-api-key'];
+      delete headers['x-xai-token-auth'];
+      headers.authorization = `Bearer ${config.credential}`;
+      if (account) headers['x-xai-token-auth'] = 'xai-grok-cli';
+      return headers;
+    },
+    parseRequest: body => {
+      const payload = JSON.parse(body.toString('utf8'));
+      if (!isRecord(payload) || payload.model !== config.model) fail('request model does not match');
+      const requested = payload.max_output_tokens;
+      if (!Number.isSafeInteger(requested) || (requested as number) < 1 || (requested as number) > config.maxOutputTokens) {
+        fail('invalid max_output_tokens');
+      }
+      return payload;
+    },
+    requestPricing: payload => {
+      const feature = responsesRequestFeature(payload);
+      return { unpriced: feature, requiresUsage: null, bounded: feature === null };
+    },
+    outputLimit: payload => payload.max_output_tokens as number,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
     responseRejection: responsesRejection,
   };

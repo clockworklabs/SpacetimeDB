@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.js';
 import { sha256 } from '../evidence/provenance.js';
+import { readGrokLogin } from './grok-login.js';
 
 const label = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
 export const executionCredentialsSchema = z.object({
@@ -13,7 +14,7 @@ export const executionCredentialsSchema = z.object({
 export type ExecutionCredentials = z.infer<typeof executionCredentialsSchema>;
 export const assignmentSchema = z.object({
   id: label, version: label,
-  provider: z.enum(['anthropic', 'openai', 'openrouter']),
+  provider: z.enum(['anthropic', 'openai', 'openrouter', 'xai']),
   mode: z.enum(['api-key', 'subscription-token']),
 }).strict();
 export type CredentialAssignment = z.infer<typeof assignmentSchema>;
@@ -28,6 +29,7 @@ const authenticationVariables = {
   anthropic: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
   openai: ['OPENAI_API_KEY', 'CODEX_AUTH'],
   openrouter: ['OPENROUTER_API_KEY'],
+  xai: ['XAI_API_KEY', 'GROK_AUTH'],
 } as const;
 
 /** Public selection metadata. Never return credential paths or values to a client. */
@@ -54,7 +56,10 @@ function readProfile(id: string, env: NodeJS.ProcessEnv) {
   try { secret = readFileSync(profile.secretFile, 'utf8').trim(); }
   catch { throw new Error(`Credential profile ${id} secret file cannot be read`); }
   if (!secret) throw new Error(`Credential profile ${id} secret file is empty`);
-  return { profile, secret, fingerprint: sha256(secret) };
+  // A Grok sign-in rotates its tokens in place, so its account is what stays fixed.
+  const fingerprint = profile.provider === 'xai' && profile.mode === 'subscription-token'
+    ? readGrokLogin(secret).identity : sha256(secret);
+  return { profile, secret, fingerprint };
 }
 
 export function resolveExecutionCredentials(adapterId: string, attemptId: string,
@@ -79,7 +84,7 @@ export function resolveExecutionCredentials(adapterId: string, attemptId: string
   delete env.STACK_BENCH_AGENT_API_KEY;
   delete env.STACK_BENCH_AGENT_API_KEY_FILE;
   const variable = profile.mode === 'api-key' ? authenticationVariables[profile.provider][0]
-    : profile.provider === 'anthropic' ? 'CLAUDE_CODE_OAUTH_TOKEN' : 'CODEX_AUTH';
+    : profile.provider === 'anthropic' ? 'CLAUDE_CODE_OAUTH_TOKEN' : profile.provider === 'xai' ? 'GROK_AUTH' : 'CODEX_AUTH';
   env[`${variable}_FILE`] = profile.secretFile;
   env[ASSIGNMENT] = JSON.stringify(assignment);
   env[FINGERPRINT] = fingerprint;

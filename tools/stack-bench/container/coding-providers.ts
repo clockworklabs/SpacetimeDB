@@ -9,8 +9,9 @@ import { runTranscriptAwareProcess } from '../src/agents/claude-terminal-recover
 import type { PricingRates } from '../src/evidence/pricing-authority.js';
 import { containerClaudeTranscriptReader } from './claude-transcript-reader.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
-import { validateClaudeNativeSession, validateCodexNativeSession }
+import { validateClaudeNativeSession, validateCodexNativeSession, validateGrokNativeSession }
   from '../src/agents/native-session-validation.js';
+import { grokArguments, grokTranscriptDirectory, parseGrokResult } from '../src/agents/grok-protocol.js';
 
 type Invocation = { model: string; effort: string; baseUrl: string; resumeSession: string | null;
   maxBudgetUsd: string | null };
@@ -53,6 +54,31 @@ const codexProvider: CodingProvider = {
     const path = join(codexTranscriptDirectory(appDir), eventFile);
     const header = existsSync(path) ? '' : `${JSON.stringify({ type: 'stack_bench_context', cwd: '/app' })}\n`;
     appendFileSync(path, `${header}${stdout}\n`, { mode: 0o600 });
+    return result;
+  },
+};
+
+// Grok signs in through its external auth command with the broker's session token,
+// which the broker exchanges for the real SuperGrok token. The CLI never sees it.
+const GROK_SIGN_IN = `printf '{"access_token":"%s","expires_in":86400,"issuer":"https://auth.x.ai"}' "$GROK_BROKER_TOKEN"`;
+const grokProvider: CodingProvider = {
+  requiresBudget: true,
+  executable: 'sh', apiKeyEnvironment: 'XAI_API_KEY',
+  containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.grok/sessions`,
+  tokenEnvironment: 'GROK_BROKER_TOKEN',
+  environment: baseUrl => [`GROK_CLI_CHAT_PROXY_BASE_URL=${baseUrl}/v1`, `GROK_AUTH_PROVIDER_COMMAND=${GROK_SIGN_IN}`,
+    'GROK_DISABLE_AUTOUPDATER=1'],
+  projects: appDir => grokTranscriptDirectory(appDir),
+  rates: () => null,
+  args: options => ['-c', 'grok login < /dev/null > /dev/null && exec grok "$@"', 'grok', ...grokArguments(options)],
+  run: runCodexProcess,
+  validateContinuation: validateGrokNativeSession,
+  // The controller keeps the stream as the session's audited transcript, beside the
+  // agent-writable native sessions.
+  result: (stdout, appDir, invocationToken) => {
+    const result = parseGrokResult(stdout);
+    const name = typeof result.session_id === 'string' ? result.session_id : `interrupted-${invocationToken}`;
+    appendFileSync(join(grokTranscriptDirectory(appDir), `${name}.events.jsonl`), `${stdout}\n`, { mode: 0o600 });
     return result;
   },
 };
@@ -103,6 +129,7 @@ export const CODING_PROVIDERS = {
   },
   openai: codexProvider,
   openrouter: { ...codexProvider, apiKeyEnvironment: 'OPENROUTER_API_KEY' },
+  xai: grokProvider,
 } satisfies Record<string, CodingProvider>;
 
 export type CodingProviderId = keyof typeof CODING_PROVIDERS;

@@ -61,3 +61,16 @@ test('OpenRouter accepts only its explicit API key and never falls back to accou
   assert.deepEqual(resolveContainerAuth({ provider: 'openrouter', apiKey: 'router-key', env: {} }),
     { provider: 'openrouter', mode: 'api-key', credential: 'router-key' });
 });
+
+test('xAI auth snapshots the Grok sign-in token or uses an API key, never both', () => {
+  const login = { 'https://auth.x.ai::client': { key: 'grok-access', refresh_token: 'never-forward',
+    expires_at: new Date(Date.now() + 3_600_000).toISOString(), oidc_issuer: 'https://auth.x.ai', oidc_client_id: 'client' } };
+  const options = { provider: 'xai' as const, env: { GROK_AUTH_FILE: resolve('/private/grok.json') },
+    exists: () => true, read: () => JSON.stringify(login) };
+  assert.deepEqual(resolveContainerAuth(options), { provider: 'xai', mode: 'subscription-token', credential: 'grok-access' });
+  assert.throws(() => resolveContainerAuth({ ...options, apiKey: 'key' }), /only one/);
+  assert.throws(() => resolveContainerAuth({ ...options, read: () => '{}' }), /exactly one auth\.x\.ai sign-in/);
+  assert.throws(() => resolveContainerAuth({ provider: 'xai', env: {} }), /API key or an absolute GROK_AUTH_FILE/);
+  assert.deepEqual(resolveContainerAuth({ provider: 'xai', env: {}, apiKey: 'key' }),
+    { provider: 'xai', mode: 'api-key', credential: 'key' });
+});

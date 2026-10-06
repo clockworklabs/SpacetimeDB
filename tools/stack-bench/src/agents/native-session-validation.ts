@@ -172,3 +172,19 @@ export function validateCodexNativeSession(directory: string, sessionId: string,
   if (paths.length !== 1) throw new Error('Native rollout is missing or ambiguous');
   validateCodexContinuationTranscript(readFileSync(paths[0]!, 'utf8'), sessionId, model);
 }
+
+// Grok keeps a session at `<encoded cwd>/<session id>/`; its usage record names the session and model.
+export function validateGrokNativeSession(directory: string, sessionId: string, model: string): void {
+  const sessions = readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter(entry => {
+      if (entry.isSymbolicLink()) throw new Error('Native session contains a symbolic link');
+      return entry.isDirectory() && entry.name === sessionId;
+    }).map(entry => join(entry.parentPath, entry.name));
+  if (sessions.length !== 1) throw new Error('Native Grok session is missing or ambiguous');
+  let usage: { sessionId?: unknown; session?: { primaryModelId?: unknown } };
+  try { usage = JSON.parse(readFileSync(join(sessions[0]!, 'usage.json'), 'utf8')); }
+  catch { throw new Error('Native Grok session has no readable usage record'); }
+  if (usage.sessionId !== sessionId || usage.session?.primaryModelId !== model) {
+    throw new Error('Native Grok session does not match the selected session and model');
+  }
+}

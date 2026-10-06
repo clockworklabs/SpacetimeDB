@@ -229,3 +229,36 @@ test('verified isolated loopback allows temporary test ports but keeps private h
     assert(isolated.hits.every(hit => hit.kind === 'NETWORK / OTHER RUN'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a Grok Build stream is audited through its own tool names', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-grok-audit-'));
+  const transcript = join(root, '01a112c6-39bd-7d52-a3a9-3158e1b76555.events.jsonl');
+  try {
+    // The shapes grok 1.0.46 prints with --output-format streaming-messages-json.
+    const events = [
+      { type: 'system', subtype: 'init', session_id: '01a112c6-39bd-7d52-a3a9-3158e1b76555', cwd: '/app' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_1', name: 'run_terminal_command',
+        input: { command: 'cat /tools/stack-bench/grader/grade.ts', description: 'read' } }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call_1', content: 'x', is_error: false }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_2', name: 'read_file',
+        input: { target_file: '/outside/notes.md' } }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call_2', content: 'x', is_error: false }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_3', name: 'search_replace',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' } }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call_3', content: 'ok', is_error: false }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_4', name: 'list_dir',
+        input: { target_directory: '/tools/stack-bench/tracks' } }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call_4', content: 'denied', is_error: true }] } },
+      { type: 'result', subtype: 'success', is_error: false, session_id: '01a112c6-39bd-7d52-a3a9-3158e1b76555' },
+    ];
+    writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+    const audit = auditTranscript(transcript, 'C:/host/app');
+    assert.equal(audit.cwd, '/app');
+    assert.deepEqual(audit.hits.map(hit => [hit.path, hit.via]), [
+      ['/tools/stack-bench/grader/grade.ts', 'Bash'], ['/outside/notes.md', 'Read']]);
+    assert.deepEqual(audit.refused.map(hit => [hit.path, hit.via]), [['/tools/stack-bench/tracks', 'Glob']]);
+    assert.equal(audit.fileTool, 3, 'the in-app edit is a file tool use, not a hit');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

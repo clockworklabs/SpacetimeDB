@@ -39,7 +39,7 @@ export type BrokerMode = 'api-key' | 'subscription-token';
 export type PricingRates = ReturnType<typeof validateSharedPricingRates>;
 
 export type BrokerConfig = {
-  provider?: 'anthropic' | 'openai' | 'openrouter';
+  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
   accountId?: string;
   providerRoute?: string;
   mode: BrokerMode;
@@ -129,7 +129,7 @@ const usageSchema = z.strictObject({
   cacheWrite1h: nonNegativeSafeInteger,
 });
 const brokerConfigSchema = z.strictObject({
-  provider: z.enum(['anthropic', 'openai', 'openrouter']).optional(),
+  provider: z.enum(['anthropic', 'openai', 'openrouter', 'xai']).optional(),
   accountId: z.string().min(1).optional(),
   providerRoute: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/).optional(),
   mode: z.enum(['api-key', 'subscription-token']),
@@ -317,7 +317,7 @@ export function readCredentialBrokerLedger(path: string,
 
 export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, maxBudgetUsd,
   pricingRates, provider = 'anthropic', brokerDiagnostics = null, toleranceUsd = COST_TOLERANCE_USD }: {
-  provider?: 'anthropic' | 'openai' | 'openrouter';
+  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
   ledger: unknown; cliResult: unknown; model: unknown; maxBudgetUsd: unknown; pricingRates: unknown;
   brokerDiagnostics?: unknown; toleranceUsd?: number;
 }): { ok: boolean; result: CredentialBrokerResult; receipt: CredentialBrokerReceipt } {

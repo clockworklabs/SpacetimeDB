@@ -31,15 +31,17 @@ test('production framing follows every coding adapter but not model-free control
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const adapter = AGENT_ADAPTER_REGISTRY.get(id);
     const routed = adapter.provider === 'openrouter';
+    // Grok Build requests must declare the output cap the broker prices.
+    const capped = routed || adapter.provider === 'xai';
     const input = { ...request, pricing, maxBudgetUsd: 12.5,
-      ...(routed ? { providerRoute: 'openai', maxOutputTokens: 8192 } : {}) };
+      ...(routed ? { providerRoute: 'openai' } : {}), ...(capped ? { maxOutputTokens: 8192 } : {}) };
     const enabled = agentRequestArgv(adapter, { ...input, productionQuality: true });
     const legacy = agentRequestArgv(adapter, input);
     assert.equal(enabled.includes('--no-production-quality'), false);
     assert.equal(legacy.includes('--no-production-quality'), Boolean(adapter.provider));
     const flag = (name: string) => legacy.includes(name) ? legacy[legacy.indexOf(name) + 1] : undefined;
     assert.equal(flag('--provider-route'), routed ? 'openai' : undefined);
-    assert.equal(flag('--max-output-tokens'), routed ? '8192' : undefined);
+    assert.equal(flag('--max-output-tokens'), capped ? '8192' : undefined);
     assert.equal(flag('--max-budget-usd'), adapter.costLimit === 'native' ? '12.5' : undefined);
     assert.equal(flag('--pricing-json'), JSON.stringify(pricing));
     for (const mode of ['build', 'upgrade', 'resume', 'fix'] as const) {

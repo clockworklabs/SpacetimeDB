@@ -148,6 +148,24 @@ conversation references are forwarded and marked unpriced. Inline image bytes
 are not counted as text tokens. Models with a verified image-token bound use it
 for reservation. Other inline images, including Sol screenshots, require complete
 provider token usage for final pricing; without it, their cost remains unknown.
+
+### xAI credentials
+
+Select the `grok-build` agent adapter and an explicit billing mode in `operator.env`:
+
+- `STACK_BENCH_AGENT_AUTH=xai-api-key` uses `STACK_BENCH_XAI_API_KEY_FILE`.
+  Store the key with `set-secret xai_api_key`.
+- `STACK_BENCH_AGENT_AUTH=grok-account` uses `STACK_BENCH_GROK_AUTH_FILE`.
+  Run `grok login --device-auth`, then send only its `~/.grok/auth.json` through
+  standard input to `set-secret grok_auth`.
+
+A SuperGrok access token lasts hours and its refresh token rotates on every use.
+Before a coding session the controller renews the stored sign-in, under a lock,
+when less than the session limit plus 15 minutes remains, and the session uses a
+snapshot of the access token. The coding container signs in with the broker's
+session token instead; the broker sends the real token to the CLI chat proxy.
+Campaigns pin the signed-in account, not the token bytes. Grok plans must set an
+output-token limit, which the broker uses to price each request's reservation.
 The output bound and priced text reservation still apply. Provider
 usage records the observed normalized token cost without claiming to cover all
 unpriced charges.
