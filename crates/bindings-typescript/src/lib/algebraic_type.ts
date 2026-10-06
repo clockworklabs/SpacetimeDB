@@ -1,12 +1,12 @@
-import { TimeDuration } from './time_duration';
-import { Timestamp } from './timestamp';
-import { Uuid } from './uuid';
-import { ConnectionId } from './connection_id';
-import BinaryReader from './binary_reader';
-import BinaryWriter from './binary_writer';
-import { Identity } from './identity';
-import * as AlgebraicTypeVariants from './algebraic_type_variants';
-import { hasOwn } from './util';
+import { TimeDuration } from './time_duration.ts';
+import { Timestamp } from './timestamp.ts';
+import { Uuid } from './uuid.ts';
+import { ConnectionId } from './connection_id.ts';
+import BinaryReader from './binary_reader.ts';
+import BinaryWriter from './binary_writer.ts';
+import { Identity } from './identity.ts';
+import * as AlgebraicTypeVariants from './algebraic_type_variants.ts';
+import { hasOwn } from './util.ts';
 
 type TypespaceType = {
   types: AlgebraicTypeType[];

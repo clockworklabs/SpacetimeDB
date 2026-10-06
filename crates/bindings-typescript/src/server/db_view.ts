@@ -1,6 +1,6 @@
-import type { UntypedSchemaDef } from '../lib/schema';
-import type { ReadonlyTable, Table } from '../lib/table';
-import type { Values } from '../lib/type_util';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
+import type { ReadonlyTable, Table } from '../lib/table.ts';
+import type { Values } from '../lib/type_util.ts';
 
 /**
  * A type representing a read-only database view, mapping table names to their corresponding read-only Table handles.
