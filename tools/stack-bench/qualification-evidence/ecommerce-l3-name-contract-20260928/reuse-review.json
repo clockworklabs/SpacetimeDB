@@ -1,0 +1,755 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "bf1460e54381d95992a4a7d791aad9946bb191bf",
+  "candidateCommit": "318f8e3a60c7ef0944d03032ccc13d581ade0c00",
+  "rationale": "Fixed reference and defect apps do not consume the changed prompt. The observer already compares exact name text, count and order. The clarification preserves the product rule and moves decorative text outside the observed element. All scenarios, requirements, ownership, points, budgets, runtime, references, mutations and fixture stay unchanged for this candidate.",
+  "limits": "Prospective prompt clarification only. Do not relabel prior generated-app scores, or claim that old ambiguous task text was equivalent for model behavior. No Docker or paid run was performed.",
+  "sourceDiff": {
+    "files": [
+      "tools/stack-bench/tests/item-navigation.integration.ts",
+      "tools/stack-bench/tracks/ecommerce/contracts/catalog-discovery.md",
+      "tools/stack-bench/tracks/ecommerce/contracts/catalog-items.md"
+    ],
+    "sourceChanges": [
+      {
+        "path": "contracts/catalog-discovery.md",
+        "beforeSha256": "d13ea495f78e3827b7a243b97466aefbf0252980c76edb432b6b0506854e8450",
+        "afterSha256": "5aa76a31b4acff5fb507ff30c5d217d2e9ccf7f21b7e67602caa24174491fa1d"
+      },
+      {
+        "path": "contracts/catalog-items.md",
+        "beforeSha256": "16ff827c9f2424af3c4378669ad201a452781313dd64ce92c7b92adddd47a20d",
+        "afterSha256": "731382c1e18f64041a5a448e7a6d8b5055317c5317dc6c620ec4aab93a583ced"
+      }
+    ],
+    "lineEndingOnlySourceManifestChanges": [
+      {
+        "path": "contracts/customer-profile.md",
+        "beforeSha256": "a3671c31da99b372fe2c9ab09fca90f1afdab5d80e5d63c70677b474b5692dfc",
+        "afterSha256": "f538ff2723c3e8fe6f21fddcd758ba78e48b9b282125b758029dc254d9b59c2f"
+      },
+      {
+        "path": "contracts/notification-preferences.md",
+        "beforeSha256": "8256f9b0f2c311585cfabdcde1d32b1d2a84de74ffbc44201fef9c9f5c4c314a",
+        "afterSha256": "a1c7b18c38fe1e2b399392cf36cc8293a40b296ba5234909d168e0aed2e3c0f7"
+      },
+      {
+        "path": "scenarios/01-account-duplicate.json",
+        "beforeSha256": "6e462339365e37ceaa4ca0bcc0b2402979b740e6ef871fce1e542ef70186061a",
+        "afterSha256": "c4bff4db01f5fbed76514009f97334c0a0af7cf1face67d6c64386866466de46"
+      },
+      {
+        "path": "scenarios/01-account-reload.json",
+        "beforeSha256": "8cb21370afa42ce062c3133070401d21b69a03389faef2c7a25cc9191c16bf7d",
+        "afterSha256": "574de181769f0d2fa1a88f1131b2a033385fdd576f9aa5088e95781cbd2266d4"
+      },
+      {
+        "path": "scenarios/01-buying.json",
+        "beforeSha256": "a983eb1f20531cd0acf5493a93ad8eb3b3b572442295a9e2a67fb061791a53a5",
+        "afterSha256": "a405625cce34416d7d5f8a51bad7c7bbf869299d048398ea2eb1b21249653659"
+      },
+      {
+        "path": "scenarios/01-cart.json",
+        "beforeSha256": "325ba0f473c5a2aaa9055a311d7bea803b1484cc0d3c8e401ace5ea0b8ab3520",
+        "afterSha256": "19e72eaaa4742426354fccd39e8298af5580fb5036c7baa59481b20dd1f3743e"
+      },
+      {
+        "path": "scenarios/01-catalog-ranking.json",
+        "beforeSha256": "59647930d98beb0a27cb81b7675ebc1f6a4e3c714a960e8196bf87b501580fbc",
+        "afterSha256": "ac231a38801cabcc2d90f8561dff7b75443a2e727a01447421edc2ca78795910"
+      },
+      {
+        "path": "scenarios/01-catalog-search.json",
+        "beforeSha256": "d845c61ad15d78a92700f5c534d756c1d6813e30ea62c0b6a7c62f8def330474",
+        "afterSha256": "f98f82c6634cef595acfde9a6f2015c80080c47deec46acc0c67454336c2877d"
+      },
+      {
+        "path": "scenarios/01-catalog-values.json",
+        "beforeSha256": "fffd19ffdd581ab2171b5e85382a388759086d08172fe4ab7e680e3c429eb96c",
+        "afterSha256": "b345f8c62953f7128f015f820a5e3ef486904ba31e1dd94ab22ba2520df60080"
+      },
+      {
+        "path": "scenarios/01-core.json",
+        "beforeSha256": "75d1622ecbf6c18c26aa941518748656116f5ae41d664c11d96ecf192fd7aaf3",
+        "afterSha256": "84bcaf1e19cddb6c95a2c77d19da8dd6687ad6391e27c9999c3d1f5f5ff27205"
+      },
+      {
+        "path": "scenarios/01-duplicate-checkout.json",
+        "beforeSha256": "276812622448dc64a35f804550d5786df82ee398caafd6d76628f61a67c61fef",
+        "afterSha256": "06627043607cb20b0d25647fad15186b60648d80367b9b3d15ffb97d3db8fa0a"
+      },
+      {
+        "path": "scenarios/01-external-live-sync.json",
+        "beforeSha256": "f8f2d19ad922c449b9284002bcde10afb44b503f8ce182cb19761ad6d68a3fdc",
+        "afterSha256": "86fdfc221d41b5ea856d10721997c734a643ff4047889ef41a7eebd2e0632c36"
+      },
+      {
+        "path": "scenarios/01-external-reconnect-sync.json",
+        "beforeSha256": "3a106732302c15a200113f9493627b962b1d0ee616d8a53f8f0c61e8bc8d8785",
+        "afterSha256": "613305feea5b8e242bd5abb1c8b9518e41dd0e332ab06fc914ab2b7076276aef"
+      },
+      {
+        "path": "scenarios/01-purchase-attribution.json",
+        "beforeSha256": "b2bd7cb9ded94ba9c34d8ce5901ec2f53dc00e6b9d42ba2187031424c44c958e",
+        "afterSha256": "95cd97dfa18f6452053f9766cdbd50a9abb878b3321dd4b89efe3464e36b1d7a"
+      },
+      {
+        "path": "scenarios/01-review-eligibility.json",
+        "beforeSha256": "993685fc53ea33c2b189c46785cbfef0d3771346e3dbc0d97ad96cb0ce4ae722",
+        "afterSha256": "2cee26bfd8edf69a91afae4fbac9419a8a631ef6102e0157c9835ebf9b40004b"
+      },
+      {
+        "path": "scenarios/01-review-rating-live.json",
+        "beforeSha256": "897209973d95e8cbf42eb9fab0f772d223aac8cf4bf288e3f39a493a3c5653b5",
+        "afterSha256": "0bd74926f0004aa1afd2d51d75e562aba85f0fc4035aaeacabb2e992187c1441"
+      },
+      {
+        "path": "scenarios/01-review-uniqueness.json",
+        "beforeSha256": "e828c7d267efea1bda6196c97c4a8bb9d33467fc660477dc69bae89427dd5303",
+        "afterSha256": "1d8f6c15ed55117759dfaaeab9c166c16892420cf63483d4e0fbd7acf8486ae3"
+      },
+      {
+        "path": "scenarios/01-review-visibility.json",
+        "beforeSha256": "5c0c6a80b02ddf7bc07c89ca9f29a37e6177be3cc199604547227b1cadfb77cd",
+        "afterSha256": "fcc97bdd857cfdd516fdc102fb39c3966513d18201fe538f75bfe964fd94f022"
+      },
+      {
+        "path": "scenarios/01-warehouse-admin-staff.json",
+        "beforeSha256": "71ba6d772d83c55a332debf6836d5bf8536045fbc90d03b9293057bb6ac285e6",
+        "afterSha256": "7e7fce7f6a0d30a68f85bbd0cb11f7f126a591a5cacb21bc38b8c14eadab5c30"
+      },
+      {
+        "path": "scenarios/01-warehouse-stock-live-staff.json",
+        "beforeSha256": "eb764bb53647e46ee434c8a2fb13017b5216af817e4917e39c5d362b2f769966",
+        "afterSha256": "4f4e276ad955b0bd1f951ab819658fafd7cbf38dedaf7bb63eac72aea5a09ae7"
+      },
+      {
+        "path": "scenarios/02-fulfilment-access.json",
+        "beforeSha256": "73215a10d6553eea102d85857b9d1b612171cfc3c1d8ad672456d3d593bbb404",
+        "afterSha256": "ca90d1f449b1c85eec65c0b419e69802408495e2d7a270243e8f2c34e5a1533c"
+      },
+      {
+        "path": "scenarios/02-fulfilment-live.json",
+        "beforeSha256": "0d5cd3599dd43216ebba06971c5074ae708f18e16262f0e835c3b1c5b375db0b",
+        "afterSha256": "8bc4f4ed389ccdac6483287c7504a7a845a49a59bc9783a887947b8fe24a93b7"
+      },
+      {
+        "path": "scenarios/02-live-price.json",
+        "beforeSha256": "b966869ee3c0f997394fc76e1b80818fc0ea3c074035c961bb184d6482a1ce1e",
+        "afterSha256": "7a905177cae6af15f682ebdb909f695bdee85d3124ee91917cb65e8209a73803"
+      },
+      {
+        "path": "scenarios/02-low-stock.json",
+        "beforeSha256": "09175fb7ddc545767544b2c813128832ded7cbe7d844a6db09a381a779485e79",
+        "afterSha256": "825106842ee10d734fab9fec922606a0ffe05801af5654b927c3e7371819f101"
+      },
+      {
+        "path": "scenarios/02-operational-best-sellers.json",
+        "beforeSha256": "f0b142c2e579738b1a07a6d71fed87fe6b85762bea6c9a8e36c5d2ccdf4b9ec1",
+        "afterSha256": "707a53bb57e05fea1e587b1861572b452b13234591d3f1ea42a47e635e478991"
+      },
+      {
+        "path": "scenarios/02-operational-category-totals.json",
+        "beforeSha256": "f357c717fdd5af2756229d3f65a0df9f5c2412d0692d5ec69f13c51d047cc343",
+        "afterSha256": "3e37bc2c928f8a05dc3436cf8195441eb291447bca7c654631941b3e32db347b"
+      },
+      {
+        "path": "scenarios/02-order-cancellation-core.json",
+        "beforeSha256": "af165a7706b26a3c2436989de50c6bcb0c2caab408675b41f23a4f72890bf7c3",
+        "afterSha256": "455480a97b078e9eacea3156bcd9bb328bf424fa6e7ad9e379e6570000470a43"
+      },
+      {
+        "path": "scenarios/02-order-cancellation-history.json",
+        "beforeSha256": "1e8c775c5161d59e3c910eb95c886a8adc8cd08fc5f4bbd73e4a0c080a3c660e",
+        "afterSha256": "0e15bf64c9fdce6e30a83d5d3cc3f67071ea3d6324761660535f236bb479b74d"
+      },
+      {
+        "path": "scenarios/02-paid-price-history.json",
+        "beforeSha256": "4a057afdcb286f968c0189aa74e8c3a078cf3c6added26b824b18bac15eac799",
+        "afterSha256": "84896fdea36b4f267443000306a6a349fc7221772278d96c751516b0330dff5d"
+      },
+      {
+        "path": "scenarios/02-queue-warehouse.json",
+        "beforeSha256": "2e450430a2ccffd233d58605f0431ba40ff9f8a6fadc298bc3a23a35dca8ffd0",
+        "afterSha256": "ca406727fef2be2ff76b3ce8ff1bbde976d5f672701e71daee3cc336c8d88992"
+      },
+      {
+        "path": "scenarios/03-deferred-access.json",
+        "beforeSha256": "8fd746e3c28e32c31ca786b46d43b3a17ba6278ddbbd30cdccca9aa19ab7f8e8",
+        "afterSha256": "9bdc7da61aca2b7837b1bc85e2813188faf1adb26bf9406ee40e967cf15e91f4"
+      },
+      {
+        "path": "scenarios/03-reservations.json",
+        "beforeSha256": "0b9341a4da0786132eccddd2aaf5f4b33a963f5fe645836da7f526c3d3f8ced7",
+        "afterSha256": "c2460d2b1f1336d1e4c918b6c27ac962d680f8df897a8ca8fd52bdbd403d17ca"
+      },
+      {
+        "path": "scenarios/progression-books-balance.json",
+        "beforeSha256": "b11d74b416c17772c6da7936c0a3083a0b0a437594abd06028e2aed4c12abe83",
+        "afterSha256": "0ed039fcc2ef867754f465e7f2e8ecedc7a08ce1039df3a6ab1cd4cacb32384c"
+      },
+      {
+        "path": "scenarios/progression-faceted-filters.json",
+        "beforeSha256": "fcb915b4ff6594f2b4b90fbf684fc79bf3a8831bd3d79eebc2f5dfd3876dddc3",
+        "afterSha256": "7c5784b80b5831974258c61b7a76790e2d998078377500e6a046e0f07d596bf2"
+      },
+      {
+        "path": "scenarios/progression-managed-support-shared.json",
+        "beforeSha256": "bad6319b860b439b472b1278ac79402dabd78b776698ae85bd6f53e8a7913611",
+        "afterSha256": "f334137a33fc63171d6b5c19549add6ff1c51c6f3729f7f372dd9785a0b7eab2"
+      },
+      {
+        "path": "scenarios/progression-open-list-live.json",
+        "beforeSha256": "044a513af66adcb6ad948116fee71a60b741fff5864257c0cc21cf0fb7581998",
+        "afterSha256": "2293ca3734351091238a795d8ea2f13afc50fd6c10b2867d93965a3fc8798a38"
+      },
+      {
+        "path": "scenarios/progression-order-support-owned.json",
+        "beforeSha256": "f96136e0426f10ee64898bb735825068cc6459cba8b3b1960dd1196da3696da4",
+        "afterSha256": "dda5208d3dbe3a151e683a8cd238f414118553ea0812584f00a82655255cf1a5"
+      },
+      {
+        "path": "scenarios/progression-personalized-recommendations.json",
+        "beforeSha256": "a83484489cdc3b4f14b3b1c9c7976ba94db8e3422feb7a11f318dd315ca342d2",
+        "afterSha256": "8bb96bf7c8a81df356cc0e4bd248184dc13924d78bfe85bf173f840899350e1d"
+      },
+      {
+        "path": "scenarios/progression-price-cart-checkout.json",
+        "beforeSha256": "514677c1b4059aab9685419f9e1ef9338c406420dbc3ac7a772a27cb68072b41",
+        "afterSha256": "0e0f6383af25fa70701c7cc99a4b934da2318a68d168ea897333c8be943c8274"
+      },
+      {
+        "path": "scenarios/progression-promotion-checkout.json",
+        "beforeSha256": "75c8e3e9d9277c28cd8213cfa5eed8902b62188ff6848ca84fc8c13ac6724600",
+        "afterSha256": "3e6baa221f1ab203893a2a105c809a3f221d985251a64f115d47e2ab58c180ec"
+      },
+      {
+        "path": "scenarios/progression-promotion-reporting.json",
+        "beforeSha256": "f137fa2fe1fb3d5b56c59a76bb2c96389186e05449fd8d67c19c57673fa01498",
+        "afterSha256": "8c9efe46cdeee1d1dd8d802a222bd1f58b06e997dc53a44fd8e19ff45586673e"
+      },
+      {
+        "path": "scenarios/progression-purchasing.json",
+        "beforeSha256": "f2d31f3b141070d9ca7301bc5c060cc95d4c83782bd452ca4547d933f1c28332",
+        "afterSha256": "b4ead2290f0ed9eb318f2ff0ec44e243c88073b81e2e554aa7e0f01ce59d5b67"
+      },
+      {
+        "path": "scenarios/progression-staff-activity.json",
+        "beforeSha256": "3e1cb0c1cf3646d292cbfb1b4d845ba70f99743682fba15a6dee72717f6d7777",
+        "afterSha256": "28600137357ce5620f9f4919b25eb1ff27ba5aff4ed02285349e4d82cd1585a4"
+      },
+      {
+        "path": "scenarios/progression-stock-limit.json",
+        "beforeSha256": "ab02477e163a0821e12e9ad9cf50ed76d4e677561e4453ae1279dc99e677e627",
+        "afterSha256": "e07cd6c2b949b392cbb10f0f7cf8b2e8b74a0ef2ed17d563187ad28387eebc4a"
+      },
+      {
+        "path": "scenarios/progression-support-intake.json",
+        "beforeSha256": "bfbd58110731933f37068b632dfa17cf5b16f9047e748b00d99c0f123ac7bdae",
+        "afterSha256": "c8d01303a3316f28de956fb2a72ab289905a46f5d689fe40b8193e12cea1753a"
+      },
+      {
+        "path": "scenarios/progression-support-refunds-resolution.json",
+        "beforeSha256": "7e9b9bf19574047f02cbb833881264073cbc4767b56fd2a03ce8beb93f0fcec3",
+        "afterSha256": "2627a122fd791ed4ed2c4c08e7fea283e017bfe59dd1a682899207cc89d7ee67"
+      },
+      {
+        "path": "scenarios/progression-support-triage.json",
+        "beforeSha256": "13d7b33d8c22cae258057f536d69c5a9beb61928311c07a6e16a20eca18cf1ca",
+        "afterSha256": "0b09a2f1f4b9483c43ea460c2c5515c84d702d9c0e4481dfdc3304d333763d91"
+      },
+      {
+        "path": "track.json",
+        "beforeSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+        "afterSha256": "9b252857352627213cd12776a5e7ea6905afe834fd9412e1963bec2fd0ff6485"
+      }
+    ],
+    "taskChanges": [
+      {
+        "id": "ecommerce.feature.catalog-items.hooks",
+        "beforeRow": "| `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |",
+        "afterRow": "| `item-name` | Shows exactly the item name inside its `item-card`; activating it opens `item-detail`. Put icons, badges, and other text outside this element. |"
+      },
+      {
+        "id": "ecommerce.feature.catalog-discovery.hooks",
+        "beforeRow": "| `item-name` | Shows the item name inside its `item-card`. |",
+        "afterRow": "| `item-name` | Shows exactly the item name inside its `item-card`. Put icons, badges, and other text outside this element. |"
+      }
+    ],
+    "allOtherTaskFieldsEqual": true,
+    "executionEqual": true,
+    "checkMeaningEqual": true
+  },
+  "baseline": {
+    "calibration": {
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sha256": "037ecef0a7f42f807fde973776dec6cb3cf83d981ede695091dc0ce11c7a1863"
+    },
+    "snapshot": {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/inputs-a176a3c7c578.json",
+      "sha256": "a176a3c7c578d29a6959f9fdbef741efed718c0bf6b326e60c05765be9548a12"
+    }
+  },
+  "exactTaskPair": {
+    "fromTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e",
+    "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+  },
+  "contractTextEquivalences": [
+    {
+      "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "7bf9bc25b7a7e52449c380b51be539f6db344f4904f26d9c1424fed136384234",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "4373d05c598352b585c93cf44003904e320fdf6772ea75b5d77b24d49430017e",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "fceac36a2300719e7ffc43fb4ec4965fbb3303c2190d27c9a0e18bc66d775c24",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    },
+    {
+      "fromTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e",
+      "toTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35"
+    }
+  ],
+  "unchangedExecutableScopes": [
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "beforeExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0",
+      "afterExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "beforeExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664",
+      "afterExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "beforeExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691",
+      "afterExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691"
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "beforeExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3",
+      "afterExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "beforeExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0",
+      "afterExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "beforeExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664",
+      "afterExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "beforeExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691",
+      "afterExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "beforeExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3",
+      "afterExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3"
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "beforeExecutableSha256": "c288f07a496f7e61d26d52cd986a0e3653787da165d05cac649428ed7154742a",
+      "afterExecutableSha256": "c288f07a496f7e61d26d52cd986a0e3653787da165d05cac649428ed7154742a"
+    }
+  ],
+  "proof": {
+    "unchangedExecutionAndFixtures": true,
+    "unchangedRequirements": true,
+    "unchangedOwnershipAndCheckSemantics": true,
+    "unchangedProductionFilesAgainstHEAD": true,
+    "unchangedExecutableScopes": true
+  },
+  "referenceRegistryValidation": {
+    "ok": true,
+    "issues": []
+  },
+  "mutationInputs": [
+    {
+      "path": "grader/mutations/mongodb-ecommerce.json",
+      "sha256": "255140a2cc0c4ffcdd026cc25418c1bda80f15e4eb7829bbca43d06206ebc07d"
+    },
+    {
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "sha256": "2c757bf0ededa88d5b8d4d078ed74dc16bea090e9ce688f10d7e1ba71bd87155"
+    },
+    {
+      "path": "grader/mutations/spacetime-ecommerce.json",
+      "sha256": "e5fd8b8752cc89f12c019b72df9959b3632c2abedcf08a5dc5de943a0b3c67f0"
+    },
+    {
+      "path": "grader/mutations/convex-ecommerce.json",
+      "sha256": "f08b9fd2ae3e6f9ebe60908110861e188bede3e639c7264a45f7e41c6d1a313e"
+    }
+  ],
+  "retainedArtifacts": [
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-reference.json",
+      "sha256": "c984f9495874f4924732d79a1985c6a2c4dcf0a16c2e18fa0d44da469f859635"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/shared-inputs.json",
+      "sha256": "74a16aff32d77238a863a55f0b8add9642e8b04ab2074403dd78a4643b50f676"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-mutation.json",
+      "sha256": "8b2bfde52ac6a816bfa7dee2d9733fb82677b9a88418dbf06da53116006991c1"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-reference.json",
+      "sha256": "241e507d6d3f5748a2b7c525caed31ff8edf63fdf834dc0e560dcf2f50f27bdb"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-mutation.json",
+      "sha256": "1f8506fb9a3110f69ccdbfb691f950885546a51cdd0107f847e520d7635b17f5"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/null.json",
+      "sha256": "aea50eb653e6f5380dc0ea4163d85df2bb43f502fb709442e0b653ac197234f7"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-reference.json",
+      "sha256": "1c7260b43cd367419f30356d1cf493ec4359acdae57ec5be6cac6df7a8b70a2f"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/inputs.json",
+      "sha256": "2bfcb7603887b64f74a5c965ba404527cb8b2ba534486c05d04f91f83ec132da"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-mutation.json",
+      "sha256": "9929e0620404d3e0e7f2023c7ace6b13997f38669940b2c3d5dd1bf6f7d545f2"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-remaining-composed.json",
+      "sha256": "d8dbd0936f12c2f63319b4ff95eafc374d96d56fcabd7013839133f9b907f8fd"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/spacetime.json",
+      "sha256": "9a342f905d219d9bd35a7d054486258770ab1a586fb61eeb8cab96ba9af13d67"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/inputs.json",
+      "sha256": "c673fa651a1c920d2e1742f85a3a25cb0f77864fc99b15807621013d2041a453"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/postgres.json",
+      "sha256": "923abde3099cb6a1a30c8636c069d684344ddf6b19d48c34d556890d4ccb8d2f"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/convex.json",
+      "sha256": "d367e27302edf416beb555109cb66e4c0c1134029d5b42d6f2fc26a396c9cd90"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/mongodb.json",
+      "sha256": "425a084e605fac74c7f4f942832bca12f0a615ad77bd2429b4e098b9957c2edf"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/null.json",
+      "sha256": "1f567d2ca9593cbe7cfe51cc4f11d82651ad740d3fe688a8a758f0f303a19cb2"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/mongodb.json",
+      "sha256": "4d187a594a1b2c00312c2058bf3b5133abbea2a592a6e06a1112e283ca0c7c14"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/shared-inputs.json",
+      "sha256": "67cc8274e52c3fb419bf39f19642b41aa1815b3e2067b9fa2699c1647708cdac"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/postgres.json",
+      "sha256": "be48305da255d52f183d590a6aba886b3721689632452824194acbec96d2c53c"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/spacetime.json",
+      "sha256": "b7061a85767031e426af8d36c08e658087ca41aa0cf442730bdacafdacc3bc2f"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/convex.json",
+      "sha256": "58de2cd2a7e7a9aa326c96fd5a4a8d374a573cb04cb8731c98935397e3db46d0"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/null.json",
+      "sha256": "f634ff10016fcb326c1b3112e93743f4e09b8d3d7129cfd7ba964e2e4a170e6e"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.json",
+      "sha256": "fcd2a5346c286b3fff2782aa43f367098a752721a0ffcab736477da0ab6016a3"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.inputs.json",
+      "sha256": "c82322c63ff0e28002d0a8f43e3e4aab4d7b10b926a2f1dc49c9d39df5d20bdc"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-20260927/spacetime-controls.json",
+      "sha256": "04e1f6fcc6aae1c0f302d6d9b57583a3471dffb0861371020202857230115e56"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-20260927/inputs-c976f299af18.json",
+      "sha256": "c976f299af18e11939e0cbbd5cf0d50e56b68df551c138f88c2e02db950c1318"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-20260927/postgres-controls.json",
+      "sha256": "2570a146dd44d55aab4250c50be0dc7ac1fb1e8f077ecdca8f36d06badaa5b99"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-20260927/mongodb-controls.json",
+      "sha256": "885621424fd2c633b49c70b97bf10cf549163ddaeff4b3a38849671b8fd379ae"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-20260927/convex-controls.json",
+      "sha256": "254df573258d713cb2e3249fd2e8e157d59d33cd8bf168c439c51765002b4e14"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-20260927/null-appliance.json",
+      "sha256": "d4c535e3b0e3e50c0dc7a21d9345cea26b392fd6d606b48071c0c5953ab6a16e"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/spacetime-controls.json",
+      "sha256": "3fd4f2730c32f1b9352e75569538c5ac9340e2ced4fc7d53efb0ac61e53bf073"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/inputs-2ac2e7105880.json",
+      "sha256": "2ac2e7105880dced6620b5a8cc931a7402fbce5ea0040b54439114870d53699d"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/postgres-controls.json",
+      "sha256": "0731e174f79aa6e7a4d1c2c6c3ffe39abc99179a4b291d7043b23934e3f15ac6"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/mongodb-controls.json",
+      "sha256": "bffbfd5e49aaa63eb832f0178a4e608f60378f1086050badab0dbc6205239985"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/convex-controls.json",
+      "sha256": "9b068b7355613c88ef8e96053cd57b5cc9ff538e73d0d66dd13503b736be7141"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/null.json",
+      "sha256": "24fb70b9254b47eb954aece0cbe1816b6ae7fde842dd961ed011414f01f51e3b"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-spacetime.json",
+      "sha256": "08f50dfbe591884d67e6a8c89857451da0edb53bbc0099a0854da82ee1148ed0"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/inputs-efdb971a1b50.json",
+      "sha256": "efdb971a1b502b4bf855256631bd7e0d84eb1de3d5eefa5baab814e88a4953d0"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-postgres.json",
+      "sha256": "c132dc4a33cc07c752284d27ffae53df2c7dc8e11e27d2671371fc8fdd05aa79"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-mongodb.json",
+      "sha256": "b2eb14f687cdee0b8767900d480fcd7472c33878505bc42edd19ef460ee177ee"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-convex.json",
+      "sha256": "3c49aa41b91d9983d5d3b6c6e6bb5307bd62caf1104c25abcc2c105b4f61b974"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-null.json",
+      "sha256": "190a0ab4a918193709180be1fe87b2f777a2bbc163a4f87d61b67ad7b7358edd"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-spacetime-controls.json",
+      "sha256": "f108017a151aad19d6e0afa3eaf9b8d3bf5ae7e124b43566f2427c59674093ea"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/inputs-f60c91e7bcfa.json",
+      "sha256": "f60c91e7bcfa1370b80e3b8ac7e5ba297357519c64045e515537a844382eab01"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-postgres-controls.json",
+      "sha256": "2cd4f9b5d2ef4e0085f4c060c0281f2d310155a15bed41109359fcbd5aa51504"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/inputs-009cae712226.json",
+      "sha256": "009cae712226dc1838a6ef5e35f90e54ab633ebbf4a5376d55c3621cf46d19a2"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-mongodb-controls.json",
+      "sha256": "46f0c2ed442cade8142d0404b3a0f3ff8e4e16e2c4ff9153f80aae8309c1cee5"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-convex-controls.json",
+      "sha256": "e1d367d3c57a9880d83bd0ad44424ed2373715ff3f921d642c5c85467ffdb235"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-spacetime-controls.json",
+      "sha256": "c672f7c24ce611cd1235e97e688c334020a5392881fbc48b09a4e88dc8d28e24"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-postgres-controls.json",
+      "sha256": "ee4647ef1fd5220de7032d64f0b48ea9128077192a66a6181247ddc1883f08f0"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-mongodb-controls.json",
+      "sha256": "92f3114ac287e3e9c1c8e3cdda193729d872372c840fa999c5135ca4e8d81003"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-convex-controls.json",
+      "sha256": "6f396ab7fded12bb05aed3400906d02abe6293ecd0a7b279b8b66afb539cd36d"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/response1-spacetime-controls.json",
+      "sha256": "97cd4dca73a1df2be8897a7ecddc32cb173e4f090d3337dcf57d8db0304e59c1"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/response1-postgres-controls.json",
+      "sha256": "e246c40929afafa34732b745a261de7c1b3d26a9349df2c1ab5aab7816621ec7"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/response1-mongodb-controls.json",
+      "sha256": "909353cfb8795f26b59a67e5376910f90dbbd9a71a1d46e55d2379b4fc7c2312"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/response1-convex-controls.json",
+      "sha256": "34fe5b3c6e1e272ae01242de9532ed1e6df64cbca150ec4aae80901967c8d512"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/null.json",
+      "sha256": "57e7ba0d3937a3e4554743a2e96fb299851b76abfcff408f4fa520b35d18dfa6"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/inputs-644fe35e8d79.json",
+      "sha256": "644fe35e8d79a6e7c052a406e7574b521a07258bf1a8e90c93cc992e8ceb4820"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-null.json",
+      "sha256": "5d6b05d8683498b67f6eb95a790fe776aabb4c87401aa80da4257917ab77cab0"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/response1-null.json",
+      "sha256": "85aafc97e77e5c79ae9e3323d5eca086aa2a6c6f57a3f8e45ce4917b5b9f90d2"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime.json",
+      "sha256": "49234d55cee88ba1381a1b3dc02d9d71bf0d32336f9cc5db3755969f56a7c632"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/inputs-7a03147ef791.json",
+      "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres.json",
+      "sha256": "19fc76d6c316ca4805c8fdded05a806a9298804e3e301f9920b14a7cf444a427"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb.json",
+      "sha256": "4f40ac2b16ca95388b14a4d797720f672f35178e41f713d5a6ded10e222746fa"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex.json",
+      "sha256": "40f5746b89458d6e16f23d59ff8170ec5a18e8f770b1cdee3e8cc2691bd4f353"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-null.json",
+      "sha256": "529fcb9c5de1650b9b4f1fc4d975a19f5605b4d0c7359aed30a9870607b832c6"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/reused-spacetime.json",
+      "sha256": "303917ec0605dbbb71f33d584de36a230e2fa65d8c99b659d07ba3e867beb2ba"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/inputs-a176a3c7c578.json",
+      "sha256": "a176a3c7c578d29a6959f9fdbef741efed718c0bf6b326e60c05765be9548a12"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/reused-convex.json",
+      "sha256": "fcc8d528fc478b6611c3342ed00539c0f256a1a546a80872026e46cc79021a48"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/reused-null.json",
+      "sha256": "a14d286df655e0207634296ea4daf14c02bf9ca20b73620e5916f8bbe927724e"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-spacetime-qualification.json",
+      "sha256": "4fa3eddecf9e4e8953e80eeffbdca3c63675129eba6bf42f63f4e942dc705dfd"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-convex-qualification.json",
+      "sha256": "065a1314ed1e82ff6c712d88a8ee01884c4847d8486a99aaa9afb141a7654a24"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-postgres-qualification.json",
+      "sha256": "ea0004c9cb9a9a52151d00ac3e6990d6f155e2b8f3646878d918168864fe4d2c"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-mongodb-qualification.json",
+      "sha256": "3e2eac1d8415588a0169412fea312a8de6c6e15f07f845dd7565f93de9993039"
+    }
+  ],
+  "validation": {
+    "negativeWithoutNewMappings": "invalid calibration at evidence.reference:convex:1: qualification artifact claims a changed check, setup, or shared dependency",
+    "proposedDefinitionValid": true,
+    "allSlicesValid": true,
+    "exactCoverageValid": true,
+    "selectedChecks": 112,
+    "retainedSlices": 105,
+    "taskMappings": 8,
+    "requiredPopulations": [
+      "reference:mongodb:1",
+      "mutation:mongodb:1",
+      "reference:postgres:1",
+      "mutation:postgres:1",
+      "reference:spacetime:1",
+      "mutation:spacetime:1",
+      "reference:convex:1",
+      "mutation:convex:1",
+      "null::1"
+    ],
+    "retainedSliceDefinitions": {
+      "unchanged": true,
+      "source": "tracks/ecommerce/composition/calibrations/dependency-l3.json#qualification.evidence",
+      "count": 105,
+      "sha256": "edf952e4a1cb82e69d1eadc49a141aee08e47af5de3e907de0ad850f56ec7ed1"
+    }
+  },
+  "evidence": [
+    {
+      "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/browser-evidence.json",
+      "sha256": "83afc52c775d7dbc2d5ca3c8f9416d96d47fbac62c1ed2f0d2f8b29de298bf0d"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/rendered-pair-verification.json",
+      "sha256": "10bd2a6c2e2a340623195e6f3b11d7135ed49d947adf1bb9c47ec3b6f70e45f3"
+    }
+  ],
+  "validationCommands": [
+    "node dist/commands/check-calibration.js",
+    "node dist/commands/qualification-cli.js status --track ecommerce --level 3 --recipe ecommerce.progression-catalog"
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "recipe": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56",
+  "scope": "Executable comparison only; mutation selection identities remain subject to normal compiler validation.",
+  "scopes": [
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "before": "a428c855aa7a4b02049d6b788c1f5922ca8d0e8223fa012fdc2286e6a1f07e9a",
+      "after": "279315b6dd0591e214606a43d3133f3519a4a8f71013d51185ba265ea7d4fe2a",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "before": "a428c855aa7a4b02049d6b788c1f5922ca8d0e8223fa012fdc2286e6a1f07e9a",
+      "after": "279315b6dd0591e214606a43d3133f3519a4a8f71013d51185ba265ea7d4fe2a",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "before": "a7caa0fe59d3b5aaa4715fcedffb3d15072adfed778e96a6c1414ac47a2ee2d9",
+      "after": "3981eac083b5a3a36e3d79d6bf10e2dc856382fe0104091696dcc938c9d9d805",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "before": "a7caa0fe59d3b5aaa4715fcedffb3d15072adfed778e96a6c1414ac47a2ee2d9",
+      "after": "3981eac083b5a3a36e3d79d6bf10e2dc856382fe0104091696dcc938c9d9d805",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "before": "b4408860df767aae40882a65ffddb59586153f0981dfc3a449139038931b5590",
+      "after": "48be8d97c368f729076aee7c4be4220e5b6156048b098479f3101f5320b995c9",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "before": "b4408860df767aae40882a65ffddb59586153f0981dfc3a449139038931b5590",
+      "after": "48be8d97c368f729076aee7c4be4220e5b6156048b098479f3101f5320b995c9",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "before": "6c07276bc73fcce4b7c689d136b4e4b1e4907356625528c7d23f1d9a48b6c735",
+      "after": "e753913a511dfb0d131b61c9488e5dd30533345c4aabac9e53d1e3a10f78860e",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "before": "6c07276bc73fcce4b7c689d136b4e4b1e4907356625528c7d23f1d9a48b6c735",
+      "after": "e753913a511dfb0d131b61c9488e5dd30533345c4aabac9e53d1e3a10f78860e",
+      "changed": true
+    },
+    {
+      "kind": "null",
+      "before": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "after": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "changed": false
+    }
+  ]
+}

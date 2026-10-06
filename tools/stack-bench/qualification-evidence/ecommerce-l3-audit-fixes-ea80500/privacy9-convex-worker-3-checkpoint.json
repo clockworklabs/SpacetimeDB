@@ -1,0 +1,275 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T18-18-02-461Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T18-18-02-461Z",
+    "parentId": "ecommerce-convex-run126-20260927181704-480ef985"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:18:02.461Z",
+    "completedAt": "2026-09-27T18:21:36.585Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 214124,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-wLYMPz/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-wLYMPz/selected-mutations.json",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "../tracks/ecommerce/scenarios/01-account-disclosure.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "profile-read-not-owner-scoped",
+        "profile-data-is-lost-on-server-restart",
+        "account-password-in-script"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "db50edb040833552eb9b26167abd98bfcf2ad5d3ea6aeaf4a2221e23f1ff04da"
+      },
+      "total": 6,
+      "max": 6,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "identitySha256": "228e06252dd60e6bb37e935f9ee650bbd92e488f7001316e4723634b845ff9d0",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "identitySha256": "909783c33e23fc64fab7b5e4d39e02ae9a65e0726d9824416ad098ce8b459f5b",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 3,
+      "completed": 3,
+      "total": 3,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "profile-read-not-owner-scoped",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.spec.access-control.customer-profile-privacy.620b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.customer-profile-privacy.620b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"9 Harbor Road\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.customer-profile-privacy.620b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "profile-data-is-lost-on-server-restart",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"14 Market Street profilemarker395e8e14-25c6-4df620\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "account-password-in-script",
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "targets": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 110,
+            "criterion": "110a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "private data was delivered to unauthorized actor other",
+            "failedAction": "expectNotReceived",
+            "key": "ecommerce.spec.access-control.account-disclosure.110a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "profile-read-not-owner-scoped",
+          "profile-data-is-lost-on-server-restart",
+          "account-password-in-script"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "scenarioSha256": "726b5330f10e5c782b89c3e36f3ecfa95ba190c5240508cc70db9495f6aeb70e",
+          "mutationSha256": "3a5431240ff6b242fb8a6abeec91638614b7ddf8c197398ec85a8b395e9aa793",
+          "selectionSha256": "dc22661c6d55c81a922124ae6703877aefe0bcecf9b276e841f7691c2507c453",
+          "identitySha256": "228e06252dd60e6bb37e935f9ee650bbd92e488f7001316e4723634b845ff9d0",
+          "mutationIds": [
+            "profile-read-not-owner-scoped",
+            "profile-data-is-lost-on-server-restart"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "scenarioSha256": "b078ded6d5350e83a6b754f01349e21ee5fd53434636164d2436aa66593bd2c0",
+          "mutationSha256": "4c5a758b8209b2e92446d9beaeb11d973b815b16b3bab0450c701ee2dbc0e200",
+          "selectionSha256": "7fb7eb11f8baacc56ffe990b1ffd5a97a89c8c324b938c515c19c4df9718288f",
+          "identitySha256": "909783c33e23fc64fab7b5e4d39e02ae9a65e0726d9824416ad098ce8b459f5b",
+          "mutationIds": [
+            "account-password-in-script"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T18:21:36.585Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "profile-read-not-owner-scoped",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-ahVpVY/grade.json",
+          "sha256": "f6fcb695091bdf065f2973effd80570bff99c77e833e3ae2eb788f1635705c27"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "profile-data-is-lost-on-server-restart",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-3e4It9/grade.json",
+          "sha256": "f681a7b14ce9746ef12f859ee59a9ae4f0163da6d9c473b3a1aa0aa7a591cd48"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "mutationId": "account-password-in-script",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-BbMTYp/grade.json",
+          "sha256": "c380d78f9fd4e0ea1d6ce7d0876729f5dc1c82a13b2a0d983dc29a21a374e3a9"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

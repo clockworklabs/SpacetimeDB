@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "bf1460e54381d95992a4a7d791aad9946bb191bf",
+  "candidateCommit": "318f8e3a60c7ef0944d03032ccc13d581ade0c00",
+  "method": "Use the normal progression selection and buildPrompt for neutral-dev, build at L1 and upgrade at L2/L3. Render before using the two exact base-commit contract rows, and after using candidate text. All other inputs remain identical. The after bytes equal the independently saved prompt review. Only the two reviewed rows differ. L1 and L2 each contain one changed row. L3 contains neither changed contract, so its four rendered pairs are equal.",
+  "renderer": [
+    "src/progression/progression-recipe-selection.ts:resolveProgressionRecipeLevelSelection",
+    "src/composition/recipe-selection.ts:resolveBoundRecipeTaskRequest",
+    "commands/agent.ts:buildPrompt"
+  ],
+  "rows": [
+    {
+      "stack": "spacetime",
+      "level": 1,
+      "beforeSha256": "ee48b73c7fb01ff5ff129d2e2b192fd6e074848ef4e5344fd5e7f61d19beb5fd",
+      "afterSha256": "516b17bae597565f189e513d27c53ba0634d3e4699cb2e2a57440aa8eb445747",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-items.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`; activating it opens `item-detail`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "postgres",
+      "level": 1,
+      "beforeSha256": "be21aa23e5fc968c2be28dab00d2a6f7229840bedbdc7c09813685c39cc8437f",
+      "afterSha256": "f706c5b59e17f1198f18f8e2ad71106daee01a76e2adffbf9b58a82b9edb871a",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-items.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`; activating it opens `item-detail`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 1,
+      "beforeSha256": "f3b38d62d5e575db687081e476c8bb0441d6cc5986d9073ce7add2faf876aa32",
+      "afterSha256": "d4ec7ad16247c9ff02675ae4dc2963b4c359a115eed8b99615eb8f2a0e7a077b",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-items.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`; activating it opens `item-detail`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "convex",
+      "level": 1,
+      "beforeSha256": "e8e3e75e45dc855f6b06eb7fd6d76c5190ef9e84e3556b778c076bc5f5db90ae",
+      "afterSha256": "a2a7bf01fbacda44e654f4e263514b66a988b8b40c0be934b002cfc44af17b65",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-items.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`; activating it opens `item-detail`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`; activating it opens `item-detail`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "spacetime",
+      "level": 2,
+      "beforeSha256": "d6c8b20c01268567a912fe81dc786711d4dc688015974b02efbc5c2a9fc3be1c",
+      "afterSha256": "1268fd9b425dc6563f3be480e9b121bb5459bae19968c76e5ee97fa784488320",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-discovery.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "postgres",
+      "level": 2,
+      "beforeSha256": "7395d457921190f615f0dccf3d61634bd9f51f7ef26dd7e4350ca3ab43b8112f",
+      "afterSha256": "ca905ea236d86be102a5c6c6aee343f8fb27b99af1ed1e4101911f93697bb31c",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-discovery.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 2,
+      "beforeSha256": "167000a7e81e1191fd080cf13ace0ad867a782b1e7efffdd565e5d833e8ffaaa",
+      "afterSha256": "62ea596342a924418cf74515b53e4ed9f0e5aa186ebc168c3fbf2baec90989cd",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-discovery.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "convex",
+      "level": 2,
+      "beforeSha256": "f82a09274f498ec93c0ca4e4d2dea923c12ec2bbd4d8e8cff2258cf55260106e",
+      "afterSha256": "b5f0eb6114e92c94f7a3cb54ea7f9eeb410caa2207d024c568843bd6433080d3",
+      "changes": [
+        {
+          "path": "tracks/ecommerce/contracts/catalog-discovery.md",
+          "before": "| `item-name` | Shows the item name inside its `item-card`. |",
+          "after": "| `item-name` | Shows exactly the item name inside its `item-card`. Put icons, badges, and other text outside this element. |"
+        }
+      ],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "spacetime",
+      "level": 3,
+      "beforeSha256": "0b64e817a55d3b0c37ebf8571f517802f1d81fb9bbecf52f5878cecaae6a2976",
+      "afterSha256": "0b64e817a55d3b0c37ebf8571f517802f1d81fb9bbecf52f5878cecaae6a2976",
+      "changes": [],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "postgres",
+      "level": 3,
+      "beforeSha256": "abe75bf5831c47ea06387b7568b5c12782e313141fae3aaf113e45cb71d6f4a0",
+      "afterSha256": "abe75bf5831c47ea06387b7568b5c12782e313141fae3aaf113e45cb71d6f4a0",
+      "changes": [],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 3,
+      "beforeSha256": "be005823b1b41aacb7956eb1c841c7cf7797c5c2b22884b3b5a8c46752d16060",
+      "afterSha256": "be005823b1b41aacb7956eb1c841c7cf7797c5c2b22884b3b5a8c46752d16060",
+      "changes": [],
+      "allOtherRenderedTextEqual": true
+    },
+    {
+      "stack": "convex",
+      "level": 3,
+      "beforeSha256": "5dfacd0ba0ad1c3c258873b7ef51254048e4864c2b11f2c9d2008f91306e5aed",
+      "afterSha256": "5dfacd0ba0ad1c3c258873b7ef51254048e4864c2b11f2c9d2008f91306e5aed",
+      "changes": [],
+      "allOtherRenderedTextEqual": true
+    }
+  ]
+}

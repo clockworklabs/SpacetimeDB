@@ -1,0 +1,443 @@
+{
+  "ok": true,
+  "inputs": [
+    {
+      "path": "tracks/ecommerce/contracts/accounts.md",
+      "sha256": "efb892a75a65debd138c329f61603fff564e9d056597ff11e2c7a354bc3ccfde"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/appendix-02.md",
+      "sha256": "dec771835f5fd6883a8d2d19cf1ef15fc8808635cc328e8ef549da1efa8918ec"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/application-interface.md",
+      "sha256": "c108d2ffa2d594f1eee4fbd86ff842cd6d6f4057304e429d061975a8d2df6cd2"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/bundle-checkout.md",
+      "sha256": "7d0d59159f31ebc1680074f61e5ef4a468ae06107e444168019c618643dc6fb0"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/bundle-returns.md",
+      "sha256": "db02537d28e0053745b3a99b5d9cc12393653eaadd8b02078c114303c25c5553"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/cart-expiration.md",
+      "sha256": "56c0966494cd19b629140f8b8d53e8b9838e34668a5cab6b7cccb41b78734c50"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/cart.md",
+      "sha256": "255e0e68da874fbef10ea522358aa6fbb91b86eddaa3162db2f66b38a5e8ca22"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/catalog-discovery.md",
+      "sha256": "d13ea495f78e3827b7a243b97466aefbf0252980c76edb432b6b0506854e8450"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/catalog-items.md",
+      "sha256": "16ff827c9f2424af3c4378669ad201a452781313dd64ce92c7b92adddd47a20d"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/catalog-management.md",
+      "sha256": "5fa87c847c0b5b02b8d6ebdf70d13dbbb9953abaf07b7dca3d3fda44b33cd116"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/checkout.md",
+      "sha256": "fff35b5078f4faf638b04b29abb83dd463800ad1a4fd426f55aa1c816701787c"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/customer-profile.md",
+      "sha256": "f538ff2723c3e8fe6f21fddcd758ba78e48b9b282125b758029dc254d9b59c2f"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/delivery-notifications.md",
+      "sha256": "4bf565ea751bb5278bae5910420beeb531a2eb88fb5755e5a06dda68860af490"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/faceted-search.md",
+      "sha256": "08ace4d2d1947f16ceb4da95e6993086c9bd77a0977c258fef1f0a96c7e7879d"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/inventory-dashboard.md",
+      "sha256": "8c3de4ff8a958776ca087febbbbf5f950eaef9efacb96b7c4fa49357b2d0a371"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/l2-order-hooks.md",
+      "sha256": "8040ece7663af2b41c9113976ae3cce49eea5c5c79abe3b23c44bf317dd94048"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/managed-support.md",
+      "sha256": "3a63ab36ea3b318ef5b17915e1190bfd07edbaa745fb090becb17e1e1a32972b"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/notification-preferences.md",
+      "sha256": "a1c7b18c38fe1e2b399392cf36cc8293a40b296ba5234909d168e0aed2e3c0f7"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/operations-access.md",
+      "sha256": "946dbaf1c83ba2b31eb37eb7bbf470ed0e748cd574cfa4bd6d54057a5631ba80"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/order-cancellation.md",
+      "sha256": "8ea0ee31db486769a243e331160f9ae1362ffa95dbcf0a52921795c375849c1e"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/order-data.md",
+      "sha256": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/order-delivery.md",
+      "sha256": "74bd21b39c8d5f020ff62cc408992c15788e48eba8e05a76a0cddc4b4920a98e"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/order-returns.md",
+      "sha256": "c2a6ad77d577df63d547ce8daab58d0b710f67fbf859e522cf8e123e58f424f1"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/order-support.md",
+      "sha256": "72c96cc6c0dad57b0780b735a73f8d69d911f932c916d3d95cd122606fcdce7e"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/payment-records.md",
+      "sha256": "8c752352c7f47a0a65d1823f9ec74009dc95088fc6c2a6cc30d1a1dc7fa11fe0"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/price-history-orders.md",
+      "sha256": "c3a86a7de94e345c578d6b9ba3527c82c137797f385ca4aca3cf2b7ee39b9d40"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/price-history.md",
+      "sha256": "6b013905d0bd4aff0991b084b69d72dc2badc5336e1fc243b3074187bbb9ec13"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/product-bundles.md",
+      "sha256": "670cde34083a655f927e31e8b046bf7bd322a5f70951a82955c1a7afa6917532"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/progression-automatic-reorder.md",
+      "sha256": "0e18d104b14d0ed6c877e3ecf7f4cef0defba6ac8a55476826439ed5687303fd"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/progression-cart-recovery.md",
+      "sha256": "daf04aea3082483caa2ebf3a3c89a438329600cb6aa5d74fb47d97bc244e5747"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/progression-personalized-recommendations.md",
+      "sha256": "42389a6d284dcfdb53a610ce5ce77d40dbc2b9d5e177bbd3f6bccc40079c7d98"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/promotion-checkout.md",
+      "sha256": "b74e703dc77c9eeec26f5beb41cab102570c8314d817015c858557e9946293aa"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/promotion-reporting.md",
+      "sha256": "81cded5fd9a8822c8756ea50bedb879971c94f8727d176f22fa53d2a6a1efbb0"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/promotion-rules.md",
+      "sha256": "701118071fa6e47dfaa1fce667e24df249adb7166304b543dfa93b349c6db779"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/purchasing.md",
+      "sha256": "6434d046c21e5f8299c9817fd4383d4235401adc9432c0fb233354f473edf43c"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/recommendation-feedback.md",
+      "sha256": "00a96f594c8da1ffb4a933c6f8d8d0219216ab6cc2c781cfd17dd9c97c517d58"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/recommendations.md",
+      "sha256": "14ee01ed82a9060fd659b4064ac359104e65f616bef75487d41ebc2dca018c5d"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/reservations.md",
+      "sha256": "e1c4af7a67dd200d5f18d550e5b4c30e7a4bbaf60600b434108ebff7bdf90627"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/reviews.md",
+      "sha256": "2239b960b1792c11710e530ea1825cd65eab87edd23a01732f09d2df54451bd8"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/sales-dashboard.md",
+      "sha256": "ff9ed3890aa5c8303a0badecf946e7d98da3fbbb0a2890a693099bab1a2056c0"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/scheduled-restocks.md",
+      "sha256": "191f9189cb9d22c97960cf77801aaf0943f9e74f4907f7171d67fe0c157b91a3"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/split-tender-refunds.md",
+      "sha256": "62b8b3c233d33858e9b696d06d94c70f6524f8cbed77028acc0d2affdd780841"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/staff-access.md",
+      "sha256": "f43b7829baecea6e7278f1926ab1d7988c85421430b335374f8f5c372c142a93"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/staff-activity.md",
+      "sha256": "7e7c1846445f82aa78ad8e32606e6830f9d326ebfea75d13b077c073695c9594"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/staff-roles.md",
+      "sha256": "3e0dcbf16f165016f812171124e72782e0ea5df08e5254239bdd842a372e0a66"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/stock-alerts.md",
+      "sha256": "5d1f347371efad33747681d588ae5687cf4888d2690ae72532810294862210f2"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/stock-transfers.md",
+      "sha256": "8e0b44912f7e4b1312e3ece2b67118bb578061ccb21e7bf056f3e2cdd99b8f65"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/store-credit.md",
+      "sha256": "5cdb7509a28af2b87687c44d2c35743292e0c72f261d4187aa3b097f02cee1a7"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/subscriptions.md",
+      "sha256": "7f663dc6a8557cd5d5e3eabe9bd14f1b6817ba638398f8b1e6776c6cf42e7bd4"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-history.md",
+      "sha256": "22e5a31ce4adf44521162f6dbc91c2baf577d6488c316263e9b92524a1e1149f"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-intake.md",
+      "sha256": "a07b26a36568f67a7e5b24806409bff5219e26fc4f8faf289872126b9c9d8d89"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-refunds.md",
+      "sha256": "84939247a26608d18fb2fd3969143075f05747e305f5c24faba89e740fc7bdd9"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-triage.md",
+      "sha256": "6556d070031fa4085fe5ace82aec3d613f801ceb46a7f19c4aa746cd97798a86"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/warehouse-administration.md",
+      "sha256": "c0d10ad42d8c9e4773a78f8df62aa0d047a6c9b5d10bf892a5cc16ec213a1d84"
+    }
+  ],
+  "rows": [
+    {
+      "stack": "spacetime",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-spacetime-l1.txt",
+      "sha256": "ee48b73c7fb01ff5ff129d2e2b192fd6e074848ef4e5344fd5e7f61d19beb5fd",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": false,
+      "mode": "build",
+      "guidance": "neutral-dev",
+      "skills": [
+        "typescript-server",
+        "typescript-client",
+        "cli",
+        "spacetime-dev"
+      ],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "b989e606f852bd93fd377925db814b0f1f8e5a42b34af0481d5dcf2f4ad0d451",
+      "requirementSha256": "82adfa15120b6a554be5cc45f816200071cb42e27ebd21df99fdb9fbb315a795",
+      "contractSha256": "f53fb61a6ea396bb774c899d79eb1ad95b5ec04795f404abfa789b14dcadb9e6",
+      "productionQuality": true
+    },
+    {
+      "stack": "postgres",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-postgres-l1.txt",
+      "sha256": "be21aa23e5fc968c2be28dab00d2a6f7229840bedbdc7c09813685c39cc8437f",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": false,
+      "mode": "build",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "b989e606f852bd93fd377925db814b0f1f8e5a42b34af0481d5dcf2f4ad0d451",
+      "requirementSha256": "82adfa15120b6a554be5cc45f816200071cb42e27ebd21df99fdb9fbb315a795",
+      "contractSha256": "f53fb61a6ea396bb774c899d79eb1ad95b5ec04795f404abfa789b14dcadb9e6",
+      "productionQuality": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-mongodb-l1.txt",
+      "sha256": "f3b38d62d5e575db687081e476c8bb0441d6cc5986d9073ce7add2faf876aa32",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": false,
+      "mode": "build",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "b989e606f852bd93fd377925db814b0f1f8e5a42b34af0481d5dcf2f4ad0d451",
+      "requirementSha256": "82adfa15120b6a554be5cc45f816200071cb42e27ebd21df99fdb9fbb315a795",
+      "contractSha256": "f53fb61a6ea396bb774c899d79eb1ad95b5ec04795f404abfa789b14dcadb9e6",
+      "productionQuality": true
+    },
+    {
+      "stack": "convex",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-convex-l1.txt",
+      "sha256": "e8e3e75e45dc855f6b06eb7fd6d76c5190ef9e84e3556b778c076bc5f5db90ae",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": false,
+      "mode": "build",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "b989e606f852bd93fd377925db814b0f1f8e5a42b34af0481d5dcf2f4ad0d451",
+      "requirementSha256": "82adfa15120b6a554be5cc45f816200071cb42e27ebd21df99fdb9fbb315a795",
+      "contractSha256": "f53fb61a6ea396bb774c899d79eb1ad95b5ec04795f404abfa789b14dcadb9e6",
+      "productionQuality": true
+    },
+    {
+      "stack": "spacetime",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-spacetime-l2.txt",
+      "sha256": "d6c8b20c01268567a912fe81dc786711d4dc688015974b02efbc5c2a9fc3be1c",
+      "supportReceipt": true,
+      "roleTab": true,
+      "productTab": false,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [
+        "typescript-server",
+        "typescript-client",
+        "cli",
+        "spacetime-dev"
+      ],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "d871adebd661481f312138c8f7f9da4287c0d089ed628c175513711f6f08679a",
+      "requirementSha256": "0d7d23d1277b06c2875f70c337ba2f74d34979eebb2b9bbe38ceea1af7f3208c",
+      "contractSha256": "1cb416007c51d45c2ead382e2d2fd9899a5ad10c26c61a63f685c0dc83cb3d31",
+      "productionQuality": true
+    },
+    {
+      "stack": "postgres",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-postgres-l2.txt",
+      "sha256": "7395d457921190f615f0dccf3d61634bd9f51f7ef26dd7e4350ca3ab43b8112f",
+      "supportReceipt": true,
+      "roleTab": true,
+      "productTab": false,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "d871adebd661481f312138c8f7f9da4287c0d089ed628c175513711f6f08679a",
+      "requirementSha256": "0d7d23d1277b06c2875f70c337ba2f74d34979eebb2b9bbe38ceea1af7f3208c",
+      "contractSha256": "1cb416007c51d45c2ead382e2d2fd9899a5ad10c26c61a63f685c0dc83cb3d31",
+      "productionQuality": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-mongodb-l2.txt",
+      "sha256": "167000a7e81e1191fd080cf13ace0ad867a782b1e7efffdd565e5d833e8ffaaa",
+      "supportReceipt": true,
+      "roleTab": true,
+      "productTab": false,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "d871adebd661481f312138c8f7f9da4287c0d089ed628c175513711f6f08679a",
+      "requirementSha256": "0d7d23d1277b06c2875f70c337ba2f74d34979eebb2b9bbe38ceea1af7f3208c",
+      "contractSha256": "1cb416007c51d45c2ead382e2d2fd9899a5ad10c26c61a63f685c0dc83cb3d31",
+      "productionQuality": true
+    },
+    {
+      "stack": "convex",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-convex-l2.txt",
+      "sha256": "f82a09274f498ec93c0ca4e4d2dea923c12ec2bbd4d8e8cff2258cf55260106e",
+      "supportReceipt": true,
+      "roleTab": true,
+      "productTab": false,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "d871adebd661481f312138c8f7f9da4287c0d089ed628c175513711f6f08679a",
+      "requirementSha256": "0d7d23d1277b06c2875f70c337ba2f74d34979eebb2b9bbe38ceea1af7f3208c",
+      "contractSha256": "1cb416007c51d45c2ead382e2d2fd9899a5ad10c26c61a63f685c0dc83cb3d31",
+      "productionQuality": true
+    },
+    {
+      "stack": "spacetime",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-spacetime-l3.txt",
+      "sha256": "e1907b2d2ec96103e4e581b57f833ed712a1283c2c450783c3f4da9e60bf5d20",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": true,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [
+        "typescript-server",
+        "typescript-client",
+        "cli",
+        "spacetime-dev"
+      ],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "0dd9dd9cd6e773eaeddae6414a60d2ec6e861d4cdcb48d76ea08c4f3ea9f82c4",
+      "requirementSha256": "9d88b0079553094ab422a251e0541c75b4db1269ebc3ca9ea621fe81626ac332",
+      "contractSha256": "534bc1e5b3b2173a50eb091d58abceb81d588cbad510f4f80b53cb106836aa79",
+      "productionQuality": true
+    },
+    {
+      "stack": "postgres",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-postgres-l3.txt",
+      "sha256": "ba24c5dc9a1b02fdeaef0f622a930d24b8db002d413107ddc357d9094bd4085b",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": true,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "0dd9dd9cd6e773eaeddae6414a60d2ec6e861d4cdcb48d76ea08c4f3ea9f82c4",
+      "requirementSha256": "9d88b0079553094ab422a251e0541c75b4db1269ebc3ca9ea621fe81626ac332",
+      "contractSha256": "534bc1e5b3b2173a50eb091d58abceb81d588cbad510f4f80b53cb106836aa79",
+      "productionQuality": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-mongodb-l3.txt",
+      "sha256": "1d6bcf05fb8d45a5e0b1785e2abaa6a50c25fc5de5428eb26512de8fecb19c95",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": true,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "0dd9dd9cd6e773eaeddae6414a60d2ec6e861d4cdcb48d76ea08c4f3ea9f82c4",
+      "requirementSha256": "9d88b0079553094ab422a251e0541c75b4db1269ebc3ca9ea621fe81626ac332",
+      "contractSha256": "534bc1e5b3b2173a50eb091d58abceb81d588cbad510f4f80b53cb106836aa79",
+      "productionQuality": true
+    },
+    {
+      "stack": "convex",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/audit-fixes-prompt-convex-l3.txt",
+      "sha256": "afccac51431a9944f15899d7d9fcf4eaf41055d771b55917781ce2020a3352a0",
+      "supportReceipt": false,
+      "roleTab": false,
+      "productTab": true,
+      "mode": "upgrade",
+      "guidance": "neutral-dev",
+      "skills": [],
+      "recipeContentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "requestSha256": "0dd9dd9cd6e773eaeddae6414a60d2ec6e861d4cdcb48d76ea08c4f3ea9f82c4",
+      "requirementSha256": "9d88b0079553094ab422a251e0541c75b4db1269ebc3ca9ea621fe81626ac332",
+      "contractSha256": "534bc1e5b3b2173a50eb091d58abceb81d588cbad510f4f80b53cb106836aa79",
+      "productionQuality": true
+    }
+  ],
+  "limits": "Scoped normal build/upgrade prompt rendering for no-repair progression; no model execution or qualification claim. No repair prompt rendered."
+}

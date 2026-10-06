@@ -1,0 +1,253 @@
+TAP version 13
+# Subtest: evaluator requests preserve actor cookies without the browser-only proxy
+    # Subtest: controller request avoids unreachable browser proxy and consumes the full body
+    ok 1 - controller request avoids unreachable browser proxy and consumes the full body
+      ---
+      duration_ms: 75.2105
+      type: 'test'
+      ...
+    # Subtest: current cookies rotate and delete without losing unrelated concurrent cookies
+    ok 2 - current cookies rotate and delete without losing unrelated concurrent cookies
+      ---
+      duration_ms: 14.4781
+      type: 'test'
+      ...
+    # Subtest: another actor stays isolated and explicit forged Cookie is preserved
+    ok 3 - another actor stays isolated and explicit forged Cookie is preserved
+      ---
+      duration_ms: 17.002
+      type: 'test'
+      ...
+    # Subtest: partitioned cookies are not flattened into an evaluator cookie jar
+    not ok 4 - partitioned cookies are not flattened into an evaluator cookie jar
+      ---
+      duration_ms: 3.1031
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:99:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /partition/i. Input:
+        
+        'ActionInconclusive: could not issue the replay as browser context'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+      error: 'could not issue the replay as browser context'
+      stack: |-
+        inconclusive (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/actor-action-runtime.js:11:11)
+        withBrowserRequest (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/browser-request.js:22:9)
+        async waitForActual (node:assert:644:5)
+        async Function.rejects (node:assert:767:25)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:104:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:99:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      operator: 'rejects'
+      stack: |-
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:104:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:99:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: a concurrent change to the same cookie is not overwritten
+    not ok 5 - a concurrent change to the same cookie is not overwritten
+      ---
+      duration_ms: 7.2726
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:107:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /cookie.*chang|concurrent|reconcil/i. Input:
+        
+        'ActionInconclusive: could not issue the replay as browser context'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+      error: 'could not issue the replay as browser context'
+      stack: |-
+        inconclusive (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/actor-action-runtime.js:11:11)
+        withBrowserRequest (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/browser-request.js:47:21)
+        async waitForActual (node:assert:644:5)
+        async Function.rejects (node:assert:767:25)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:109:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:107:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      operator: 'rejects'
+      stack: |-
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:109:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:107:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: unregistered contexts use their original request unchanged
+    ok 6 - unregistered contexts use their original request unchanged
+      ---
+      duration_ms: 3.0026
+      type: 'test'
+      ...
+    # Subtest: an active network cut cannot be bypassed by evaluator requests
+    not ok 7 - an active network cut cannot be bypassed by evaluator requests
+      ---
+      duration_ms: 0.521
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:121:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        The input did not match the regular expression /offline|network.*cut/i. Input:
+        
+        'ActionInconclusive: could not issue the replay as browser context'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+      actual:
+      error: 'could not issue the replay as browser context'
+      stack: |-
+        inconclusive (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/actor-action-runtime.js:11:11)
+        withBrowserRequest (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/browser-request.js:17:9)
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:126:34)
+        Test.runInAsyncScope (node:async_hooks:214:14)
+        Test.run (node:internal/test_runner/test:1047:25)
+        Test.start (node:internal/test_runner/test:944:17)
+        TestContext.test (node:internal/test_runner/test:373:20)
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:121:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      operator: 'rejects'
+      stack: |-
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:126:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:121:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: callback and network failures dispose their temporary request context
+    ok 8 - callback and network failures dispose their temporary request context
+      ---
+      duration_ms: 10.2475
+      type: 'test'
+      ...
+    # Subtest: a fulfilled response lets the browser apply relative-expiry cookies once
+    not ok 9 - a fulfilled response lets the browser apply relative-expiry cookies once
+      ---
+      duration_ms: 1373.5056
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:150:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        Expected values to be strictly equal:
+        + actual - expected
+        
+        + ActionInconclusive: could not issue the replay as browser context
+        +     at inconclusive (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/actor-action-runtime.js:11:11)
+        +     at withBrowserRequest (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/browser-request.js:47:21)
+        +     at async file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:158:21
+        +     at async Promise.all (index 1)
+        +     at async RouteHandler._handleInternal (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:59784:27)
+        +     at async RouteHandler._handleImpl (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:59753:18)
+        +     at async RouteHandler.handle (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:59747:16)
+        +     at async _BrowserContext._onRoute (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:61965:27) {
+        +   classification: 'inconclusive',
+        +   details: {
+        +     finding: {
+        +       fields: {
+        +         actor: 'browser context',
+        +         detail: 'A browser cookie changed concurrently with the evaluator request.'
+        +       },
+        +       kind: 'replay-unavailable'
+        +     }
+        +   }
+        + }
+        - undefined
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      actual:
+      error: 'could not issue the replay as browser context'
+      stack: |-
+        inconclusive (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/actor-action-runtime.js:11:11)
+        withBrowserRequest (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/src/actions/browser-request.js:47:21)
+        async file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:158:21
+        async Promise.all (index 1)
+        async RouteHandler._handleInternal (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:59784:27)
+        async RouteHandler._handleImpl (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:59753:18)
+        async RouteHandler.handle (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:59747:16)
+        async _BrowserContext._onRoute (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\node_modules\playwright-core\lib\coreBundle.js:61965:27)
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:172:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:150:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: a dropped routed response does not apply evaluator response cookies
+    not ok 10 - a dropped routed response does not apply evaluator response cookies
+      ---
+      duration_ms: 191.8972
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:181:13'
+      failureType: 'testCodeFailure'
+      error: |-
+        Expected values to be strictly equal:
+        + actual - expected
+        
+        + {
+        +   domain: '127.0.0.1',
+        +   expires: 1790532417.5,
+        +   httpOnly: true,
+        +   name: 'route-session',
+        +   path: '/',
+        +   sameSite: 'Lax',
+        +   secure: false,
+        +   value: 'accepted'
+        + }
+        - undefined
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      actual:
+        name: 'route-session'
+        value: 'accepted'
+        domain: '127.0.0.1'
+        path: '/'
+        expires: 1790532417.5
+        httpOnly: true
+        secure: false
+        sameSite: 'Lax'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:201:20)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-request.integration.js:181:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..10
+not ok 1 - evaluator requests preserve actor cookies without the browser-only proxy
+  ---
+  duration_ms: 2331.9598
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-request.integration.js:12:1'
+  failureType: 'subtestsFailed'
+  error: '5 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 11
+# suites 0
+# pass 5
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2812.9439

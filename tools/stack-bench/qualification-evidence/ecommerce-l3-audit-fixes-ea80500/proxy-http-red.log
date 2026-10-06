@@ -1,0 +1,126 @@
+TAP version 13
+# Subtest: HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels
+    # Subtest: identity
+    not ok 1 - identity
+      ---
+      duration_ms: 865.7148
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    # Subtest: gzip
+    not ok 2 - gzip
+      ---
+      duration_ms: 726.5339
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    # Subtest: deflate
+    not ok 3 - deflate
+      ---
+      duration_ms: 767.2697
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    # Subtest: br
+    not ok 4 - br
+      ---
+      duration_ms: 734.071
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    # Subtest: unknown
+    not ok 5 - unknown
+      ---
+      duration_ms: 731.0144
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    # Subtest: corrupt
+    not ok 6 - corrupt
+      ---
+      duration_ms: 845.0655
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    # Subtest: overflow
+    not ok 7 - overflow
+      ---
+      duration_ms: 786.9368
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:102:17'
+      failureType: 'testCodeFailure'
+      error: 'proxy exited 2'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/network-interruption.integration.js:110:30
+        shutdown (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:62:9)
+        handle (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:219:16)
+        file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/container/browser-network-proxy.js:221:49
+      ...
+    1..7
+not ok 1 - HTTP proxy snapshots preserve delivered bodies and exclude replay tunnels
+  ---
+  duration_ms: 5460.8421
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\network-interruption.integration.js:95:1'
+  failureType: 'subtestsFailed'
+  error: '7 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 8
+# suites 0
+# pass 0
+# fail 8
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6116.2864

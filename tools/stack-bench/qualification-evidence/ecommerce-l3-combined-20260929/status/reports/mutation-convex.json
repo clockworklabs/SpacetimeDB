@@ -1,0 +1,259 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-convex-20260929012105-30",
+  "attempt": {
+    "id": "reference-live-convex-20260929012105-30",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-29T01:21:05.394Z",
+    "completedAt": "2026-09-29T01:35:30.867Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "06a9f4f447cdafd60a5b93e40f1bbd6587c9ba74a8ef9be3fe9c3327789ad0a0"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "2da1458d95e849a9380f362d900bca8903f94336bad6237ce3f5d9d0816aef5a"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-convex",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "7ffc69c12db746c949009d43ae7e4942847394ef0086747b33589e6b94c0c1fc"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-convex",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 21,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "c0dbcc68de39839d3151b095ccaa65a1a27e2bf1fd169affd5a88b16135d7368",
+      "executableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801",
+      "kind": "mutation",
+      "mutationSha256": "449539530d501fc72d4370aaf0e7f1c67aaa2f0f71fec60f0e1a9c960ebb1278",
+      "recipe": {
+        "contentSha256": "2da1458d95e849a9380f362d900bca8903f94336bad6237ce3f5d9d0816aef5a",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "convex",
+        "reference": {
+          "id": "ecommerce-reference-convex",
+          "sourceSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+        },
+        "version": "1.0.0"
+      },
+      "sha256": "2429c9b276a4aa5fb92f008b33f8a7c5495c9e3b3b260eb1f474b7ff5b645281"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "convex.runs/r1-workers",
+        "durationMs": 860928,
+        "processError": null,
+        "harnessSha256Before": "54e523d7174462e3cce5236d95d87d348154a93496aa16a9bffa7720e6c10a35",
+        "harnessSha256After": "54e523d7174462e3cce5236d95d87d348154a93496aa16a9bffa7720e6c10a35",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-convex-20260929012105-30",
+        "score": "19/19",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 9,
+        "zeroPointCriteria": 0,
+        "fingerprint": "7f4e9985c3bc6b6f9d1e423bf492697fde6fc380dff313ee0af177da3291bb0e",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.l2.order-cancellation-features",
+              "checkCount": 2,
+              "setupRuntimeMs": 1779,
+              "criterionRuntimeMs": 16752,
+              "measuredRuntimeMs": 18531,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.deferred-integrity-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 20482,
+              "criterionRuntimeMs": 36734,
+              "measuredRuntimeMs": 57216,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 400000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.cancellation-accounting-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 2930,
+              "criterionRuntimeMs": 12793,
+              "measuredRuntimeMs": 15723,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.fulfilment-queue",
+              "checkCount": 1,
+              "setupRuntimeMs": 1144,
+              "criterionRuntimeMs": 21206,
+              "measuredRuntimeMs": 22350,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 76000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.inventory-conservation-specifications",
+              "checkCount": 2,
+              "setupRuntimeMs": 2599,
+              "criterionRuntimeMs": 38439,
+              "measuredRuntimeMs": 41038,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 338000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "checkCount": 2,
+              "setupRuntimeMs": 10129,
+              "criterionRuntimeMs": 30247,
+              "measuredRuntimeMs": 40376,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 138000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 15,
+          "total": 15
+        },
+        "baselineDurationMs": 385398,
+        "baselineOutput": "convex.runs/r1",
+        "baselineHarnessSha256Before": "54e523d7174462e3cce5236d95d87d348154a93496aa16a9bffa7720e6c10a35",
+        "baselineHarnessSha256After": "54e523d7174462e3cce5236d95d87d348154a93496aa16a9bffa7720e6c10a35",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 1004,
+            "artifact": "convex.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "shipping-counts-sale-twice",
+              "ship-acknowledges-without-changing-status",
+              "cancel-does-not-restore-stock-feature",
+              "opposing-transfer-ignored",
+              "shipping-rejects-every-request"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex.runs/r1-workers/w1.stdout.log",
+              "stderr": "convex.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 1005,
+            "artifact": "convex.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "transfer-creates-stock-during-race",
+              "customer-can-ship-order-direct-1-1",
+              "cancel-restores-stock-but-keeps-pending-status",
+              "opposing-transfer-rejected",
+              "cancel-trusts-submitted-owner"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex.runs/r1-workers/w2.stdout.log",
+              "stderr": "convex.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 1006,
+            "artifact": "convex.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "completed-restock-is-replayed",
+              "customer-can-cancel-foreign-order-1-1",
+              "cancellation-accounting-loses-stock-restoration",
+              "shipping-trusts-submitted-staff-role",
+              "cancel-rejects-every-request"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex.runs/r1-workers/w3.stdout.log",
+              "stderr": "convex.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "54e523d7174462e3cce5236d95d87d348154a93496aa16a9bffa7720e6c10a35",
+    "qualifiedCheckKeys": [
+      "ecommerce.inventory-operations.shipping-accounting.202e",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.l3.deferred-integrity.exactly-once.311a",
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "ecommerce.returns-pricing.cancellation-and-return.3b",
+      "ecommerce.returns-pricing.refund-accounting.203a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "81293ef69fefd55d3744d5adcbb3e70bd06d339f7810e2017f2efe229616d3e0",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

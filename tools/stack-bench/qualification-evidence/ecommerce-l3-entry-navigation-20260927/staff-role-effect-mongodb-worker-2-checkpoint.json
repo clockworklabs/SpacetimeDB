@@ -1,0 +1,210 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T12-55-50-894Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T12-55-50-894Z",
+    "parentId": "ecommerce-mongodb-run39-20260927125518-7fa31145"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T12:55:50.895Z",
+    "completedAt": "2026-09-27T12:57:28.247Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 97353,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-hcVpHJ/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-hcVpHJ/selected-mutations.json",
+    "fixtureSha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-staff-roles.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 3,
+      "mutationIds": [
+        "role-assignment-drops-role",
+        "role-editor-snaps-back-to-stored-role"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "ee64cc0b77224895e59beb6b85a1d377b1aaefedb6a6f485ff74fdc54c6dc54d"
+      },
+      "total": 7,
+      "max": 7,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "identitySha256": "f47a7a45f34f35202f9e297f2fd3ee321d62df901f8441b3c4fe1149bdc7a0e0",
+          "total": 7,
+          "max": 7
+        }
+      ]
+    },
+    "summary": {
+      "caught": 2,
+      "completed": 2,
+      "total": 2,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "role-assignment-drops-role",
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "targets": [
+          "ecommerce.spec.state-durability.staff-role-reload.621a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.staff-role-reload.621a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 621,
+            "criterion": "621a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.staff-role-reload.621a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "role-editor-snaps-back-to-stored-role",
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "targets": [
+          "ecommerce.progression.staff-roles.staff-roles.621c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.staff-roles.staff-roles.621c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 621,
+            "criterion": "621c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.staff-roles.staff-roles.621c",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b",
+      "recipeSha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe",
+      "fixtureSha256": "656b831869b71fee564f11a02626cd85bfb17e49425a7e07fdb9b8e376cbe391",
+      "calibrationSha256": "92ca9b28199ffb4d3dcef11fecda778b03b2925efffb3d31f57b4807dc9a20f3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 3,
+        "mutationIds": [
+          "role-assignment-drops-role",
+          "role-editor-snaps-back-to-stored-role"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "scenarioSha256": "bfe392b6cfb5b918b847778ee9fbf94521a647859617970e1e0d44109567c784",
+          "mutationSha256": "6f63f46ff376a4ae7bf705e1c44f81bec0cbf32413a58b906a423615f3d5cbd1",
+          "selectionSha256": "c22761b31be21bcc70de2c8911188a0b47c36eca3f65e6d7fa8f2e5d08edf8fe",
+          "identitySha256": "f47a7a45f34f35202f9e297f2fd3ee321d62df901f8441b3c4fe1149bdc7a0e0",
+          "mutationIds": [
+            "role-assignment-drops-role",
+            "role-editor-snaps-back-to-stored-role"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T12:57:28.248Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "mutationId": "role-assignment-drops-role",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-pT2WyL/grade.json",
+          "sha256": "2a9e605c25f132ebd7965333f69556ad3f278e517ac740def576d9b15ae196d3"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "mutationId": "role-editor-snaps-back-to-stored-role",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-pOsaeJ/grade.json",
+          "sha256": "66a826423c7062d1ae430a8590211029964064af1ee339958483bd2625d65434"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

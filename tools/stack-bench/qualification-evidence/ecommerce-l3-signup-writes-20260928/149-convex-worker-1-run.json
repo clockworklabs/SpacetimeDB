@@ -1,0 +1,427 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-convex-run424-20260928050027-a15c35e4",
+  "attempt": {
+    "id": "ecommerce-convex-run424-20260928050027-a15c35e4",
+    "parentId": "reference-live-convex-20260928050026-4846"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:00:33.350Z",
+    "completedAt": "2026-09-28T05:02:38.296Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null,
+      "version": "1.0.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "convex",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-convex-run424-20260928050027-a15c35e4",
+      "backend": "convex",
+      "track": "ecommerce",
+      "runIndex": 424,
+      "ownerPid": 5000,
+      "createdAt": "2026-09-28T05:00:27.200Z",
+      "state": "released",
+      "resources": {
+        "serverUri": "http://127.0.0.1:13634",
+        "database": null,
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-e7867116907fb331-backend",
+          "id": "14af123e64ce0bbee0cd2e4fe3ef9db1c849ea55ca107c5aea6c287e1aa5fb9d",
+          "image": "sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743",
+          "owned": true,
+          "networkMode": "5c1ea752d20afe51ed9a4271cc9babddf800e36c07323d2112529ba1308e09be",
+          "running": false,
+          "removedAt": "2026-09-28T05:02:40.489Z"
+        },
+        "buildContainer": {
+          "name": "sb-e7867116907fb331-build",
+          "id": "a9f5cd408940fdde7817533d9df0396afc704e73024b320df7385e94335ae94c",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:14af123e64ce0bbee0cd2e4fe3ef9db1c849ea55ca107c5aea6c287e1aa5fb9d",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T05:02:39.320Z",
+          "removedAt": "2026-09-28T05:02:39.525Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/9811f625b3c71ceaed75222c1132b0336c4d6c88ebfee2d77a0aa55e45c76523.lock.json",
+            "key": "listener:http://127.0.0.1:13634",
+            "digest": "9811f625b3c71ceaed75222c1132b0336c4d6c88ebfee2d77a0aa55e45c76523",
+            "acquiredAt": "2026-09-28T05:00:27.308Z",
+            "releasedAt": "2026-09-28T05:02:41.279Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/97630cea41461f42c70069268f97eb19bef4c931644e58ffc463e9a620358da0.lock.json",
+            "key": "port:13634",
+            "digest": "97630cea41461f42c70069268f97eb19bef4c931644e58ffc463e9a620358da0",
+            "acquiredAt": "2026-09-28T05:00:27.308Z",
+            "releasedAt": "2026-09-28T05:02:41.280Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/1a9080101f5dae817e2b0592e3ce16fcb129c27d14a2f3457f21edd5f85a73fb.lock.json",
+            "key": "port:7347",
+            "digest": "1a9080101f5dae817e2b0592e3ce16fcb129c27d14a2f3457f21edd5f85a73fb",
+            "acquiredAt": "2026-09-28T05:00:27.308Z",
+            "releasedAt": "2026-09-28T05:02:41.280Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/444f1cce2207f07b1bcfc058c0d33d62daf936dc26c4e2b19aacdc9d039ccdab.lock.json",
+            "key": "port:7425",
+            "digest": "444f1cce2207f07b1bcfc058c0d33d62daf936dc26c4e2b19aacdc9d039ccdab",
+            "acquiredAt": "2026-09-28T05:00:27.308Z",
+            "releasedAt": "2026-09-28T05:02:41.280Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/03d5fb825c227910bfbf85841235a14d5e755b1abb41a5a9ed0a02ff72ba60d4.lock.json",
+            "key": "slot:ecommerce:convex:run424",
+            "digest": "03d5fb825c227910bfbf85841235a14d5e755b1abb41a5a9ed0a02ff72ba60d4",
+            "acquiredAt": "2026-09-28T05:00:27.308Z",
+            "releasedAt": "2026-09-28T05:02:41.280Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/e108adb6dc7157015a58df1d3f441794cbb09df881880df3b1718d9ff19f29af.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-JH3LdK/app",
+            "digest": "e108adb6dc7157015a58df1d3f441794cbb09df881880df3b1718d9ff19f29af",
+            "acquiredAt": "2026-09-28T05:00:27.308Z",
+            "releasedAt": "2026-09-28T05:02:41.280Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-e7867116907fb331-network",
+          "id": "5c1ea752d20afe51ed9a4271cc9babddf800e36c07323d2112529ba1308e09be",
+          "namespaceContainerId": "14af123e64ce0bbee0cd2e4fe3ef9db1c849ea55ca107c5aea6c287e1aa5fb9d",
+          "hostAddresses": [
+            "10.0.0.65",
+            "10.0.0.73",
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "10.0.0.81",
+            "172.30.0.1",
+            "10.0.0.89",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.9",
+            "10.0.0.33",
+            "10.0.0.41",
+            "10.0.0.17"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.91",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "37c69bf6fddb6f40eab18e543a4f8852de8dd7209775124359b32528f08957d9",
+          "firewallInstalledAt": "2026-09-28T05:00:30.500Z",
+          "ownAddresses": [
+            "10.0.0.90"
+          ],
+          "namespaceStartedAt": "2026-09-28T05:00:29.22538315Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-e7867116907fb331-browser",
+          "id": "f1d0a9d2f02fa2ab2e0070f4d6411763fd281da7a1d021c635dec82fca9a9f6d",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:14af123e64ce0bbee0cd2e4fe3ef9db1c849ea55ca107c5aea6c287e1aa5fb9d",
+          "running": false,
+          "removedAt": "2026-09-28T05:02:38.724Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T05:02:41.215Z",
+      "releasedAt": "2026-09-28T05:02:41.280Z",
+      "ownership": {
+        "markerSha256": "a7d6f3bb6f83b997979ed08d89f0f28e6d68da3303bd43c78d2590f0281e764f"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1-workers/w1.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "score": null,
+        "max": null,
+        "graded": false,
+        "contractPass": null,
+        "selection": null,
+        "outcome": {
+          "kind": "ungraded",
+          "phase": "reference-mutation-only",
+          "reason": "the parent qualification owns the full clean grade",
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "buildSessions": [
+          {
+            "sessionId": "reference-convex-1790571655533",
+            "costUsd": 0,
+            "durationMs": 21985,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-convex-1790571655533"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "buildCostUsd": 0,
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 21985,
+          "activeDurationMs": 21985,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "costUsd": 0,
+        "durationMs": 22227
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "mutationControl": {
+      "ok": true,
+      "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1-workers/w1.runs/r1/mutation-control.json",
+      "processError": null,
+      "summary": {
+        "caught": 2,
+        "completed": 2,
+        "total": 2,
+        "remaining": 0
+      },
+      "outcome": null,
+      "results": [
+        {
+          "id": "authorized-restock-does-not-change-stock",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the item-stock control reads 100, expected exactly 101 in the entry matching \"Air Purifier\"",
+              "failedAction": "expectNumber",
+              "key": "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "expected": true
+            },
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 100, expected exactly 101",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "signup-accepts-admin-claim",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        }
+      ]
+    },
+    "totals": {
+      "score": 0,
+      "max": 0,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 21985,
+      "durationSec": 125,
+      "ungraded": [
+        3
+      ]
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "mutation-control",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7347"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

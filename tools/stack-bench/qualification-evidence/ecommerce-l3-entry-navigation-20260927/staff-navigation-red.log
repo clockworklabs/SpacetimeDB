@@ -1,0 +1,213 @@
+TAP version 13
+# Subtest: staff and role navigation follows declared account and role entry controls
+    # Subtest: staff: direct
+    ok 1 - staff: direct
+      ---
+      duration_ms: 11272.3636
+      type: 'test'
+      ...
+    # Subtest: staff: menu
+    not ok 2 - staff: menu
+      ---
+      duration_ms: 11117.3444
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:87:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"staff","layout":"menu","passed":true,"grade":{"id":601,"name":"Staff access","score":0,"max":4,"criteria":[{"id":"601a","desc":"staff and administrators can sign in and open staff tools","points":2,"evidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"assertion","actor":"staff","summary":"the staff-area control did not appear","finding":{"kind":"control-missing","fields":{"control":"staff-area"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506370600,"completedAtMs":1790506376395,"durationMs":5795},"actions":[{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506370600,"completedAtMs":1790506370679,"durationMs":79,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506370679,"completedAtMs":1790506375690,"durationMs":5011,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"failed","type":"browser-observation-evidence","code":"application_failure","phase":"execute","summary":"the staff-area control did not appear","finding":{"kind":"control-missing","fields":{"control":"staff-area"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506375690,"completedAtMs":1790506376394,"durationMs":704,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Staff and administrators can sign in and use staff areas."},{"id":"601b","desc":"customers cannot open staff tools","points":2,"evidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"assertion","actor":"authorized","summary":"the staff-link control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-link","detail":"locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506376396,"completedAtMs":1790506381490,"durationMs":5094},"actions":[{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506376396,"completedAtMs":1790506376487,"durationMs":91,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"failed","type":"browser-interaction-evidence","code":"application_failure","phase":"execute","summary":"the staff-link control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-link","detail":"locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506376487,"completedAtMs":1790506381489,"durationMs":5002,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Customers cannot open staff tools."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"setup","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506370599,"completedAtMs":1790506370600,"durationMs":1},"actions":[],"attachments":[],"sensitivity":[]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /"],"assignedRole":"staff"}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:109:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:87:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: staff: already-open
+    not ok 3 - staff: already-open
+      ---
+      duration_ms: 15533.5006
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:87:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"staff","layout":"already-open","passed":true,"grade":{"id":601,"name":"Staff access","score":2,"max":4,"criteria":[{"id":"601a","desc":"staff and administrators can sign in and open staff tools","points":2,"evidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"assertion","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506381768,"completedAtMs":1790506391953,"durationMs":10185},"actions":[{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506381768,"completedAtMs":1790506381847,"durationMs":79,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506381847,"completedAtMs":1790506386862,"durationMs":5015,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506386862,"completedAtMs":1790506386865,"durationMs":3,"deadlineMs":300000},"attachments":[],"sensitivity":[]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506386865,"completedAtMs":1790506386946,"durationMs":81,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506386946,"completedAtMs":1790506391951,"durationMs":5005,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506391951,"completedAtMs":1790506391953,"durationMs":2,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Staff and administrators can sign in and use staff areas."},{"id":"601b","desc":"customers cannot open staff tools","points":2,"evidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"assertion","actor":"authorized","summary":"the staff-link control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-link","detail":"locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506391954,"completedAtMs":1790506397028,"durationMs":5074},"actions":[{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506391954,"completedAtMs":1790506392028,"durationMs":74,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"failed","type":"browser-interaction-evidence","code":"application_failure","phase":"execute","summary":"the staff-link control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-link","detail":"locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506392028,"completedAtMs":1790506397028,"durationMs":5000,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Customers cannot open staff tools."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"setup","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506381768,"completedAtMs":1790506381768,"durationMs":0},"actions":[],"attachments":[],"sensitivity":[]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /","GET /"],"assignedRole":"staff"}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:109:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:87:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: staff: menu-noop
+    ok 4 - staff: menu-noop
+      ---
+      duration_ms: 11159.2598
+      type: 'test'
+      ...
+    # Subtest: staff: missing-target
+    ok 5 - staff: missing-target
+      ---
+      duration_ms: 11090.7732
+      type: 'test'
+      ...
+    # Subtest: staff: customer-hidden
+    ok 6 - staff: customer-hidden
+      ---
+      duration_ms: 10918.9312
+      type: 'test'
+      ...
+    # Subtest: staff: customer-leak
+    not ok 7 - staff: customer-leak
+      ---
+      duration_ms: 10905.3895
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:87:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"staff","layout":"customer-leak","passed":false,"grade":{"id":601,"name":"Staff access","score":4,"max":4,"criteria":[{"id":"601a","desc":"staff and administrators can sign in and open staff tools","points":2,"evidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"assertion","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430400,"completedAtMs":1790506430657,"durationMs":257},"actions":[{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430400,"completedAtMs":1790506430475,"durationMs":75,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430475,"completedAtMs":1790506430515,"durationMs":40,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430515,"completedAtMs":1790506430526,"durationMs":11,"deadlineMs":300000},"attachments":[],"sensitivity":[]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430526,"completedAtMs":1790506430610,"durationMs":84,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430610,"completedAtMs":1790506430646,"durationMs":36,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430646,"completedAtMs":1790506430657,"durationMs":11,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Staff and administrators can sign in and use staff areas."},{"id":"601b","desc":"customers cannot open staff tools","points":2,"evidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"assertion","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430657,"completedAtMs":1790506441101,"durationMs":10444},"actions":[{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430657,"completedAtMs":1790506430725,"durationMs":68,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430725,"completedAtMs":1790506430763,"durationMs":38,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"authorized","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430763,"completedAtMs":1790506430774,"durationMs":11,"deadlineMs":300000},"attachments":[],"sensitivity":[]}},{"actor":"customer","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"customer","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430774,"completedAtMs":1790506430841,"durationMs":67,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"customer","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430841,"completedAtMs":1790506435853,"durationMs":5012,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"customer","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"absent":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506435853,"completedAtMs":1790506441101,"durationMs":5248,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"Customers cannot open staff tools."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"setup","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506430400,"completedAtMs":1790506430400,"durationMs":0},"actions":[],"attachments":[],"sensitivity":[]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /staff","GET /","GET /staff","GET /","GET /staff","GET /"],"assignedRole":"staff"}
+        
+        true !== false
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: false
+      actual: true
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:109:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:87:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: roles: direct
+    ok 8 - roles: direct
+      ---
+      duration_ms: 721.3143
+      type: 'test'
+      ...
+    # Subtest: roles: menu
+    not ok 9 - roles: menu
+      ---
+      duration_ms: 1027.2845
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:87:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"roles","layout":"menu","passed":true,"grade":{"id":621,"name":"Staff roles","score":0,"max":3,"criteria":[{"id":"621c","desc":"an administrator can assign a staff role","points":1,"evidence":{"schemaVersion":2,"status":"blocked","code":"application_failure","phase":"setup","actor":"admin","summary":"Blocked by a failed prerequisite: the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506442073,"completedAtMs":1790506442848,"durationMs":775},"actions":[],"attachments":[{"kind":"check-evidence","ref":"feature.setupEvidence"}],"sensitivity":["credential","user-content"]},"statedBy":"An administrator can assign a role to an existing staff account."},{"id":"621a","desc":"an assigned staff role survives reload and backend restart in a fresh browser","points":2,"evidence":{"schemaVersion":2,"status":"blocked","code":"application_failure","phase":"setup","actor":"admin","summary":"Blocked by a failed prerequisite: the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506442073,"completedAtMs":1790506442848,"durationMs":775},"actions":[],"attachments":[{"kind":"check-evidence","ref":"feature.setupEvidence"}],"sensitivity":["credential","user-content"]},"statedBy":"Assigned staff roles persist."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"setup","actor":"admin","summary":"the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506442073,"completedAtMs":1790506442848,"durationMs":775},"actions":[{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506442073,"completedAtMs":1790506442139,"durationMs":66,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"failed","type":"browser-observation-evidence","code":"application_failure","phase":"execute","summary":"the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506442139,"completedAtMs":1790506442848,"durationMs":709,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /"],"assignedRole":"staff"}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:109:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:87:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: roles: already-open
+    not ok 10 - roles: already-open
+      ---
+      duration_ms: 1066.4481
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:87:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"roles","layout":"already-open","passed":true,"grade":{"id":621,"name":"Staff roles","score":0,"max":3,"criteria":[{"id":"621c","desc":"an administrator can assign a staff role","points":1,"evidence":{"schemaVersion":2,"status":"blocked","code":"application_failure","phase":"setup","actor":"admin","summary":"Blocked by a failed prerequisite: the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506443126,"completedAtMs":1790506443913,"durationMs":787},"actions":[],"attachments":[{"kind":"check-evidence","ref":"feature.setupEvidence"}],"sensitivity":["credential","user-content"]},"statedBy":"An administrator can assign a role to an existing staff account."},{"id":"621a","desc":"an assigned staff role survives reload and backend restart in a fresh browser","points":2,"evidence":{"schemaVersion":2,"status":"blocked","code":"application_failure","phase":"setup","actor":"admin","summary":"Blocked by a failed prerequisite: the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506443126,"completedAtMs":1790506443913,"durationMs":787},"actions":[],"attachments":[{"kind":"check-evidence","ref":"feature.setupEvidence"}],"sensitivity":["credential","user-content"]},"statedBy":"Assigned staff roles persist."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"setup","actor":"admin","summary":"the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506443126,"completedAtMs":1790506443913,"durationMs":787},"actions":[{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506443127,"completedAtMs":1790506443208,"durationMs":81,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"failed","type":"browser-observation-evidence","code":"application_failure","phase":"execute","summary":"the admin-link control did not appear","finding":{"kind":"control-missing","fields":{"control":"admin-link"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506443208,"completedAtMs":1790506443913,"durationMs":705,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /"],"assignedRole":"staff"}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:109:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:87:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: roles: role-tab
+    not ok 11 - roles: role-tab
+      ---
+      duration_ms: 20384.0767
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:87:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"roles","layout":"role-tab","passed":true,"grade":{"id":621,"name":"Staff roles","score":0,"max":3,"criteria":[{"id":"621c","desc":"an administrator can assign a staff role","points":1,"evidence":{"schemaVersion":2,"status":"blocked","code":"application_failure","phase":"setup","actor":"admin","summary":"Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-role-select","scope":"staff-role-account-staff","detail":"locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444176,"completedAtMs":1790506464301,"durationMs":20125},"actions":[],"attachments":[{"kind":"check-evidence","ref":"feature.setupEvidence"}],"sensitivity":["credential","user-content"]},"statedBy":"An administrator can assign a role to an existing staff account."},{"id":"621a","desc":"an assigned staff role survives reload and backend restart in a fresh browser","points":2,"evidence":{"schemaVersion":2,"status":"blocked","code":"application_failure","phase":"setup","actor":"admin","summary":"Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-role-select","scope":"staff-role-account-staff","detail":"locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444176,"completedAtMs":1790506464301,"durationMs":20125},"actions":[],"attachments":[{"kind":"check-evidence","ref":"feature.setupEvidence"}],"sensitivity":["credential","user-content"]},"statedBy":"Assigned staff roles persist."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"setup","actor":"admin","summary":"the staff-role-select control inside the staff-role-account-staff control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-role-select","scope":"staff-role-account-staff","detail":"locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444176,"completedAtMs":1790506464300,"durationMs":20124},"actions":[{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444176,"completedAtMs":1790506444258,"durationMs":82,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444258,"completedAtMs":1790506444260,"durationMs":2,"deadlineMs":300000},"attachments":[],"sensitivity":[]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"admin-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444260,"completedAtMs":1790506444297,"durationMs":37,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"fill","version":"1.0.0"},"status":"failed","type":"browser-interaction-evidence","code":"application_failure","phase":"execute","summary":"the staff-role-select control inside the staff-role-account-staff control did not become available in time","finding":{"kind":"page-timeout","fields":{"control":"staff-role-select","scope":"staff-role-account-staff","detail":"locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790506444297,"completedAtMs":1790506464300,"durationMs":20003,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}}],"attachments":[],"sensitivity":["credential","user-content"]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /","GET /admin"],"assignedRole":"staff"}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:109:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:87:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: roles: broken-tab
+    ok 12 - roles: broken-tab
+      ---
+      duration_ms: 20395.8023
+      type: 'test'
+      ...
+    # Subtest: roles: missing-tab
+    ok 13 - roles: missing-tab
+      ---
+      duration_ms: 20374.7488
+      type: 'test'
+      ...
+    # Subtest: roles: wrong-row
+    ok 14 - roles: wrong-row
+      ---
+      duration_ms: 2187.4967
+      type: 'test'
+      ...
+    1..14
+not ok 1 - staff and role navigation follows declared account and role entry controls
+  ---
+  duration_ms: 148356.7453
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:13:1'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 15
+# suites 0
+# pass 8
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 148879.0277

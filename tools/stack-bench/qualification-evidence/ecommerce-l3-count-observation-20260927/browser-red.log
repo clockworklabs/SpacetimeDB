@@ -1,0 +1,69 @@
+TAP version 13
+# Subtest: count observations wait for a rendered list without accepting missing or duplicate rows
+    # Subtest: delayed
+    not ok 1 - delayed
+      ---
+      duration_ms: 335.9238
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-action-executors.test.js:51:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        0 row entries shown, expected 1
+        
+        'failed' !== 'passed'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'passed'
+      actual: 'failed'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-action-executors.test.js:92:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/browser-action-executors.test.js:51:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: missing
+    ok 2 - missing
+      ---
+      duration_ms: 138.933
+      type: 'test'
+      ...
+    # Subtest: duplicates
+    ok 3 - duplicates
+      ---
+      duration_ms: 98.4769
+      type: 'test'
+      ...
+    # Subtest: late
+    ok 4 - late
+      ---
+      duration_ms: 101.4037
+      type: 'test'
+      ...
+    # Subtest: scoped
+    ok 5 - scoped
+      ---
+      duration_ms: 89.5434
+      type: 'test'
+      ...
+    1..5
+not ok 1 - count observations wait for a rendered list without accepting missing or duplicate rows
+  ---
+  duration_ms: 1534.3244
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\browser-action-executors.test.js:40:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 6
+# suites 0
+# pass 4
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2326.3275

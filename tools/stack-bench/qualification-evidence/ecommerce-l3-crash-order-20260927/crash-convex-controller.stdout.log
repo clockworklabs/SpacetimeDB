@@ -1,0 +1,332 @@
+2026-09-27T22:56:45.932770102Z 
+2026-09-27T22:56:45.932817154Z qualifying ecommerce-reference-convex: clean run 1/1
+2026-09-27T22:56:47.867299541Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:56:49.371249914Z   preflight  ... 24 checks passed, 2 warning(s)
+2026-09-27T22:56:54.534856431Z   preflight  ... 26 checks passed, 1 warning(s)
+2026-09-27T22:56:54.536012042Z 
+2026-09-27T22:56:54.536036344Z ================ convex — level 3 ================
+2026-09-27T22:57:28.006093978Z   kept the unaided source at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1/first-build-l3
+2026-09-27T22:57:29.693063641Z 
+2026-09-27T22:57:29.693093553Z === convex-l3 (convex) ===
+2026-09-27T22:57:29.693511013Z   app: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-pK5agR/app
+2026-09-27T22:57:29.693526754Z   url: http://localhost:7187
+2026-09-27T22:57:29.693528984Z   recipe: L3 -> ecommerce.progression-catalog (40e7aba3f559)
+2026-09-27T22:57:29.693531354Z   scope: 2 check(s), 2 point(s)
+2026-09-27T22:57:29.693533684Z     features: ecommerce.feature.accounts, ecommerce.feature.cart, ecommerce.feature.catalog-discovery, ecommerce.feature.catalog-items, ecommerce.feature.checkout, ecommerce.feature.purchasing, ecommerce.feature.reviews, ecommerce.feature.warehouse-admin, ecommerce.l2.inventory-dashboard, ecommerce.l2.order-cancellation-features, ecommerce.l2.recommendations, ecommerce.l2.sales-dashboard, ecommerce.l2.stock-transfers-features, ecommerce.l3.scheduled-restocks-features, ecommerce.progression.catalog-management, ecommerce.progression.customer-profile, ecommerce.progression.faceted-search, ecommerce.progression.fulfilment-queue, ecommerce.progression.managed-support, ecommerce.progression.notification-preferences, ecommerce.progression.promotion-rules, ecommerce.progression.staff-access, ecommerce.progression.staff-roles, ecommerce.progression.stock-alerts, ecommerce.progression.support-history, ecommerce.progression.support-intake, ecommerce.progression.support-triage
+2026-09-27T22:57:29.693544525Z     extra checks: ecommerce.spec.state-durability.checkout-crash-durability.910b, ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:57:29.696599485Z   code        ... 468 server LOC in 9 files, 2105 total LOC, 7 runtime deps
+2026-09-27T22:57:29.697045712Z   database    ... leased database requires runtime marker verification
+2026-09-27T22:57:31.964775510Z   stop application ... ok
+2026-09-27T22:57:33.492464975Z   reset database ... ok
+2026-09-27T22:57:43.321773836Z   restart     ... ok
+2026-09-27T22:57:48.483174195Z   stop application ... ok
+2026-09-27T22:57:50.046231729Z   reset database ... ok
+2026-09-27T22:58:04.118785291Z   restart     ... ok
+2026-09-27T22:58:04.118859085Z   db runtime  ... application marker exists in the leased Convex backend
+2026-09-27T22:58:04.695778799Z   contract lint ... DEFERRED (31 interfaces checked during feature grading)
+2026-09-27T22:58:05.837304649Z   actions    ... all 4 present
+2026-09-27T22:58:06.534083280Z   selected-source-001 ... not selected
+2026-09-27T22:58:06.534123162Z   selected-source-002 ... not selected
+2026-09-27T22:58:06.534128992Z   selected-source-003 ... not selected
+2026-09-27T22:58:06.534131323Z   selected-source-004 ... not selected
+2026-09-27T22:58:06.534132523Z   selected-source-005 ... not selected
+2026-09-27T22:58:06.534133563Z   selected-source-006 ... not selected
+2026-09-27T22:58:06.534134683Z   selected-source-007 ... not selected
+2026-09-27T22:58:06.534135953Z   selected-source-008 ... not selected
+2026-09-27T22:58:06.534137143Z   selected-source-009 ... not selected
+2026-09-27T22:58:06.534140753Z   selected-source-010 ... not selected
+2026-09-27T22:58:06.534237278Z   selected-source-011 ... not selected
+2026-09-27T22:58:06.534243688Z   selected-source-012 ... not selected
+2026-09-27T22:58:06.534245598Z   selected-source-013 ... not selected
+2026-09-27T22:58:06.534246668Z   selected-source-014 ... not selected
+2026-09-27T22:58:06.534247748Z   selected-source-015 ... not selected
+2026-09-27T22:58:06.534248668Z   selected-source-016 ... not selected
+2026-09-27T22:58:06.534249668Z   selected-source-017 ... not selected
+2026-09-27T22:58:06.534250638Z   selected-source-018 ... not selected
+2026-09-27T22:58:06.534251658Z   selected-source-019 ... not selected
+2026-09-27T22:58:06.534252738Z   selected-source-020 ... not selected
+2026-09-27T22:58:06.534253738Z   selected-source-021 ... not selected
+2026-09-27T22:58:06.534254768Z   selected-source-022 ... not selected
+2026-09-27T22:58:06.534256118Z   selected-source-023 ... not selected
+2026-09-27T22:58:06.534257439Z   selected-source-024 ... not selected
+2026-09-27T22:58:06.534439057Z   selected-source-025 ... not selected
+2026-09-27T22:58:06.534455878Z   selected-source-026 ... not selected
+2026-09-27T22:58:06.534457458Z   selected-source-027 ... not selected
+2026-09-27T22:58:06.534458818Z   selected-source-028 ... not selected
+2026-09-27T22:58:06.534459868Z   selected-source-029 ... not selected
+2026-09-27T22:58:06.534460818Z   selected-source-030 ... not selected
+2026-09-27T22:58:06.534461828Z   selected-source-031 ... not selected
+2026-09-27T22:58:06.534462878Z   selected-source-032 ... not selected
+2026-09-27T22:58:06.534463898Z   selected-source-033 ... not selected
+2026-09-27T22:58:06.534464928Z   selected-source-034 ... not selected
+2026-09-27T22:58:06.534465898Z   selected-source-035 ... not selected
+2026-09-27T22:58:06.534466808Z   selected-source-036 ... not selected
+2026-09-27T22:58:06.534467699Z   selected-source-037 ... not selected
+2026-09-27T22:58:06.534480629Z   selected-source-038 ... not selected
+2026-09-27T22:58:06.534481629Z   selected-source-039 ... not selected
+2026-09-27T22:58:06.534482609Z   selected-source-040 ... not selected
+2026-09-27T22:58:06.534483579Z   selected-source-041 ... not selected
+2026-09-27T22:58:06.534484519Z   selected-source-042 ... not selected
+2026-09-27T22:58:06.534485429Z   selected-source-043 ... not selected
+2026-09-27T22:58:06.534486309Z   selected-source-044 ... not selected
+2026-09-27T22:58:06.534487209Z   selected-source-045 ... not selected
+2026-09-27T22:58:06.534488180Z   selected-source-046 ... not selected
+2026-09-27T22:58:06.534489220Z   selected-source-047 ... not selected
+2026-09-27T22:58:06.534490200Z   selected-source-048 ... not selected
+2026-09-27T22:58:06.534491210Z   selected-source-049 ... not selected
+2026-09-27T22:58:06.534492160Z   selected-source-050 ... not selected
+2026-09-27T22:58:06.534493190Z   selected-source-051 ... not selected
+2026-09-27T22:58:06.534494120Z   selected-source-052 ... not selected
+2026-09-27T22:58:06.534495240Z   selected-source-053 ... not selected
+2026-09-27T22:58:06.534496160Z   selected-source-054 ... not selected
+2026-09-27T22:58:06.534570354Z   selected-source-055 ... not selected
+2026-09-27T22:58:06.534579444Z   selected-source-056 ... not selected
+2026-09-27T22:58:06.534581274Z   selected-source-057 ... not selected
+2026-09-27T22:58:06.534582834Z   selected-source-058 ... not selected
+2026-09-27T22:58:06.534583934Z   selected-source-059 ... not selected
+2026-09-27T22:58:06.534585024Z   selected-source-060 ... not selected
+2026-09-27T22:58:06.534586065Z   selected-source-061 ... not selected
+2026-09-27T22:58:06.534587045Z   selected-source-062 ... not selected
+2026-09-27T22:58:06.534588385Z   selected-source-063 ... not selected
+2026-09-27T22:58:06.534589405Z   selected-source-064 ... not selected
+2026-09-27T22:58:06.534590385Z   selected-source-065 ... not selected
+2026-09-27T22:58:06.534591435Z   selected-source-066 ... not selected
+2026-09-27T22:58:06.534592405Z   selected-source-067 ... not selected
+2026-09-27T22:58:06.534593695Z   selected-source-068 ... not selected
+2026-09-27T22:58:06.534594765Z   selected-source-069 ... not selected
+2026-09-27T22:58:06.534595815Z   selected-source-070 ... not selected
+2026-09-27T22:58:06.534596815Z   selected-source-071 ... not selected
+2026-09-27T22:58:09.071417025Z   stop application ... ok
+2026-09-27T22:58:10.561385627Z   reset database ... ok
+2026-09-27T22:58:21.081707770Z   restart     ... ok
+2026-09-27T22:58:43.716748499Z   selected-source-072 ... 2/2
+2026-09-27T22:58:43.719016875Z   selected-source-073 ... not selected
+2026-09-27T22:58:43.719059927Z   selected-source-074 ... not selected
+2026-09-27T22:58:43.719062067Z   selected-source-075 ... not selected
+2026-09-27T22:58:43.719063247Z   selected-source-076 ... not selected
+2026-09-27T22:58:43.719066977Z   selected-source-077 ... not selected
+2026-09-27T22:58:43.719067917Z   selected-source-078 ... not selected
+2026-09-27T22:58:43.719068907Z   selected-source-079 ... not selected
+2026-09-27T22:58:43.719069827Z   selected-source-080 ... not selected
+2026-09-27T22:58:43.719070747Z   selected-source-081 ... not selected
+2026-09-27T22:58:43.719071697Z   selected-source-082 ... not selected
+2026-09-27T22:58:43.719075487Z   selected-source-083 ... not selected
+2026-09-27T22:58:43.719076508Z   selected-source-084 ... not selected
+2026-09-27T22:58:43.719077508Z   selected-source-085 ... not selected
+2026-09-27T22:58:43.719078438Z   selected-source-086 ... not selected
+2026-09-27T22:58:43.719079338Z   selected-source-087 ... not selected
+2026-09-27T22:58:43.719080228Z   selected-source-088 ... not selected
+2026-09-27T22:58:43.719081138Z   selected-source-089 ... not selected
+2026-09-27T22:58:43.719082078Z   selected-source-090 ... not selected
+2026-09-27T22:58:43.719085798Z   selected-source-091 ... not selected
+2026-09-27T22:58:43.719086928Z   selected-source-092 ... not selected
+2026-09-27T22:58:43.719087828Z   selected-source-093 ... not selected
+2026-09-27T22:58:43.719088738Z   selected-source-094 ... not selected
+2026-09-27T22:58:43.719089648Z   selected-source-095 ... not selected
+2026-09-27T22:58:43.719090578Z   selected-source-096 ... not selected
+2026-09-27T22:58:43.719091668Z   selected-source-097 ... not selected
+2026-09-27T22:58:43.719094648Z   selected-source-098 ... not selected
+2026-09-27T22:58:43.719096218Z   selected-source-099 ... not selected
+2026-09-27T22:58:43.719097868Z   selected-source-100 ... not selected
+2026-09-27T22:58:43.719098809Z   selected-source-101 ... not selected
+2026-09-27T22:58:43.719099709Z   selected-source-102 ... not selected
+2026-09-27T22:58:43.719100609Z   selected-source-103 ... not selected
+2026-09-27T22:58:43.719101579Z   selected-source-104 ... not selected
+2026-09-27T22:58:43.719102489Z   selected-source-105 ... not selected
+2026-09-27T22:58:43.719103399Z   selected-source-106 ... not selected
+2026-09-27T22:58:43.719104369Z   selected-source-107 ... not selected
+2026-09-27T22:58:43.719105279Z   selected-source-108 ... not selected
+2026-09-27T22:58:43.719106289Z   selected-source-109 ... not selected
+2026-09-27T22:58:43.719218874Z   selected-source-110 ... not selected
+2026-09-27T22:58:43.719244255Z   selected-source-111 ... not selected
+2026-09-27T22:58:43.719250446Z   selected-source-112 ... not selected
+2026-09-27T22:58:43.719252416Z   selected-source-113 ... not selected
+2026-09-27T22:58:43.719253536Z   selected-source-114 ... not selected
+2026-09-27T22:58:43.995647493Z   evidence write and source verification ... 106.2ms
+2026-09-27T22:58:43.995675734Z   TOTAL      ... 2/2
+2026-09-27T22:58:43.995941625Z   bundle: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-pK5agR/app-grading/bundle.json
+2026-09-27T22:58:44.150442569Z   kept the unaided grading at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1/first-build-l3-grading
+2026-09-27T22:58:44.190435041Z   kept the L3 source checkpoint at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1/level-l3-source
+2026-09-27T22:58:44.200015358Z   convex-ecom-run264-ecommerce-convex-run264-20260927225647-9172a8b8: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:58:44.240281713Z   source kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1/source
+2026-09-27T22:58:44.240308684Z   grading detail kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1/grading
+2026-09-27T22:58:44.250199861Z 
+2026-09-27T22:58:44.250223842Z ================ convex summary ================
+2026-09-27T22:58:44.250559430Z   L3: 2/2 unaided -> 2/2 | 0 repairs | $0.00 total ($0.00 repairs) | not needed | 110s
+2026-09-27T22:58:44.250734685Z   TOTAL 2/2  $0  0 repair(s)  110s
+2026-09-27T22:58:44.250747815Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1/run.json
+2026-09-27T22:58:44.925000382Z   removed the leased run container sb-d5577c9b65c4c9e9-browser
+2026-09-27T22:58:45.867792260Z   removed the leased run container sb-d5577c9b65c4c9e9-build
+2026-09-27T22:58:47.103392716Z   removed the leased run container sb-d5577c9b65c4c9e9-backend
+2026-09-27T22:58:54.964160980Z 
+2026-09-27T22:58:54.964541124Z qualifying ecommerce-reference-convex: clean run 1/1
+2026-09-27T22:58:55.013240948Z 
+2026-09-27T22:58:55.013274749Z qualifying ecommerce-reference-convex: clean run 1/1
+2026-09-27T22:58:55.075255819Z 
+2026-09-27T22:58:55.075294351Z qualifying ecommerce-reference-convex: clean run 1/1
+2026-09-27T22:58:56.545466055Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:56.665870169Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:56.674816966Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:58.225029902Z   preflight  ... 24 checks passed, 2 warning(s)
+2026-09-27T22:58:58.226830043Z   preflight  ... 24 checks passed, 2 warning(s)
+2026-09-27T22:58:58.352959636Z   preflight  ... 24 checks passed, 2 warning(s)
+2026-09-27T22:59:05.054157113Z   preflight  ... 26 checks passed, 1 warning(s)
+2026-09-27T22:59:05.054196504Z 
+2026-09-27T22:59:05.054201344Z ================ convex — level 3 ================
+2026-09-27T22:59:05.174307785Z   preflight  ... 26 checks passed, 1 warning(s)
+2026-09-27T22:59:05.177374044Z 
+2026-09-27T22:59:05.177394625Z ================ convex — level 3 ================
+2026-09-27T22:59:05.420307811Z   preflight  ... 26 checks passed, 1 warning(s)
+2026-09-27T22:59:05.421916523Z 
+2026-09-27T22:59:05.422013441Z ================ convex — level 3 ================
+2026-09-27T22:59:35.401896834Z 
+2026-09-27T22:59:35.402035978Z ================ convex mutation control ================
+2026-09-27T22:59:35.662055776Z 
+2026-09-27T22:59:35.662086567Z ================ convex mutation control ================
+2026-09-27T22:59:35.760897260Z 
+2026-09-27T22:59:35.760926111Z ================ convex mutation control ================
+2026-09-27T22:59:36.932281997Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:59:36.934986215Z   baseline: 2/2  F910:2
+2026-09-27T22:59:36.935009946Z 
+2026-09-27T22:59:37.135473301Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:59:37.139182151Z   baseline: 2/2  F910:2
+2026-09-27T22:59:37.139203472Z 
+2026-09-27T22:59:37.352318645Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:59:37.360537289Z   baseline: 2/2  F910:2
+2026-09-27T22:59:37.360718598Z 
+2026-09-27T23:00:26.765452332Z CAUGHT               checkout-crash-sibling-stock — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:26.765515976Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:27.491293911Z CAUGHT               checkout-crash-durability — expected ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T23:00:27.491337563Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T23:00:27.975177484Z CAUGHT               checkout-crash-integrity — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:27.975295716Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:00:43.710286911Z 
+2026-09-27T23:00:43.710314392Z 1/1 mutations cleanly caught
+2026-09-27T23:00:43.710750114Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w2.runs/r1/mutation-control.json
+2026-09-27T23:00:43.768637839Z   convex-ecom-run265-ecommerce-convex-run265-20260927225856-c4e5479d: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:00:43.780875618Z 
+2026-09-27T23:00:43.780964992Z ================ convex summary ================
+2026-09-27T23:00:43.780970022Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 30s
+2026-09-27T23:00:43.780971752Z   TOTAL 0/0  $0  0 repair(s)  99s
+2026-09-27T23:00:43.781784966Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w2.runs/r1/run.json
+2026-09-27T23:00:44.344083578Z   removed the leased run container sb-d2b4f3d5a12d5e2e-browser
+2026-09-27T23:00:44.445834432Z 
+2026-09-27T23:00:44.446104625Z 1/1 mutations cleanly caught
+2026-09-27T23:00:44.446111505Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w3.runs/r1/mutation-control.json
+2026-09-27T23:00:44.528651070Z   convex-ecom-run266-ecommerce-convex-run266-20260927225856-09aeae53: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:00:44.537894839Z 
+2026-09-27T23:00:44.537935491Z ================ convex summary ================
+2026-09-27T23:00:44.538439796Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 30s
+2026-09-27T23:00:44.539522408Z   TOTAL 0/0  $0  0 repair(s)  99s
+2026-09-27T23:00:44.539544399Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w3.runs/r1/run.json
+2026-09-27T23:00:44.661742015Z 
+2026-09-27T23:00:44.661774566Z 1/1 mutations cleanly caught
+2026-09-27T23:00:44.661776786Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w1.runs/r1/mutation-control.json
+2026-09-27T23:00:44.711582814Z   convex-ecom-run264-ecommerce-convex-run264-20260927225856-df524410: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:00:44.726100093Z 
+2026-09-27T23:00:44.726224409Z ================ convex summary ================
+2026-09-27T23:00:44.738408900Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 30s
+2026-09-27T23:00:44.738482355Z   TOTAL 0/0  $0  0 repair(s)  99s
+2026-09-27T23:00:44.738695115Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w1.runs/r1/run.json
+2026-09-27T23:00:45.126097511Z   removed the leased run container sb-0e6854e442d69d4f-browser
+2026-09-27T23:00:45.327288661Z   removed the leased run container sb-d76e7a7c2813ad8a-browser
+2026-09-27T23:00:45.578768565Z   removed the leased run container sb-d2b4f3d5a12d5e2e-build
+2026-09-27T23:00:46.440822616Z   removed the leased run container sb-0e6854e442d69d4f-build
+2026-09-27T23:00:46.604554916Z   removed the leased run container sb-d76e7a7c2813ad8a-build
+2026-09-27T23:00:47.274822651Z   removed the leased run container sb-d2b4f3d5a12d5e2e-backend
+2026-09-27T23:00:47.837536987Z   removed the leased run container sb-0e6854e442d69d4f-backend
+2026-09-27T23:00:48.583295737Z   removed the leased run container sb-d76e7a7c2813ad8a-backend
+2026-09-27T23:00:50.133005981Z {
+2026-09-27T23:00:50.133056204Z   "ok": true,
+2026-09-27T23:00:50.133065784Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w2.json",
+2026-09-27T23:00:50.133069094Z   "stable": true,
+2026-09-27T23:00:50.133070905Z   "sameImage": true,
+2026-09-27T23:00:50.133072715Z   "sameHarness": true,
+2026-09-27T23:00:50.133074535Z   "diagnostic": true,
+2026-09-27T23:00:50.133076115Z   "runs": [
+2026-09-27T23:00:50.133080475Z     {
+2026-09-27T23:00:50.133086205Z       "repetition": 1,
+2026-09-27T23:00:50.133088185Z       "ok": true,
+2026-09-27T23:00:50.133089776Z       "score": null,
+2026-09-27T23:00:50.133091406Z       "criteria": null,
+2026-09-27T23:00:50.133093106Z       "zeroPointCriteria": null,
+2026-09-27T23:00:50.133094806Z       "mutations": {
+2026-09-27T23:00:50.133096596Z         "caught": 1,
+2026-09-27T23:00:50.133098436Z         "completed": 1,
+2026-09-27T23:00:50.133100306Z         "total": 1,
+2026-09-27T23:00:50.133106006Z         "remaining": 0
+2026-09-27T23:00:50.133111107Z       },
+2026-09-27T23:00:50.133113057Z       "failures": []
+2026-09-27T23:00:50.133114807Z     }
+2026-09-27T23:00:50.133116547Z   ]
+2026-09-27T23:00:50.133118107Z }
+2026-09-27T23:00:50.553862344Z {
+2026-09-27T23:00:50.553958899Z   "ok": true,
+2026-09-27T23:00:50.553961489Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w3.json",
+2026-09-27T23:00:50.553963710Z   "stable": true,
+2026-09-27T23:00:50.553965340Z   "sameImage": true,
+2026-09-27T23:00:50.553966880Z   "sameHarness": true,
+2026-09-27T23:00:50.553968380Z   "diagnostic": true,
+2026-09-27T23:00:50.553969810Z   "runs": [
+2026-09-27T23:00:50.553971310Z     {
+2026-09-27T23:00:50.553972760Z       "repetition": 1,
+2026-09-27T23:00:50.553974290Z       "ok": true,
+2026-09-27T23:00:50.553975720Z       "score": null,
+2026-09-27T23:00:50.553986131Z       "criteria": null,
+2026-09-27T23:00:50.553987221Z       "zeroPointCriteria": null,
+2026-09-27T23:00:50.554032513Z       "mutations": {
+2026-09-27T23:00:50.554034473Z         "caught": 1,
+2026-09-27T23:00:50.554035643Z         "completed": 1,
+2026-09-27T23:00:50.554036763Z         "total": 1,
+2026-09-27T23:00:50.554041133Z         "remaining": 0
+2026-09-27T23:00:50.554042094Z       },
+2026-09-27T23:00:50.554043064Z       "failures": []
+2026-09-27T23:00:50.554044044Z     }
+2026-09-27T23:00:50.554044994Z   ]
+2026-09-27T23:00:50.554045884Z }
+2026-09-27T23:00:51.097885983Z {
+2026-09-27T23:00:51.097924025Z   "ok": true,
+2026-09-27T23:00:51.097926325Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.runs/r1-workers/w1.json",
+2026-09-27T23:00:51.097927655Z   "stable": true,
+2026-09-27T23:00:51.097928625Z   "sameImage": true,
+2026-09-27T23:00:51.097929635Z   "sameHarness": true,
+2026-09-27T23:00:51.097930615Z   "diagnostic": true,
+2026-09-27T23:00:51.097931615Z   "runs": [
+2026-09-27T23:00:51.097932605Z     {
+2026-09-27T23:00:51.097933615Z       "repetition": 1,
+2026-09-27T23:00:51.097934645Z       "ok": true,
+2026-09-27T23:00:51.097935615Z       "score": null,
+2026-09-27T23:00:51.097936575Z       "criteria": null,
+2026-09-27T23:00:51.097937895Z       "zeroPointCriteria": null,
+2026-09-27T23:00:51.097938875Z       "mutations": {
+2026-09-27T23:00:51.097939795Z         "caught": 1,
+2026-09-27T23:00:51.097940755Z         "completed": 1,
+2026-09-27T23:00:51.097941815Z         "total": 1,
+2026-09-27T23:00:51.097942775Z         "remaining": 0
+2026-09-27T23:00:51.097943716Z       },
+2026-09-27T23:00:51.097944656Z       "failures": []
+2026-09-27T23:00:51.097945756Z     }
+2026-09-27T23:00:51.097946676Z   ]
+2026-09-27T23:00:51.097947636Z }
+2026-09-27T23:00:51.689592610Z {
+2026-09-27T23:00:51.689628422Z   "ok": true,
+2026-09-27T23:00:51.689630422Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.json",
+2026-09-27T23:00:51.689631852Z   "stable": true,
+2026-09-27T23:00:51.689632882Z   "sameImage": true,
+2026-09-27T23:00:51.689634012Z   "sameHarness": true,
+2026-09-27T23:00:51.689635002Z   "diagnostic": true,
+2026-09-27T23:00:51.689658763Z   "runs": [
+2026-09-27T23:00:51.689659883Z     {
+2026-09-27T23:00:51.689660884Z       "repetition": 1,
+2026-09-27T23:00:51.689661914Z       "ok": true,
+2026-09-27T23:00:51.689663114Z       "score": "2/2",
+2026-09-27T23:00:51.689664144Z       "criteria": 2,
+2026-09-27T23:00:51.689665204Z       "zeroPointCriteria": 0,
+2026-09-27T23:00:51.689666234Z       "mutations": {
+2026-09-27T23:00:51.689667224Z         "caught": 3,
+2026-09-27T23:00:51.689668214Z         "total": 3
+2026-09-27T23:00:51.689669184Z       },
+2026-09-27T23:00:51.689670174Z       "failures": []
+2026-09-27T23:00:51.689671534Z     }
+2026-09-27T23:00:51.689672534Z   ]
+2026-09-27T23:00:51.689673504Z }

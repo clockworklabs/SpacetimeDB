@@ -1,0 +1,3 @@
+FROM sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133
+LABEL stack-bench.diagnostic="unqualified-checkout-readiness" stack-bench.candidate="d9cf20f6d7512b7b8e8e7c2cb17d433624da9712" stack-bench.inputs="72610dbdb8ef30d75929552a6f7a28d388eb7a6f970c23e424809748ec5368dc"
+COPY overlay/ /opt/stack-bench/

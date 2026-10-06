@@ -1,0 +1,210 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T18-55-23-715Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T18-55-23-715Z",
+    "parentId": "ecommerce-convex-run164-20260927185442-17f7835c"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:55:23.715Z",
+    "completedAt": "2026-09-27T18:57:07.709Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "8a6b9f7f96b7bbefc9e9592c1020843c7a57131f9b351cdcf9d546494db67255"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 103994,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-6orN6g/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-6orN6g/selected-mutations.json",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-duplicate-checkout.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "checkout-retains-purchased-cart",
+        "checkout-replay-loses-prior-order"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "a3946cc2f74074b4ac6251a5822ceb33cc6975ff1c67d3391d2cef731fcc1dbf"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+          "identitySha256": "7fa5d6f86729f7d09ad8202b2c67087ef41d681c4e7b7cae2c13b0b796f8218a",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 2,
+      "completed": 2,
+      "total": 2,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "checkout-retains-purchased-cart",
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 203,
+            "criterion": "203b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the cart-count control did not become available in time",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-replay-loses-prior-order",
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 203,
+            "criterion": "203b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the order lines without an order control reads 1, expected exactly 0",
+            "failedAction": "dbExpectCheckout",
+            "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "8a6b9f7f96b7bbefc9e9592c1020843c7a57131f9b351cdcf9d546494db67255",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "checkout-retains-purchased-cart",
+          "checkout-replay-loses-prior-order"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+          "scenarioSha256": "276812622448dc64a35f804550d5786df82ee398caafd6d76628f61a67c61fef",
+          "mutationSha256": "cc82b5a33e10da58675a10e65f811c859ba5d1161eec358c693f84d4a66fa4bd",
+          "selectionSha256": "6c5e67fd5d8817423b6526cc17e4c1802834b1d4b3c793485f39e4faf2fbdf0d",
+          "identitySha256": "7fa5d6f86729f7d09ad8202b2c67087ef41d681c4e7b7cae2c13b0b796f8218a",
+          "mutationIds": [
+            "checkout-retains-purchased-cart",
+            "checkout-replay-loses-prior-order"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T18:57:07.710Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "mutationId": "checkout-retains-purchased-cart",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-10eMRB/grade.json",
+          "sha256": "f573138921b4eefd82bac5c0980ea780bf54aea40234acdbf1f12afb0c8454f5"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "mutationId": "checkout-replay-loses-prior-order",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-ZCJ2rW/grade.json",
+          "sha256": "5cf908f2040d3927e6b7e9050053f8d0b2ef4c8753cb1b0d4c78745bc808c05e"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

@@ -1,0 +1,455 @@
+TAP version 13
+# Subtest: a parameterless action needs no DOM input; parameterized actions still do
+ok 1 - a parameterless action needs no DOM input; parameterized actions still do
+  ---
+  duration_ms: 4.0996
+  type: 'test'
+  ...
+# Subtest: live session hooks override captured credentials after signout and account changes
+ok 2 - live session hooks override captured credentials after signout and account changes
+  ---
+  duration_ms: 7.9218
+  type: 'test'
+  ...
+# Subtest: session tampering reaches the server, preserves context, requires a valid matching control and restores access
+ok 3 - session tampering reaches the server, preserves context, requires a valid matching control and restores access
+  ---
+  duration_ms: 48.4159
+  type: 'test'
+  ...
+# Subtest: mixed credentials need a measured isolated control; cookie and CSRF dependencies stay inconclusive
+    # Subtest: bearer
+    ok 1 - bearer
+      ---
+      duration_ms: 18.5808
+      type: 'test'
+      ...
+    # Subtest: cookie-only
+    ok 2 - cookie-only
+      ---
+      duration_ms: 8.2508
+      type: 'test'
+      ...
+    # Subtest: requires-cookie
+    ok 3 - requires-cookie
+      ---
+      duration_ms: 10.448
+      type: 'test'
+      ...
+    # Subtest: accept-forgery
+    ok 4 - accept-forgery
+      ---
+      duration_ms: 11.6978
+      type: 'test'
+      ...
+    # Subtest: commit-then-refuse
+    ok 5 - commit-then-refuse
+      ---
+      duration_ms: 7.4406
+      type: 'test'
+      ...
+    # Subtest: reject-all
+    ok 6 - reject-all
+      ---
+      duration_ms: 5.1457
+      type: 'test'
+      ...
+    # Subtest: response-loss
+    ok 7 - response-loss
+      ---
+      duration_ms: 8.0965
+      type: 'test'
+      ...
+    1..7
+ok 4 - mixed credentials need a measured isolated control; cookie and CSRF dependencies stay inconclusive
+  ---
+  duration_ms: 71.2649
+  type: 'test'
+  ...
+# Subtest: shipping accounting waits for the staff response before reading accounting
+ok 5 - shipping accounting waits for the staff response before reading accounting
+  ---
+  duration_ms: 3.3887
+  type: 'test'
+  ...
+# Subtest: one named server action maps DOM input symmetrically and verifies its outcome
+ok 6 - one named server action maps DOM input symmetrically and verifies its outcome
+  ---
+  duration_ms: 1.1399
+  type: 'test'
+  ...
+# Subtest: named action input uses declared defaults and a missing route is not mistaken for a refusal
+ok 7 - named action input uses declared defaults and a missing route is not mistaken for a refusal
+  ---
+  duration_ms: 3.2889
+  type: 'test'
+  ...
+# Subtest: validation refusal accepts only deliberate application rejection statuses
+ok 8 - validation refusal accepts only deliberate application rejection statuses
+  ---
+  duration_ms: 1.0026
+  type: 'test'
+  ...
+# Subtest: business outcomes allow deliberate refusals but never turn server errors into completed work
+ok 9 - business outcomes allow deliberate refusals but never turn server errors into completed work
+  ---
+  duration_ms: 1.8569
+  type: 'test'
+  ...
+# Subtest: purchase and restock privacy refusals require their successful control
+ok 10 - purchase and restock privacy refusals require their successful control
+  ---
+  duration_ms: 2.5229
+  type: 'test'
+  ...
+# Subtest: purchase-session tampering uses early order data, awaits a response, checks effects and restores access
+ok 11 - purchase-session tampering uses early order data, awaits a response, checks effects and restores access
+  ---
+  duration_ms: 0.5975
+  type: 'test'
+  ...
+# Subtest: browser-origin calls need a matching positive control and a real browser observer
+ok 12 - browser-origin calls need a matching positive control and a real browser observer
+  ---
+  duration_ms: 0.8238
+  type: 'test'
+  ...
+# Subtest: restock role claims reach the real write with staff credentials and stored-state checks
+ok 13 - restock role claims reach the real write with staff credentials and stored-state checks
+  ---
+  duration_ms: 2.8419
+  type: 'test'
+  ...
+# Subtest: shipping role and cancellation owner claims retain the caller and check fresh state before classifying refusal
+ok 14 - shipping role and cancellation owner claims retain the caller and check fresh state before classifying refusal
+  ---
+  duration_ms: 4.4815
+  type: 'test'
+  ...
+# Subtest: fixed checkout price claims reach the native transport without inventing a DOM hook
+ok 15 - fixed checkout price claims reach the native transport without inventing a DOM hook
+  ---
+  duration_ms: 1.4167
+  type: 'test'
+  ...
+# Subtest: price claims reach the purchase transport without replacing the normal purchase controls
+ok 16 - price claims reach the purchase transport without replacing the normal purchase controls
+  ---
+  duration_ms: 3.2083
+  type: 'test'
+  ...
+# Subtest: an invalid Spacetime u64 input fails before transport and cannot prove refusal
+ok 17 - an invalid Spacetime u64 input fails before transport and cannot prove refusal
+  ---
+  duration_ms: 0.5564
+  type: 'test'
+  ...
+# Subtest: account setup preserves scoped credentials and classifies browser failures
+ok 18 - account setup preserves scoped credentials and classifies browser failures
+  ---
+  duration_ms: 2.8952
+  type: 'test'
+  ...
+# Subtest: awaitSignedIn false leaves the signed-in view to the following expect
+ok 19 - awaitSignedIn false leaves the signed-in view to the following expect
+  ---
+  duration_ms: 1.7831
+  type: 'test'
+  ...
+# Subtest: account restoration does not accept the wrong signed-in user
+ok 20 - account restoration does not accept the wrong signed-in user
+  ---
+  duration_ms: 0.5262
+  type: 'test'
+  ...
+# Subtest: an unreplayable WebSocket write or missing transport evidence cannot earn server-side forgery credit
+ok 21 - an unreplayable WebSocket write or missing transport evidence cannot earn server-side forgery credit
+  ---
+  duration_ms: 1.2101
+  type: 'test'
+  ...
+# Subtest: a negative delivery check observes its full window before passing
+ok 22 - a negative delivery check observes its full window before passing
+  ---
+  duration_ms: 0.3115
+  type: 'test'
+  ...
+# Subtest: a delivery check is inconclusive when application traffic is not observable
+ok 23 - a delivery check is inconclusive when application traffic is not observable
+  ---
+  duration_ms: 0.5912
+  type: 'test'
+  ...
+# Subtest: replay retargeting maps nested entity ids by field and relationship depth
+ok 24 - replay retargeting maps nested entity ids by field and relationship depth
+  ---
+  duration_ms: 2.6404
+  type: 'test'
+  ...
+# Subtest: replay decodes Socket.IO entities and uses the target actor browser cookie
+ok 25 - replay decodes Socket.IO entities and uses the target actor browser cookie
+  ---
+  duration_ms: 1.1345
+  type: 'test'
+  ...
+# Subtest: replay uses an authenticated named action when the source write is an opaque WebSocket call
+ok 26 - replay uses an authenticated named action when the source write is an opaque WebSocket call
+  ---
+  duration_ms: 0.9218
+  type: 'test'
+  ...
+# Subtest: named replay can replace a declared literal without an undeclared UI attribute
+ok 27 - named replay can replace a declared literal without an undeclared UI attribute
+  ---
+  duration_ms: 0.4154
+  type: 'test'
+  ...
+# Subtest: a missing or malformed declared replay target is an application failure
+ok 28 - a missing or malformed declared replay target is an application failure
+  ---
+  duration_ms: 0.8191
+  type: 'test'
+  ...
+# Subtest: only an explicit authorization response proves a replay refusal
+ok 29 - only an explicit authorization response proves a replay refusal
+  ---
+  duration_ms: 2.0655
+  type: 'test'
+  ...
+# Subtest: an idempotent replay permits success or deliberate validation refusal, never a transport failure
+ok 30 - an idempotent replay permits success or deliberate validation refusal, never a transport failure
+  ---
+  duration_ms: 1.8763
+  type: 'test'
+  ...
+# Subtest: only an explicit authorization response proves a forged-write refusal
+ok 31 - only an explicit authorization response proves a forged-write refusal
+  ---
+  duration_ms: 1.0938
+  type: 'test'
+  ...
+# Subtest: a missing numeric literal makes the server-side replay check inconclusive
+ok 32 - a missing numeric literal makes the server-side replay check inconclusive
+  ---
+  duration_ms: 0.436
+  type: 'test'
+  ...
+# Subtest: named calls scope browser cookies and captured request context to the action destination
+ok 33 - named calls scope browser cookies and captured request context to the action destination
+  ---
+  duration_ms: 2.8358
+  type: 'test'
+  ...
+# Subtest: cross-account replay uses caller CSRF context and cannot credit missing caller context
+ok 34 - cross-account replay uses caller CSRF context and cannot credit missing caller context
+  ---
+  duration_ms: 1.8473
+  type: 'test'
+  ...
+# Subtest: concurrent calls classify every result before counting accepted requests
+ok 35 - concurrent calls classify every result before counting accepted requests
+  ---
+  duration_ms: 6.9376
+  type: 'test'
+  ...
+# Subtest: bounded checkout cohorts issue every request and retain client timing and transport outcomes
+ok 36 - bounded checkout cohorts issue every request and retain client timing and transport outcomes
+  ---
+  duration_ms: 13.1648
+  type: 'test'
+  ...
+# Subtest: named writes expose refused response bodies to the existing privacy check
+ok 37 - named writes expose refused response bodies to the existing privacy check
+  ---
+  duration_ms: 0.8396
+  type: 'test'
+  ...
+# Subtest: cancelled cohorts drain requests and retain their history in action evidence
+ok 38 - cancelled cohorts drain requests and retain their history in action evidence
+  ---
+  duration_ms: 17.1396
+  type: 'test'
+  ...
+# Subtest: a committed operation with a truncated HTTP success body remains unknown
+ok 39 - a committed operation with a truncated HTTP success body remains unknown
+  ---
+  duration_ms: 1014.8091
+  type: 'test'
+  ...
+# Subtest: purchase bursts reuse validated dynamic action inputs across stack transports
+ok 40 - purchase bursts reuse validated dynamic action inputs across stack transports
+  ---
+  duration_ms: 2.7972
+  type: 'test'
+  ...
+# Subtest: mixed groups prepare every input before release and keep each operation and buyer in the history
+ok 41 - mixed groups prepare every input before release and keep each operation and buyer in the history
+  ---
+  duration_ms: 2.4636
+  type: 'test'
+  ...
+# Subtest: named calls keep actor credentials separate in storage and in-memory accessors
+ok 42 - named calls keep actor credentials separate in storage and in-memory accessors
+  ---
+  duration_ms: 1.6942
+  type: 'test'
+  ...
+# Subtest: unobserved session tokens cannot issue a replay or earn authorization credit
+ok 43 - unobserved session tokens cannot issue a replay or earn authorization credit
+  ---
+  duration_ms: 2.6979
+  type: 'test'
+  ...
+# Subtest: missing named actions and application roots stay inconclusive
+ok 44 - missing named actions and application roots stay inconclusive
+  ---
+  duration_ms: 1.2572
+  type: 'test'
+  ...
+# Subtest: an application-owned script timeout is a scored application failure
+ok 45 - an application-owned script timeout is a scored application failure
+  ---
+  duration_ms: 59.7574
+  type: 'test'
+  ...
+# Subtest: named calls override one declared parameter from another actor without changing the caller
+ok 46 - named calls override one declared parameter from another actor without changing the caller
+  ---
+  duration_ms: 3.1473
+  type: 'test'
+  ...
+# Subtest: staff-role replay changes the role without changing the HTTP route or the reducer target
+ok 47 - staff-role replay changes the role without changing the HTTP route or the reducer target
+  ---
+  duration_ms: 2.0893
+  type: 'test'
+  ...
+# Subtest: role revocation uses declared transitions despite earlier captured role writes
+ok 48 - role revocation uses declared transitions despite earlier captured role writes
+  ---
+  duration_ms: 1.6004
+  type: 'test'
+  ...
+# Subtest: native envelopes govern single, concurrent and replay outcomes, including body loss
+ok 49 - native envelopes govern single, concurrent and replay outcomes, including body loss
+  ---
+  duration_ms: 6.9721
+  type: 'test'
+  ...
+# Subtest: native POST queries cannot be forged as writes, and mutation arguments stay inside their envelope
+ok 50 - native POST queries cannot be forged as writes, and mutation arguments stay inside their envelope
+  ---
+  duration_ms: 0.8044
+  type: 'test'
+  ...
+# Subtest: an accepted forged write is decided by its stored effect, not the status
+ok 51 - an accepted forged write is decided by its stored effect, not the status
+  ---
+  duration_ms: 0.1905
+  type: 'test'
+  ...
+# Subtest: platform request headers reach single and concurrent calls under the caller bearer token
+ok 52 - platform request headers reach single and concurrent calls under the caller bearer token
+  ---
+  duration_ms: 1.7009
+  type: 'test'
+  ...
+# Subtest: scored interface names are disclosed by their issued dependency step on each stack
+ok 53 - scored interface names are disclosed by their issued dependency step on each stack
+  ---
+  duration_ms: 25470.6048
+  type: 'test'
+  ...
+# Subtest: later disclosure cannot satisfy an earlier check; only issued contracts can be retained
+ok 54 - later disclosure cannot satisfy an earlier check; only issued contracts can be retained
+  ---
+  duration_ms: 13093.8307
+  type: 'test'
+  ...
+# Subtest: selected privacy checks prove a working positive path without sibling criteria
+ok 55 - selected privacy checks prove a working positive path without sibling criteria
+  ---
+  duration_ms: 4.7943
+  type: 'test'
+  ...
+# Subtest: order ownership switches the same browser and reconciles the next write under the new account
+ok 56 - order ownership switches the same browser and reconciles the next write under the new account
+  ---
+  duration_ms: 3.0429
+  type: 'test'
+  ...
+# Subtest: scheduled-restock identifiers match each native interface and stay opaque in replay
+ok 57 - scheduled-restock identifiers match each native interface and stay opaque in replay
+  ---
+  duration_ms: 1.7768
+  type: 'test'
+  ...
+# Subtest: restock observations use one pending row and a ledger delta without item-name labels
+ok 58 - restock observations use one pending row and a ledger delta without item-name labels
+  ---
+  duration_ms: 10.4097
+  type: 'test'
+  ...
+# Subtest: support logout checks fresh traffic with post-logout storage and a usable public page
+ok 59 - support logout checks fresh traffic with post-logout storage and a usable public page
+  ---
+  duration_ms: 1.7595
+  type: 'test'
+  ...
+# Subtest: support privacy creates its own persisted ticket after the durability probe
+ok 60 - support privacy creates its own persisted ticket after the durability probe
+  ---
+  duration_ms: 0.9466
+  type: 'test'
+  ...
+# Subtest: stock alerts use ready fresh account views after accepted restocks
+ok 61 - stock alerts use ready fresh account views after accepted restocks
+  ---
+  duration_ms: 1.577
+  type: 'test'
+  ...
+# Subtest: cart validation sends only a negative quantity and restores actor identity after reloads
+ok 62 - cart validation sends only a negative quantity and restores actor identity after reloads
+  ---
+  duration_ms: 1.014
+  type: 'test'
+  ...
+# Subtest: later-depth checks retain their own effects and independent controls
+ok 63 - later-depth checks retain their own effects and independent controls
+  ---
+  duration_ms: 4.2746
+  type: 'test'
+  ...
+# Subtest: progression review eligibility proves the route and reads back persisted refusal
+ok 64 - progression review eligibility proves the route and reads back persisted refusal
+  ---
+  duration_ms: 1.0637
+  type: 'test'
+  ...
+# Subtest: countdown displays decrease from observed baselines without setup-time assumptions
+ok 65 - countdown displays decrease from observed baselines without setup-time assumptions
+  ---
+  duration_ms: 0.9433
+  type: 'test'
+  ...
+# Subtest: role revocation proves authorization before testing the same session after removal
+ok 66 - role revocation proves authorization before testing the same session after removal
+  ---
+  duration_ms: 0.7077
+  type: 'test'
+  ...
+# Subtest: privacy and role actors reconnect after a preceding backend restart
+ok 67 - privacy and role actors reconnect after a preceding backend restart
+  ---
+  duration_ms: 1.4243
+  type: 'test'
+  ...
+1..67
+# tests 74
+# suites 0
+# pass 74
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 39254.2859

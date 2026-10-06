@@ -1,0 +1,436 @@
+{
+  "status": "selected_controls_passed",
+  "candidate": "149fecf8bf454309cdc7473982e175c442b56286",
+  "stack": "convex",
+  "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+  "baselineScore": "3/3",
+  "criteria": 2,
+  "caught": 5,
+  "total": 5,
+  "exactFrozenSelectionMatched": true,
+  "qualifiedChecks": [
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+  ],
+  "qualificationScope": {
+    "checksSha256": "410410caff3313b668784ec88d0e993b0ce8bedced9bb23099db5ccc6dcf21c9",
+    "executableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3",
+    "kind": "mutation",
+    "mutationSha256": "930787c584245d0119e8c0ec75f9bd0991a1d9f35ff84d9ac863a4c914831c81",
+    "recipe": {
+      "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474",
+      "id": "ecommerce.progression-catalog"
+    },
+    "schemaVersion": 3,
+    "stack": {
+      "id": "convex",
+      "reference": {
+        "id": "ecommerce-reference-convex",
+        "sourceSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+      },
+      "version": "1.0.0"
+    },
+    "sha256": "d2636d78169d58bc923f58aba24e6c224ad7272d6e647baee7e9bb65b60c4ce5"
+  },
+  "results": [
+    {
+      "id": "authorized-restock-does-not-change-stock",
+      "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "status": "CAUGHT",
+      "targetKeys": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "targetMissing": [],
+      "targetHarnessFailures": [],
+      "targetInconclusive": [],
+      "targetSurvived": [],
+      "targetOffAssertion": [],
+      "collateral": [],
+      "collateralHarnessFailures": [],
+      "collateralInconclusive": [],
+      "setupFailures": [],
+      "missing": [],
+      "regressions": [
+        {
+          "feature": 103,
+          "criterion": "103a",
+          "passed": false,
+          "measured": true,
+          "applicationFailure": true,
+          "outcomeKind": "app_failure",
+          "status": "failed",
+          "phase": "assertion",
+          "detail": "the item-stock control reads 100, expected exactly 101 in the entry matching \"Air Purifier\"",
+          "failedAction": "expectNumber",
+          "key": "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "expected": true
+        },
+        {
+          "feature": 103,
+          "criterion": "103b",
+          "passed": false,
+          "measured": true,
+          "applicationFailure": true,
+          "outcomeKind": "app_failure",
+          "status": "failed",
+          "phase": "assertion",
+          "detail": "the stored stock for Air Purifier control reads 100, expected exactly 101",
+          "failedAction": "dbExpectStock",
+          "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "signup-accepts-admin-claim",
+      "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "status": "CAUGHT",
+      "targetKeys": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "targetMissing": [],
+      "targetHarnessFailures": [],
+      "targetInconclusive": [],
+      "targetSurvived": [],
+      "targetOffAssertion": [],
+      "collateral": [],
+      "collateralHarnessFailures": [],
+      "collateralInconclusive": [],
+      "setupFailures": [],
+      "missing": [],
+      "regressions": [
+        {
+          "feature": 103,
+          "criterion": "103b",
+          "passed": false,
+          "measured": true,
+          "applicationFailure": true,
+          "outcomeKind": "app_failure",
+          "status": "failed",
+          "phase": "assertion",
+          "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+          "failedAction": "dbExpectStock",
+          "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "staff-can-use-direct-restock",
+      "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "status": "CAUGHT",
+      "targetKeys": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "targetMissing": [],
+      "targetHarnessFailures": [],
+      "targetInconclusive": [],
+      "targetSurvived": [],
+      "targetOffAssertion": [],
+      "collateral": [],
+      "collateralHarnessFailures": [],
+      "collateralInconclusive": [],
+      "setupFailures": [],
+      "missing": [],
+      "regressions": [
+        {
+          "feature": 103,
+          "criterion": "103b",
+          "passed": false,
+          "measured": true,
+          "applicationFailure": true,
+          "outcomeKind": "app_failure",
+          "status": "failed",
+          "phase": "assertion",
+          "detail": "the restock action was accepted for staff, who must be refused",
+          "failedAction": "expectActionOutcome",
+          "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "admin-boundary-rejects-all-signups",
+      "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "status": "CAUGHT",
+      "targetKeys": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "targetMissing": [],
+      "targetHarnessFailures": [],
+      "targetInconclusive": [],
+      "targetSurvived": [],
+      "targetOffAssertion": [],
+      "collateral": [],
+      "collateralHarnessFailures": [],
+      "collateralInconclusive": [],
+      "setupFailures": [],
+      "missing": [],
+      "regressions": [
+        {
+          "feature": 103,
+          "criterion": "103b",
+          "passed": false,
+          "measured": true,
+          "applicationFailure": true,
+          "outcomeKind": "app_failure",
+          "status": "failed",
+          "phase": "assertion",
+          "detail": "the current-user control matching \"claimant-ordinary1fa1191e-2a90-4cf103\" did not appear",
+          "failedAction": "expect",
+          "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "restock-trusts-submitted-admin-role",
+      "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "status": "CAUGHT",
+      "targetKeys": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "targetMissing": [],
+      "targetHarnessFailures": [],
+      "targetInconclusive": [],
+      "targetSurvived": [],
+      "targetOffAssertion": [],
+      "collateral": [],
+      "collateralHarnessFailures": [],
+      "collateralInconclusive": [],
+      "setupFailures": [],
+      "missing": [],
+      "regressions": [
+        {
+          "feature": 103,
+          "criterion": "103b",
+          "passed": false,
+          "measured": true,
+          "applicationFailure": true,
+          "outcomeKind": "app_failure",
+          "status": "failed",
+          "phase": "assertion",
+          "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+          "failedAction": "dbExpectStock",
+          "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+          "expected": true
+        }
+      ]
+    }
+  ],
+  "grades": [
+    {
+      "mutationId": "authorized-restock-does-not-change-stock",
+      "path": "authorized-restock-does-not-change-stock.grade.json",
+      "sha256": "f2e2ccc58f557dd2019ac0e01d80bf30753ce7739f059d4a54ac8ce3727f00e2"
+    },
+    {
+      "mutationId": "signup-accepts-admin-claim",
+      "path": "signup-accepts-admin-claim.grade.json",
+      "sha256": "29bedc17368ca573d082abcb147720cf873a5127005ee684bab2f18885057bce"
+    },
+    {
+      "mutationId": "staff-can-use-direct-restock",
+      "path": "staff-can-use-direct-restock.grade.json",
+      "sha256": "83b26b6e989103752c3b64c3b2b299c54cd5f9e6e1ecbb21af7308fbc0311022"
+    },
+    {
+      "mutationId": "admin-boundary-rejects-all-signups",
+      "path": "admin-boundary-rejects-all-signups.grade.json",
+      "sha256": "33e85f15b2b726c1099cc0b1a91d852aaf5111645db9c6a107d8d81fb0706453"
+    },
+    {
+      "mutationId": "restock-trusts-submitted-admin-role",
+      "path": "restock-trusts-submitted-admin-role.grade.json",
+      "sha256": "0a279d7a2f983533479d07477ccfc21c956840f4f990b29de3775f143b60bb41"
+    }
+  ],
+  "controllerState": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-28T04:58:15.897337841Z",
+    "FinishedAt": "2026-09-28T05:02:42.180075477Z"
+  },
+  "cleanup": {
+    "releasedRuns": 4,
+    "allRecoveryClean": true,
+    "allLocksReleased": true,
+    "removedRunContainers": [
+      "sb-cd2027d8d9f9cf3c-browser",
+      "sb-cd2027d8d9f9cf3c-build",
+      "sb-cd2027d8d9f9cf3c-backend",
+      "sb-65d1922a21f8632d-browser",
+      "sb-65d1922a21f8632d-build",
+      "sb-65d1922a21f8632d-backend",
+      "sb-b88e3eef494fc300-browser",
+      "sb-b88e3eef494fc300-build",
+      "sb-b88e3eef494fc300-backend",
+      "sb-e7867116907fb331-browser",
+      "sb-e7867116907fb331-build",
+      "sb-e7867116907fb331-backend"
+    ],
+    "allAbsent": true,
+    "safeRemoval": "docker rm stack-bench-convex-network-retry-149fecf8b",
+    "preserveVolumes": true
+  },
+  "files": [
+    {
+      "path": "admin-boundary-rejects-all-signups.grade.json",
+      "sha256": "33e85f15b2b726c1099cc0b1a91d852aaf5111645db9c6a107d8d81fb0706453"
+    },
+    {
+      "path": "authorized-restock-does-not-change-stock.grade.json",
+      "sha256": "f2e2ccc58f557dd2019ac0e01d80bf30753ce7739f059d4a54ac8ce3727f00e2"
+    },
+    {
+      "path": "baseline-bundle.json",
+      "sha256": "bf8ba01c1e08752f1a9e23df14b2bfefd6921b4fdc4921b67964a471d42e2c1d"
+    },
+    {
+      "path": "baseline-recovery.json",
+      "sha256": "483d03ac2d731ac7450de5d9b7ccc9fa515a5f69398433a87a0145e1cb9726bc"
+    },
+    {
+      "path": "baseline-run.json",
+      "sha256": "e6ca047dd115132bb240af553e60092f049ec0f4a7a2d717b07c1537dd69ecaa"
+    },
+    {
+      "path": "container-names-after-cleanup.txt",
+      "sha256": "01f0da6af2782d6067bbd42cad9e8e5b63e122eb3e89f536c82d42e84a919b87"
+    },
+    {
+      "path": "controller-state.json",
+      "sha256": "fd43cebab6fa78f0f03664031ac6ae2cfa3a3d5ca27925176508a46ca24c82e8"
+    },
+    {
+      "path": "controller.log",
+      "sha256": "11343cece5a50193038274ab3fc056fccff4215999189a0238e33f219419acd6"
+    },
+    {
+      "path": "qualification-inputs.json",
+      "sha256": "a176a3c7c578d29a6959f9fdbef741efed718c0bf6b326e60c05765be9548a12"
+    },
+    {
+      "path": "qualification.json",
+      "sha256": "065a1314ed1e82ff6c712d88a8ee01884c4847d8486a99aaa9afb141a7654a24"
+    },
+    {
+      "path": "restock-trusts-submitted-admin-role.grade.json",
+      "sha256": "0a279d7a2f983533479d07477ccfc21c956840f4f990b29de3775f143b60bb41"
+    },
+    {
+      "path": "signup-accepts-admin-claim.grade.json",
+      "sha256": "29bedc17368ca573d082abcb147720cf873a5127005ee684bab2f18885057bce"
+    },
+    {
+      "path": "staff-can-use-direct-restock.grade.json",
+      "sha256": "83b26b6e989103752c3b64c3b2b299c54cd5f9e6e1ecbb21af7308fbc0311022"
+    },
+    {
+      "path": "worker-1-preflight.json",
+      "sha256": "0baf18afe74aff87045c2b791233cbd756f3597b689312c9cd6aa60bd477e8bc"
+    },
+    {
+      "path": "worker-1-recovery.json",
+      "sha256": "e0e0fbe3545e1fd8e32ad369e407744aa77ec13899d1adf7b544b4d9b232f9ca"
+    },
+    {
+      "path": "worker-1-run.json",
+      "sha256": "937471f7ec185749d0378c495acfe5253da654488c8a0b7cdaed83bce9aabff4"
+    },
+    {
+      "path": "worker-1.json",
+      "sha256": "23457dbb55b58f5b8c4f2d5c6f0e03fb561aa4f77580932a7d1944165ff88e18"
+    },
+    {
+      "path": "worker-1.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "worker-1.stdout.log",
+      "sha256": "ac9ff5c5057c6c4f5f54af8d3439032f56963f556a7a41b653362efcb6618279"
+    },
+    {
+      "path": "worker-2-preflight.json",
+      "sha256": "6e2e9b338e55ffa2d9bdf3b3d34e0bf67439eb7d7b5778b07271e9be19235b74"
+    },
+    {
+      "path": "worker-2-recovery.json",
+      "sha256": "15ad4469af477d4fc1ac442e435988aad7b60de23655c65b6c3a89c2aff20f4f"
+    },
+    {
+      "path": "worker-2-run.json",
+      "sha256": "915c8d01aeb355d73ccae4a63da6b964f7334bfcd74df890871056bfafb27f78"
+    },
+    {
+      "path": "worker-2.json",
+      "sha256": "5ceb239c9ab36bd7f197a4468fe6d6c8045c6996e9ab59f5fb55fb75cd94cc0a"
+    },
+    {
+      "path": "worker-2.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "worker-2.stdout.log",
+      "sha256": "41dcc79a9f1916c2c9088b35281dc036f3e09afabd9a083119c729de5cc336c6"
+    },
+    {
+      "path": "worker-3-preflight.json",
+      "sha256": "ef201080769bd3f56c680b49cf7069a5a01bb8f64b279b4d2d308ba31809f88a"
+    },
+    {
+      "path": "worker-3-recovery.json",
+      "sha256": "a5cf148e43369dda50f68e7d9d48209d53acea028831fa30eeef1b7e838a38eb"
+    },
+    {
+      "path": "worker-3-run.json",
+      "sha256": "72dc001c24c724b367cfd1b726d91c02ab7d4eae0d942b7bd5d2d914a608f33d"
+    },
+    {
+      "path": "worker-3.json",
+      "sha256": "f09c2e4423a2433bf284bc269486f557a69d7eac2c6fd7af4573d112d307d8e4"
+    },
+    {
+      "path": "worker-3.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "worker-3.stdout.log",
+      "sha256": "4489cad000c7487c26fc1d9d2cbc89340aa296007579346113c46c3ceda10fd2"
+    }
+  ],
+  "priorFailedAttempt": {
+    "path": "../convex/audit.json",
+    "sha256": "353ec7f30c70c5fd37fca83ad3346aaa34c7667fd8ec2c823e64ca8c5f3ba8e4",
+    "preserved": true
+  },
+  "limits": [
+    "Same-candidate retry passed; original network-failed attempt remains separate.",
+    "Selected diagnostic qualification. Normal calibration validation still required.",
+    "Only exact result files copied. No source/build/run/stop/removal changes."
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "browser": "151.0.7922.34",
+  "evidence": [
+    {
+      "case": "full-body",
+      "result": {
+        "value": "complete-evaluator-echo"
+      },
+      "pageResponses": 0
+    },
+    {
+      "case": "cookie-updates",
+      "result": {
+        "cookie": "session=initial; remove=old",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+      },
+      "cookies": [
+        {
+          "name": "concurrent",
+          "value": "keep",
+          "domain": "127.0.0.1",
+          "path": "/",
+          "expires": -1,
+          "httpOnly": false,
+          "secure": false,
+          "sameSite": "Lax"
+        },
+        {
+          "name": "session",
+          "value": "rotated",
+          "domain": "127.0.0.1",
+          "path": "/",
+          "expires": -1,
+          "httpOnly": true,
+          "secure": false,
+          "sameSite": "Lax"
+        }
+      ],
+      "later": {
+        "cookie": "concurrent=keep; session=rotated",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "case": "isolation",
+      "isolated": {
+        "cookie": "",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+      },
+      "forged": {
+        "cookie": "session=forged",
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+      }
+    }
+  ],
+  "requests": [
+    {
+      "path": "/body",
+      "cookie": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/rotate",
+      "cookie": "session=initial; remove=old",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/echo",
+      "cookie": "concurrent=keep; session=rotated",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/echo",
+      "cookie": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/echo",
+      "cookie": "session=forged",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/rotate",
+      "cookie": "concurrent=keep; session=before-race",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/echo",
+      "cookie": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/reset",
+      "cookie": "concurrent=keep; session=newer-browser-session",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/route-cookie",
+      "cookie": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/favicon.ico",
+      "cookie": "route-session=accepted",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    },
+    {
+      "path": "/drop-cookie",
+      "cookie": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36"
+    }
+  ],
+  "pageResponses": 0
+}

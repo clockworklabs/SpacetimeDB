@@ -1,0 +1,584 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T04-59-56-761Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T04-59-56-761Z",
+    "parentId": "ecommerce-mongodb-run418-20260928045929-8f7b328b"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:59:56.761Z",
+    "completedAt": "2026-09-28T05:05:29.795Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 333035,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-apiW4x/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-apiW4x/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/02-strengthened.json",
+      "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "../tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "../tracks/ecommerce/scenarios/01-purchase-session.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "operator-authorization-allows-customer-transfer",
+        "checkout-leaves-cart-claimed",
+        "completed-restock-is-replayed",
+        "authorized-restock-does-not-change-stock",
+        "tampered-session-commits-then-refuses",
+        "checkout-missing-sibling-line",
+        "signout-keeps-session",
+        "rejected-query-login-creates-order"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "eb2736dd4d6df8fd66c714f0b3947a00c94ec6f0953a04e72e21c310dec37abd"
+      },
+      "total": 16,
+      "max": 16,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "c8adfd461d6130a918b7e509ea32a0f247d2f15238278c39110cb3ea8191d2c4",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "identitySha256": "7d524137d54bcc031b1c5df8ea9204383d7293b20682a55fb99238c7ddbf99f4",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/03-deferred-integrity.json",
+          "identitySha256": "634d4bf173d3e66ae023b356f758700dd2c404f9923606e33883a70bed8e9610",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "identitySha256": "90d6a91615a17a311aa84d681814d03f458646be9e8affa877c30e146b023437",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "identitySha256": "5e8308ffa80dc35a3aafd192e7f384271db290645c3d690cd7a6e64b48e30c67",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 8,
+      "completed": 8,
+      "total": 8,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the transfer action was accepted for customer, who must be refused",
+            "failedAction": "expectActionOutcome",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-leaves-cart-claimed",
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "targets": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 4,
+            "criterion": "4d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the remaining cart lines after checkout control reads 2, expected exactly 0",
+            "failedAction": "dbExpectCheckout",
+            "key": "ecommerce.feature.cart-checkout.cart.4d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "completed-restock-is-replayed",
+        "scenario": "../tracks/ecommerce/scenarios/03-deferred-integrity.json",
+        "targets": [
+          "ecommerce.l3.deferred-integrity.exactly-once.311a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.l3.deferred-integrity.exactly-once.311a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 311,
+            "criterion": "311a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Air Purifier control reads 345, expected exactly 105",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.l3.deferred-integrity.exactly-once.311a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "authorized-restock-does-not-change-stock",
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 103,
+            "criterion": "103a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-stock control reads 100, expected exactly 101 in the entry matching \"Air Purifier\"",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "expected": true
+          },
+          {
+            "feature": 103,
+            "criterion": "103b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Air Purifier control reads 100, expected exactly 101",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "tampered-session-commits-then-refuses",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase orders for account kim11f307e3-ab07-49f101 control reads 1, expected exactly 0",
+            "failedAction": "dbExpectNoPurchase",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-missing-sibling-line",
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "targets": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.cart-checkout.cart.4d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 4,
+            "criterion": "4d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the checkout order quantity control reads 1, expected exactly 2",
+            "failedAction": "dbExpectCheckout",
+            "key": "ecommerce.feature.cart-checkout.cart.4d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "signout-keeps-session",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "rejected-query-login-creates-order",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase orders for account kim4850885e-9b32-4ef101 control reads 1, expected exactly 0",
+            "failedAction": "dbExpectNoPurchase",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5",
+      "recipeSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "ae3a0b216bc06c917b0a3489993a2f1ea2362dbec2c1a754cfb2119fd4f3d5e4",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "operator-authorization-allows-customer-transfer",
+          "checkout-leaves-cart-claimed",
+          "completed-restock-is-replayed",
+          "authorized-restock-does-not-change-stock",
+          "tampered-session-commits-then-refuses",
+          "checkout-missing-sibling-line",
+          "signout-keeps-session",
+          "rejected-query-login-creates-order"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "2fa6bceb0d87eaa39c00c901b710653ddc0870b922edd2b9ea5de6e9f5e10aa9",
+          "mutationSha256": "154d3fed62965d5c5dfaf0cad9943ade0a722f3157b2c84ff2743568facbc951",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "c8adfd461d6130a918b7e509ea32a0f247d2f15238278c39110cb3ea8191d2c4",
+          "mutationIds": [
+            "operator-authorization-allows-customer-transfer"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "scenarioSha256": "8e629381acd57f501ec9fd071f8fce3229a54cb4a9a125bf449f77b6624a0cc3",
+          "mutationSha256": "554306f83c39187421958249db1a2a09654697041a3550044a73c0079ce2cdd8",
+          "selectionSha256": "9983c83e224a2e861e29cde5d2c0f00e09cf895853e600b7960d0698fe06d83e",
+          "identitySha256": "7d524137d54bcc031b1c5df8ea9204383d7293b20682a55fb99238c7ddbf99f4",
+          "mutationIds": [
+            "checkout-leaves-cart-claimed",
+            "checkout-missing-sibling-line"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/03-deferred-integrity.json",
+          "scenarioSha256": "9e747ffbb6949e2ab24bfd201205f9c327512ded187d29945f5969911f75b8fc",
+          "mutationSha256": "1724909f19f7e4a5c9d772d1167f815ed48555d070a686a6980ecd2a367a4f66",
+          "selectionSha256": "d957489e8ba32302ec04ac9744fc7455a55e991df077757452303ee945f0fa65",
+          "identitySha256": "634d4bf173d3e66ae023b356f758700dd2c404f9923606e33883a70bed8e9610",
+          "mutationIds": [
+            "completed-restock-is-replayed"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "scenarioSha256": "26a72bfe910bedbd86b93c77426e4ed563e0fe02b796120e5d8b058b3d5c11aa",
+          "mutationSha256": "338b42964c225f7a70951921d359e185f2fad6090ab401d79ca217f8d0414009",
+          "selectionSha256": "bd93e0f7ed3cbc398e8633c33bd54bd305e73fd7fc95cf7da498a89402d1e772",
+          "identitySha256": "90d6a91615a17a311aa84d681814d03f458646be9e8affa877c30e146b023437",
+          "mutationIds": [
+            "authorized-restock-does-not-change-stock"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "scenarioSha256": "68a86b2164627ecc5ede0d916e98881e77e731f6f840e9637bfa2b5f6cda5b01",
+          "mutationSha256": "f79311eb82a219942d39f7741bbfb29189fd55a001c1495d8d539c00b2afc922",
+          "selectionSha256": "93900497e87d382fb33acbd636b7bb3d8c6165595640215e49c5a1e0deeb6c1f",
+          "identitySha256": "5e8308ffa80dc35a3aafd192e7f384271db290645c3d690cd7a6e64b48e30c67",
+          "mutationIds": [
+            "tampered-session-commits-then-refuses",
+            "signout-keeps-session",
+            "rejected-query-login-creates-order"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-28T05:05:29.796Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "operator-authorization-allows-customer-transfer",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-NGnETq/grade.json",
+          "sha256": "805b3a060cdcd3348e5d54e37e5b581a207e4333a1cb6df78414facbd3281c47"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "mutationId": "checkout-leaves-cart-claimed",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-Um8tWQ/grade.json",
+          "sha256": "900572d438b736a5774c05f95743b411a7688e31052b5a4f5d73e5cd744443e7"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+        "mutationId": "checkout-missing-sibling-line",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-BJvzUx/grade.json",
+          "sha256": "1a0f7033865f89a41d0c45b8a0b19922ca2309bf0df137c701af6e7e8727deeb"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/03-deferred-integrity.json",
+        "mutationId": "completed-restock-is-replayed",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-hzJdqm/grade.json",
+          "sha256": "c6dc542723964f95a2079e64bcb344e09235cc6ae285f3336e0ebd23b4275e00"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "mutationId": "authorized-restock-does-not-change-stock",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-WNLDNw/grade.json",
+          "sha256": "b533b38caa9907b376506fb93a79439bf2f7c0f0cba1c2b8a31bb78d8ef50ac6"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "tampered-session-commits-then-refuses",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-bOg2se/grade.json",
+          "sha256": "3c87bc57bef37088282646514071a1d6bd593dd7e3027c749d3c8b36a6423058"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "signout-keeps-session",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-hIX4jQ/grade.json",
+          "sha256": "cfe2aadae4ee824e6e0d78676eb92414644538619090555d3592220e12c04f23"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "rejected-query-login-creates-order",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-6BduDC/grade.json",
+          "sha256": "9cdb0b36cf583dc1e693d42de60127ee20e13f84075e10487b34ece21d4a9fd6"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

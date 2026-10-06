@@ -1,0 +1,217 @@
+TAP version 13
+# Subtest: reference HTTP helpers preserve complete responses and reject body transport loss
+    # Subtest: postgres: json
+    ok 1 - postgres: json
+      ---
+      duration_ms: 17.5083
+      type: 'test'
+      ...
+    # Subtest: postgres: empty
+    ok 2 - postgres: empty
+      ---
+      duration_ms: 5.0723
+      type: 'test'
+      ...
+    # Subtest: postgres: text
+    ok 3 - postgres: text
+      ---
+      duration_ms: 2.3337
+      type: 'test'
+      ...
+    # Subtest: postgres: refused
+    ok 4 - postgres: refused
+      ---
+      duration_ms: 1.9389
+      type: 'test'
+      ...
+    # Subtest: postgres: body-aborted
+    not ok 5 - postgres: body-aborted
+      ---
+      duration_ms: 56.2268
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\reference-request-diagnostic\\tests\\reference-request.integration.js:56:25'
+      failureType: 'testCodeFailure'
+      error: |-
+        postgres: body-aborted
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:66:28)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:56:17)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: mongodb: json
+    ok 6 - mongodb: json
+      ---
+      duration_ms: 4.2268
+      type: 'test'
+      ...
+    # Subtest: mongodb: empty
+    ok 7 - mongodb: empty
+      ---
+      duration_ms: 1.3124
+      type: 'test'
+      ...
+    # Subtest: mongodb: text
+    ok 8 - mongodb: text
+      ---
+      duration_ms: 1.9673
+      type: 'test'
+      ...
+    # Subtest: mongodb: refused
+    ok 9 - mongodb: refused
+      ---
+      duration_ms: 3.1097
+      type: 'test'
+      ...
+    # Subtest: mongodb: body-aborted
+    not ok 10 - mongodb: body-aborted
+      ---
+      duration_ms: 55.2814
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\reference-request-diagnostic\\tests\\reference-request.integration.js:56:25'
+      failureType: 'testCodeFailure'
+      error: |-
+        mongodb: body-aborted
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:66:28)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:56:17)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: mongodb-app: json
+    ok 11 - mongodb-app: json
+      ---
+      duration_ms: 3.5748
+      type: 'test'
+      ...
+    # Subtest: mongodb-app: empty
+    ok 12 - mongodb-app: empty
+      ---
+      duration_ms: 1.1213
+      type: 'test'
+      ...
+    # Subtest: mongodb-app: text
+    ok 13 - mongodb-app: text
+      ---
+      duration_ms: 0.9379
+      type: 'test'
+      ...
+    # Subtest: mongodb-app: refused
+    ok 14 - mongodb-app: refused
+      ---
+      duration_ms: 3.5084
+      type: 'test'
+      ...
+    # Subtest: mongodb-app: body-aborted
+    not ok 15 - mongodb-app: body-aborted
+      ---
+      duration_ms: 59.2664
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\reference-request-diagnostic\\tests\\reference-request.integration.js:56:25'
+      failureType: 'testCodeFailure'
+      error: |-
+        mongodb-app: body-aborted
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:66:28)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:56:17)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: postgres-app: json
+    ok 16 - postgres-app: json
+      ---
+      duration_ms: 4.7619
+      type: 'test'
+      ...
+    # Subtest: postgres-app: empty
+    ok 17 - postgres-app: empty
+      ---
+      duration_ms: 0.9899
+      type: 'test'
+      ...
+    # Subtest: postgres-app: text
+    ok 18 - postgres-app: text
+      ---
+      duration_ms: 1.1512
+      type: 'test'
+      ...
+    # Subtest: postgres-app: refused
+    ok 19 - postgres-app: refused
+      ---
+      duration_ms: 0.8426
+      type: 'test'
+      ...
+    # Subtest: postgres-app: body-aborted
+    not ok 20 - postgres-app: body-aborted
+      ---
+      duration_ms: 61.5445
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\reference-request-diagnostic\\tests\\reference-request.integration.js:56:25'
+      failureType: 'testCodeFailure'
+      error: |-
+        postgres-app: body-aborted
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:66:28)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/reference-request-diagnostic/tests/reference-request.integration.js:56:17)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..20
+not ok 1 - reference HTTP helpers preserve complete responses and reject body transport loss
+  ---
+  duration_ms: 414.1586
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\reference-request-diagnostic\\tests\\reference-request.integration.js:13:1'
+  failureType: 'subtestsFailed'
+  error: '4 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 21
+# suites 0
+# pass 16
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 761.8588

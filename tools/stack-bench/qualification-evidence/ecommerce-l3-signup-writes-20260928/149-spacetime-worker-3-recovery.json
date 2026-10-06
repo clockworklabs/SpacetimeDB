@@ -1,0 +1,75 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "recovery",
+  "id": "ecommerce-spacetime-run402-20260928045305-2d57e848-recovery",
+  "attempt": {
+    "id": "ecommerce-spacetime-run402-20260928045305-2d57e848-recovery",
+    "parentId": "ecommerce-spacetime-run402-20260928045305-2d57e848"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:55:06.371Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-spacetime-run402-20260928045305-2d57e848",
+    "backend": "spacetime",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "0a3668353fbb1fb47a94d70e1d6d0dcb82380200e9aff12941fa86c7c42447a3",
+        "name": "sb-31ba41671e0d63f4-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "listener:http://127.0.0.1:3712",
+          "released": true
+        },
+        {
+          "key": "port:3712",
+          "released": true
+        },
+        {
+          "key": "port:6875",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:spacetime:run402",
+          "released": true
+        },
+        {
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-OfqJdi/app",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "8d8c632c8a1b437e1653d9fb71cf5de52fb6acd7bc83ba002c421744019e86f0"
+  }
+}

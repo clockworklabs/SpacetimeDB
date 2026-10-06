@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "37e56c5e29e4a3c4e314cfdee753f7e413532d3a",
+  "change": "For the selected SpacetimeDB module, require native package and src/index.ts entry instead of direct SDK-import text below src. Retain path containment, missing-file, ambiguity and undeclared-target discovery guards. Native publish still builds the module.",
+  "cause": "Saved app source072ae8552b3f0744afa50d56e6e5061b79da8e89a49ff32429ddffe9e876190e used a valid src entry re-exporting a root implementation. Native CLI built and published it, but the former resolver rejected it before grading.",
+  "reuse": "Only module admission changes. All existing fixed reference and mutation modules retain their native entries and selected target. Scenarios, assertions, application controls, prompts, check ownership, points and budgets are unchanged. Their existing selected-check evidence remains applicable. Other stacks import the shared error class but never call this resolver; their changed executable closure is not changed behavior. Null scope is unchanged. The existing validator must accept exact scope mappings and unchanged selected checks.",
+  "sources": [
+    {
+      "path": "src/runtime/spacetime-layout.ts",
+      "sha256": "d009f43162f53f27cf8684e40b14ba05a243be7b25214d36c4492fac6162305e"
+    },
+    {
+      "path": "dist/src/runtime/spacetime-layout.js",
+      "sha256": "2076897de3d5e1270179d964fe188b673c0137b8404ad439ff5afd3365d555b4"
+    }
+  ],
+  "validation": {
+    "savedSource": {
+      "sha256": "072ae8552b3f0744afa50d56e6e5061b79da8e89a49ff32429ddffe9e876190e",
+      "files": 32
+    },
+    "expected": "Valid re-export module reaches reset, native publish, runtime database proof and account creation; malformed or escaping layout still rejected.",
+    "observed": "Saved-source account creation passed1/1 with3 successful native resets, exact source unchanged, zero model calls and clean recovery. Pre-code layout test fails on old resolver and passes on fixed resolver, retaining missing-file, escape and ambiguity rejection.",
+    "rerun": {
+      "controllerImage": "sha256:15c5db3a3a9fab7692b543b603bc42516201f7716b8226a9028192a2b34ec410",
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "dependencyVolume": "stack-bench-release-deps-37e56c5e2",
+      "command": [
+        "run",
+        "--grade-from",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/campaigns/job-2cf67e61ea8ab5fd896a495af999f87a5043181489e3a5b36b62decb10e42f1e/attempts/sol6-norepair-four-stack-12-37e56c5e2-r2-c1-a1-spacetime/execution-1",
+        "--grade-level",
+        "1",
+        "--check",
+        "ecommerce.feature.accounts.accounts.1a",
+        "--no-media",
+        "--out",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed"
+      ],
+      "environment": "Normal isolated appliance run with state volume mounted at /var/lib/docker/volumes/stack-bench-state/_data; no model credentials or calls are needed.",
+      "guardCommand": "node --test dist/tests/reset-backend.test.js"
+    },
+    "controls": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-module-layout-20260927/replay-verification.json",
+        "sha256": "f48a9b9cda5f3642100556c169501f4cf2a17466db5bee7ad68084211e0b13dc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-module-layout-20260927/replay.log",
+        "sha256": "3ae94cbda2aa3a22c62fb1dbe0dd5a90e1d08e4a5b37e3b3409495594e8aeec7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-module-layout-20260927/scope-review.json",
+        "sha256": "d3e56d2751ee6758188a65628bd6c7de30bd6b393aefb953c496c73cd0e7c92d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-module-layout-20260927/layout-red.log",
+        "sha256": "6a6a33d3b87c3646b785bf3451a72cd78ccb6dafd6f4b3ed5a1f867a5066abff"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-module-layout-20260927/layout-green.log",
+        "sha256": "6551d115320df7c77350b767fa6bf795357999415d7a138489b89fd6772d9041"
+      }
+    ]
+  },
+  "limits": "This is targeted module-admission proof, not a new full reference/mutation qualification. Original false app_failure remains unchanged and excluded by audit. No L2/L3 model results are recovered. Generic native publish failure classification remains a separate known limitation; no new false grade from it was observed. Official immutable build and normal calibration validation remain required."
+}

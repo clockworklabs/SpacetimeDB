@@ -1,0 +1,50 @@
+{
+  "rerun": "STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern=\"account creation accepts explicit login\" dist/tests/account-navigation.integration.js",
+  "evidence": [
+    {
+      "mode": "missing-identity-observed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "browser-interaction-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the page did not respond in time",
+        "finding": {
+          "kind": "page-timeout",
+          "fields": {
+            "detail": "locator.waitFor: Timeout 250ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#signin-username').first().or(locator('#signin-toggle')).or(locator('#current-user').first()).filter({ visible: true }).first() to be visible\u001b[22m\n"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790494930194,
+          "completedAtMs": 1790494931134,
+          "durationMs": 940,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "",
+      "privilegedStatus": null
+    }
+  ]
+}

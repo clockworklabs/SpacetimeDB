@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T11-21-43-660Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T11-21-43-660Z",
+    "parentId": "ecommerce-mongodb-run417-20260928112110-05b25222"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:21:43.660Z",
+    "completedAt": "2026-09-28T11:22:13.160Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 29501,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-MsNzPX/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-MsNzPX/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-catalog-ranking.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 3,
+      "mutationIds": [
+        "catalog-initial-ranking-is-reversed"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "0cf912fbc5ec743a8fb563a6b48cf2c0e908954710e7d6a43089a009a2965703"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+          "identitySha256": "2471a39a73904c3683bb03cb1e102ef6f6bc3805e5479e450a4576236001ff5c",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "catalog-initial-ranking-is-reversed",
+        "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.feature.catalog.catalog-ranking.2b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c",
+      "recipeSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "dd9eb769e56f3b8bc1348f1fccac8b49db7da12f2c8ffd800051c425aed8bc51",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 3,
+        "mutationIds": [
+          "catalog-initial-ranking-is-reversed"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+          "scenarioSha256": "59647930d98beb0a27cb81b7675ebc1f6a4e3c714a960e8196bf87b501580fbc",
+          "mutationSha256": "34fed3e11bb4a7948f49983dfb6bfd1f5a6a7f6849156343aade0bd2f4b7dfec",
+          "selectionSha256": "0c680639735cd3fa115044770fb4a9dad98d1327a8e1dc938910af90697ec498",
+          "identitySha256": "2471a39a73904c3683bb03cb1e102ef6f6bc3805e5479e450a4576236001ff5c",
+          "mutationIds": [
+            "catalog-initial-ranking-is-reversed"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T11:22:13.161Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+        "mutationId": "catalog-initial-ranking-is-reversed",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-NpUSVs/grade.json",
+          "sha256": "26fd75af06b7f2b530f6ff6706552fdc6eca395080d5fbb1c12632d001a7af1f"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

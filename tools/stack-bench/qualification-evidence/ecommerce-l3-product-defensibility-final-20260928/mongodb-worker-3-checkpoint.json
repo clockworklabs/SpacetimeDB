@@ -1,0 +1,177 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T21-41-56-347Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T21-41-56-347Z",
+    "parentId": "ecommerce-mongodb-run658-20260928214123-d050a693"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T21:41:56.347Z",
+    "completedAt": "2026-09-28T21:42:45.511Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 49164,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-1Qy3tT/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-1Qy3tT/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/02-strengthened.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "transfer-debits-source-without-crediting-existing-destination"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "b0d9540901c5ee2d9bc738e7563d3972d79c3d148e94c74ca3337d30f32a63df"
+      },
+      "total": 5,
+      "max": 5,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "847d6ae15fb2777d791fb514c2b3f46a10d2f827a3b9c3416f76d956e8e11ad4",
+          "total": 5,
+          "max": 5
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Headphones in West control reads 40, expected exactly 50",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "expected": true
+          },
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Headphones in West control reads 40, expected exactly 65",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84",
+      "recipeSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "6812ff2a29d3f4fc278e3e5f6f5a994cce483514154408e48e6ccdfdb75d70a0",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "transfer-debits-source-without-crediting-existing-destination"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+          "mutationSha256": "fc8541d82ac4858ced3fb518ae66176a24f62a3ece4dcbaf696b00ee57404694",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "847d6ae15fb2777d791fb514c2b3f46a10d2f827a3b9c3416f76d956e8e11ad4",
+          "mutationIds": [
+            "transfer-debits-source-without-crediting-existing-destination"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T21:42:45.512Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "transfer-debits-source-without-crediting-existing-destination",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-0jpM6Q/grade.json",
+          "sha256": "5089806575c8a4115599372d51ce3fd4663c95dda6be4e704a6ff40dbd2d6984"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

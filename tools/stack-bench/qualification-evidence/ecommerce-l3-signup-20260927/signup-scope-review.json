@@ -1,0 +1,1752 @@
+{
+  "at": "2026-09-27T07:46:19.247Z",
+  "recipeBefore": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56",
+  "recipeAfter": "f161f9ee7884c6cfde45d8e9378339062a6262c159452d488b5c74a8bd1a2eb7",
+  "selectedChecks": 112,
+  "changedCheckKeys": [
+    "ecommerce.feature.accounts.accounts.1a",
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+  ],
+  "evidence": [
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-reference.json",
+      "kind": "reference",
+      "stack": "convex",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-mutation.json",
+      "kind": "mutation",
+      "stack": "convex",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-reference.json",
+      "kind": "reference",
+      "stack": "spacetime",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-mutation.json",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-3213109f5/null.json",
+      "kind": "null",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-capture-20260926/spacetime.json",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-capture-20260926/convex.json",
+      "kind": "mutation",
+      "stack": "convex",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-capture-20260926/null.json",
+      "kind": "null",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/spacetime-roles.json",
+      "kind": "reference",
+      "stack": "spacetime",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/spacetime-roles.json",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/convex-roles.json",
+      "kind": "reference",
+      "stack": "convex",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/convex-roles.json",
+      "kind": "mutation",
+      "stack": "convex",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-roles.json",
+      "kind": "reference",
+      "stack": "postgres",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-roles.json",
+      "kind": "mutation",
+      "stack": "postgres",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-roles.json",
+      "kind": "reference",
+      "stack": "mongodb",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-roles.json",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-reference.json",
+      "kind": "reference",
+      "stack": "postgres",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-mutation.json",
+      "kind": "mutation",
+      "stack": "postgres",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 28
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-remaining-composed.json",
+      "kind": "reference",
+      "stack": "mongodb",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 22
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-remaining-composed.json",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "changed": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "total": 28
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/null.json",
+      "kind": "null",
+      "changed": [],
+      "total": 4
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/spacetime.json",
+      "kind": "reference",
+      "stack": "spacetime",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/spacetime.json",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/postgres.json",
+      "kind": "reference",
+      "stack": "postgres",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/postgres.json",
+      "kind": "mutation",
+      "stack": "postgres",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/convex.json",
+      "kind": "reference",
+      "stack": "convex",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/convex.json",
+      "kind": "mutation",
+      "stack": "convex",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/mongodb.json",
+      "kind": "reference",
+      "stack": "mongodb",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/mongodb.json",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/null.json",
+      "kind": "null",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/mongodb-privacy-final.json",
+      "kind": "reference",
+      "stack": "mongodb",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/postgres-privacy-final.json",
+      "kind": "reference",
+      "stack": "postgres",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/spacetime-privacy-final.json",
+      "kind": "reference",
+      "stack": "spacetime",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/convex-privacy-final.json",
+      "kind": "reference",
+      "stack": "convex",
+      "changed": [],
+      "total": 6
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/mongodb.json",
+      "kind": "reference",
+      "stack": "mongodb",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/mongodb.json",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/postgres.json",
+      "kind": "reference",
+      "stack": "postgres",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 78
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/postgres.json",
+      "kind": "mutation",
+      "stack": "postgres",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 78
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/spacetime.json",
+      "kind": "reference",
+      "stack": "spacetime",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/spacetime.json",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/convex.json",
+      "kind": "reference",
+      "stack": "convex",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/convex.json",
+      "kind": "mutation",
+      "stack": "convex",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-navigation-20260927/null.json",
+      "kind": "null",
+      "changed": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "total": 79
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.json",
+      "kind": "reference",
+      "stack": "postgres",
+      "changed": [],
+      "total": 1
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.json",
+      "kind": "mutation",
+      "stack": "postgres",
+      "changed": [],
+      "total": 1
+    }
+  ],
+  "signupChecks": [
+    {
+      "key": "ecommerce.feature.accounts.accounts.1a",
+      "source": "scenarios/01-account-create.json",
+      "setup": [],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "ann",
+          "awaitSignedIn": false
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.access-control.account-disclosure.110a",
+      "source": "scenarios/01-account-disclosure.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "private-password",
+          "password": "sb-private-pw-76dc492ea153"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "different-password"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.feature.accounts.accounts.1b",
+      "source": "scenarios/01-account-duplicate.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "ann"
+        }
+      ],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "impostor",
+          "name": "ann",
+          "password": "different-pw",
+          "expectFailure": true
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.feature.accounts.accounts.1c",
+      "source": "scenarios/01-account-password.json",
+      "setup": [],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "password-boundary",
+          "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A"
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.state-durability.session-reload.1e",
+      "source": "scenarios/01-account-reload.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "ann"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.feature.accounts.accounts.1d",
+      "source": "scenarios/01-account-signout.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "ann"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "source": "scenarios/01-admin-write-staff.json",
+      "setup": [],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "claimant",
+          "name": "claimant",
+          "requestPatch": {
+            "fields": {
+              "role": "admin"
+            }
+          }
+        },
+        {
+          "do": "signUp",
+          "actor": "ordinary",
+          "name": "ordinary",
+          "awaitSignedIn": false
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.live-state.purchase-stock.3b",
+      "source": "scenarios/01-buying.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "eli"
+        },
+        {
+          "do": "signUp",
+          "actor": "watcher",
+          "name": "fay"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.cart-boundary.109a",
+      "source": "scenarios/01-cart-boundary.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "vic"
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "wes"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.cart-boundary.109b",
+      "source": "scenarios/01-cart-boundary.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "vic"
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "wes"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.cart-reload.4b",
+      "source": "scenarios/01-cart.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "quantity",
+          "name": "nora"
+        },
+        {
+          "do": "signUp",
+          "actor": "reload",
+          "name": "omar"
+        },
+        {
+          "do": "signUp",
+          "actor": "live1",
+          "name": "pia"
+        },
+        {
+          "do": "signUp",
+          "actor": "checkout",
+          "name": "quinn"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.shared-cart.4c",
+      "source": "scenarios/01-cart.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "quantity",
+          "name": "nora"
+        },
+        {
+          "do": "signUp",
+          "actor": "reload",
+          "name": "omar"
+        },
+        {
+          "do": "signUp",
+          "actor": "live1",
+          "name": "pia"
+        },
+        {
+          "do": "signUp",
+          "actor": "checkout",
+          "name": "quinn"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.ranking.2c",
+      "source": "scenarios/01-core.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "dov"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "source": "scenarios/01-duplicate-checkout.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "tab1",
+          "name": "twin"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "source": "scenarios/01-duplicate-checkout.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "tab1",
+          "name": "twin"
+        }
+      ],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "reply",
+          "name": "lost-reply"
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "source": "scenarios/01-last-unit.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "c1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "c2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "c3"
+        },
+        {
+          "do": "signUp",
+          "actor": "d",
+          "name": "c4"
+        },
+        {
+          "do": "signUp",
+          "actor": "e",
+          "name": "c5"
+        },
+        {
+          "do": "signUp",
+          "actor": "f",
+          "name": "c6"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "source": "scenarios/01-last-unit.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "c1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "c2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "c3"
+        },
+        {
+          "do": "signUp",
+          "actor": "d",
+          "name": "c4"
+        },
+        {
+          "do": "signUp",
+          "actor": "e",
+          "name": "c5"
+        },
+        {
+          "do": "signUp",
+          "actor": "f",
+          "name": "c6"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "source": "scenarios/01-last-unit.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "c1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "c2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "c3"
+        },
+        {
+          "do": "signUp",
+          "actor": "d",
+          "name": "c4"
+        },
+        {
+          "do": "signUp",
+          "actor": "e",
+          "name": "c5"
+        },
+        {
+          "do": "signUp",
+          "actor": "f",
+          "name": "c6"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.order-ownership.106a",
+      "source": "scenarios/01-order-ownership.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "one",
+          "name": "quin"
+        },
+        {
+          "do": "signUp",
+          "actor": "two",
+          "name": "ros"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.purchase-attribution.102a",
+      "source": "scenarios/01-purchase-attribution.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "victim",
+          "name": "lee"
+        },
+        {
+          "do": "signUp",
+          "actor": "attacker",
+          "name": "mel"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.purchase-session.101a",
+      "source": "scenarios/01-purchase-session.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "kim"
+        }
+      ],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "duplicate",
+          "name": "kim",
+          "password": "not-kims-password",
+          "expectFailure": true
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "source": "scenarios/01-restock-race.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "r1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "r2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "r3"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.review-eligibility.108a",
+      "source": "scenarios/01-review-eligibility.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "tam"
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "uma"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.review-eligibility.108b",
+      "source": "scenarios/01-review-eligibility.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "tam"
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "uma"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.rating.6c",
+      "source": "scenarios/01-review-rating-live.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "author",
+          "name": "leon"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "maya"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.transactional-integrity.unique-review.6b",
+      "source": "scenarios/01-review-uniqueness.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "author",
+          "name": "kira"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.feature.reviews.reviews.6a",
+      "source": "scenarios/01-review-visibility.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "author",
+          "name": "hal"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.transactional-integrity.server-price.104a",
+      "source": "scenarios/01-server-price.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "oli"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+      "source": "scenarios/02-fulfilment-access.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "fq-customer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.fulfilment-queue.1a",
+      "source": "scenarios/02-fulfilment-live.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "fq-live"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.operations-access.fulfilment-queue.1c",
+      "source": "scenarios/02-fulfilment-ship.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "fq-ship"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.returns-pricing.refund-accounting.203a",
+      "source": "scenarios/02-invariants.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "books"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.operational-views.5e",
+      "source": "scenarios/02-low-stock.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "low-stock-focused"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.inventory-dashboard.5a",
+      "source": "scenarios/02-low-stock.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "low-stock-focused"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.operational-views.5d",
+      "source": "scenarios/02-operational-best-sellers.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "best-seller-buyer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.operational-views.5f",
+      "source": "scenarios/02-operational-category-totals.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "category-totals"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.sales-dashboard.5b",
+      "source": "scenarios/02-operational-category-totals.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "category-totals"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.operational-views.5c",
+      "source": "scenarios/02-operational-recommendations.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "recommendations"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "source": "scenarios/02-order-cancellation-core.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "cancel-core"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.returns-pricing.cancellation-and-return.3b",
+      "source": "scenarios/02-order-cancellation-history.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "cancel-focused"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.operations-access.fulfilment-queue.1b",
+      "source": "scenarios/02-queue-warehouse.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "fq-warehouse"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.stock-conservation.202b",
+      "source": "scenarios/02-self-contained.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "fresh-stock"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.operations-access.operator-authorization.201c",
+      "source": "scenarios/02-server-actions.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "direct-notstaff"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.stock-conservation.202d",
+      "source": "scenarios/02-server-actions.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "direct-conserve"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.operations-access.order-owner.204a",
+      "source": "scenarios/02-server-actions.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "direct-owner",
+          "exact": true
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "direct-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.operations-access.operator-authorization.201a",
+      "source": "scenarios/02-strengthened.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "not-operator"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "source": "scenarios/03-deferred-access.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "restock-outsider"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.stock-conservation.202f",
+      "source": "scenarios/mixed-operation-history.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "history-17-a"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "history-17-b"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "source": "scenarios/progression-account-state-reconnect.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "pat"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "source": "scenarios/progression-account-state-reload.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "pat"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "source": "scenarios/progression-books-balance.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "sam"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "tess"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "source": "scenarios/progression-books-balance.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "sam"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "tess"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.feature.cart-checkout.cart.4a",
+      "source": "scenarios/progression-cart-checkout.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "quantity",
+          "name": "cart-quantity"
+        },
+        {
+          "do": "signUp",
+          "actor": "checkout",
+          "name": "cart-checkout"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.feature.cart-checkout.cart.4d",
+      "source": "scenarios/progression-cart-checkout.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "quantity",
+          "name": "cart-quantity"
+        },
+        {
+          "do": "signUp",
+          "actor": "checkout",
+          "name": "cart-checkout"
+        }
+      ],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "raceCheckout",
+          "name": "checkout-overlap"
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "source": "scenarios/progression-checkout-crash.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "database"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "application"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "recovered"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "source": "scenarios/progression-checkout-crash.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "database"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "application"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "recovered"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.customer-profile.customer-profile.620c",
+      "source": "scenarios/progression-customer-profile.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "profile-owner"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "source": "scenarios/progression-customer-profile.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "profile-owner"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "source": "scenarios/progression-customer-profile.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "profile-owner"
+        }
+      ],
+      "steps": [
+        {
+          "do": "signUp",
+          "actor": "privateOwner",
+          "name": "profile-private-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "profile-other"
+        }
+      ]
+    },
+    {
+      "key": "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "source": "scenarios/progression-managed-support-privacy.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "managed-private-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "managed-private-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.managed-support.managed-support.613c",
+      "source": "scenarios/progression-managed-support-shared.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "managed-shared-owner"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.managed-support.613a",
+      "source": "scenarios/progression-managed-support-shared.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "managed-shared-owner"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.notification-preferences.notification-preferences.630c",
+      "source": "scenarios/progression-notification-preferences.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "notification-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "notification-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+      "source": "scenarios/progression-notification-preferences.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "notification-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "notification-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+      "source": "scenarios/progression-notification-preferences.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "notification-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "notification-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.live-state.open-list.902a",
+      "source": "scenarios/progression-open-list-live.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "reviewer",
+          "name": "raceR"
+        },
+        {
+          "do": "signUp",
+          "actor": "reader",
+          "name": "raceL"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "source": "scenarios/progression-promotion-rules.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "promotion-customer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "source": "scenarios/progression-promotion-rules.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "promotion-customer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.feature.purchasing.purchase-order.3c",
+      "source": "scenarios/progression-purchasing.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "purchase-buyer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+      "source": "scenarios/progression-review-access.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "claim-review-owner",
+          "exact": true
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "claim-review-stranger",
+          "exact": true
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+      "source": "scenarios/progression-review-script.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "script-review-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "reader",
+          "name": "script-review-reader"
+        },
+        {
+          "do": "signUp",
+          "actor": "writer",
+          "name": "script-review-writer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.search-ordering.search-ordering.402b",
+      "source": "scenarios/progression-search-ordering.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "search-order-buyer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.inventory-operations.shipping-accounting.202e",
+      "source": "scenarios/progression-shipping-accounting.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "shipping-accounting"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.signed-out-purchase.3a",
+      "source": "scenarios/progression-signed-out-purchase.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "signed-in-buyer"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "source": "scenarios/progression-stock-alert-delivery.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "subscriber",
+          "name": "stock-subscriber"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+      "source": "scenarios/progression-stock-alerts.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "subscriber",
+          "name": "stock-subscriber"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "stock-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "source": "scenarios/progression-stock-alerts.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "subscriber",
+          "name": "stock-subscriber"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "stock-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.progression.support-history.support-history.612c",
+      "source": "scenarios/progression-support-history.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "support-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "support-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.state-durability.support-history-reload.612a",
+      "source": "scenarios/progression-support-history.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "support-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "support-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.support-history-privacy.612b",
+      "source": "scenarios/progression-support-history.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "support-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "support-other"
+        }
+      ],
+      "steps": []
+    },
+    {
+      "key": "ecommerce.spec.access-control.support-history-logout.612d",
+      "source": "scenarios/progression-support-history.json",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "support-owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "support-other"
+        }
+      ],
+      "steps": []
+    }
+  ],
+  "scopes": [
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "executableSha256": "a534dbc21466f0bfaaf41e79eacaca33fe3b1f1801f34ea792d993ab6f93baa4"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "executableSha256": "3979eeabd8c10dcf7b834a42a6f75f7e8a025a528c586fb9a332c9e254efb206"
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "executableSha256": "df54a72880b15eb9d801239e127510ba02a12ea4068a9a0ae36bd38fb0d1d0af"
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "executableSha256": "8a1ded6ead652f137ff14aa8dd5b5940d76e496b659f015ed3a01eb17e2ee1c7"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "executableSha256": "a534dbc21466f0bfaaf41e79eacaca33fe3b1f1801f34ea792d993ab6f93baa4"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "executableSha256": "3979eeabd8c10dcf7b834a42a6f75f7e8a025a528c586fb9a332c9e254efb206"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "executableSha256": "df54a72880b15eb9d801239e127510ba02a12ea4068a9a0ae36bd38fb0d1d0af"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "executableSha256": "8a1ded6ead652f137ff14aa8dd5b5940d76e496b659f015ed3a01eb17e2ee1c7"
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "executableSha256": "ab687583c6d8314c2fb7da4e5f96ff25433aafb0d84715feb17630144a21a9c8"
+    }
+  ],
+  "review": {
+    "status": "promotion-plan-not-qualified",
+    "note": "signup-scope-review.md",
+    "executableHashesAreProvisional": true,
+    "finalCandidate": "v3 after refusal guard; recompute exact identities",
+    "unchangedChecks": 109,
+    "replacementChecks": 3,
+    "replacementPoints": 4,
+    "requiredControls": {
+      "spacetime": 6,
+      "postgres": 8,
+      "mongodb": 6,
+      "convex": 6
+    },
+    "requiredControlTotal": 26,
+    "requiredNullChecks": 3,
+    "requiresFullQualification": false,
+    "preserveOriginalArtifacts": true,
+    "constraints": [
+      "Normal unchangedQualificationChecks and calibration slice validation remain mandatory.",
+      "Reference, mutation and null executable scopes all need evidence-backed mappings.",
+      "Retain original artifact runtime identities; do not rewrite source evidence.",
+      "Replace exactly the three changed keys with complete final-runtime slices.",
+      "Known patched refusal must never trigger fallback login even without UI error.",
+      "No new evidence framework and no new paid work in this review."
+    ]
+  }
+}

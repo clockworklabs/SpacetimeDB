@@ -1,0 +1,729 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "7120c8caaef1c4ddbab0aca2904010925fb7804d",
+  "candidateCommit": "3926fa8ae1ac948b61f2320c8cd7ae462f991a93",
+  "image": "sha256:d20bb418cf83dba45b8dea20e0133ef4d87fa3c8ae4e4a64753a2045c8d417ab",
+  "priorControls": {
+    "candidate": "84e2be5c7d648f7be36e15f92db387691bf03c1a",
+    "image": "sha256:b6ec1b490f1c8e34dac8c03cf3de3d95bd6cbbbb31a96f5b83a87386035859c0",
+    "originalChecks": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.spec.access-control.account-password.1c",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.state-durability.staff-role-reload.621a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "retainedChecks": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.spec.access-control.account-password.1c",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.state-durability.staff-role-reload.621a"
+    ],
+    "replacedChecks": [
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ]
+  },
+  "replacedChecks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "reusedChecks": [
+    "ecommerce.feature.accounts.accounts.1a",
+    "ecommerce.feature.accounts.accounts.1b",
+    "ecommerce.feature.accounts.accounts.1d",
+    "ecommerce.feature.cart-checkout.cart.4a",
+    "ecommerce.feature.cart-checkout.cart.4d",
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.feature.catalog.catalog-search.2d",
+    "ecommerce.feature.catalog.catalog-values.2a",
+    "ecommerce.feature.purchasing.purchase-order.3c",
+    "ecommerce.feature.reviews.reviews.6a",
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.inventory-operations.operational-views.5c",
+    "ecommerce.inventory-operations.operational-views.5d",
+    "ecommerce.inventory-operations.operational-views.5e",
+    "ecommerce.inventory-operations.operational-views.5f",
+    "ecommerce.inventory-operations.shipping-accounting.202e",
+    "ecommerce.inventory-operations.stock-conservation.202b",
+    "ecommerce.inventory-operations.stock-conservation.202d",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+    "ecommerce.l3.deferred-integrity.exactly-once.311a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+    "ecommerce.l3.server-time.server-time.312a",
+    "ecommerce.operations-access.fulfilment-queue.1b",
+    "ecommerce.operations-access.fulfilment-queue.1c",
+    "ecommerce.operations-access.operator-authorization.201c",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.progression.catalog-management.catalog-management.622a",
+    "ecommerce.progression.catalog-management.catalog-management.622b",
+    "ecommerce.progression.customer-profile.customer-profile.620c",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.progression.managed-support.managed-support.613c",
+    "ecommerce.progression.notification-preferences.notification-preferences.630c",
+    "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+    "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+    "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+    "ecommerce.progression.staff-access.staff-access.601a",
+    "ecommerce.progression.staff-roles.staff-roles.621c",
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "ecommerce.progression.support-history.support-history.612c",
+    "ecommerce.progression.support-intake.support-intake.610a",
+    "ecommerce.progression.support-triage.support-assignment.611a",
+    "ecommerce.progression.support-triage.support-priority.611b",
+    "ecommerce.progression.support-triage.support-status.611c",
+    "ecommerce.returns-pricing.cancellation-and-return.3a",
+    "ecommerce.returns-pricing.cancellation-and-return.3b",
+    "ecommerce.returns-pricing.refund-accounting.203a",
+    "ecommerce.spec.access-control.account-disclosure.110a",
+    "ecommerce.spec.access-control.account-password.1c",
+    "ecommerce.spec.access-control.cart-boundary.109a",
+    "ecommerce.spec.access-control.cart-boundary.109b",
+    "ecommerce.spec.access-control.customer-profile-privacy.620b",
+    "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+    "ecommerce.spec.access-control.managed-support-privacy.613b",
+    "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+    "ecommerce.spec.access-control.order-ownership.106a",
+    "ecommerce.spec.access-control.promotion-management-boundary.620b",
+    "ecommerce.spec.access-control.purchase-attribution.102a",
+    "ecommerce.spec.access-control.purchase-session.101a",
+    "ecommerce.spec.access-control.review-eligibility.108a",
+    "ecommerce.spec.access-control.review-eligibility.108b",
+    "ecommerce.spec.access-control.signed-out-purchase.3a",
+    "ecommerce.spec.access-control.staff-area-boundary.601b",
+    "ecommerce.spec.access-control.staff-role-boundary.621b",
+    "ecommerce.spec.access-control.staff-role-revocation.621d",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b",
+    "ecommerce.spec.access-control.support-history-logout.612d",
+    "ecommerce.spec.access-control.support-history-privacy.612b",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.concurrency-safety.last-unit.201a",
+    "ecommerce.spec.concurrency-safety.last-unit.201b",
+    "ecommerce.spec.concurrency-safety.last-unit.201c",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.external-data-sync.external-stock.901a",
+    "ecommerce.spec.external-data-sync.external-stock.901d",
+    "ecommerce.spec.live-state.fulfilment-queue.1a",
+    "ecommerce.spec.live-state.inventory-dashboard.5a",
+    "ecommerce.spec.live-state.managed-support.613a",
+    "ecommerce.spec.live-state.open-list.902a",
+    "ecommerce.spec.live-state.purchase-stock.3b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.live-state.rating.6c",
+    "ecommerce.spec.live-state.sales-dashboard.5b",
+    "ecommerce.spec.live-state.shared-cart.4c",
+    "ecommerce.spec.live-state.warehouse-stock.7c",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.account-state-recovery.105a",
+    "ecommerce.spec.state-durability.account-state-recovery.105b",
+    "ecommerce.spec.state-durability.cart-reload.4b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.state-durability.customer-profile-reload.620a",
+    "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+    "ecommerce.spec.state-durability.session-reload.1e",
+    "ecommerce.spec.state-durability.staff-role-reload.621a",
+    "ecommerce.spec.state-durability.support-history-reload.612a",
+    "ecommerce.spec.transactional-integrity.books-balance.107a",
+    "ecommerce.spec.transactional-integrity.books-balance.107b",
+    "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+    "ecommerce.spec.transactional-integrity.server-price.104a",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "ecommerce.spec.transactional-integrity.unique-review.6b"
+  ],
+  "executableEquivalences": [
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "886fac0911a8f4b872a1d4d2ca4582141105fe826c66619c0e6043e2e475c52f",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "e5cd484f2e8457b01ee551e3070a22b99b8693899d5f887d7b5893b1c2b44abd",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "696b6b426115e51aa5f83778e4d674ec0485f296c980b85c38c748415febe65b",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2ff2b06d57793eca77bac97e3a2f3ec53016a8bd1888b47a3441d9e4737b13f1",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "5964d725ceda174d12f4a9cdbb6a5df9d7d05d36b5081ab017d8a61de7d644cb",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "a7caa0fe59d3b5aaa4715fcedffb3d15072adfed778e96a6c1414ac47a2ee2d9",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "1f0545921fdd8e193175641155f990802ec5ecef338f93b80b41512df239f974",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "002d93c40992f477d8c1da7b00845cdfe04864eeef35fe8d6b0d81bb880a7239",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "0554fd6a0a173b4ff9b9dca1468dd1f8f32c11319888882b5eaa96004dd45086",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "99f7ce3c13b11bf3c7fdc742656a0a482742814826a51bc2db36a19a178132a7",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "a624ae4170d100a9133db5ed2ac3686a6be63153564eedd333c1cdae11c4c817",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "7797b69093145170dc055c05838039a3c2d9a086c3fe56f0192f439c2292701e",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "3438bd353df49fcc6b2f1f6a0c9bd38d7fd247e984372cb8b08b6d33b4d4cf9d",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "a94eb7fe1415d45004c9a997775a0b2bd903929eb39afd86a97414b02a2f7c17",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "250040d4ccfb1203a388f1bb82845965b69e694352a783369049a9627c2cdf9b",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "681c4c9ad83791152dcc2b62f4fbffe6d16e1112044691f98a2a57d6cb433c90",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "5c4518ed1ef285e1db42d91212f24021b1b51406728731595c101e7e788dcb3e",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "b03aecea221b88a1a6a24e0eccd5a3be67e1e96cb18b5ea39149a0c65be2f24f",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "d6702c2baacb2f309f7f126ec460088af6a58b1f78535c3483fce25a3fcbf322",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "7cdf1c72945c7f788402f694eb4fd8fa2cba3a290e37f6b0f26a9a99b095b33b",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "4b46451fb20b3a671ede495806c4b1c666876cd0facff1c27731381975bcfca2",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "de4841f80ff5c46197c77fbb682e637d70ea1b3bdfa5211aa3f31bb7da320c8a",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "fb61656ae25e83c392250e57a58a7f569bcd42b0da179e8c13811298daca7db0",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "e389913df8ba45c65425b9744763cb70201a27c7c11be878ec7c691b3d46c146",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "2df97cad66798f1b4c13a1609f139f2da5d867ac8bcc1d4964824067129801a7",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "ecfc53d7c99ad94e1a23974086dd3fcf652fd37242c506da34e33cbd620cf378",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "d4c0809aafc67533354df5d58f51fd584036fa6f35898899179aceb7ee137d96",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "8deb9e80d0f224397863c6a03213f192ac67098ea51afc4637ab13f946b4af11",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "c288f07a496f7e61d26d52cd986a0e3653787da165d05cac649428ed7154742a",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "b0eb79bfd49e7880a794b5e3aa5fcb304a355e62a1b157832b1e4ee22b833c28",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "46eccfd5d77a3ef2d9fe33afe9147fc888a874f54073e9e40db74042e9569154",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "6191bbb0d9c34539a5ff2ae10f23d36c78b993eb32f4f50153ddb4f5b01deb5f",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "c3362f25defd5fd69124efba09fe9aefd3ad20063395dba0cf8453f60efa532a",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "14054c6f1dc3395f434d7bf14c9ee0011c3133e282f8c644a219602a0ad86b9e",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "4f0da393bff7e0e6ab140bdd5bf7d3d65f042eb0ce24fc090393bda52364d068",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "f3231de2128af1baebb75f960c84c8f34516fe03d75da88c35a60bf9cc9dc6bb",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "e6f5baa5245213d640622d7e503e8f53a4eb5df3d9c6a7f3b489ba3d26a76fa0",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "1bbd60c1dd63a81c5ca9e03f4fb70b58d2c969f3ab550dddb613b662bad90712",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "f0c376de1594b0486f6294ec13ac689cacf1cfb992306f6db017fd7cb99bdb08",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "84b6669ce7b306b84290cf93819ab8efef20b0b72021c7bf5ca5fc92c8bc04b8",
+      "toExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "4fad8810881387954160b6533c3d795e52343b1718894bdd3fe82634585b786b",
+      "toExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "f2815c4d4dab37fb035dbcc475080d2c5844ef119e04502854cda5923ff1c4dd",
+      "toExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "4fbc90c64aab09ab7d44dfb65dad19fce7ce91b420da74853a409eff84f43df4",
+      "toExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "38051552ed07cdf0e3594f85ad38b9d004b07eb915c7077c382c8ed3140bf353",
+      "toExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c"
+    }
+  ],
+  "changes": "Retain the reviewed password/refusal/product changes from84e. Replace warehouse observations to allow same-role wrappers around consistent complete views while retaining every numeric or conflicting projection. Include the bounded qualification-slice validator and implicit source-selection fix.",
+  "executableReview": [
+    "Launch-scope approval only. The final runtime must pass the five selected positive, defect and null controls before promotion. The first batch passed four 19-check baselines, all124 intended defect assertions, null19 and all16 lease recoveries.",
+    "Traced the complete112-check compiled catalog. Only warehouse7b and total-reader callers2a,201a,2c reach the changed warehouse readers;7a is included for complete scenario closure. These five checks replace their84e results. The fourteen other newly measured checks retain unchanged complete scenarios and execution inputs.",
+    "The final warehouse reader separates numeric controls from labels and resolves redundant same-role wrappers with the consumer declared identity matcher. Numeric projections, conflicting identities and incomplete independent rows remain checked. Forty inventory and23 total browser cases passed, including failure-first valid nesting and label-decoration cases.",
+    "The validator-only changes affect eligibility of fixed independent qualification slices, not model prompts or browser/application behavior. They require membership in both source/current effective check populations, catalog identity/path/presence, unchanged complete scenarios/dependencies and all other policies. Source artifact identity and execution-scope proofs remain bound. Two failure-first saved-artifact test runs each passed four groups; altered identity, dependencies, policies and populations remain rejected.",
+    "The93 historical checks retain their earlier reviewed contract-text and runtime equivalence evidence. Current document comparison proves their complete scenario inputs unchanged. Source changes since the prior measured runtime are limited to the traced warehouse reader and qualification validation; each listed artifact-to-final executable mapping is accepted only for its retained check slice. No mapping qualifies the replaced five warehouse checks.",
+    "Original artifacts, original selection keys and source snapshots stay unchanged. The saved-source progression review confirms warehouse false failures in SpacetimeDBr2 and Convexr1 withheld six L3 feature groups; therefore old L3 work and corrected cohort comparisons cannot be reused. Fresh model testing remains gated on final qualification and immutable official image checks."
+  ],
+  "selectionChange": {
+    "oldPasswordKey": "ecommerce.feature.accounts.accounts.1c",
+    "newPasswordKey": "ecommerce.spec.access-control.account-password.1c",
+    "historicalKeysRewritten": false
+  },
+  "mutationManifestUpdates": [
+    {
+      "stack": "mongodb",
+      "path": "grader/mutations/mongodb-ecommerce.json",
+      "fromSha256": "255140a2cc0c4ffcdd026cc25418c1bda80f15e4eb7829bbca43d06206ebc07d",
+      "toSha256": "c34fb587384594e4b4367231e1bd322cbfa5d01d849661959b5ec8e7b609f75a"
+    },
+    {
+      "stack": "postgres",
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "fromSha256": "2c757bf0ededa88d5b8d4d078ed74dc16bea090e9ce688f10d7e1ba71bd87155",
+      "toSha256": "ce0c0c10dad084ed5c694c0db8afa40cb3ae101484c24fe64eda07ad2563f37e"
+    },
+    {
+      "stack": "spacetime",
+      "path": "grader/mutations/spacetime-ecommerce.json",
+      "fromSha256": "e5fd8b8752cc89f12c019b72df9959b3632c2abedcf08a5dc5de943a0b3c67f0",
+      "toSha256": "5d37f436793c4311671c50578e84b3656a1124c76cba1625b6c7a9b5d48b1dbb"
+    },
+    {
+      "stack": "convex",
+      "path": "grader/mutations/convex-ecommerce.json",
+      "fromSha256": "f08b9fd2ae3e6f9ebe60908110861e188bede3e639c7264a45f7e41c6d1a313e",
+      "toSha256": "13b26c47cb482ed3e1ff4338d603e1d524c20bfbffe2cf4ee8d746c413b7efeb"
+    }
+  ],
+  "validation": {
+    "positiveChecksPerStack": 5,
+    "mutations": {
+      "spacetime": 6,
+      "postgres": 6,
+      "mongodb": 5,
+      "convex": 4
+    },
+    "caughtOnAssertion": 21,
+    "nullExpectedFailures": 5,
+    "recentRetainedChecks": 14,
+    "historicalRetainedChecks": 93,
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-spacetime.json",
+        "sha256": "767bde8c906cbb556ab7877dee1dea1fe83800e8fe01cd8971735add7373339f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-postgres.json",
+        "sha256": "01e24c0971ce66767df6a270acc5eb53f7938fa50db80a5e1b60ab2e35cce850"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-mongodb.json",
+        "sha256": "5b0f7df0790c3d8d1ecf33d0e2422e2e7380d54a1fbcbf4c1a85fe78e8fdb5ba"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-convex.json",
+        "sha256": "78ca9fa3b45c92a8973c45a03d7148871f168a68d82df971955a75b904ed2414"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-null.json",
+        "sha256": "4d1148a796d2a859a00669df99ec4cb63936ca2e436435b1337b5744b511e901"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-controls-verification.json",
+        "sha256": "66611def43cbcc44f48417a12ede675315ebc735bee123cec81b928badfe9ef0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-frozen.json",
+        "sha256": "59a3c05196998184e4dc172f729ec7936205cf01f6382220f82c4bd112709920"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/prior19-launch.json",
+        "sha256": "806a8a1f806c8ed3bcd0590ba0ea0c670d81a9b0e22a2c5d8f3e01b75bbd1f12"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/reviewed-scope.json",
+        "sha256": "db3eab63368c2f4d2d3f35d71d5df5355fdc3d8bce506148c45d6d7f4d4be9fa"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/scope.json",
+        "sha256": "b0849e37fc5e1b44a112602e465c716dc72ed6b09d3ba1772616f25af1f6e492"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/product-defensibility-3926fa8ae-frozen.json",
+        "sha256": "d1561a85e7d9ad6c3007430e4c0f07f6ffd11a1f74c6f914fe29c92d784dc02e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/inputs.json",
+        "sha256": "c3759ab3e7674fc9fb8016be29e0eda72431192527fa22bd8361923af05563ba"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/Dockerfile",
+        "sha256": "4fad8a11305cb74f5da45a94314718145876ca66f07ca97e559fdc0eccb70daa"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/preparation-inputs.json",
+        "sha256": "15e3ff88b8ac9f6d1a9a2d7cf187e8c8c209e05682d8c1e1ddb3536bb99aa212"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/product-defensibility-3926fa8ae-launch.json",
+        "sha256": "ca23b9af36fc9140b93e28e3793dde2de4d95927e0787b634bec3d5fd7dd33a8"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/candidate-calibration-before-promotion.json",
+        "sha256": "674bb0688be7762b7e1cb5eb503de09f86bf879a04a3499cfc7ed4db920b800a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/spacetime-worker-1-checkpoint.json",
+        "sha256": "a08d2ac97927f8288cddcc778e2d4ba5bf87b6cbd3aa8f4f54e04af8ddc614e5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/spacetime-worker-2-checkpoint.json",
+        "sha256": "e65408fe1ce285a0296e8a246c7c2767430f3baeb55c09c7341280581d2c0d7e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/spacetime-worker-3-checkpoint.json",
+        "sha256": "abe27267a50fd7791246d9b19ec4fd297937c8cdd589f9dca6bae8c69e799605"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/spacetime.json",
+        "sha256": "b6238b7de656ae328c08b4a8e88ea63dcc45478c85ee4247ae88153709a4d643"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/inputs-6eeb398657f0.json",
+        "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/postgres-worker-1-checkpoint.json",
+        "sha256": "4387d28aebcc7993e76c6b0641e1cb8bf761956da78562e5609c22bd182e3972"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/postgres-worker-2-checkpoint.json",
+        "sha256": "6b52d826cb9f96a6fcf353f602ed509b068987d31954f69c524f3ba477f8c5a2"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/postgres-worker-3-checkpoint.json",
+        "sha256": "595403210ef1e0687c7fb7fc4342cfaf2fc44ba817f208d92193ea63ee3e0236"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/postgres.json",
+        "sha256": "7b088c4a0d7a13ce6f6be7f00001658e4a2052c84e06c75fa01ba236bb3a2fdf"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/mongodb-worker-1-checkpoint.json",
+        "sha256": "a21765544dba33c735f4a34d6d85533ed84eef4924a962de406b5c78cadacf56"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/mongodb-worker-2-checkpoint.json",
+        "sha256": "f16bca839a3f62903be2263c2775f32255ed1242d36fd23cef98a205a8bf97f7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/mongodb-worker-3-checkpoint.json",
+        "sha256": "b4f2c5a29f7ad0fdac15f05bb0c69a038f9732d6f2c8134c03e604cf76409b5e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/mongodb.json",
+        "sha256": "938147bf91b9584b26b8a5ee42cf9b20e01aa56cb2a5c807a52e63ecb14842d9"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/convex-worker-1-checkpoint.json",
+        "sha256": "9a04854a655d70fcbc0ec51f562968ad602f4fe4f057bc45b4e80f72c8609d28"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/convex-worker-2-checkpoint.json",
+        "sha256": "8311a70de18bbbf5441295a469f6fe40553525a350b9d48bb8183f02bf989966"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/convex-worker-3-checkpoint.json",
+        "sha256": "06e1d55879f15c83bc8f5786251680d420465d4eee36c3ba3d3b5d43835d147a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/convex.json",
+        "sha256": "1ab31197773c85cb9c569a77248f08e063678234badc4cab5a4205c57e56306d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/null.json",
+        "sha256": "d49a3ebc534f4349eabe52b0327c950c1cf6cdb81cc7581e52bcdb9ba4939422"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/cleanup-verification.json",
+        "sha256": "32177bf8f2c1a2a3166ee6254c461723364bbaf3293cd498f6c47131c9307e81"
+      }
+    ]
+  },
+  "limits": "Fixed-reference qualification only. SpacetimeDB r2 and the separately successful Convex r1 saved-source retry proved corrected 7b changes the next L3 task from 72 to 112 checks. The initial Convex r1 replay timed out before grading; both executions remain preserved and the exact timeout cause is unproved. A fresh authorized model study is required; no old L3 reuse or corrected cohort comparison. Sequential L1/L2 and L6 remain unqualified with no evidence. Normal calibration validation, requested dependency-L3 qualification status, and immutable official image checks remain required."
+}

@@ -1,0 +1,137 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-postgres-20260927045149-30",
+  "attempt": {
+    "id": "reference-live-postgres-20260927045149-30",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T04:51:50.054Z",
+    "completedAt": "2026-09-27T04:53:26.986Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "4f9d2e0fb71c607a59547414b49b115b33b6c0d7399dafb1680c37c57599ba38"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-postgres",
+      "sha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "324d289b36ef389bac093274a57017d4d00fd7743177f18a8c349753ad17d5ca"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-postgres",
+    "fixtureSha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 21,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "7661d98733896180f01a1f1a23f7e389f7755223375886cf015c10f7d826e2b2",
+      "executableSha256": "a7caa0fe59d3b5aaa4715fcedffb3d15072adfed778e96a6c1414ac47a2ee2d9",
+      "kind": "mutation",
+      "mutationSha256": "68608d5f6317d9216fbd2cfa3e8a3ad1d02def47d06938303cf0f626165c092c",
+      "recipe": {
+        "contentSha256": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "postgres",
+        "reference": {
+          "id": "ecommerce-reference-postgres",
+          "sourceSha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3"
+        },
+        "version": "1.6.0"
+      },
+      "sha256": "cf985474d62661eccbe6d57430809841bda5614678c087a456e614598a1e95e5"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "postgres-stock.runs/r1",
+        "durationMs": 96825,
+        "capacityWaitMs": 0,
+        "processError": null,
+        "harnessSha256Before": "e3cc210f5a953f614dfe0ec58feca0c1d3dfaf0d708730e45562a0f560d6bb83",
+        "harnessSha256After": "e3cc210f5a953f614dfe0ec58feca0c1d3dfaf0d708730e45562a0f560d6bb83",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-postgres-run30-20260927045151-34d38ed1",
+        "score": "1/1",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 1,
+        "zeroPointCriteria": 0,
+        "fingerprint": "f72edd23731ba3abb7381f3ba8aef77107fe44de2b9863c69c4ee3ab521faca6",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.spec.external-data-sync",
+              "checkCount": 1,
+              "setupRuntimeMs": 280,
+              "criterionRuntimeMs": 4325,
+              "measuredRuntimeMs": 4605,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 105000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 1,
+          "completed": 1,
+          "total": 1,
+          "remaining": 0
+        }
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "e3cc210f5a953f614dfe0ec58feca0c1d3dfaf0d708730e45562a0f560d6bb83",
+    "qualifiedCheckKeys": [
+      "ecommerce.spec.external-data-sync.external-stock.901a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

@@ -1,0 +1,438 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T09-31-58-829Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T09-31-58-829Z",
+    "parentId": "ecommerce-postgres-run63-20260927093139-307245a6"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T09:31:58.829Z",
+    "completedAt": "2026-09-27T09:45:17.855Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "7a56b268900a471b4a0d61d22493ce78b546b4b4bc63e19fb1534b24ec9f0dc4"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 799026,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-LY3m27/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-LY3m27/selected-mutations.json",
+    "fixtureSha256": "7a56b268900a471b4a0d61d22493ce78b546b4b4bc63e19fb1534b24ec9f0dc4",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-purchase-session.json",
+      "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "../tracks/ecommerce/scenarios/progression-books-balance.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 2,
+      "mutationIds": [
+        "unauthenticated-direct-purchase-uses-default-account",
+        "stock-alert-is-sent-after-every-restock",
+        "progression-revenue-double-counts-orders",
+        "revenue-aggregation-truncates-order-population",
+        "signout-keeps-session",
+        "purchase-session-rejects-returning-login"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres-controls.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "82cf11afbfa23e14e070c978e5fa4a88fb0d81660d52b7e820a95ccefd0bf5f6"
+      },
+      "total": 6,
+      "max": 6,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "identitySha256": "bc38df0655bf8b317b1e790b00de79a54b8c90443d2374efb2c1b2a171fffb34",
+          "total": 2,
+          "max": 2
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "identitySha256": "469558dd04d6213138971208424b90d6e033faad70f3814d1840907a37ce932f",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-books-balance.json",
+          "identitySha256": "4a4eb5dab7480d98a88d28bcac1b7e128d27950e84a6bc9366e84f0f3c267a59",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 6,
+      "completed": 6,
+      "total": 6,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "unauthenticated-direct-purchase-uses-default-account",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the buy action was accepted for guest, who must be refused",
+            "failedAction": "expectActionOutcome",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "stock-alert-is-sent-after-every-restock",
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 631,
+            "criterion": "631a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "2 stock-alert-delivery entries shown, expected 1",
+            "failedAction": "expectElementCount",
+            "key": "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "progression-revenue-double-counts-orders",
+        "scenario": "../tracks/ecommerce/scenarios/progression-books-balance.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.books-balance.107a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.books-balance.107a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 107,
+            "criterion": "107a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the admin-revenue control reads 58000, expected exactly 29000",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "revenue-aggregation-truncates-order-population",
+        "scenario": "../tracks/ecommerce/scenarios/progression-books-balance.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.books-balance.107a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.books-balance.107a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 107,
+            "criterion": "107a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the admin-revenue control reads 7424, expected exactly 29000",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.spec.transactional-integrity.books-balance.107a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "signout-keeps-session",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase orders for account kim90ff8efc-1554-4cf101 control reads 1, expected exactly 0",
+            "failedAction": "dbExpectNoPurchase",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "purchase-session-rejects-returning-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"kim\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8",
+      "recipeSha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a",
+      "fixtureSha256": "7a56b268900a471b4a0d61d22493ce78b546b4b4bc63e19fb1534b24ec9f0dc4",
+      "calibrationSha256": "4c43ef267f7e0c2dc4584ea7312133159bccea97ce546abbb5ee3caf50b74338",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 2,
+        "mutationIds": [
+          "unauthenticated-direct-purchase-uses-default-account",
+          "stock-alert-is-sent-after-every-restock",
+          "progression-revenue-double-counts-orders",
+          "revenue-aggregation-truncates-order-population",
+          "signout-keeps-session",
+          "purchase-session-rejects-returning-login"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "scenarioSha256": "c8d6c1598540cc153d2a4aa70f8cea9d18520b899fbdbb66e9e39c63e3ff3a4f",
+          "mutationSha256": "33bf3af4d50f7e3d7bd3940568e050e00a1fa9e1123229aa7a4398ab3bab5eb3",
+          "selectionSha256": "93900497e87d382fb33acbd636b7bb3d8c6165595640215e49c5a1e0deeb6c1f",
+          "identitySha256": "bc38df0655bf8b317b1e790b00de79a54b8c90443d2374efb2c1b2a171fffb34",
+          "mutationIds": [
+            "unauthenticated-direct-purchase-uses-default-account",
+            "signout-keeps-session",
+            "purchase-session-rejects-returning-login"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "scenarioSha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9",
+          "mutationSha256": "0f2204054fd8af416771c8aae6dea54bf2771ba9e4c2bb85008d0b1a93a5f598",
+          "selectionSha256": "e5a777f4f07173d3eb5a140677d89b231e1031c327d31a7798c0d9f515eaf216",
+          "identitySha256": "469558dd04d6213138971208424b90d6e033faad70f3814d1840907a37ce932f",
+          "mutationIds": [
+            "stock-alert-is-sent-after-every-restock"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-books-balance.json",
+          "scenarioSha256": "872a328f878b9a7608e9f1f54830111f31eb995007b52834c73b6efb82148ff2",
+          "mutationSha256": "f599195ac525821f149df207640e030c2208fff2adefda2a4a5acae40cf126c1",
+          "selectionSha256": "bdc930f14f7e5c0576cb7cafe34741de347f3a4301483dac0cfa7c856c59bcea",
+          "identitySha256": "4a4eb5dab7480d98a88d28bcac1b7e128d27950e84a6bc9366e84f0f3c267a59",
+          "mutationIds": [
+            "progression-revenue-double-counts-orders",
+            "revenue-aggregation-truncates-order-population"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 60,
+      "updatedAt": "2026-09-27T09:45:17.855Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "unauthenticated-direct-purchase-uses-default-account",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-ag3DbA/grade.json",
+          "sha256": "fdaf13164f323ef1206119df9fb448031e13565e0fba8dd05b400650e98cdee9"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "signout-keeps-session",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-YXKz8e/grade.json",
+          "sha256": "c7f3b74cf6ad0b2b1a4cfd1e499d0a9b96a187ce21bd1f922f5c964ccee68c42"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "purchase-session-rejects-returning-login",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-Rl41PR/grade.json",
+          "sha256": "462818d51ef159fcfe8cf8cd070180e04bd9edb0621041fb22d3eb9cce818e54"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "mutationId": "stock-alert-is-sent-after-every-restock",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-AIrO8A/grade.json",
+          "sha256": "dcc9bf3164b600dfbc727266430bb298aea3adad8cd7403d8a5b2efc1b39f6c5"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-books-balance.json",
+        "mutationId": "progression-revenue-double-counts-orders",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-nXulsV/grade.json",
+          "sha256": "c9dae1f0e2bf62711bbdba57e389b6a95e4d449270eb56752b69a850cd0c161b"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-books-balance.json",
+        "mutationId": "revenue-aggregation-truncates-order-population",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-Wyl4Zi/grade.json",
+          "sha256": "9cd706a4122d72f5689967160ad39ffac13c59d6e0f371960cde81cd43963384"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

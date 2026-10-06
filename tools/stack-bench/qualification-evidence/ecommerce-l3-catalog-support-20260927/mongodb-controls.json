@@ -1,0 +1,243 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260927084116-32",
+  "attempt": {
+    "id": "reference-live-mongodb-20260927084116-32",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T08:41:16.305Z",
+    "completedAt": "2026-09-27T08:54:46.674Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a2df8bfcc481c060903ee29a325e5badf028f37c0778bc476188aea344552032"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "1ac64fea56d812e96e9063a79f3de12492be27bbad01c6566f51d4520e1ab241"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "d68704b751883dd91b4cfcdf2030387a32209551ccbb475f4491318e9eeb6164"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "1ac64fea56d812e96e9063a79f3de12492be27bbad01c6566f51d4520e1ab241",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 35,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "dacff94c546a277dabfd9c4f800864624609eba03e50987e586e41f4aa91a0fc",
+      "executableSha256": "0554fd6a0a173b4ff9b9dca1468dd1f8f32c11319888882b5eaa96004dd45086",
+      "kind": "mutation",
+      "mutationSha256": "87c1cd0f8a2ee98bbf46cd5903673a4f5a160ca953b9478ee2694568579c81fa",
+      "recipe": {
+        "contentSha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "1ac64fea56d812e96e9063a79f3de12492be27bbad01c6566f51d4520e1ab241"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "028f76a6d8fbcfa485745c52feb2816809e17a45724e7b5461376e7bcb581cea"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "mongodb-controls.runs/r1-workers",
+        "durationMs": 807842,
+        "processError": null,
+        "harnessSha256Before": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "harnessSha256After": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-mongodb-20260927084116-32",
+        "score": "16/16",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 10,
+        "zeroPointCriteria": 0,
+        "fingerprint": "c2b8020e1ac0746252103f4712ce52e4eb856bf30ab59bd286d237d9f6242fd6",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "checkCount": 1,
+              "setupRuntimeMs": 283,
+              "criterionRuntimeMs": 1660,
+              "measuredRuntimeMs": 1943,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.catalog-management",
+              "checkCount": 2,
+              "setupRuntimeMs": 4727,
+              "criterionRuntimeMs": 57,
+              "measuredRuntimeMs": 4784,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.faceted-search",
+              "checkCount": 2,
+              "setupRuntimeMs": 44668,
+              "criterionRuntimeMs": 25874,
+              "measuredRuntimeMs": 70542,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 141000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-triage",
+              "checkCount": 3,
+              "setupRuntimeMs": 1724,
+              "criterionRuntimeMs": 5845,
+              "measuredRuntimeMs": 7569,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "checkCount": 1,
+              "setupRuntimeMs": 23456,
+              "criterionRuntimeMs": 5270,
+              "measuredRuntimeMs": 28726,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 1392,
+              "criterionRuntimeMs": 198682,
+              "measuredRuntimeMs": 200074,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 10,
+          "total": 10
+        },
+        "baselineDurationMs": 456032,
+        "baselineOutput": "mongodb-controls.runs/r1",
+        "baselineHarnessSha256Before": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "baselineHarnessSha256After": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 46,
+            "artifact": "mongodb-controls.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "catalog-search-requires-exact-name",
+              "catalog-variants-are-discarded",
+              "active-search-uses-purchase-ranking",
+              "support-triage-discards-updates",
+              "catalog-discards-product-writes"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb-controls.runs/r1-workers/w1.stdout.log",
+              "stderr": "mongodb-controls.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 47,
+            "artifact": "mongodb-controls.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "catalog-product-name-is-not-published",
+              "faceted-search-ignores-category",
+              "pagination-repeats-first-page",
+              "catalog-truncates-created-population",
+              "catalog-rejects-all-product-writes"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb-controls.runs/r1-workers/w2.stdout.log",
+              "stderr": "mongodb-controls.runs/r1-workers/w2.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "9f86c60e8ee3411fe9660226a17a146c2ff452acfd309e14338feaec20962a32",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.progression.catalog-management.catalog-management.622a",
+      "ecommerce.progression.catalog-management.catalog-management.622b",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.progression.support-triage.support-assignment.611a",
+      "ecommerce.progression.support-triage.support-priority.611b",
+      "ecommerce.progression.support-triage.support-status.611c",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

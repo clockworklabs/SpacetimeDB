@@ -1,0 +1,183 @@
+TAP version 13
+# Subtest: privacy verdict drains an in-flight body and keeps a stalled response inconclusive
+    # Subtest: clean
+    ok 1 - clean
+      ---
+      duration_ms: 562.9923
+      type: 'test'
+      ...
+    # Subtest: leak
+    ok 2 - leak
+      ---
+      duration_ms: 493.2695
+      type: 'test'
+      ...
+# transport body unavailable {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: captured
+    ok 3 - captured
+      ---
+      duration_ms: 153.8048
+      type: 'test'
+      ...
+# transport body pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":false,"failure":null,"elapsedMs":1088}
+# transport body unavailable {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: stalled
+    ok 4 - stalled
+      ---
+      duration_ms: 1172.8434
+      type: 'test'
+      ...
+    # Subtest: late-clean
+    ok 5 - late-clean
+      ---
+      duration_ms: 648.205
+      type: 'test'
+      ...
+    # Subtest: late-leak
+    ok 6 - late-leak
+      ---
+      duration_ms: 674.7963
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1101}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1101}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1101}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1099}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1099}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1099}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1100}
+# transport request pending {"origin":"http://127.0.0.1:53972","pathSha256":"1270dbff226e8720afdf696d9e82e276bfe5b16b467e652fca3cb7ebb240e61e","method":"GET","resourceType":"fetch","phase":"absence","elapsedMs":1099}
+    # Subtest: headers-stalled
+    ok 7 - headers-stalled
+      ---
+      duration_ms: 1181.2958
+      type: 'test'
+      ...
+    1..7
+ok 1 - privacy verdict drains an in-flight body and keeps a stalled response inconclusive
+  ---
+  duration_ms: 5118.1226
+  type: 'test'
+  ...
+# Subtest: privacy reload preserves preceding read and write responses
+    # Subtest: PUT clean
+    ok 1 - PUT clean
+      ---
+      duration_ms: 652.1777
+      type: 'test'
+      ...
+    # Subtest: PUT leak
+    ok 2 - PUT leak
+      ---
+      duration_ms: 529.4412
+      type: 'test'
+      ...
+    # Subtest: PUT late-clean
+    ok 3 - PUT late-clean
+      ---
+      duration_ms: 700.1267
+      type: 'test'
+      ...
+    # Subtest: PUT late-leak
+    ok 4 - PUT late-leak
+      ---
+      duration_ms: 692.7166
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","phase":"navigation","elapsedMs":5004}
+# transport body pending {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":false,"failure":null,"elapsedMs":6092}
+# transport body unavailable {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: PUT stalled
+    ok 5 - PUT stalled
+      ---
+      duration_ms: 6221.8446
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","phase":"navigation","elapsedMs":5002}
+# transport body unavailable {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"PUT","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: PUT captured-stalled
+    ok 6 - PUT captured-stalled
+      ---
+      duration_ms: 5244.0637
+      type: 'test'
+      ...
+    # Subtest: PUT eventsource-clean
+    ok 7 - PUT eventsource-clean
+      ---
+      duration_ms: 523.2052
+      type: 'test'
+      ...
+    # Subtest: PUT eventsource-leak
+    ok 8 - PUT eventsource-leak
+      ---
+      duration_ms: 524.5905
+      type: 'test'
+      ...
+    # Subtest: GET clean
+    ok 9 - GET clean
+      ---
+      duration_ms: 552.9795
+      type: 'test'
+      ...
+    # Subtest: GET leak
+    ok 10 - GET leak
+      ---
+      duration_ms: 538.744
+      type: 'test'
+      ...
+    # Subtest: GET late-clean
+    ok 11 - GET late-clean
+      ---
+      duration_ms: 716.702
+      type: 'test'
+      ...
+    # Subtest: GET late-leak
+    ok 12 - GET late-leak
+      ---
+      duration_ms: 710.9057
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","phase":"navigation","elapsedMs":5013}
+# transport body pending {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":false,"failure":null,"elapsedMs":6103}
+# transport body unavailable {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: GET stalled
+    ok 13 - GET stalled
+      ---
+      duration_ms: 6247.4786
+      type: 'test'
+      ...
+# transport request pending {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","phase":"navigation","elapsedMs":5016}
+# transport body unavailable {"origin":"http://127.0.0.1:56122","pathSha256":"ad217a7b579266ca30f4ce97f7eddb5370c8bbbc67e1f7750df179473317fe82","method":"GET","resourceType":"fetch","status":200,"contentType":"application/json","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: GET captured-stalled
+    ok 14 - GET captured-stalled
+      ---
+      duration_ms: 5196.5823
+      type: 'test'
+      ...
+    # Subtest: GET eventsource-clean
+    ok 15 - GET eventsource-clean
+      ---
+      duration_ms: 510.6682
+      type: 'test'
+      ...
+    # Subtest: GET eventsource-leak
+    ok 16 - GET eventsource-leak
+      ---
+      duration_ms: 522.1408
+      type: 'test'
+      ...
+    1..16
+ok 2 - privacy reload preserves preceding read and write responses
+  ---
+  duration_ms: 30285.5536
+  type: 'test'
+  ...
+1..2
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 36101.0674

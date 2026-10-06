@@ -2,3 +2,28 @@
 **/ModuleBindings/** linguist-generated=true eol=lf
 /docs/llms/** linguist-generated=true
 /docs/llms/*-details.json linguist-generated=false
+/tools/stack-bench/** text eol=lf
+/tools/stack-bench/**/*.woff2 -text -diff
+/tools/stack-bench/qualification-evidence/**/*.json -text whitespace=cr-at-eol
+/tools/stack-bench/qualification-evidence/ecommerce-l3-navigation-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-readiness-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-module-layout-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-count-observation-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-catalog-support-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-readiness-final-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-entry-navigation-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-audit-fixes-ea80500/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-crash-order-20260927/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-signup-writes-20260928/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-restored-navigation-20260928/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-faceted-ranking-20260928/Dockerfile -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-checkout-readiness-20260928/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-click-classifier-20260928/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-probe-removal-20260928/** -text -whitespace
+
+# Preserve exact measured cookie-control evidence bytes.
+tools/stack-bench/qualification-evidence/ecommerce-l3-cookie-session-20260928/** -text -whitespace
+
+# Preserve exact measured combined-control evidence bytes.
+tools/stack-bench/qualification-evidence/ecommerce-l3-combined-20260929/** -text -whitespace
+/tools/stack-bench/qualification-evidence/ecommerce-l3-opus55-c34ab8c8a7/** -text -whitespace

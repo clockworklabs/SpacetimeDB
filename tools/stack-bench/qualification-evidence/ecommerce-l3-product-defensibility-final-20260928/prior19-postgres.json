@@ -1,0 +1,338 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-postgres-20260928210344-31",
+  "attempt": {
+    "id": "reference-live-postgres-20260928210344-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T21:03:44.076Z",
+    "completedAt": "2026-09-28T21:22:14.548Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "9d329bf4ba29bc7ad99f2962f7d54a2c6ed3912400cfa4952fb4a6e7f09816c2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-postgres",
+      "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "eafc0d64ec059d1708ce99fd22c99dc454a9029bd0c2c4971475048fe0444a46"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-postgres",
+    "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 23,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "0b332c372b8e9b6f4e2b67cfacf06eacb4f195845089171c6c42627a27eec92c",
+      "executableSha256": "4fad8810881387954160b6533c3d795e52343b1718894bdd3fe82634585b786b",
+      "kind": "mutation",
+      "mutationSha256": "7433551dbcb7e8fea661656e9a170578b67f9e60b74074e20a5199c0712e92c4",
+      "recipe": {
+        "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "postgres",
+        "reference": {
+          "id": "ecommerce-reference-postgres",
+          "sourceSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+        },
+        "version": "1.6.0"
+      },
+      "sha256": "5fb087ae901669bb1d855376f4b1ee2f02e580d9a87119750c7aa5fb1e96cdf9"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "postgres.runs/r1-workers",
+        "durationMs": 1107448,
+        "processError": null,
+        "harnessSha256Before": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "harnessSha256After": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-postgres-20260928210344-31",
+        "score": "34/34",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 19,
+        "zeroPointCriteria": 0,
+        "fingerprint": "ceb0bca8885228406aec880a8ec8743a2692236c60ec30e1f5a75d3b426e8baa",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 2,
+              "setupRuntimeMs": 3263,
+              "criterionRuntimeMs": 4402,
+              "measuredRuntimeMs": 7665,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.stock-transfers-features",
+              "checkCount": 1,
+              "setupRuntimeMs": 1004,
+              "criterionRuntimeMs": 861,
+              "measuredRuntimeMs": 1865,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.deferred-access-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 1602,
+              "criterionRuntimeMs": 4336,
+              "measuredRuntimeMs": 5938,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.inventory-conservation-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 1236,
+              "criterionRuntimeMs": 21590,
+              "measuredRuntimeMs": 22826,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 338000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "checkCount": 3,
+              "setupRuntimeMs": 11865,
+              "criterionRuntimeMs": 43467,
+              "measuredRuntimeMs": 55332,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 138000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.promotion-rules",
+              "checkCount": 1,
+              "setupRuntimeMs": 1253,
+              "criterionRuntimeMs": 394,
+              "measuredRuntimeMs": 1647,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.staff-roles",
+              "checkCount": 1,
+              "setupRuntimeMs": 1177,
+              "criterionRuntimeMs": 26,
+              "measuredRuntimeMs": 1203,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 7,
+              "setupRuntimeMs": 9983,
+              "criterionRuntimeMs": 87218,
+              "measuredRuntimeMs": 97201,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 1,
+              "setupRuntimeMs": 1177,
+              "criterionRuntimeMs": 8097,
+              "measuredRuntimeMs": 9274,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 872,
+              "criterionRuntimeMs": 1823,
+              "measuredRuntimeMs": 2695,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 36,
+          "total": 36
+        },
+        "baselineDurationMs": 347276,
+        "baselineOutput": "postgres.runs/r1",
+        "baselineHarnessSha256Before": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "baselineHarnessSha256After": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 568,
+            "artifact": "postgres.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "staff-admin-access-survives-role-removal",
+              "operator-authorization-allows-customer-transfer",
+              "transfer-debits-source-without-crediting-existing-destination",
+              "staff-role-write-precedes-denial",
+              "progression-promotion-discount-is-offset",
+              "progression-staff-can-restock-directly",
+              "staff-role-form-reverts-after-save",
+              "password-verification-truncates-utf8",
+              "restock-admin-claim-commits-then-refuses",
+              "opposing-transfer-rejected",
+              "shipping-rejects-every-request",
+              "cancel-rejects-every-request"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "postgres.runs/r1-workers/w1.stdout.log",
+              "stderr": "postgres.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 569,
+            "artifact": "postgres.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "signin-skips-password-verification",
+              "customer-can-ship-order-direct-1-1",
+              "transfer-overwrites-concurrent-purchase-with-stale-stock",
+              "progression-staff-can-assign-roles",
+              "progression-customer-can-create-promotions",
+              "progression-customers-can-manage-scheduled-work",
+              "transfer-overdraft-guard-skips-bulk-transfers",
+              "password-verification-rejects-every-login",
+              "restock-rejects-administrator-control",
+              "shipping-trusts-submitted-staff-role",
+              "cancel-trusts-submitted-owner",
+              "signup-accepts-admin-claim"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "postgres.runs/r1-workers/w2.stdout.log",
+              "stderr": "postgres.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 570,
+            "artifact": "postgres.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "admin-warehouse-view-drops-one-location",
+              "customer-can-cancel-foreign-order-1-1",
+              "progression-staff-role-is-lost-on-restart",
+              "progression-managed-support-leaks",
+              "progression-staff-sees-admin-navigation",
+              "authorized-restock-does-not-change-stock",
+              "transfer-does-not-publish-warehouse-totals",
+              "restock-trusts-submitted-admin-role",
+              "opposing-transfer-ignored",
+              "shipping-claim-commits-then-refuses",
+              "cancel-claim-commits-then-refuses",
+              "admin-boundary-rejects-all-signups"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "postgres.runs/r1-workers/w3.stdout.log",
+              "stderr": "postgres.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "a1d407151c686d407072018c423becbdd8606b7e37bcd89b237384fc540c4476",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.spec.access-control.account-password.1c",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.state-durability.staff-role-reload.621a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "featureCatalog": {
+      "contentSha256": "81293ef69fefd55d3744d5adcbb3e70bd06d339f7810e2017f2efe229616d3e0",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

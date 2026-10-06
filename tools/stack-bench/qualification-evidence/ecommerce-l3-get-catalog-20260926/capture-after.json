@@ -1,0 +1,2796 @@
+{
+  "rerun": "STACK_BENCH_CAPTURE_EVIDENCE=<file> node --test dist/tests/transport-cache.integration.js",
+  "browser": "151.0.7922.34",
+  "node": "v22.22.1",
+  "fontSha256": "0f1d5219934e96e83b8db162d60b4d8c09b5de1e7d38031cbafe4a3c0f2889c9",
+  "executables": [
+    {
+      "path": "./transport-cache.integration.js",
+      "sha256": "abc6b1abab05316c821dff171e0d9f8ad6a61bac2b6a890fc1659403b4a3f69f"
+    },
+    {
+      "path": "../grader/grade.js",
+      "sha256": "2a29accb6140f0e270f38b4e10b122d7bd28b821d47e700c13ae1ea9113ec455"
+    },
+    {
+      "path": "../grader/transport-frames.js",
+      "sha256": "618a1aeb9deb149b6f8d41d7285ccd9da2089d07f69047d5498c95eada283862"
+    }
+  ],
+  "evidence": [
+    {
+      "phase": "ordinary",
+      "leak": false,
+      "fontRequests": 1,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455293171,
+                "completedAtMs": 1790455293237,
+                "durationMs": 66
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293171,
+                      "completedAtMs": 1790455293180,
+                      "durationMs": 9,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293180,
+                      "completedAtMs": 1790455293193,
+                      "durationMs": 13,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293193,
+                      "completedAtMs": 1790455293209,
+                      "durationMs": 16,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293209,
+                      "completedAtMs": 1790455293224,
+                      "durationMs": 15,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293225,
+                      "completedAtMs": 1790455293237,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455293142,
+            "completedAtMs": 1790455293166,
+            "durationMs": 24
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455293142,
+                  "completedAtMs": 1790455293166,
+                  "durationMs": 24,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "initial",
+      "leak": false,
+      "fontRequests": 3,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455293325,
+                "completedAtMs": 1790455293481,
+                "durationMs": 156
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293325,
+                      "completedAtMs": 1790455293328,
+                      "durationMs": 3,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293328,
+                      "completedAtMs": 1790455293337,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293338,
+                      "completedAtMs": 1790455293350,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293350,
+                      "completedAtMs": 1790455293362,
+                      "durationMs": 12,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293362,
+                      "completedAtMs": 1790455293375,
+                      "durationMs": 13,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-font-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293375,
+                      "completedAtMs": 1790455293481,
+                      "durationMs": 106,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455293307,
+            "completedAtMs": 1790455293325,
+            "durationMs": 18
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455293308,
+                  "completedAtMs": 1790455293325,
+                  "durationMs": 17,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "initial",
+      "leak": true,
+      "fontRequests": 3,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455293553,
+                "completedAtMs": 1790455293701,
+                "durationMs": 148
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293553,
+                      "completedAtMs": 1790455293555,
+                      "durationMs": 2,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293556,
+                      "completedAtMs": 1790455293565,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293565,
+                      "completedAtMs": 1790455293578,
+                      "durationMs": 13,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293578,
+                      "completedAtMs": 1790455293586,
+                      "durationMs": 8,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293587,
+                      "completedAtMs": 1790455293599,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293599,
+                      "completedAtMs": 1790455293700,
+                      "durationMs": 101,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455293536,
+            "completedAtMs": 1790455293553,
+            "durationMs": 17
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455293536,
+                  "completedAtMs": 1790455293552,
+                  "durationMs": 16,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "replacement",
+      "leak": false,
+      "fontRequests": 4,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455293775,
+                "completedAtMs": 1790455293994,
+                "durationMs": 219
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "closeClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "closed": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293775,
+                      "completedAtMs": 1790455293777,
+                      "durationMs": 2,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "openClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "opened": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293777,
+                      "completedAtMs": 1790455293832,
+                      "durationMs": 55,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293832,
+                      "completedAtMs": 1790455293846,
+                      "durationMs": 14,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293846,
+                      "completedAtMs": 1790455293856,
+                      "durationMs": 10,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293856,
+                      "completedAtMs": 1790455293867,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293867,
+                      "completedAtMs": 1790455293877,
+                      "durationMs": 10,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293877,
+                      "completedAtMs": 1790455293888,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-font-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455293888,
+                      "completedAtMs": 1790455293994,
+                      "durationMs": 106,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455293759,
+            "completedAtMs": 1790455293775,
+            "durationMs": 16
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455293759,
+                  "completedAtMs": 1790455293775,
+                  "durationMs": 16,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "replacement",
+      "leak": true,
+      "fontRequests": 4,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455294067,
+                "completedAtMs": 1790455294290,
+                "durationMs": 223
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "closeClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "closed": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294067,
+                      "completedAtMs": 1790455294069,
+                      "durationMs": 2,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "openClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "opened": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294069,
+                      "completedAtMs": 1790455294125,
+                      "durationMs": 56,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294126,
+                      "completedAtMs": 1790455294139,
+                      "durationMs": 13,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294139,
+                      "completedAtMs": 1790455294149,
+                      "durationMs": 10,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294149,
+                      "completedAtMs": 1790455294160,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294161,
+                      "completedAtMs": 1790455294170,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294170,
+                      "completedAtMs": 1790455294182,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294182,
+                      "completedAtMs": 1790455294290,
+                      "durationMs": 108,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455294049,
+            "completedAtMs": 1790455294067,
+            "durationMs": 18
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455294049,
+                  "completedAtMs": 1790455294067,
+                  "durationMs": 18,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "fresh",
+      "leak": false,
+      "fontRequests": 4,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455294365,
+                "completedAtMs": 1790455294583,
+                "durationMs": 218
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "freshClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "actor": "reader-fresh"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294365,
+                      "completedAtMs": 1790455294419,
+                      "durationMs": 54,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294419,
+                      "completedAtMs": 1790455294434,
+                      "durationMs": 15,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294435,
+                      "completedAtMs": 1790455294447,
+                      "durationMs": 12,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294447,
+                      "completedAtMs": 1790455294459,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294459,
+                      "completedAtMs": 1790455294468,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294468,
+                      "completedAtMs": 1790455294480,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-font-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294480,
+                      "completedAtMs": 1790455294583,
+                      "durationMs": 103,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455294347,
+            "completedAtMs": 1790455294365,
+            "durationMs": 18
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455294347,
+                  "completedAtMs": 1790455294364,
+                  "durationMs": 17,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "fresh",
+      "leak": true,
+      "fontRequests": 4,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader-fresh",
+              "summary": "private data was delivered to unauthorized actor reader-fresh",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader-fresh"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455294660,
+                "completedAtMs": 1790455294881,
+                "durationMs": 221
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "freshClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "actor": "reader-fresh"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294660,
+                      "completedAtMs": 1790455294717,
+                      "durationMs": 57,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294717,
+                      "completedAtMs": 1790455294735,
+                      "durationMs": 18,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294735,
+                      "completedAtMs": 1790455294745,
+                      "durationMs": 10,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294745,
+                      "completedAtMs": 1790455294756,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294756,
+                      "completedAtMs": 1790455294765,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294765,
+                      "completedAtMs": 1790455294777,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader-fresh",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader-fresh"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294777,
+                      "completedAtMs": 1790455294881,
+                      "durationMs": 104,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455294644,
+            "completedAtMs": 1790455294660,
+            "durationMs": 16
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455294644,
+                  "completedAtMs": 1790455294660,
+                  "durationMs": 16,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "race",
+      "leak": false,
+      "fontRequests": 3,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455294957,
+                "completedAtMs": 1790455295128,
+                "durationMs": 171
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294957,
+                      "completedAtMs": 1790455294959,
+                      "durationMs": 2,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294960,
+                      "completedAtMs": 1790455294969,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294969,
+                      "completedAtMs": 1790455294980,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294980,
+                      "completedAtMs": 1790455294989,
+                      "durationMs": 9,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455294989,
+                      "completedAtMs": 1790455295000,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295001,
+                      "completedAtMs": 1790455295003,
+                      "durationMs": 2,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "received": false,
+                      "contains": "private-font-canary"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295001,
+                      "completedAtMs": 1790455295112,
+                      "durationMs": 111,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "race",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "concurrency-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "branches": 2
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295001,
+                      "completedAtMs": 1790455295128,
+                      "durationMs": 127,
+                      "deadlineMs": 120000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455294942,
+            "completedAtMs": 1790455294957,
+            "durationMs": 15
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455294942,
+                  "completedAtMs": 1790455294957,
+                  "durationMs": 15,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    },
+    {
+      "phase": "race",
+      "leak": true,
+      "fontRequests": 3,
+      "result": {
+        "id": 1,
+        "name": "cached response capture",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "capture",
+            "desc": "decoded responses remain observable",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "reader",
+              "summary": "private data was delivered to unauthorized actor reader",
+              "finding": {
+                "kind": "message-delivered",
+                "fields": {
+                  "actor": "reader"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790455295199,
+                "completedAtMs": 1790455295344,
+                "durationMs": 145
+              },
+              "actions": [
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295199,
+                      "completedAtMs": 1790455295201,
+                      "durationMs": 2,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295201,
+                      "completedAtMs": 1790455295212,
+                      "durationMs": 11,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295212,
+                      "completedAtMs": 1790455295224,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295224,
+                      "completedAtMs": 1790455295232,
+                      "durationMs": 8,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295232,
+                      "completedAtMs": 1790455295244,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295244,
+                      "completedAtMs": 1790455295246,
+                      "durationMs": 2,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "reader",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNotReceived",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "transport-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295244,
+                      "completedAtMs": 1790455295344,
+                      "durationMs": 100,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "race",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "concurrency-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "private data was delivered to unauthorized actor reader",
+                    "finding": {
+                      "kind": "message-delivered",
+                      "fields": {
+                        "actor": "reader"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790455295244,
+                      "completedAtMs": 1790455295344,
+                      "durationMs": 100,
+                      "deadlineMs": 120000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "network-address",
+                "user-content"
+              ]
+            }
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790455295183,
+            "completedAtMs": 1790455295199,
+            "durationMs": 16
+          },
+          "actions": [
+            {
+              "actor": "reader",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790455295183,
+                  "completedAtMs": 1790455295199,
+                  "durationMs": 16,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    }
+  ]
+}

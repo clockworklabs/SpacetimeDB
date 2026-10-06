@@ -1,0 +1,288 @@
+{
+  "kind": "count-observation-targeted-validation",
+  "at": "2026-09-27T06:48:57.657Z",
+  "replay": {
+    "id": "ecommerce-postgres-run6-20260927063847-dcc9d5ab",
+    "parent": {
+      "id": "ecommerce-postgres-run6-20260927053509-e80c18b5",
+      "runSha256": "a96cd60a86c7dc0f108106693850df6233641aa07eb0c21746fe0facfc6a6835",
+      "source": {
+        "sha256": "cf81f5313b585f6a89495e3f740fde8cae64f4b28756901c9495f6b222c39ecd",
+        "files": 7
+      },
+      "mode": {
+        "id": "dependency",
+        "retainPriorContracts": true,
+        "unchangedFailureLimit": 7,
+        "workSelection": "progressive"
+      },
+      "selectionSha256": "17e1c67dfd21c76d6462c34b8e4eb9ddb7c4f1e45df730a656b217785dc92613"
+    },
+    "controllerImage": "sha256:36aee7f2a28ffd2770644d559ad1eebe01dd1204e589743677be40619917af51",
+    "source": {
+      "sha256": "cf81f5313b585f6a89495e3f740fde8cae64f4b28756901c9495f6b222c39ecd"
+    },
+    "selectedChecks": [
+      "ecommerce.inventory-operations.warehouse-transfer.2a"
+    ],
+    "score": {
+      "score": 3,
+      "max": 3,
+      "dirty": false,
+      "contractPass": true,
+      "regression": null
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "grading",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "modelCalls": 0,
+    "additionalModelCostUsd": 0,
+    "cleanupSucceeded": true,
+    "gradingSha256": "df2d495e55ccf5ce43e9001fe8e31e4694f7d72ee72c815e8c7129dd03a39ecb",
+    "nativeStock": [
+      {
+        "schemaVersion": 2,
+        "action": {
+          "id": "dbRecordStock",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "database-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "backend": "postgres",
+          "item": "Headphones",
+          "warehouse": "East",
+          "quantity": 60,
+          "key": "product-East"
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790491175001,
+          "completedAtMs": 1790491175228,
+          "durationMs": 227,
+          "deadlineMs": 90000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      {
+        "schemaVersion": 2,
+        "action": {
+          "id": "dbRecordStock",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "database-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "backend": "postgres",
+          "item": "Headphones",
+          "warehouse": "West",
+          "quantity": 40,
+          "key": "product-West"
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790491175228,
+          "completedAtMs": 1790491175426,
+          "durationMs": 198,
+          "deadlineMs": 90000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      {
+        "schemaVersion": 2,
+        "action": {
+          "id": "dbExpectStock",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "database-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "backend": "postgres",
+          "item": "Headphones",
+          "warehouse": "East",
+          "quantity": 50,
+          "expected": {
+            "equals": 50
+          }
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790491176218,
+          "completedAtMs": 1790491176470,
+          "durationMs": 252,
+          "deadlineMs": 90000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      {
+        "schemaVersion": 2,
+        "action": {
+          "id": "dbExpectStock",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "database-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "backend": "postgres",
+          "item": "Headphones",
+          "warehouse": "West",
+          "quantity": 50,
+          "expected": {
+            "equals": 50
+          }
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790491176470,
+          "completedAtMs": 1790491176708,
+          "durationMs": 238,
+          "deadlineMs": 90000
+        },
+        "attachments": [],
+        "sensitivity": []
+      }
+    ],
+    "recovery": {
+      "schemaVersion": 1,
+      "status": "clean",
+      "runId": "ecommerce-postgres-run6-20260927063847-dcc9d5ab",
+      "backend": "postgres",
+      "reason": null,
+      "cleanup": {
+        "succeeded": true,
+        "retained": false
+      },
+      "resources": {
+        "backendState": "released",
+        "buildContainer": {
+          "id": "23dc10d6048ebea5e8676f0a22c76f87109b8dce3c75ffed857f0293d8fac3aa",
+          "name": "sb-88313db176513d55-build",
+          "running": false
+        },
+        "listenerProcesses": [],
+        "locks": [
+          {
+            "key": "port:6307",
+            "released": true
+          },
+          {
+            "key": "port:6579",
+            "released": true
+          },
+          {
+            "key": "slot:ecommerce:postgres:run6",
+            "released": true
+          }
+        ]
+      },
+      "instructions": [
+        "No recovery action is required."
+      ],
+      "ownershipMarkerSha256": "14237e4ba6e08baed1d5c0e68557222ebe4d3215a54cce0059f8102299ffcf89"
+    },
+    "networkAbsent": true,
+    "containers": [
+      {
+        "name": "sb-88313db176513d55-backend",
+        "absent": true
+      },
+      {
+        "name": "sb-88313db176513d55-build",
+        "absent": true
+      },
+      {
+        "name": "sb-88313db176513d55-browser",
+        "absent": true
+      }
+    ]
+  },
+  "control": {
+    "reportSha256": "0eb9a1bac0235e06bc42797695f22a4eb192297ffa2c9e3af544f886f25d3644",
+    "checkpointSha256": "578eb74179134642694af16492e9fa14bc91e2deaef323a235113a01bec4e386",
+    "recovery": {
+      "schemaVersion": 1,
+      "status": "clean",
+      "runId": "ecommerce-postgres-run30-20260927063929-ae75289a",
+      "backend": "postgres",
+      "reason": null,
+      "cleanup": {
+        "succeeded": true,
+        "retained": false
+      },
+      "resources": {
+        "backendState": "released",
+        "buildContainer": {
+          "id": "8d8ccce17fd086b1a5659152471a4d9bdfa223e2b72e308d9abb75ad67216b14",
+          "name": "sb-a7d541e55d06a9b5-build",
+          "running": false
+        },
+        "listenerProcesses": [],
+        "locks": [
+          {
+            "key": "port:6331",
+            "released": true
+          },
+          {
+            "key": "port:6603",
+            "released": true
+          },
+          {
+            "key": "slot:ecommerce:postgres:run30",
+            "released": true
+          },
+          {
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-2I1t9B/app",
+            "released": true
+          }
+        ]
+      },
+      "instructions": [
+        "No recovery action is required."
+      ],
+      "ownershipMarkerSha256": "2e9ac56d4c2bd93bbf956db05a7c332420fbbfd81a0a6f116db7625bfc578e53"
+    },
+    "networkAbsent": true,
+    "containers": [
+      {
+        "name": "sb-a7d541e55d06a9b5-backend",
+        "absent": true
+      },
+      {
+        "name": "sb-a7d541e55d06a9b5-build",
+        "absent": true
+      },
+      {
+        "name": "sb-a7d541e55d06a9b5-browser",
+        "absent": true
+      }
+    ]
+  }
+}

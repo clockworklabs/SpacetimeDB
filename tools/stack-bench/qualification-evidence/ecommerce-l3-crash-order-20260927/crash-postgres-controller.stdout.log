@@ -1,0 +1,332 @@
+2026-09-27T22:56:42.621212547Z 
+2026-09-27T22:56:42.621315112Z qualifying ecommerce-reference-postgres: clean run 1/1
+2026-09-27T22:56:44.597147358Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:56:45.958466149Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:56:53.666480629Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:56:53.667790423Z 
+2026-09-27T22:56:53.667809924Z ================ postgres — level 3 ================
+2026-09-27T22:57:17.110492446Z   kept the unaided source at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1/first-build-l3
+2026-09-27T22:57:18.867811656Z 
+2026-09-27T22:57:18.867852578Z === postgres-l3 (postgres) ===
+2026-09-27T22:57:18.868109474Z   app: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-aU7a9e/app
+2026-09-27T22:57:18.868131766Z   url: http://localhost:6821
+2026-09-27T22:57:18.868134196Z   recipe: L3 -> ecommerce.progression-catalog (40e7aba3f559)
+2026-09-27T22:57:18.868136576Z   scope: 2 check(s), 2 point(s)
+2026-09-27T22:57:18.868138296Z     features: ecommerce.feature.accounts, ecommerce.feature.cart, ecommerce.feature.catalog-discovery, ecommerce.feature.catalog-items, ecommerce.feature.checkout, ecommerce.feature.purchasing, ecommerce.feature.reviews, ecommerce.feature.warehouse-admin, ecommerce.l2.inventory-dashboard, ecommerce.l2.order-cancellation-features, ecommerce.l2.recommendations, ecommerce.l2.sales-dashboard, ecommerce.l2.stock-transfers-features, ecommerce.l3.scheduled-restocks-features, ecommerce.progression.catalog-management, ecommerce.progression.customer-profile, ecommerce.progression.faceted-search, ecommerce.progression.fulfilment-queue, ecommerce.progression.managed-support, ecommerce.progression.notification-preferences, ecommerce.progression.promotion-rules, ecommerce.progression.staff-access, ecommerce.progression.staff-roles, ecommerce.progression.stock-alerts, ecommerce.progression.support-history, ecommerce.progression.support-intake, ecommerce.progression.support-triage
+2026-09-27T22:57:18.868253022Z     extra checks: ecommerce.spec.state-durability.checkout-crash-durability.910b, ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:57:18.872042259Z   code        ... 2608 server LOC in 11 files, 4526 total LOC, 10 runtime deps
+2026-09-27T22:57:18.872564685Z   database    ... leased database requires runtime marker verification
+2026-09-27T22:57:20.795995928Z   stop application ... ok
+2026-09-27T22:57:21.423703835Z   reset database ... ok
+2026-09-27T22:57:25.977472459Z   restart     ... ok
+2026-09-27T22:57:30.758733435Z   stop application ... ok
+2026-09-27T22:57:31.256516665Z   reset database ... ok
+2026-09-27T22:57:36.357781542Z   restart     ... ok
+2026-09-27T22:57:36.357826044Z   db runtime  ... the application marker exists in the leased PostgreSQL database
+2026-09-27T22:57:36.805304817Z   contract lint ... DEFERRED (31 interfaces checked during feature grading)
+2026-09-27T22:57:37.105922081Z   actions    ... all 6 present
+2026-09-27T22:57:37.867626185Z   selected-source-001 ... not selected
+2026-09-27T22:57:37.867666667Z   selected-source-002 ... not selected
+2026-09-27T22:57:37.867668457Z   selected-source-003 ... not selected
+2026-09-27T22:57:37.867669557Z   selected-source-004 ... not selected
+2026-09-27T22:57:37.867671227Z   selected-source-005 ... not selected
+2026-09-27T22:57:37.867672297Z   selected-source-006 ... not selected
+2026-09-27T22:57:37.867673357Z   selected-source-007 ... not selected
+2026-09-27T22:57:37.867674317Z   selected-source-008 ... not selected
+2026-09-27T22:57:37.867675387Z   selected-source-009 ... not selected
+2026-09-27T22:57:37.867676317Z   selected-source-010 ... not selected
+2026-09-27T22:57:37.867677377Z   selected-source-011 ... not selected
+2026-09-27T22:57:37.867678287Z   selected-source-012 ... not selected
+2026-09-27T22:57:37.867679197Z   selected-source-013 ... not selected
+2026-09-27T22:57:37.867680157Z   selected-source-014 ... not selected
+2026-09-27T22:57:37.867681117Z   selected-source-015 ... not selected
+2026-09-27T22:57:37.867682847Z   selected-source-016 ... not selected
+2026-09-27T22:57:37.867684008Z   selected-source-017 ... not selected
+2026-09-27T22:57:37.867684908Z   selected-source-018 ... not selected
+2026-09-27T22:57:37.867685808Z   selected-source-019 ... not selected
+2026-09-27T22:57:37.867686738Z   selected-source-020 ... not selected
+2026-09-27T22:57:37.867687698Z   selected-source-021 ... not selected
+2026-09-27T22:57:37.867688618Z   selected-source-022 ... not selected
+2026-09-27T22:57:37.867689598Z   selected-source-023 ... not selected
+2026-09-27T22:57:37.867690568Z   selected-source-024 ... not selected
+2026-09-27T22:57:37.867843434Z   selected-source-025 ... not selected
+2026-09-27T22:57:37.867855625Z   selected-source-026 ... not selected
+2026-09-27T22:57:37.867857335Z   selected-source-027 ... not selected
+2026-09-27T22:57:37.867858625Z   selected-source-028 ... not selected
+2026-09-27T22:57:37.867859665Z   selected-source-029 ... not selected
+2026-09-27T22:57:37.867860845Z   selected-source-030 ... not selected
+2026-09-27T22:57:37.867861835Z   selected-source-031 ... not selected
+2026-09-27T22:57:37.867862855Z   selected-source-032 ... not selected
+2026-09-27T22:57:37.867864125Z   selected-source-033 ... not selected
+2026-09-27T22:57:37.867865085Z   selected-source-034 ... not selected
+2026-09-27T22:57:37.867866075Z   selected-source-035 ... not selected
+2026-09-27T22:57:37.867867045Z   selected-source-036 ... not selected
+2026-09-27T22:57:37.867868025Z   selected-source-037 ... not selected
+2026-09-27T22:57:37.867882136Z   selected-source-038 ... not selected
+2026-09-27T22:57:37.867883096Z   selected-source-039 ... not selected
+2026-09-27T22:57:37.867883996Z   selected-source-040 ... not selected
+2026-09-27T22:57:37.867884906Z   selected-source-041 ... not selected
+2026-09-27T22:57:37.867885786Z   selected-source-042 ... not selected
+2026-09-27T22:57:37.867886756Z   selected-source-043 ... not selected
+2026-09-27T22:57:37.867887666Z   selected-source-044 ... not selected
+2026-09-27T22:57:37.867888546Z   selected-source-045 ... not selected
+2026-09-27T22:57:37.867889456Z   selected-source-046 ... not selected
+2026-09-27T22:57:37.867890416Z   selected-source-047 ... not selected
+2026-09-27T22:57:37.867891346Z   selected-source-048 ... not selected
+2026-09-27T22:57:37.867892356Z   selected-source-049 ... not selected
+2026-09-27T22:57:37.867893266Z   selected-source-050 ... not selected
+2026-09-27T22:57:37.867894156Z   selected-source-051 ... not selected
+2026-09-27T22:57:37.867895076Z   selected-source-052 ... not selected
+2026-09-27T22:57:37.867895976Z   selected-source-053 ... not selected
+2026-09-27T22:57:37.867898876Z   selected-source-054 ... not selected
+2026-09-27T22:57:37.867899976Z   selected-source-055 ... not selected
+2026-09-27T22:57:37.867901057Z   selected-source-056 ... not selected
+2026-09-27T22:57:37.867901987Z   selected-source-057 ... not selected
+2026-09-27T22:57:37.867992455Z   selected-source-058 ... not selected
+2026-09-27T22:57:37.868000576Z   selected-source-059 ... not selected
+2026-09-27T22:57:37.868002256Z   selected-source-060 ... not selected
+2026-09-27T22:57:37.868003386Z   selected-source-061 ... not selected
+2026-09-27T22:57:37.868004416Z   selected-source-062 ... not selected
+2026-09-27T22:57:37.868005466Z   selected-source-063 ... not selected
+2026-09-27T22:57:37.868006486Z   selected-source-064 ... not selected
+2026-09-27T22:57:37.868007546Z   selected-source-065 ... not selected
+2026-09-27T22:57:37.868008476Z   selected-source-066 ... not selected
+2026-09-27T22:57:37.868009466Z   selected-source-067 ... not selected
+2026-09-27T22:57:37.868010536Z   selected-source-068 ... not selected
+2026-09-27T22:57:37.868011486Z   selected-source-069 ... not selected
+2026-09-27T22:57:37.868012446Z   selected-source-070 ... not selected
+2026-09-27T22:57:37.868013396Z   selected-source-071 ... not selected
+2026-09-27T22:57:39.740850367Z   stop application ... ok
+2026-09-27T22:57:40.330346147Z   reset database ... ok
+2026-09-27T22:57:45.505622678Z   restart     ... ok
+2026-09-27T22:58:14.122707832Z   selected-source-072 ... 2/2
+2026-09-27T22:58:14.125790020Z   selected-source-073 ... not selected
+2026-09-27T22:58:14.125825681Z   selected-source-074 ... not selected
+2026-09-27T22:58:14.125827291Z   selected-source-075 ... not selected
+2026-09-27T22:58:14.125828511Z   selected-source-076 ... not selected
+2026-09-27T22:58:14.125829711Z   selected-source-077 ... not selected
+2026-09-27T22:58:14.125830732Z   selected-source-078 ... not selected
+2026-09-27T22:58:14.125831832Z   selected-source-079 ... not selected
+2026-09-27T22:58:14.125833352Z   selected-source-080 ... not selected
+2026-09-27T22:58:14.125834422Z   selected-source-081 ... not selected
+2026-09-27T22:58:14.125835402Z   selected-source-082 ... not selected
+2026-09-27T22:58:14.125836402Z   selected-source-083 ... not selected
+2026-09-27T22:58:14.125837812Z   selected-source-084 ... not selected
+2026-09-27T22:58:14.125838822Z   selected-source-085 ... not selected
+2026-09-27T22:58:14.125839922Z   selected-source-086 ... not selected
+2026-09-27T22:58:14.125840942Z   selected-source-087 ... not selected
+2026-09-27T22:58:14.125842132Z   selected-source-088 ... not selected
+2026-09-27T22:58:14.125843082Z   selected-source-089 ... not selected
+2026-09-27T22:58:14.125844122Z   selected-source-090 ... not selected
+2026-09-27T22:58:14.125846152Z   selected-source-091 ... not selected
+2026-09-27T22:58:14.125847262Z   selected-source-092 ... not selected
+2026-09-27T22:58:14.125848322Z   selected-source-093 ... not selected
+2026-09-27T22:58:14.125849312Z   selected-source-094 ... not selected
+2026-09-27T22:58:14.125850262Z   selected-source-095 ... not selected
+2026-09-27T22:58:14.125851192Z   selected-source-096 ... not selected
+2026-09-27T22:58:14.125852123Z   selected-source-097 ... not selected
+2026-09-27T22:58:14.125853073Z   selected-source-098 ... not selected
+2026-09-27T22:58:14.125854003Z   selected-source-099 ... not selected
+2026-09-27T22:58:14.125854943Z   selected-source-100 ... not selected
+2026-09-27T22:58:14.125855913Z   selected-source-101 ... not selected
+2026-09-27T22:58:14.125856853Z   selected-source-102 ... not selected
+2026-09-27T22:58:14.125857843Z   selected-source-103 ... not selected
+2026-09-27T22:58:14.125858813Z   selected-source-104 ... not selected
+2026-09-27T22:58:14.125859743Z   selected-source-105 ... not selected
+2026-09-27T22:58:14.125860763Z   selected-source-106 ... not selected
+2026-09-27T22:58:14.125861843Z   selected-source-107 ... not selected
+2026-09-27T22:58:14.125862833Z   selected-source-108 ... not selected
+2026-09-27T22:58:14.125863783Z   selected-source-109 ... not selected
+2026-09-27T22:58:14.125864723Z   selected-source-110 ... not selected
+2026-09-27T22:58:14.125879434Z   selected-source-111 ... not selected
+2026-09-27T22:58:14.125880474Z   selected-source-112 ... not selected
+2026-09-27T22:58:14.125883784Z   selected-source-113 ... not selected
+2026-09-27T22:58:14.125884884Z   selected-source-114 ... not selected
+2026-09-27T22:58:14.302143897Z   evidence write and source verification ... 73.1ms
+2026-09-27T22:58:14.302178298Z   TOTAL      ... 2/2
+2026-09-27T22:58:14.302180039Z   bundle: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-aU7a9e/app-grading/bundle.json
+2026-09-27T22:58:14.414907692Z   kept the unaided grading at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1/first-build-l3-grading
+2026-09-27T22:58:14.445202329Z   kept the L3 source checkpoint at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1/level-l3-source
+2026-09-27T22:58:14.455375624Z   postgres-ecom-run248-ecommerce-postgres-run248-20260927225644-71014425: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:58:14.502561357Z   source kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1/source
+2026-09-27T22:58:14.502602989Z   grading detail kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1/grading
+2026-09-27T22:58:14.514066334Z 
+2026-09-27T22:58:14.514109126Z ================ postgres summary ================
+2026-09-27T22:58:14.514113076Z   L3: 2/2 unaided -> 2/2 | 0 repairs | $0.00 total ($0.00 repairs) | not needed | 81s
+2026-09-27T22:58:14.514287523Z   TOTAL 2/2  $0  0 repair(s)  81s
+2026-09-27T22:58:14.514306614Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1/run.json
+2026-09-27T22:58:14.962437573Z   removed the leased run container sb-f7327911cc7af9d7-browser
+2026-09-27T22:58:15.794852687Z   removed the leased run container sb-f7327911cc7af9d7-build
+2026-09-27T22:58:16.651418701Z   removed the leased run container sb-f7327911cc7af9d7-backend
+2026-09-27T22:58:22.582493959Z 
+2026-09-27T22:58:22.582533741Z qualifying ecommerce-reference-postgres: clean run 1/1
+2026-09-27T22:58:22.582824525Z 
+2026-09-27T22:58:22.582840355Z qualifying ecommerce-reference-postgres: clean run 1/1
+2026-09-27T22:58:22.582938058Z 
+2026-09-27T22:58:22.582948259Z qualifying ecommerce-reference-postgres: clean run 1/1
+2026-09-27T22:58:23.687298232Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:23.704875917Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:23.733145657Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:58:25.116105249Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:58:25.196827187Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:58:25.205909785Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:58:32.202745084Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:58:32.204093423Z 
+2026-09-27T22:58:32.204685252Z ================ postgres — level 3 ================
+2026-09-27T22:58:32.341964387Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:58:32.341998319Z 
+2026-09-27T22:58:32.342000589Z ================ postgres — level 3 ================
+2026-09-27T22:58:32.696987126Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:58:32.698149788Z 
+2026-09-27T22:58:32.698166859Z ================ postgres — level 3 ================
+2026-09-27T22:58:51.635223945Z 
+2026-09-27T22:58:51.635258206Z ================ postgres mutation control ================
+2026-09-27T22:58:52.398693776Z 
+2026-09-27T22:58:52.398728667Z ================ postgres mutation control ================
+2026-09-27T22:58:52.739826190Z 
+2026-09-27T22:58:52.739871432Z ================ postgres mutation control ================
+2026-09-27T22:58:52.865575818Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:58:52.865614760Z   baseline: 2/2  F910:2
+2026-09-27T22:58:52.865617130Z 
+2026-09-27T22:58:53.673551760Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:58:53.675793298Z   baseline: 2/2  F910:2
+2026-09-27T22:58:53.675821109Z 
+2026-09-27T22:58:54.015640926Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T22:58:54.016570636Z   baseline: 2/2  F910:2
+2026-09-27T22:58:54.016593947Z 
+2026-09-27T22:59:36.102371304Z CAUGHT               checkout-crash-sibling-stock — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:59:36.102511741Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:59:36.901226436Z CAUGHT               checkout-crash-integrity — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:59:36.901273518Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:59:37.382329076Z CAUGHT               checkout-crash-durability — expected ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T22:59:37.392187735Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T22:59:47.899329759Z 
+2026-09-27T22:59:47.899358851Z 1/1 mutations cleanly caught
+2026-09-27T22:59:47.899371251Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w2.runs/r1/mutation-control.json
+2026-09-27T22:59:47.963554140Z   postgres-ecom-run249-ecommerce-postgres-run249-20260927225823-e5e7ea42: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:59:47.982004949Z 
+2026-09-27T22:59:47.982068872Z ================ postgres summary ================
+2026-09-27T22:59:47.982357816Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 19s
+2026-09-27T22:59:47.983181896Z   TOTAL 0/0  $0  0 repair(s)  76s
+2026-09-27T22:59:47.983736828Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w2.runs/r1/run.json
+2026-09-27T22:59:48.769739993Z 
+2026-09-27T22:59:48.769772015Z 1/1 mutations cleanly caught
+2026-09-27T22:59:48.769774525Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w1.runs/r1/mutation-control.json
+2026-09-27T22:59:48.932350020Z   postgres-ecom-run248-ecommerce-postgres-run248-20260927225823-76e37ac0: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:59:49.053447871Z 
+2026-09-27T22:59:49.053468542Z ================ postgres summary ================
+2026-09-27T22:59:49.053712074Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 20s
+2026-09-27T22:59:49.053734495Z   TOTAL 0/0  $0  0 repair(s)  77s
+2026-09-27T22:59:49.053736685Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w1.runs/r1/run.json
+2026-09-27T22:59:49.095940837Z 
+2026-09-27T22:59:49.095976979Z 1/1 mutations cleanly caught
+2026-09-27T22:59:49.095979679Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w3.runs/r1/mutation-control.json
+2026-09-27T22:59:49.511894817Z   postgres-ecom-run250-ecommerce-postgres-run250-20260927225823-39cf5a7f: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:59:49.630432095Z 
+2026-09-27T22:59:49.630456127Z ================ postgres summary ================
+2026-09-27T22:59:49.630659267Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 20s
+2026-09-27T22:59:49.631103938Z   TOTAL 0/0  $0  0 repair(s)  77s
+2026-09-27T22:59:49.631318904Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w3.runs/r1/run.json
+2026-09-27T22:59:49.633001442Z   removed the leased run container sb-753eb63ac468a745-browser
+2026-09-27T22:59:50.418545098Z   removed the leased run container sb-d0ab40d48ee67090-browser
+2026-09-27T22:59:50.689465518Z   removed the leased run container sb-baed6cd209421ddb-browser
+2026-09-27T22:59:51.366496194Z   removed the leased run container sb-753eb63ac468a745-build
+2026-09-27T22:59:51.802016070Z   removed the leased run container sb-d0ab40d48ee67090-build
+2026-09-27T22:59:52.067432711Z   removed the leased run container sb-baed6cd209421ddb-build
+2026-09-27T22:59:52.722006292Z   removed the leased run container sb-753eb63ac468a745-backend
+2026-09-27T22:59:53.067266821Z   removed the leased run container sb-d0ab40d48ee67090-backend
+2026-09-27T22:59:53.523483818Z   removed the leased run container sb-baed6cd209421ddb-backend
+2026-09-27T22:59:54.820331028Z {
+2026-09-27T22:59:54.820374460Z   "ok": true,
+2026-09-27T22:59:54.820376990Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w2.json",
+2026-09-27T22:59:54.820379250Z   "stable": true,
+2026-09-27T22:59:54.820380820Z   "sameImage": true,
+2026-09-27T22:59:54.820382590Z   "sameHarness": true,
+2026-09-27T22:59:54.820384600Z   "diagnostic": true,
+2026-09-27T22:59:54.820386220Z   "runs": [
+2026-09-27T22:59:54.820387931Z     {
+2026-09-27T22:59:54.820389481Z       "repetition": 1,
+2026-09-27T22:59:54.820391121Z       "ok": true,
+2026-09-27T22:59:54.820392661Z       "score": null,
+2026-09-27T22:59:54.820394211Z       "criteria": null,
+2026-09-27T22:59:54.820395791Z       "zeroPointCriteria": null,
+2026-09-27T22:59:54.820397351Z       "mutations": {
+2026-09-27T22:59:54.820398901Z         "caught": 1,
+2026-09-27T22:59:54.820400441Z         "completed": 1,
+2026-09-27T22:59:54.820402471Z         "total": 1,
+2026-09-27T22:59:54.820404151Z         "remaining": 0
+2026-09-27T22:59:54.820405701Z       },
+2026-09-27T22:59:54.820407231Z       "failures": []
+2026-09-27T22:59:54.820408852Z     }
+2026-09-27T22:59:54.820410392Z   ]
+2026-09-27T22:59:54.820411892Z }
+2026-09-27T22:59:55.320503919Z {
+2026-09-27T22:59:55.322126712Z   "ok": true,
+2026-09-27T22:59:55.322137873Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w1.json",
+2026-09-27T22:59:55.322140463Z   "stable": true,
+2026-09-27T22:59:55.322142313Z   "sameImage": true,
+2026-09-27T22:59:55.322143843Z   "sameHarness": true,
+2026-09-27T22:59:55.322145373Z   "diagnostic": true,
+2026-09-27T22:59:55.322146903Z   "runs": [
+2026-09-27T22:59:55.322148723Z     {
+2026-09-27T22:59:55.322150833Z       "repetition": 1,
+2026-09-27T22:59:55.322152473Z       "ok": true,
+2026-09-27T22:59:55.322166284Z       "score": null,
+2026-09-27T22:59:55.322167554Z       "criteria": null,
+2026-09-27T22:59:55.322168564Z       "zeroPointCriteria": null,
+2026-09-27T22:59:55.322169614Z       "mutations": {
+2026-09-27T22:59:55.322170674Z         "caught": 1,
+2026-09-27T22:59:55.322171894Z         "completed": 1,
+2026-09-27T22:59:55.322172964Z         "total": 1,
+2026-09-27T22:59:55.322173934Z         "remaining": 0
+2026-09-27T22:59:55.322174904Z       },
+2026-09-27T22:59:55.322175894Z       "failures": []
+2026-09-27T22:59:55.322176965Z     }
+2026-09-27T22:59:55.322177905Z   ]
+2026-09-27T22:59:55.322183175Z }
+2026-09-27T22:59:56.057936746Z {
+2026-09-27T22:59:56.057995229Z   "ok": true,
+2026-09-27T22:59:56.058000379Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.runs/r1-workers/w3.json",
+2026-09-27T22:59:56.058002859Z   "stable": true,
+2026-09-27T22:59:56.058004449Z   "sameImage": true,
+2026-09-27T22:59:56.058005549Z   "sameHarness": true,
+2026-09-27T22:59:56.058006639Z   "diagnostic": true,
+2026-09-27T22:59:56.058007629Z   "runs": [
+2026-09-27T22:59:56.058008780Z     {
+2026-09-27T22:59:56.058009950Z       "repetition": 1,
+2026-09-27T22:59:56.058011280Z       "ok": true,
+2026-09-27T22:59:56.058012460Z       "score": null,
+2026-09-27T22:59:56.058013550Z       "criteria": null,
+2026-09-27T22:59:56.058014750Z       "zeroPointCriteria": null,
+2026-09-27T22:59:56.058016150Z       "mutations": {
+2026-09-27T22:59:56.058017480Z         "caught": 1,
+2026-09-27T22:59:56.058018560Z         "completed": 1,
+2026-09-27T22:59:56.058019850Z         "total": 1,
+2026-09-27T22:59:56.058021190Z         "remaining": 0
+2026-09-27T22:59:56.058022210Z       },
+2026-09-27T22:59:56.058023150Z       "failures": []
+2026-09-27T22:59:56.058024220Z     }
+2026-09-27T22:59:56.058025170Z   ]
+2026-09-27T22:59:56.058026360Z }
+2026-09-27T22:59:56.673746680Z {
+2026-09-27T22:59:56.673775781Z   "ok": true,
+2026-09-27T22:59:56.673779801Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.json",
+2026-09-27T22:59:56.673781612Z   "stable": true,
+2026-09-27T22:59:56.673783122Z   "sameImage": true,
+2026-09-27T22:59:56.673784592Z   "sameHarness": true,
+2026-09-27T22:59:56.673796252Z   "diagnostic": true,
+2026-09-27T22:59:56.673797322Z   "runs": [
+2026-09-27T22:59:56.673798392Z     {
+2026-09-27T22:59:56.673799362Z       "repetition": 1,
+2026-09-27T22:59:56.673800422Z       "ok": true,
+2026-09-27T22:59:56.673801453Z       "score": "2/2",
+2026-09-27T22:59:56.673802553Z       "criteria": 2,
+2026-09-27T22:59:56.673803553Z       "zeroPointCriteria": 0,
+2026-09-27T22:59:56.673804633Z       "mutations": {
+2026-09-27T22:59:56.673805623Z         "caught": 3,
+2026-09-27T22:59:56.673806623Z         "total": 3
+2026-09-27T22:59:56.673807603Z       },
+2026-09-27T22:59:56.673808583Z       "failures": []
+2026-09-27T22:59:56.673809573Z     }
+2026-09-27T22:59:56.673810523Z   ]
+2026-09-27T22:59:56.673811473Z }

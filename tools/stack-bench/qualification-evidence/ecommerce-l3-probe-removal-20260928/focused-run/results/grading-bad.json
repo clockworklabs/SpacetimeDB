@@ -1,0 +1,177 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "grade",
+  "id": "grade-cc1511c7-212d-49",
+  "attempt": {
+    "id": "grade-cc1511c7-212d-49",
+    "parentId": "recovery-test-grade-bundle-l1"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T22:56:51.627Z",
+    "completedAt": "2026-09-28T22:56:52.118Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "stub",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "definitionSchemaVersion": 1,
+    "recipeRelease": null,
+    "label": "recovery-test-bad",
+    "url": "http://127.0.0.1:50382",
+    "level": 1,
+    "runId": "cc1511c7-212d-49",
+    "total": 0,
+    "max": 1,
+    "features": [
+      {
+        "id": 1,
+        "name": "bad",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "bad",
+            "desc": "bad",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "viewer",
+              "summary": "the missing control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "missing"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790636211787,
+                "completedAtMs": 1790636212105,
+                "durationMs": 318
+              },
+              "actions": [
+                {
+                  "actor": "viewer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "bad"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790636211788,
+                      "completedAtMs": 1790636211958,
+                      "durationMs": 170,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "viewer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the missing control did not appear",
+                    "finding": {
+                      "kind": "control-missing",
+                      "fields": {
+                        "control": "missing"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790636211959,
+                      "completedAtMs": 1790636212069,
+                      "durationMs": 110,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [
+                {
+                  "kind": "screenshot",
+                  "ref": "recovery-test-bad-f1-bad-viewer.png"
+                }
+              ],
+              "sensitivity": [
+                "user-content"
+              ]
+            },
+            "stableKey": null
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790636211781,
+            "completedAtMs": 1790636211782,
+            "durationMs": 1
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        },
+        "screenshots": [
+          "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\recovery-test-RAgvTX\\results\\failure-media\\recovery-test-bad-f1-bad-viewer.png"
+        ]
+      }
+    ],
+    "selection": null,
+    "inconclusive": []
+  }
+}

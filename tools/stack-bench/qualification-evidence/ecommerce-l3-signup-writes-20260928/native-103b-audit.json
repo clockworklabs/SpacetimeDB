@@ -1,0 +1,250 @@
+{
+  "status": "diagnostic_controls_verified",
+  "candidate": "149fecf8bf454309cdc7473982e175c442b56286",
+  "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+  "outcomes": [
+    {
+      "kind": "correct",
+      "file": "correct-grade.json",
+      "sha256": "cc7d211d4d6cc78bdcb044f6f6f8938a89b8b2a0b5ca3e3b9d49ccd78e7ed025",
+      "indexed": {
+        "feature": 103,
+        "criterion": "103b",
+        "passed": true,
+        "measured": true,
+        "applicationFailure": false,
+        "outcomeKind": "passed",
+        "status": "passed",
+        "phase": "assertion",
+        "detail": null,
+        "failedAction": null
+      },
+      "sourceBefore": "ad341270373e2a54226f4f8884bfa71aef587e193c5ca0b7ea51c6d80db67ca7",
+      "sourceAfter": "ad341270373e2a54226f4f8884bfa71aef587e193c5ca0b7ea51c6d80db67ca7",
+      "released": true,
+      "probes": {
+        "writes": [
+          {
+            "transport": "spacetime-websocket",
+            "destination": "412cfecbaf9ad0b3738d34dd2149de617a1cadc81cbf87b6f8654246e0e19352",
+            "shape": "4e1e43c8a44d937bb1d27f4b22b489cf702ecfb8d989f809d3ae33c2e0a46236"
+          },
+          {
+            "transport": "http",
+            "destination": "957190d7f495ed4950170dc7dc0dbc4680ef934994bf7f119739dd562a08d2a5",
+            "shape": "f072cbec3bf8841871d4284230c5e983dc211a56837aed862487148f947d1a1f"
+          }
+        ],
+        "probes": [
+          {
+            "index": 0,
+            "write": {
+              "transport": "spacetime-websocket",
+              "destination": "412cfecbaf9ad0b3738d34dd2149de617a1cadc81cbf87b6f8654246e0e19352",
+              "shape": "4e1e43c8a44d937bb1d27f4b22b489cf702ecfb8d989f809d3ae33c2e0a46236"
+            },
+            "result": {
+              "user": "claimant-06cbc8e1d-bc64-4cf103",
+              "authenticationPath": "local-form",
+              "expectedFailure": true,
+              "requestPatch": {
+                "shape": "positional",
+                "success": true,
+                "transport": "spacetime-websocket",
+                "bodySha256": "1dbc0215a9ca028ac195fa27fee17f6d0340adcd56acdfe259c437e3061313ee"
+              }
+            }
+          },
+          {
+            "index": 1,
+            "write": {
+              "transport": "http",
+              "destination": "957190d7f495ed4950170dc7dc0dbc4680ef934994bf7f119739dd562a08d2a5",
+              "shape": "f072cbec3bf8841871d4284230c5e983dc211a56837aed862487148f947d1a1f"
+            },
+            "result": {
+              "user": "claimant-16cbc8e1d-bc64-4cf103",
+              "authenticationPath": "local-form",
+              "expectedFailure": true,
+              "requestPatch": {
+                "shape": "bodyless",
+                "status": 200,
+                "bodySha256": "78f00e6526ea513465c83fdfe6eb9a999a3f405cb023ddfabc26a2f24c8cb148"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "defective",
+      "file": "defective-grade.json",
+      "sha256": "6340519279c4c269bc9d19073f65dfce4e33f62d327fae08704d6c8a3bc457ba",
+      "indexed": {
+        "feature": 103,
+        "criterion": "103b",
+        "passed": false,
+        "measured": true,
+        "applicationFailure": true,
+        "outcomeKind": "app_failure",
+        "status": "failed",
+        "phase": "assertion",
+        "detail": "the stored stock for Air Purifier control reads 102, expected exactly 101",
+        "failedAction": "dbExpectStock"
+      },
+      "sourceBefore": "bc793c132df04befbf5277e038c74be47bfe48c0a1509d6dfa4ff8b52d4e610b",
+      "sourceAfter": "bc793c132df04befbf5277e038c74be47bfe48c0a1509d6dfa4ff8b52d4e610b",
+      "released": true,
+      "failure": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "dbExpectStock",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "database-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the stored stock for Air Purifier control reads 102, expected exactly 101",
+        "finding": {
+          "kind": "number-mismatch",
+          "fields": {
+            "control": "stored stock for Air Purifier",
+            "observed": 102,
+            "expected": {
+              "equals": 101
+            }
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790571163525,
+          "completedAtMs": 1790571163969,
+          "durationMs": 444,
+          "deadlineMs": 90000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      "precedingAction": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "expectActionOutcome",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "action": "restock",
+          "outcome": "completed",
+          "status": 200,
+          "classification": "verified"
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790571163524,
+          "completedAtMs": 1790571163524,
+          "durationMs": 0,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      }
+    }
+  ],
+  "cleanup": {
+    "releasedGroups": 2,
+    "removedContainers": [
+      "sb-b67cbac318371a7c-browser",
+      "sb-b67cbac318371a7c-build",
+      "sb-b67cbac318371a7c-backend",
+      "sb-e14b22920c3e32de-browser",
+      "sb-e14b22920c3e32de-build",
+      "sb-e14b22920c3e32de-backend"
+    ],
+    "allAbsent": true,
+    "controllerState": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-28T04:51:16.496063468Z",
+      "FinishedAt": "2026-09-28T04:52:55.209681959Z"
+    },
+    "safeRemoval": "docker rm stack-bench-native-103b-149fecf8bf45",
+    "preserveVolumes": true
+  },
+  "files": [
+    {
+      "path": "container-names-after-cleanup.txt",
+      "sha256": "5fdd58899be64397b2959aca27dfc144550def66196a35137c04f6104da2412f"
+    },
+    {
+      "path": "controller-state.json",
+      "sha256": "25ead0f9db9b02a512fdab7e587dbf7fd9e3ae57d7461bbf17e2d2dd61c3fb04"
+    },
+    {
+      "path": "controller.log",
+      "sha256": "f87c21cdcccfc1e944f3b17eb5acb92df3fac89011159719ad18d8765ba258e0"
+    },
+    {
+      "path": "correct-grade.json",
+      "sha256": "cc7d211d4d6cc78bdcb044f6f6f8938a89b8b2a0b5ca3e3b9d49ccd78e7ed025"
+    },
+    {
+      "path": "defective-grade.json",
+      "sha256": "6340519279c4c269bc9d19073f65dfce4e33f62d327fae08704d6c8a3bc457ba"
+    },
+    {
+      "path": "launch.json",
+      "sha256": "6cf10db4950095908e9ae6e0d4c9048eb3672be96cb4fe49ae39337894554595"
+    },
+    {
+      "path": "launch.ps1",
+      "sha256": "99c13daf25106d9ac963360969c055958eb617ab5f40a3c3fef0030af6c14a4f"
+    },
+    {
+      "path": "plan.json",
+      "sha256": "eb660caa52bb22511bdb85dd9ff9f398236d83353cabbf2241969dad21356e73"
+    },
+    {
+      "path": "prepare.mjs",
+      "sha256": "af4fe51fd65c941df9a8459e566fd5646de38735b5182ad6f789cc2bcfce1962"
+    },
+    {
+      "path": "proof.json",
+      "sha256": "60885aa196aa635d4f45fa1cf51ed7bf14647657194625ac7d124a4b1b3f9ec4"
+    },
+    {
+      "path": "report.json",
+      "sha256": "29730487374ea2f12300623e66f4c6398b823e37228230a5253c3ded64bb7d61"
+    },
+    {
+      "path": "scenario.json",
+      "sha256": "55dc558f8eeffa5794f191722311631f953074147e4dfe102db7acbe0565194a"
+    },
+    {
+      "path": "verify.mjs",
+      "sha256": "d9c912039cea60ed05e41c9abc856d802a04d9253cc16a71a8919e9e2b40617e"
+    }
+  ],
+  "limits": [
+    "Zero-point diagnostic, one repetition per application. Not qualification.",
+    "No source, build, run or cleanup changes performed."
+  ]
+}

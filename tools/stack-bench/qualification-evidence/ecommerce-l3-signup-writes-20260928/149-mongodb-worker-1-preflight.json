@@ -1,0 +1,233 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "preflight",
+  "id": "ecommerce-mongodb-run416-20260928045929-202e3ccc-preflight",
+  "attempt": {
+    "id": "ecommerce-mongodb-run416-20260928045929-202e3ccc-preflight",
+    "parentId": "ecommerce-mongodb-run416-20260928045929-202e3ccc"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:59:41.428Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null,
+      "version": "1.5.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-09-28T04:59:39.516Z",
+    "request": {
+      "backends": [
+        "mongodb"
+      ],
+      "track": "ecommerce",
+      "levels": [
+        3
+      ],
+      "runIndex": 416,
+      "parallelism": 1,
+      "agentAdapter": "reference-fixture",
+      "guidance": "prescribed",
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.concurrency-safety.restock-race.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a",
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+        "ecommerce.l3.deferred-integrity.exactly-once.311a",
+        "ecommerce.l3.server-time.server-time.312a",
+        "ecommerce.feature.cart-checkout.cart.4a",
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "recipe": "ecommerce.progression-catalog",
+      "requestedScopeCount": 0,
+      "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "resultsDir": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/mongodb.runs/r1-workers/w1.runs/r1",
+      "agentSkills": null,
+      "smoke": true,
+      "modelFree": false
+    },
+    "ok": true,
+    "summary": {
+      "passed": 25,
+      "failed": 0,
+      "warnings": 1
+    },
+    "checks": [
+      {
+        "id": "request.scope",
+        "status": "pass",
+        "summary": "ecommerce L3 on mongodb"
+      },
+      {
+        "id": "runner.node",
+        "status": "pass",
+        "summary": "Node 24.18.1"
+      },
+      {
+        "id": "ownership.lease",
+        "status": "pass",
+        "summary": "Private lease matches this run and selected scope"
+      },
+      {
+        "id": "image.controller-reference",
+        "status": "pass",
+        "summary": "Controller image is immutable: sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730"
+      },
+      {
+        "id": "image.build-reference",
+        "status": "pass",
+        "summary": "Build image is immutable: sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      },
+      {
+        "id": "runner.architecture",
+        "status": "pass",
+        "summary": "linux/x64"
+      },
+      {
+        "id": "ambient.stack_bench_supervisor_state",
+        "status": "pass",
+        "summary": "Private supervisor handoff matches this run"
+      },
+      {
+        "id": "ambient.docker-host",
+        "status": "pass",
+        "summary": "Docker endpoint is local/default"
+      },
+      {
+        "id": "agent.credentials",
+        "status": "pass",
+        "summary": "Credential source available (not-required)"
+      },
+      {
+        "id": "storage.results",
+        "status": "pass",
+        "summary": "575.7 GiB free at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/mongodb.runs/r1-workers/w1.runs/r1"
+      },
+      {
+        "id": "docker.engine",
+        "status": "pass",
+        "summary": "Docker 29.6.2 (linux/x86_64)"
+      },
+      {
+        "id": "docker.compose",
+        "status": "pass",
+        "summary": "Docker Compose 5.3.1"
+      },
+      {
+        "id": "runner.co-resident",
+        "status": "warn",
+        "summary": "32 co-resident container(s): sb-1b54e429b6264862-browser, sb-92215563a38a3633-browser, sb-dfdc41d3b5a7b1bd-browser, sb-1b54e429b6264862-backend, sb-dfdc41d3b5a7b1bd-backend, sb-92215563a38a3633-backend",
+        "remediation": "Run paid campaigns on a dedicated runner."
+      },
+      {
+        "id": "docker.cpu",
+        "status": "pass",
+        "summary": "32 CPUs reported by Docker"
+      },
+      {
+        "id": "docker.memory",
+        "status": "pass",
+        "summary": "45.9 GiB total memory allocation reported by Docker"
+      },
+      {
+        "id": "docker.capacity",
+        "status": "pass",
+        "summary": "1-worker container caps: 4 CPUs and 10.3 GiB RAM. Shared services and uncapped CPU are additional; this is not a measured minimum."
+      },
+      {
+        "id": "docker.clock",
+        "status": "pass",
+        "summary": "host/engine skew 0 ms"
+      },
+      {
+        "id": "image.build",
+        "status": "pass",
+        "summary": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455 -> sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      },
+      {
+        "id": "image.platform",
+        "status": "pass",
+        "summary": "linux/amd64"
+      },
+      {
+        "id": "registry.cache",
+        "status": "pass",
+        "summary": "http://127.0.0.1:4873/ answered 200"
+      },
+      {
+        "id": "image.mongodb",
+        "status": "pass",
+        "summary": "Owned mongodb backend image sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082 is available"
+      },
+      {
+        "id": "materials.mongodb.skills",
+        "status": "pass",
+        "summary": "No skill documents are required",
+        "evidence": {
+          "skills": [],
+          "missing": []
+        }
+      },
+      {
+        "id": "port.mongodb.vite",
+        "status": "pass",
+        "summary": "Port 7139 belongs to the active attempt namespace"
+      },
+      {
+        "id": "port.mongodb.express",
+        "status": "pass",
+        "summary": "Port 6817 belongs to the active attempt namespace"
+      },
+      {
+        "id": "smoke.container",
+        "status": "pass",
+        "summary": "Container linux/x64 v22.22.0; 1 outbound destination(s); 1 database route(s); 0 agent executable(s); result mount persistent",
+        "evidence": {
+          "platform": "linux",
+          "arch": "x64",
+          "node": "v22.22.0",
+          "reached": [
+            {
+              "url": "https://registry.npmjs.org",
+              "status": 200,
+              "elapsedMs": 94
+            }
+          ],
+          "tcpReached": [
+            27017
+          ],
+          "executables": {},
+          "credentialStatus": "not-checked",
+          "diskFreeBytes": 618166894592
+        }
+      },
+      {
+        "id": "storage.container",
+        "status": "pass",
+        "summary": "575.7 GiB free in Docker storage"
+      }
+    ]
+  }
+}

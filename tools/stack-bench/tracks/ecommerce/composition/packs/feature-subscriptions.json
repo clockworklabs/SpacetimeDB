@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.subscriptions",
+  "moduleType": "feature",
+  "title": "Scheduled purchases",
+  "description": "Scheduled purchases",
+  "requiresPacks": [
+    "ecommerce.progression.payment-records"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "direct-server-call",
+    "database-observation"
+  ],
+  "evidence": [
+    "browser-observation",
+    "fresh-client-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 180000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.subscriptions",
+        "path": "prompts/modular/subscriptions.md",
+        "order": 5100,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.subscriptions.interface",
+        "path": "contracts/subscriptions.md",
+        "order": 5900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "feature-760",
+      "stableId": "subscriptions-760",
+      "source": "scenarios/progression-subscriptions.json",
+      "feature": 760,
+      "criteria": [
+        "760a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

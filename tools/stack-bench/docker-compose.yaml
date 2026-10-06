@@ -1,0 +1,49 @@
+# Databases for the Postgres and MongoDB backends.
+#
+# Development-only ports, container names and volumes keep this stack separate
+# from the appliance. The SpacetimeDB
+# backend needs no service here; run `spacetime start` for it.
+#
+#   docker compose -f tools/stack-bench/docker-compose.yaml up -d
+#
+name: stack-bench
+
+services:
+  postgres:
+    image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
+    container_name: stack-bench-dev-postgres
+    ports:
+      - "127.0.0.1:6532:5432"
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: local-app-password
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One local replica-set member exposes native transactions and change streams.
+  # This provides neither failover nor a multi-node availability test.
+  mongodb:
+    image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    container_name: stack-bench-dev-mongodb
+    ports:
+      - "127.0.0.1:6537:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status(); } catch (e) { if (e.code !== 94) throw e; rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}); } if (!db.hello().isWritablePrimary) quit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:
+    name: stack-bench-dev-pgdata
+  mongodata:
+    name: stack-bench-dev-mongodata

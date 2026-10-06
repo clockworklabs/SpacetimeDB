@@ -208,14 +208,26 @@ class AuthCtxImpl implements AuthCtx {
     });
   }
 
-  /** If there is a connection id, look up the JWT payload from the system tables. */
+  /** Create a context for an HTTP request, which has no connection but is not host-originated. */
+  static httpRequest(): AuthCtx {
+    return new AuthCtxImpl({
+      isInternal: false,
+      jwtSource: () => null,
+      senderIdentity: Identity.zero(),
+    });
+  }
+
+  /**
+   * If there is a connection id, look up the JWT payload from the system tables.
+   * A call without one was spawned by the database, such as `init` or a scheduled function.
+   */
   static fromSystemTables(
     connectionId: ConnectionId | null,
     sender: Identity
   ): AuthCtx {
     if (connectionId === null) {
       return new AuthCtxImpl({
-        isInternal: false,
+        isInternal: true,
         jwtSource: () => null,
         senderIdentity: sender,
       });
@@ -285,6 +297,13 @@ export const ReducerCtxImpl = class ReducerCtx<
     if (asViews !== undefined) {
       me.as = asViews as AliasViews<any>;
     }
+  }
+
+  /** A transaction inside an HTTP handler, which reports external authority. */
+  static forHttpHandler(timestamp: Timestamp, dbView: DbView<any>) {
+    const tx = new ReducerCtx<any>(Identity.zero(), timestamp, null, dbView);
+    tx.#senderAuth = AuthCtxImpl.httpRequest();
+    return tx;
   }
 
   get databaseIdentity() {
@@ -815,12 +834,7 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   withTx<T>(body: (ctx: any) => T): T {
     const dispatches = this.#dispatches;
     return runWithTx(timestamp => {
-      const tx = new ReducerCtxImpl(
-        Identity.zero(),
-        timestamp,
-        null,
-        this.#dbView()
-      );
+      const tx = ReducerCtxImpl.forHttpHandler(timestamp, this.#dbView());
       if (dispatches.length > 0) {
         tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
       }
@@ -939,10 +953,8 @@ function buildHandlerAliasCtx(
     as: subAs,
     withTx(body: any) {
       return runWithTx((ts: Timestamp) => {
-        const tx = new ReducerCtxImpl(
-          Identity.zero(),
+        const tx = ReducerCtxImpl.forHttpHandler(
           ts,
-          null,
           (nsDb_ ??= buildDbViewForDispatch(
             dispatch,
             namePrefix

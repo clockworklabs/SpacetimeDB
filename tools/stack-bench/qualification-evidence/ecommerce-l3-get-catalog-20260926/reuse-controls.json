@@ -1,0 +1,47 @@
+{
+  "rerun": "STACK_BENCH_SLICE_EVIDENCE=<file> node --test dist/tests/qualification-slices.test.js",
+  "artifact": {
+    "path": "tests/fixtures/qualification-evidence/ecommerce-l3-e804c1302/postgres-targeted.json",
+    "sha256": "efc4a7f4df5f664fca9457c5746508f53db02b52f51a9ad5281c337a44c29bed"
+  },
+  "snapshot": {
+    "path": "tests/fixtures/qualification-evidence/ecommerce-l3-e804c1302/current-inputs.json",
+    "sha256": "85f21bfeb1160f3889cb10bd3c3819a12dba46428d82e055e25af268f82b3f45"
+  },
+  "review": [
+    {
+      "fromTaskSha256": "1c358d8fb14694ea13a39ab1b4fc6d4c2919b769f2752def2f2a5021a535cd93",
+      "toTaskSha256": "c6054cc060064155b05c81d049d5627591a9866c1659496f3eca00a990142f07"
+    }
+  ],
+  "observations": [
+    {
+      "case": "reviewed contract text",
+      "outcome": "accepted"
+    },
+    {
+      "case": "wrong source task",
+      "outcome": "rejected"
+    },
+    {
+      "case": "wrong target task",
+      "outcome": "rejected"
+    },
+    {
+      "case": "no evidence",
+      "outcome": "rejected"
+    },
+    {
+      "case": "changed evidence",
+      "outcome": "rejected"
+    },
+    {
+      "case": "empty rationale",
+      "outcome": "rejected"
+    },
+    {
+      "case": "changed requirements, owners and scenario",
+      "outcome": "rejected"
+    }
+  ]
+}

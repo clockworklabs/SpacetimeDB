@@ -1,0 +1,125 @@
+{
+  "command": "Get-Content -Raw tools/stack-bench/local-notes/sol6-four-stack-20260925/sol6-four-stack-qualified-194a4aaaab/navigation-qualification/render-final-request-v2.mjs | node --input-type=module",
+  "rows": [
+    {
+      "stack": "mongodb",
+      "level": 1,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "728e585cff7019a715fb8c0ced68344a22128723e8b2fc58b45ce7968f34ebc4",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "postgres",
+      "level": 1,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "7fbce2ed5fcff0e95fb0a071847b5e367996ef1cb8019be201f0e495663e7eec",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "spacetime",
+      "level": 1,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "b1341614e396981bb4b5998eace41318573d99bdf3160c05ef2e06743ad80b5e",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "convex",
+      "level": 1,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "800e110904ceaf733a2622263affbe59faddde1706985be0630324b41e0cc23d",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "mongodb",
+      "level": 2,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "62ea596342a924418cf74515b53e4ed9f0e5aa186ebc168c3fbf2baec90989cd",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "postgres",
+      "level": 2,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "ca905ea236d86be102a5c6c6aee343f8fb27b99af1ed1e4101911f93697bb31c",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "spacetime",
+      "level": 2,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "1268fd9b425dc6563f3be480e9b121bb5459bae19968c76e5ee97fa784488320",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "convex",
+      "level": 2,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "b5f0eb6114e92c94f7a3cb54ea7f9eeb410caa2207d024c568843bd6433080d3",
+      "included": false,
+      "excerpt": null
+    },
+    {
+      "stack": "mongodb",
+      "level": 3,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "8605c7b4b3d38eabe5cc2865d12564b2299172a17d09d590189f196b5ca1852c",
+      "included": true,
+      "excerpt": "For a `select` used by `transfer-from` or `transfer-to`, each warehouse must have exactly one\noption whose value or label is the exact warehouse name. The other field may include extra\ndisplay text or use the warehouse ID."
+    },
+    {
+      "stack": "postgres",
+      "level": 3,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "d68958a605121c0fc4f509b78f7993a19c79d8980ff78a716b5eff0c553dd6a0",
+      "included": true,
+      "excerpt": "For a `select` used by `transfer-from` or `transfer-to`, each warehouse must have exactly one\noption whose value or label is the exact warehouse name. The other field may include extra\ndisplay text or use the warehouse ID."
+    },
+    {
+      "stack": "spacetime",
+      "level": 3,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "a3c42cd502e89839a0ff687e5f474ba213f964e9c2604a236b84b653abc29d4f",
+      "included": true,
+      "excerpt": "For a `select` used by `transfer-from` or `transfer-to`, each warehouse must have exactly one\noption whose value or label is the exact warehouse name. The other field may include extra\ndisplay text or use the warehouse ID."
+    },
+    {
+      "stack": "convex",
+      "level": 3,
+      "guidance": "neutral-dev",
+      "productionQuality": true,
+      "supportCloseRule": true,
+      "promptSha256": "02df3c71208b79a451d860546f493d872e08a78c239904faab2f574ba7c818f1",
+      "included": true,
+      "excerpt": "For a `select` used by `transfer-from` or `transfer-to`, each warehouse must have exactly one\noption whose value or label is the exact warehouse name. The other field may include extra\ndisplay text or use the warehouse ID."
+    }
+  ]
+}

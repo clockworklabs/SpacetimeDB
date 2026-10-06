@@ -1,0 +1,332 @@
+2026-09-27T22:56:41.150508952Z 
+2026-09-27T22:56:41.150810810Z qualifying ecommerce-reference-spacetime: clean run 1/1
+2026-09-27T22:56:43.553480170Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:56:45.047554729Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:56:50.211803956Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:56:50.213264142Z 
+2026-09-27T22:56:50.213342706Z ================ spacetime — level 3 ================
+2026-09-27T22:57:31.684237061Z   kept the unaided source at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1/first-build-l3
+2026-09-27T22:57:33.508310505Z 
+2026-09-27T22:57:33.508350357Z === spacetime-l3 (spacetime) ===
+2026-09-27T22:57:33.508952021Z   app: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-Tsh6Qm/app
+2026-09-27T22:57:33.508979922Z   url: http://localhost:6713
+2026-09-27T22:57:33.508982432Z   recipe: L3 -> ecommerce.progression-catalog (40e7aba3f559)
+2026-09-27T22:57:33.508984912Z   scope: 2 check(s), 2 point(s)
+2026-09-27T22:57:33.508991383Z     features: ecommerce.feature.accounts, ecommerce.feature.cart, ecommerce.feature.catalog-discovery, ecommerce.feature.catalog-items, ecommerce.feature.checkout, ecommerce.feature.purchasing, ecommerce.feature.reviews, ecommerce.feature.warehouse-admin, ecommerce.l2.inventory-dashboard, ecommerce.l2.order-cancellation-features, ecommerce.l2.recommendations, ecommerce.l2.sales-dashboard, ecommerce.l2.stock-transfers-features, ecommerce.l3.scheduled-restocks-features, ecommerce.progression.catalog-management, ecommerce.progression.customer-profile, ecommerce.progression.faceted-search, ecommerce.progression.fulfilment-queue, ecommerce.progression.managed-support, ecommerce.progression.notification-preferences, ecommerce.progression.promotion-rules, ecommerce.progression.staff-access, ecommerce.progression.staff-roles, ecommerce.progression.stock-alerts, ecommerce.progression.support-history, ecommerce.progression.support-intake, ecommerce.progression.support-triage
+2026-09-27T22:57:33.508998613Z     extra checks: ecommerce.spec.state-durability.checkout-crash-durability.910b, ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T22:57:33.515516956Z   code        ... 2513 server LOC in 6 files, 4686 total LOC, 3 runtime deps
+2026-09-27T22:57:33.516420286Z   database    ... leased database requires runtime marker verification
+2026-09-27T22:57:35.373963998Z   stop application ... ok
+2026-09-27T22:57:41.340493357Z   reset database ... ok
+2026-09-27T22:57:47.703248449Z   restart     ... ok
+2026-09-27T22:58:02.342388860Z   stop application ... ok
+2026-09-27T22:58:08.976530651Z   reset database ... ok
+2026-09-27T22:58:16.103373643Z   restart     ... ok
+2026-09-27T22:58:16.103420605Z   db runtime  ... the application marker exists in the leased SpacetimeDB module
+2026-09-27T22:58:16.580492954Z   contract lint ... DEFERRED (31 interfaces checked during feature grading)
+2026-09-27T22:58:16.922724520Z   actions    ... all 6 present
+2026-09-27T22:58:17.652432636Z   selected-source-001 ... not selected
+2026-09-27T22:58:17.652496264Z   selected-source-002 ... not selected
+2026-09-27T22:58:17.652591214Z   selected-source-003 ... not selected
+2026-09-27T22:58:17.652597764Z   selected-source-004 ... not selected
+2026-09-27T22:58:17.652599254Z   selected-source-005 ... not selected
+2026-09-27T22:58:17.652600454Z   selected-source-006 ... not selected
+2026-09-27T22:58:17.652601534Z   selected-source-007 ... not selected
+2026-09-27T22:58:17.652602544Z   selected-source-008 ... not selected
+2026-09-27T22:58:17.652603504Z   selected-source-009 ... not selected
+2026-09-27T22:58:17.652604424Z   selected-source-010 ... not selected
+2026-09-27T22:58:17.652792638Z   selected-source-011 ... not selected
+2026-09-27T22:58:17.652801248Z   selected-source-012 ... not selected
+2026-09-27T22:58:17.652802878Z   selected-source-013 ... not selected
+2026-09-27T22:58:17.652804018Z   selected-source-014 ... not selected
+2026-09-27T22:58:17.652993508Z   selected-source-015 ... not selected
+2026-09-27T22:58:17.653212514Z   selected-source-016 ... not selected
+2026-09-27T22:58:17.653228044Z   selected-source-017 ... not selected
+2026-09-27T22:58:17.653280662Z   selected-source-018 ... not selected
+2026-09-27T22:58:17.653289712Z   selected-source-019 ... not selected
+2026-09-27T22:58:17.653355791Z   selected-source-020 ... not selected
+2026-09-27T22:58:17.653361611Z   selected-source-021 ... not selected
+2026-09-27T22:58:17.653434200Z   selected-source-022 ... not selected
+2026-09-27T22:58:17.653538329Z   selected-source-023 ... not selected
+2026-09-27T22:58:17.653545710Z   selected-source-024 ... not selected
+2026-09-27T22:58:17.653776156Z   selected-source-025 ... not selected
+2026-09-27T22:58:17.653783936Z   selected-source-026 ... not selected
+2026-09-27T22:58:17.653785556Z   selected-source-027 ... not selected
+2026-09-27T22:58:17.653786766Z   selected-source-028 ... not selected
+2026-09-27T22:58:17.653945769Z   selected-source-029 ... not selected
+2026-09-27T22:58:17.654292495Z   selected-source-030 ... not selected
+2026-09-27T22:58:17.654308436Z   selected-source-031 ... not selected
+2026-09-27T22:58:17.654309816Z   selected-source-032 ... not selected
+2026-09-27T22:58:17.654323126Z   selected-source-033 ... not selected
+2026-09-27T22:58:17.654324266Z   selected-source-034 ... not selected
+2026-09-27T22:58:17.654325426Z   selected-source-035 ... not selected
+2026-09-27T22:58:17.654467133Z   selected-source-036 ... not selected
+2026-09-27T22:58:17.654474623Z   selected-source-037 ... not selected
+2026-09-27T22:58:17.654485964Z   selected-source-038 ... not selected
+2026-09-27T22:58:17.654487034Z   selected-source-039 ... not selected
+2026-09-27T22:58:17.654488014Z   selected-source-040 ... not selected
+2026-09-27T22:58:17.654488934Z   selected-source-041 ... not selected
+2026-09-27T22:58:17.654489834Z   selected-source-042 ... not selected
+2026-09-27T22:58:17.654490734Z   selected-source-043 ... not selected
+2026-09-27T22:58:17.654491634Z   selected-source-044 ... not selected
+2026-09-27T22:58:17.654492554Z   selected-source-045 ... not selected
+2026-09-27T22:58:17.654493464Z   selected-source-046 ... not selected
+2026-09-27T22:58:17.654516445Z   selected-source-047 ... not selected
+2026-09-27T22:58:17.654518295Z   selected-source-048 ... not selected
+2026-09-27T22:58:17.654519435Z   selected-source-049 ... not selected
+2026-09-27T22:58:17.654520346Z   selected-source-050 ... not selected
+2026-09-27T22:58:17.654521496Z   selected-source-051 ... not selected
+2026-09-27T22:58:17.654522936Z   selected-source-052 ... not selected
+2026-09-27T22:58:17.654523946Z   selected-source-053 ... not selected
+2026-09-27T22:58:17.654528846Z   selected-source-054 ... not selected
+2026-09-27T22:58:17.654534456Z   selected-source-055 ... not selected
+2026-09-27T22:58:17.654535706Z   selected-source-056 ... not selected
+2026-09-27T22:58:17.654536816Z   selected-source-057 ... not selected
+2026-09-27T22:58:17.654537986Z   selected-source-058 ... not selected
+2026-09-27T22:58:17.654539096Z   selected-source-059 ... not selected
+2026-09-27T22:58:17.654540056Z   selected-source-060 ... not selected
+2026-09-27T22:58:17.654604720Z   selected-source-061 ... not selected
+2026-09-27T22:58:17.654613810Z   selected-source-062 ... not selected
+2026-09-27T22:58:17.654615521Z   selected-source-063 ... not selected
+2026-09-27T22:58:17.654616691Z   selected-source-064 ... not selected
+2026-09-27T22:58:17.654617831Z   selected-source-065 ... not selected
+2026-09-27T22:58:17.654618821Z   selected-source-066 ... not selected
+2026-09-27T22:58:17.654619871Z   selected-source-067 ... not selected
+2026-09-27T22:58:17.654621021Z   selected-source-068 ... not selected
+2026-09-27T22:58:17.654622131Z   selected-source-069 ... not selected
+2026-09-27T22:58:17.654623111Z   selected-source-070 ... not selected
+2026-09-27T22:58:17.654624171Z   selected-source-071 ... not selected
+2026-09-27T22:58:19.663178860Z   stop application ... ok
+2026-09-27T22:58:26.273886724Z   reset database ... ok
+2026-09-27T22:58:34.856357695Z   restart     ... ok
+2026-09-27T22:59:09.633954826Z   selected-source-072 ... 2/2
+2026-09-27T22:59:09.635615473Z   selected-source-073 ... not selected
+2026-09-27T22:59:09.635639274Z   selected-source-074 ... not selected
+2026-09-27T22:59:09.635640794Z   selected-source-075 ... not selected
+2026-09-27T22:59:09.635641814Z   selected-source-076 ... not selected
+2026-09-27T22:59:09.635642814Z   selected-source-077 ... not selected
+2026-09-27T22:59:09.635643674Z   selected-source-078 ... not selected
+2026-09-27T22:59:09.635644374Z   selected-source-079 ... not selected
+2026-09-27T22:59:09.635645064Z   selected-source-080 ... not selected
+2026-09-27T22:59:09.635645754Z   selected-source-081 ... not selected
+2026-09-27T22:59:09.635646434Z   selected-source-082 ... not selected
+2026-09-27T22:59:09.635647114Z   selected-source-083 ... not selected
+2026-09-27T22:59:09.635647794Z   selected-source-084 ... not selected
+2026-09-27T22:59:09.635648464Z   selected-source-085 ... not selected
+2026-09-27T22:59:09.635649134Z   selected-source-086 ... not selected
+2026-09-27T22:59:09.635649814Z   selected-source-087 ... not selected
+2026-09-27T22:59:09.635650494Z   selected-source-088 ... not selected
+2026-09-27T22:59:09.635651184Z   selected-source-089 ... not selected
+2026-09-27T22:59:09.635651854Z   selected-source-090 ... not selected
+2026-09-27T22:59:09.635652534Z   selected-source-091 ... not selected
+2026-09-27T22:59:09.635653194Z   selected-source-092 ... not selected
+2026-09-27T22:59:09.635653874Z   selected-source-093 ... not selected
+2026-09-27T22:59:09.635654554Z   selected-source-094 ... not selected
+2026-09-27T22:59:09.635655245Z   selected-source-095 ... not selected
+2026-09-27T22:59:09.635655925Z   selected-source-096 ... not selected
+2026-09-27T22:59:09.635656595Z   selected-source-097 ... not selected
+2026-09-27T22:59:09.635657275Z   selected-source-098 ... not selected
+2026-09-27T22:59:09.635657945Z   selected-source-099 ... not selected
+2026-09-27T22:59:09.635658615Z   selected-source-100 ... not selected
+2026-09-27T22:59:09.635659295Z   selected-source-101 ... not selected
+2026-09-27T22:59:09.635659985Z   selected-source-102 ... not selected
+2026-09-27T22:59:09.635660665Z   selected-source-103 ... not selected
+2026-09-27T22:59:09.635661685Z   selected-source-104 ... not selected
+2026-09-27T22:59:09.635662385Z   selected-source-105 ... not selected
+2026-09-27T22:59:09.635663045Z   selected-source-106 ... not selected
+2026-09-27T22:59:09.635663735Z   selected-source-107 ... not selected
+2026-09-27T22:59:09.635664435Z   selected-source-108 ... not selected
+2026-09-27T22:59:09.635753012Z   selected-source-109 ... not selected
+2026-09-27T22:59:09.635759372Z   selected-source-110 ... not selected
+2026-09-27T22:59:09.635769583Z   selected-source-111 ... not selected
+2026-09-27T22:59:09.635770863Z   selected-source-112 ... not selected
+2026-09-27T22:59:09.635771873Z   selected-source-113 ... not selected
+2026-09-27T22:59:09.635772873Z   selected-source-114 ... not selected
+2026-09-27T22:59:09.864159368Z   evidence write and source verification ... 57.2ms
+2026-09-27T22:59:09.864200889Z   TOTAL      ... 2/2
+2026-09-27T22:59:09.864204919Z   bundle: /var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-Tsh6Qm/app-grading/bundle.json
+2026-09-27T22:59:09.963996703Z   kept the unaided grading at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1/first-build-l3-grading
+2026-09-27T22:59:09.996768847Z   kept the L3 source checkpoint at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1/level-l3-source
+2026-09-27T22:59:10.009570466Z   spacetime-ecom-run240-ecommerce-spacetime-run240-20260927225643-3fd8efec: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T22:59:10.043517547Z   source kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1/source
+2026-09-27T22:59:10.043597559Z   grading detail kept at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1/grading
+2026-09-27T22:59:10.055363042Z 
+2026-09-27T22:59:10.055388223Z ================ spacetime summary ================
+2026-09-27T22:59:10.055586484Z   L3: 2/2 unaided -> 2/2 | 0 repairs | $0.00 total ($0.00 repairs) | not needed | 140s
+2026-09-27T22:59:10.055701007Z   TOTAL 2/2  $0  0 repair(s)  140s
+2026-09-27T22:59:10.055710127Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1/run.json
+2026-09-27T22:59:10.424323727Z   removed the leased run container sb-0c0182a1e56c3329-browser
+2026-09-27T22:59:11.431931953Z   removed the leased run container sb-0c0182a1e56c3329-build
+2026-09-27T22:59:12.544254360Z   removed the leased run container sb-0c0182a1e56c3329-backend
+2026-09-27T22:59:21.031320206Z 
+2026-09-27T22:59:21.031356589Z qualifying ecommerce-reference-spacetime: clean run 1/1
+2026-09-27T22:59:21.099439154Z 
+2026-09-27T22:59:21.099465126Z qualifying ecommerce-reference-spacetime: clean run 1/1
+2026-09-27T22:59:21.232174513Z 
+2026-09-27T22:59:21.232227906Z qualifying ecommerce-reference-spacetime: clean run 1/1
+2026-09-27T22:59:23.447850772Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:59:23.532956453Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:59:23.533400267Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-27T22:59:26.430535071Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:59:26.500573297Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:59:26.523235084Z   preflight  ... 23 checks passed, 2 warning(s)
+2026-09-27T22:59:34.672521969Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:59:34.673882533Z 
+2026-09-27T22:59:34.673912635Z ================ spacetime — level 3 ================
+2026-09-27T22:59:35.174897188Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:59:35.176163146Z 
+2026-09-27T22:59:35.176190468Z ================ spacetime — level 3 ================
+2026-09-27T22:59:35.276379508Z   preflight  ... 25 checks passed, 1 warning(s)
+2026-09-27T22:59:35.277980746Z 
+2026-09-27T22:59:35.278003858Z ================ spacetime — level 3 ================
+2026-09-27T23:00:18.965768638Z 
+2026-09-27T23:00:18.965818420Z ================ spacetime mutation control ================
+2026-09-27T23:00:19.415700195Z 
+2026-09-27T23:00:19.415730216Z ================ spacetime mutation control ================
+2026-09-27T23:00:19.725123908Z 
+2026-09-27T23:00:19.725158190Z ================ spacetime mutation control ================
+2026-09-27T23:00:20.062971222Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T23:00:20.064726876Z   baseline: 2/2  F910:2
+2026-09-27T23:00:20.064749987Z 
+2026-09-27T23:00:20.503067011Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T23:00:20.504598883Z   baseline: 2/2  F910:2
+2026-09-27T23:00:20.504624994Z 
+2026-09-27T23:00:20.817770307Z Baseline (verified clean evidence, /opt/stack-bench/tracks/ecommerce/scenarios/progression-checkout-crash.json)...
+2026-09-27T23:00:20.817940220Z   baseline: 2/2  F910:2
+2026-09-27T23:00:20.817979062Z 
+2026-09-27T23:01:11.882819670Z CAUGHT               checkout-crash-sibling-stock — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:01:11.882857222Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:01:12.090162289Z CAUGHT               checkout-crash-integrity — expected ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:01:12.090213821Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-integrity.910a
+2026-09-27T23:01:12.580324878Z CAUGHT               checkout-crash-durability — expected ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T23:01:12.580356039Z     failed criteria: ecommerce.spec.state-durability.checkout-crash-durability.910b
+2026-09-27T23:01:28.283669977Z 
+2026-09-27T23:01:28.283710289Z 1/1 mutations cleanly caught
+2026-09-27T23:01:28.283836641Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w2.runs/r1/mutation-control.json
+2026-09-27T23:01:28.328712317Z   spacetime-ecom-run241-ecommerce-spacetime-run241-20260927225923-489e34a0: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:01:28.336056390Z 
+2026-09-27T23:01:28.336100182Z ================ spacetime summary ================
+2026-09-27T23:01:28.336335193Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 44s
+2026-09-27T23:01:28.336912536Z   TOTAL 0/0  $0  0 repair(s)  114s
+2026-09-27T23:01:28.336955928Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w2.runs/r1/run.json
+2026-09-27T23:01:28.659813548Z   removed the leased run container sb-2fe0a58128e152b0-browser
+2026-09-27T23:01:28.971836431Z 
+2026-09-27T23:01:28.971897524Z 1/1 mutations cleanly caught
+2026-09-27T23:01:28.972107566Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w1.runs/r1/mutation-control.json
+2026-09-27T23:01:28.974744477Z 
+2026-09-27T23:01:28.974764728Z 1/1 mutations cleanly caught
+2026-09-27T23:01:28.974768638Z artifact: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json
+2026-09-27T23:01:29.035080206Z   spacetime-ecom-run242-ecommerce-spacetime-run242-20260927225923-d6a0e4b9: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:01:29.037470673Z   spacetime-ecom-run240-ecommerce-spacetime-run240-20260927225923-217b1e5b: NO TRANSCRIPT in the CLI store — already pruned, or never run
+2026-09-27T23:01:29.042435523Z 
+2026-09-27T23:01:29.042478766Z ================ spacetime summary ================
+2026-09-27T23:01:29.042654760Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 45s
+2026-09-27T23:01:29.042998391Z   TOTAL 0/0  $0  0 repair(s)  114s
+2026-09-27T23:01:29.043017842Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w3.runs/r1/run.json
+2026-09-27T23:01:29.045156128Z 
+2026-09-27T23:01:29.045178429Z ================ spacetime summary ================
+2026-09-27T23:01:29.045429547Z   L3: NOT GRADED | 0 repairs | $0.00 total ($0.00 repairs) | complete | 44s
+2026-09-27T23:01:29.045794773Z   TOTAL 0/0  $0  0 repair(s)  114s
+2026-09-27T23:01:29.045855208Z   /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w1.runs/r1/run.json
+2026-09-27T23:01:29.439723729Z   removed the leased run container sb-39281aec467a5623-browser
+2026-09-27T23:01:29.632385524Z   removed the leased run container sb-e375d2c5c8dcd5e3-browser
+2026-09-27T23:01:29.818659593Z   removed the leased run container sb-2fe0a58128e152b0-build
+2026-09-27T23:01:30.992112619Z   removed the leased run container sb-2fe0a58128e152b0-backend
+2026-09-27T23:01:31.181278873Z   removed the leased run container sb-e375d2c5c8dcd5e3-build
+2026-09-27T23:01:31.312681005Z   removed the leased run container sb-39281aec467a5623-build
+2026-09-27T23:01:32.384947615Z   removed the leased run container sb-e375d2c5c8dcd5e3-backend
+2026-09-27T23:01:33.067395685Z   removed the leased run container sb-39281aec467a5623-backend
+2026-09-27T23:01:33.114041798Z {
+2026-09-27T23:01:33.114072109Z   "ok": true,
+2026-09-27T23:01:33.114075120Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w2.json",
+2026-09-27T23:01:33.114077350Z   "stable": true,
+2026-09-27T23:01:33.114078980Z   "sameImage": true,
+2026-09-27T23:01:33.114080690Z   "sameHarness": true,
+2026-09-27T23:01:33.114082260Z   "diagnostic": true,
+2026-09-27T23:01:33.114084210Z   "runs": [
+2026-09-27T23:01:33.114104411Z     {
+2026-09-27T23:01:33.114111061Z       "repetition": 1,
+2026-09-27T23:01:33.114113121Z       "ok": true,
+2026-09-27T23:01:33.114114781Z       "score": null,
+2026-09-27T23:01:33.114116352Z       "criteria": null,
+2026-09-27T23:01:33.114117982Z       "zeroPointCriteria": null,
+2026-09-27T23:01:33.114119612Z       "mutations": {
+2026-09-27T23:01:33.114121132Z         "caught": 1,
+2026-09-27T23:01:33.114122762Z         "completed": 1,
+2026-09-27T23:01:33.114124312Z         "total": 1,
+2026-09-27T23:01:33.114125922Z         "remaining": 0
+2026-09-27T23:01:33.114127422Z       },
+2026-09-27T23:01:33.114128892Z       "failures": []
+2026-09-27T23:01:33.114130442Z     }
+2026-09-27T23:01:33.114131932Z   ]
+2026-09-27T23:01:33.114133392Z }
+2026-09-27T23:01:34.247200285Z {
+2026-09-27T23:01:34.247240307Z   "ok": true,
+2026-09-27T23:01:34.247242737Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w3.json",
+2026-09-27T23:01:34.247258918Z   "stable": true,
+2026-09-27T23:01:34.247260628Z   "sameImage": true,
+2026-09-27T23:01:34.247262098Z   "sameHarness": true,
+2026-09-27T23:01:34.247263108Z   "diagnostic": true,
+2026-09-27T23:01:34.247264158Z   "runs": [
+2026-09-27T23:01:34.247265198Z     {
+2026-09-27T23:01:34.247266198Z       "repetition": 1,
+2026-09-27T23:01:34.247267278Z       "ok": true,
+2026-09-27T23:01:34.247268258Z       "score": null,
+2026-09-27T23:01:34.247269678Z       "criteria": null,
+2026-09-27T23:01:34.247270689Z       "zeroPointCriteria": null,
+2026-09-27T23:01:34.247271749Z       "mutations": {
+2026-09-27T23:01:34.247272719Z         "caught": 1,
+2026-09-27T23:01:34.247273769Z         "completed": 1,
+2026-09-27T23:01:34.247274779Z         "total": 1,
+2026-09-27T23:01:34.247275779Z         "remaining": 0
+2026-09-27T23:01:34.247276769Z       },
+2026-09-27T23:01:34.247277749Z       "failures": []
+2026-09-27T23:01:34.247278749Z     }
+2026-09-27T23:01:34.247279729Z   ]
+2026-09-27T23:01:34.247280689Z }
+2026-09-27T23:01:34.742288225Z {
+2026-09-27T23:01:34.742325077Z   "ok": true,
+2026-09-27T23:01:34.742326997Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.runs/r1-workers/w1.json",
+2026-09-27T23:01:34.742328377Z   "stable": true,
+2026-09-27T23:01:34.742334578Z   "sameImage": true,
+2026-09-27T23:01:34.742335578Z   "sameHarness": true,
+2026-09-27T23:01:34.742336638Z   "diagnostic": true,
+2026-09-27T23:01:34.742337518Z   "runs": [
+2026-09-27T23:01:34.742338628Z     {
+2026-09-27T23:01:34.742339588Z       "repetition": 1,
+2026-09-27T23:01:34.742340648Z       "ok": true,
+2026-09-27T23:01:34.742341588Z       "score": null,
+2026-09-27T23:01:34.742342608Z       "criteria": null,
+2026-09-27T23:01:34.742343638Z       "zeroPointCriteria": null,
+2026-09-27T23:01:34.742344728Z       "mutations": {
+2026-09-27T23:01:34.742345678Z         "caught": 1,
+2026-09-27T23:01:34.742346668Z         "completed": 1,
+2026-09-27T23:01:34.742347678Z         "total": 1,
+2026-09-27T23:01:34.742348608Z         "remaining": 0
+2026-09-27T23:01:34.742349609Z       },
+2026-09-27T23:01:34.742350529Z       "failures": []
+2026-09-27T23:01:34.742351479Z     }
+2026-09-27T23:01:34.742352369Z   ]
+2026-09-27T23:01:34.742368149Z }
+2026-09-27T23:01:35.118655351Z {
+2026-09-27T23:01:35.118723395Z   "ok": true,
+2026-09-27T23:01:35.118728735Z   "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.json",
+2026-09-27T23:01:35.118730535Z   "stable": true,
+2026-09-27T23:01:35.118731785Z   "sameImage": true,
+2026-09-27T23:01:35.118732875Z   "sameHarness": true,
+2026-09-27T23:01:35.118733795Z   "diagnostic": true,
+2026-09-27T23:01:35.118734765Z   "runs": [
+2026-09-27T23:01:35.118735785Z     {
+2026-09-27T23:01:35.118736715Z       "repetition": 1,
+2026-09-27T23:01:35.118737695Z       "ok": true,
+2026-09-27T23:01:35.118738695Z       "score": "2/2",
+2026-09-27T23:01:35.118739686Z       "criteria": 2,
+2026-09-27T23:01:35.118740646Z       "zeroPointCriteria": 0,
+2026-09-27T23:01:35.118741656Z       "mutations": {
+2026-09-27T23:01:35.118742716Z         "caught": 3,
+2026-09-27T23:01:35.118743706Z         "total": 3
+2026-09-27T23:01:35.118744736Z       },
+2026-09-27T23:01:35.118745706Z       "failures": []
+2026-09-27T23:01:35.118746666Z     }
+2026-09-27T23:01:35.118747606Z   ]
+2026-09-27T23:01:35.118748586Z }

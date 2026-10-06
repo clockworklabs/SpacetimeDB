@@ -1,0 +1,388 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T18-18-01-803Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T18-18-01-803Z",
+    "parentId": "ecommerce-convex-run124-20260927181703-72a100fd"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:18:01.803Z",
+    "completedAt": "2026-09-27T18:22:05.283Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 243481,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-G7BtCz/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-G7BtCz/selected-mutations.json",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-support-history.json",
+      "../tracks/ecommerce/scenarios/01-account-disclosure.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "support-history-rows-are-hidden",
+        "support-read-not-owner-scoped",
+        "account-password-in-public-data",
+        "account-password-in-style"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "db50edb040833552eb9b26167abd98bfcf2ad5d3ea6aeaf4a2221e23f1ff04da"
+      },
+      "total": 8,
+      "max": 8,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "identitySha256": "a591646e007f893bc45942e85465ddbeea031175e9afe21f0875357c12598d26",
+          "total": 7,
+          "max": 7
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "identitySha256": "a1df8911ce777708d950e94647f7308ac4afe3ce2e93be13d56d44c438c66e0a",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 4,
+      "completed": 4,
+      "total": 4,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "support-history-rows-are-hidden",
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "targets": [
+          "ecommerce.progression.support-history.support-history.612c",
+          "ecommerce.spec.state-durability.support-history-reload.612a",
+          "ecommerce.spec.access-control.support-history-privacy.612b",
+          "ecommerce.spec.access-control.support-history-logout.612d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.support-history.support-history.612c",
+          "ecommerce.spec.state-durability.support-history-reload.612a",
+          "ecommerce.spec.access-control.support-history-privacy.612b",
+          "ecommerce.spec.access-control.support-history-logout.612d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 612,
+            "criterion": "612c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Owner ticket ticketmarkerf20ec98e-c858-4ff612\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.support-history.support-history.612c",
+            "expected": true
+          },
+          {
+            "feature": 612,
+            "criterion": "612a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Owner ticket ticketmarkerf20ec98e-c858-4ff612\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.support-history-reload.612a",
+            "expected": true
+          },
+          {
+            "feature": 612,
+            "criterion": "612b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Private ticket privateticketmarkerf20ec98e-c858-4ff612\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.support-history-privacy.612b",
+            "expected": true
+          },
+          {
+            "feature": 612,
+            "criterion": "612d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Logout ticket logoutticketmarkerf20ec98e-c858-4ff612\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.support-history-logout.612d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "support-read-not-owner-scoped",
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "targets": [
+          "ecommerce.spec.access-control.support-history-privacy.612b",
+          "ecommerce.spec.access-control.support-history-logout.612d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.support-history-privacy.612b",
+          "ecommerce.spec.access-control.support-history-logout.612d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 612,
+            "criterion": "612b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Private ticket privateticketmarker4e598237-ee24-4cf612\" was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.support-history-privacy.612b",
+            "expected": true
+          },
+          {
+            "feature": 612,
+            "criterion": "612d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Logout ticket logoutticketmarker4e598237-ee24-4cf612\" was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.support-history-logout.612d",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "account-password-in-public-data",
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "targets": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 110,
+            "criterion": "110a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "private data was delivered to unauthorized actor other",
+            "failedAction": "expectNotReceived",
+            "key": "ecommerce.spec.access-control.account-disclosure.110a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "account-password-in-style",
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "targets": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 110,
+            "criterion": "110a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "private data was delivered to unauthorized actor other",
+            "failedAction": "expectNotReceived",
+            "key": "ecommerce.spec.access-control.account-disclosure.110a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "support-history-rows-are-hidden",
+          "support-read-not-owner-scoped",
+          "account-password-in-public-data",
+          "account-password-in-style"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "scenarioSha256": "a9799e8d9c5d96e29eaafffcd1fc3f6e205a3f7f00b2f0bb2b157c4db8982492",
+          "mutationSha256": "285ad8fb16088abdeb7142e8cb8ea3b07911baf2f253599d4c7469c67b9314f2",
+          "selectionSha256": "1b57aaf333e3aa86ac39641cc51fa95db1c7be82d3f8e960d2bb9a7c3d69eb4f",
+          "identitySha256": "a591646e007f893bc45942e85465ddbeea031175e9afe21f0875357c12598d26",
+          "mutationIds": [
+            "support-history-rows-are-hidden",
+            "support-read-not-owner-scoped"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "scenarioSha256": "b078ded6d5350e83a6b754f01349e21ee5fd53434636164d2436aa66593bd2c0",
+          "mutationSha256": "29ea91955e3ecbba8fd3dfaee3c4ca0ce30a503bf2724c05afbcb1db47d57520",
+          "selectionSha256": "7fb7eb11f8baacc56ffe990b1ffd5a97a89c8c324b938c515c19c4df9718288f",
+          "identitySha256": "a1df8911ce777708d950e94647f7308ac4afe3ce2e93be13d56d44c438c66e0a",
+          "mutationIds": [
+            "account-password-in-public-data",
+            "account-password-in-style"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T18:22:05.284Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "mutationId": "support-history-rows-are-hidden",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-2ii2B8/grade.json",
+          "sha256": "57d9ce8d572de372c9b52da815295e137463c86adf96e9f42b6d12fbc9d7dfad"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "mutationId": "support-read-not-owner-scoped",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-aQATS3/grade.json",
+          "sha256": "7770c0bfee10e4e88f7c90e19bcca14027e359d2625f7cd16a8c2afff2dfcdbb"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "mutationId": "account-password-in-public-data",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-bZHQmP/grade.json",
+          "sha256": "aef64b9cbb5a7d94a6eccc3b3303c327945a86dbcc09f0bb717981fc585ad78e"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "mutationId": "account-password-in-style",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-ogPPjy/grade.json",
+          "sha256": "f9bf7f70d34cc0f46fd72fa11f6b01ac68b24fe781d8cf4ec84506c9bd5906ce"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

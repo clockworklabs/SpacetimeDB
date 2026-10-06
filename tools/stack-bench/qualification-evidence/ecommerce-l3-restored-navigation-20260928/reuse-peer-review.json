@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "kind": "independent-fixed-reference-reuse-review",
+  "baseCommit": "194a4aaaab68388f9e5e75396cb1899e1a9e6950",
+  "candidateCommit": "6d560ca871dc3f1b340cf16fbbd497429f4ebd8d",
+  "scope": {
+    "path": "local-notes/sol6-four-stack-20260925/sol6-four-stack-qualified-194a4aaaab/navigation-qualification-scope.json",
+    "sha256": "1f0b8e839ae2e5f2414060e0c3071e6b0751bc89e6752e05652ec7b900dc87d8"
+  },
+  "conclusion": "The prospective wording changes permit reuse of the 67 unchanged fixed-reference checks. No additional check moves to replacement scope.",
+  "qualificationStatus": "pending: the 45 changed checks require new terminal reference/mutation/null evidence and the normal final validator",
+  "selectedScope": {
+    "total": 112,
+    "replacement": 45,
+    "retained": 67,
+    "extraReplacementChecks": []
+  },
+  "baseToCandidateTaskMapping": {
+    "fromTaskSha256": "701568b95856006504bf7b70ffa50024eadaa5010ccdea762e86889062268b35",
+    "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+  },
+  "requiredRetainedTaskMappings": [
+    {
+      "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "7bf9bc25b7a7e52449c380b51be539f6db344f4904f26d9c1424fed136384234",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "4373d05c598352b585c93cf44003904e320fdf6772ea75b5d77b24d49430017e",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "fceac36a2300719e7ffc43fb4ec4965fbb3303c2190d27c9a0e18bc66d775c24",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    },
+    {
+      "fromTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e",
+      "toTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f"
+    }
+  ],
+  "independentValidation": {
+    "currentRecipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+    "method": "Built and validated qualification documents with existing dist; ran unchangedQualificationChecks with exact task mapping endpoints; read-only, no compiler build or app execution.",
+    "historicalSnapshots": 13,
+    "retainedEvidenceSlices": 101,
+    "snapshotHashesAndTaskEndpointsVerified": true,
+    "allRetainedChecksAllowed": true,
+    "allReplacementChecksExcluded": true
+  },
+  "sourceIdentities": [
+    {
+      "path": "src",
+      "baseGitObject": "d7955fa4f50f8a67e37cd7126af2fc7d02d91bf6",
+      "candidateGitObject": "d7955fa4f50f8a67e37cd7126af2fc7d02d91bf6"
+    },
+    {
+      "path": "grader",
+      "baseGitObject": "1513bb72c7aac27b81197003f599da451e1a6736",
+      "candidateGitObject": "1513bb72c7aac27b81197003f599da451e1a6736"
+    },
+    {
+      "path": "reference-apps",
+      "baseGitObject": "3066b4913251cc6c88a172af22650907a22860d4",
+      "candidateGitObject": "3066b4913251cc6c88a172af22650907a22860d4"
+    },
+    {
+      "path": "tracks/ecommerce/composition/fixtures",
+      "baseGitObject": "cd09631c39c7be7327b8f8ac07da45ed6a0c37a0",
+      "candidateGitObject": "cd09631c39c7be7327b8f8ac07da45ed6a0c37a0"
+    },
+    {
+      "path": "tracks/ecommerce/composition/packs",
+      "baseGitObject": "586d17c3862cca11823146143b1cb97a3e33ab0c",
+      "candidateGitObject": "586d17c3862cca11823146143b1cb97a3e33ab0c"
+    },
+    {
+      "path": "tracks/ecommerce/composition/recipes",
+      "baseGitObject": "f0496a4e529aff38aec2ce8233a2bdfe245d6fba",
+      "candidateGitObject": "f0496a4e529aff38aec2ce8233a2bdfe245d6fba"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations",
+      "baseGitObject": "c1c9ded0e68ecde5b5879b3e4be3758a4b4fcec8",
+      "candidateGitObject": "c1c9ded0e68ecde5b5879b3e4be3758a4b4fcec8"
+    },
+    {
+      "path": "tracks/ecommerce/progression",
+      "baseGitObject": "a8473fa98ca54aaaf2837d006e5e581985b4d776",
+      "candidateGitObject": "a8473fa98ca54aaaf2837d006e5e581985b4d776"
+    },
+    {
+      "path": "package.json",
+      "baseGitObject": "dd339c818d552e5aef950e57d6e0a0cccce26a49",
+      "candidateGitObject": "dd339c818d552e5aef950e57d6e0a0cccce26a49"
+    },
+    {
+      "path": "package-lock.json",
+      "baseGitObject": "430532137f573aa57354c8b04727fff72e301e56",
+      "candidateGitObject": "430532137f573aa57354c8b04727fff72e301e56"
+    },
+    {
+      "path": "appliance",
+      "baseGitObject": "da48d3ffe31081be5d27c19b2e2cdb1487553719",
+      "candidateGitObject": "da48d3ffe31081be5d27c19b2e2cdb1487553719"
+    },
+    {
+      "path": "container",
+      "baseGitObject": "bcd39e41c9411b5dfdb6c63bd79a47b7b0364248",
+      "candidateGitObject": "bcd39e41c9411b5dfdb6c63bd79a47b7b0364248"
+    },
+    {
+      "path": "scripts",
+      "baseGitObject": "11d182552e2ee659ec0471915a6b94c82358da10",
+      "candidateGitObject": "11d182552e2ee659ec0471915a6b94c82358da10"
+    }
+  ],
+  "referenceCompliance": [
+    {
+      "stack": "postgres",
+      "transfer": "reference-apps/ecommerce/postgres/client/src/App.tsx:1297,1312",
+      "support": "reference-apps/ecommerce/postgres/client/src/ProgressionPanel.tsx:93",
+      "supportStyle": "reference-apps/ecommerce/postgres/client/src/index.css:16,32,38"
+    },
+    {
+      "stack": "mongodb",
+      "transfer": "reference-apps/ecommerce/mongodb/client/src/App.tsx:1290,1304",
+      "support": "reference-apps/ecommerce/mongodb/client/src/ProgressionPanel.tsx:131",
+      "supportStyle": "reference-apps/ecommerce/mongodb/client/src/index.css:684"
+    },
+    {
+      "stack": "convex",
+      "transfer": "reference-apps/ecommerce/convex/client/src/App.tsx:1039,1053",
+      "support": "reference-apps/ecommerce/convex/client/src/ProgressionPanel.tsx:113",
+      "supportStyle": "reference-apps/ecommerce/convex/client/src/index.css:671"
+    },
+    {
+      "stack": "spacetime",
+      "transfer": "reference-apps/ecommerce/spacetime/client/src/components/AdminPanel.tsx:157,171",
+      "support": "reference-apps/ecommerce/spacetime/client/src/components/ProgressionWorkbench.tsx:154",
+      "supportStyle": "reference-apps/ecommerce/spacetime/client/src/index.css:24,32,39"
+    }
+  ],
+  "referenceFindings": [
+    "Each transfer select maps warehouses to one option with the exact warehouse name as label and an ID as value. The unchanged operations fixture has the two distinct names East and West.",
+    "Each support interface uses ordinary page content in grid/flex layout, not a blocking support overlay. The new conditional close-control requirement needs no change to these fixed references.",
+    "Retained support-intake 610a and support-triage 611a/b/c do not require additional runs solely for this wording.",
+    "The appendix-02 wording is absent from the active selected recipe; the active transfer and support contract ownership/modes remain unchanged."
+  ],
+  "limits": [
+    "This review covers fixed-reference qualification reuse only. It does not reinterpret historical generated-app results under the new requirements.",
+    "Full recipe execution identity changes for the 45 changed checks. Only the 67 retained check executions are reusable.",
+    "New controller image identity is distinct; no claim of identical image digest is made. Final promotion must retain exact artifact/input identities.",
+    "No paid calls, builds, launches, application requests, or production edits were made for this review."
+  ],
+  "scriptReview": {
+    "files": [
+      {
+        "path": "local-notes/sol6-four-stack-20260925/sol6-four-stack-qualified-194a4aaaab/navigation-qualification/prepare.mjs",
+        "sha256": "324d85ca6256c99ffbfb29d84f0472f247b0922f2c5181370553f20aa69b68a9"
+      },
+      {
+        "path": "local-notes/sol6-four-stack-20260925/sol6-four-stack-qualified-194a4aaaab/navigation-qualification/launch.ps1",
+        "sha256": "c4f7dff0e4a2dce0d6ffd047ba82b178983efae50859ddc90b39a5bdd1f9ffca"
+      }
+    ],
+    "result": "No clear blocker found in read-only review. Preparation binds candidate, source blobs, policy and mutation target closure. Launch binds immutable base/image layers, overlay bytes, scope and launcher hashes, protects prior output and checks resources. Neither script was executed in this review."
+  }
+}

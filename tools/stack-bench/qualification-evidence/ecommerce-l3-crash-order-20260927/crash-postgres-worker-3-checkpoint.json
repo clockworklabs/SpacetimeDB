@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T22-58-53-033Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T22-58-53-033Z",
+    "parentId": "ecommerce-postgres-run250-20260927225823-39cf5a7f"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T22:58:53.034Z",
+    "completedAt": "2026-09-27T22:59:48.935Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 55901,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-23Ykfi/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-23Ykfi/selected-mutations.json",
+    "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-checkout-crash.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "checkout-crash-durability"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "77b06cfac1ad6520b343365221582e8a9c61d1312f09c64590ea91e7e1a59d07"
+      },
+      "total": 2,
+      "max": 2,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "identitySha256": "543bd216a7ff4519c88ba0b9886adc89074f9c6422d7dbaa17c265530ac83364",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "checkout-crash-durability",
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 910,
+            "criterion": "910b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the acknowledged orders preserved control reads 0, expected exactly 1",
+            "failedAction": "expectCrashCheckout",
+            "key": "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c",
+      "recipeSha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f",
+      "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+      "calibrationSha256": "3d86dc87f1d8607c2587a5bb2cfd4fb7a066fee29f997927de567e5c90c5ab65",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "checkout-crash-durability"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "scenarioSha256": "a53ddfa1802a484691ed4632f3461d0e8bebca95086b6bc3d6161d44eae6cb7b",
+          "mutationSha256": "39fcb3ee2cd175a1511d843cd60c029e927bf1d834cf615d14dc0cc90d6f6b30",
+          "selectionSha256": "2a39cea079f06a3090f95fbbdddb808f63dbc34af61d1478c3d5c3bc111bf981",
+          "identitySha256": "543bd216a7ff4519c88ba0b9886adc89074f9c6422d7dbaa17c265530ac83364",
+          "mutationIds": [
+            "checkout-crash-durability"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T22:59:48.935Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "mutationId": "checkout-crash-durability",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-1nhv1H/grade.json",
+          "sha256": "ffe3682d80d5c8b391a1a787336450c05afdb8a83ff775867ac375e481c20986"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

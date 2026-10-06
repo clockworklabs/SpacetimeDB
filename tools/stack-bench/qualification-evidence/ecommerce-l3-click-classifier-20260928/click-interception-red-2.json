@@ -1,0 +1,42 @@
+{
+  "command": "node --test --test-name-pattern=\"a hit-target interceptor|a click that removes\" dist/tests/browser-action-executors.test.js",
+  "browser": "151.0.7922.34",
+  "observation": {
+    "fixture": "cover appears on pointerover, after the initial hit-target check",
+    "expected": "failed/control-blocked with no delivered pointerdown or click",
+    "result": {
+      "schemaVersion": 2,
+      "action": {
+        "id": "click",
+        "version": "1.0.0"
+      },
+      "status": "inconclusive",
+      "type": "browser-interaction-evidence",
+      "code": "inconclusive",
+      "phase": "execute",
+      "summary": "browser click timed out after input dispatch began",
+      "finding": null,
+      "observation": {
+        "detail": "locator.click: Timeout 1000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#submit')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"submit\" onclick=\"document.body.dataset.clicks='1'\" onpointerdown=\"document.body.dataset.down='1'\" onpointerover=\"document.querySelector('#cover').hidden=false\">Submit</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - performing click action\u001b[22m\n\u001b[2m    - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n"
+      },
+      "expected": "confirmed completion of the browser click",
+      "retryable": false,
+      "timing": {
+        "startedAtMs": 1790610219559,
+        "completedAtMs": 1790610220571,
+        "durationMs": 1012,
+        "deadlineMs": 60000
+      },
+      "attachments": [],
+      "sensitivity": [
+        "user-content"
+      ]
+    },
+    "calls": 1,
+    "detail": "TimeoutError: locator.click: Timeout 1000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#submit')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"submit\" onclick=\"document.body.dataset.clicks='1'\" onpointerdown=\"document.body.dataset.down='1'\" onpointerover=\"document.querySelector('#cover').hidden=false\">Submit</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - performing click action\u001b[22m\n\u001b[2m    - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div id=\"cover\"></div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n",
+    "delivered": {
+      "pointerdown": null,
+      "click": null
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "ok": false,
+  "container": "033d775ef779524f0583a0e6eaf533ef7b31a379e27a1788748ca283b41cd49c",
+  "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+  "exitCode": 1,
+  "files": [
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-2-launch.json",
+      "sha256": "0ee847b739bfff0b465289a4377dd9765300d95f097db9bc5115f760cf72de53"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-2-probe.mjs",
+      "sha256": "b4ee4c83c9d1af7ad99a3c31c06bfebe3c0121953f7fbc136414531185a05f84"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-2-probe.json",
+      "sha256": "19d040ec464d22cdd88dd053af23cb91df799d494fa8732402971c324135a89d"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-2-controller.json",
+      "sha256": "4a90829d490c00e88a4ba5c63e4c64888d608e5d41e421c9da914b13f304a69c"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-2-stdout.log",
+      "sha256": "b2b82cd8c67f6d7129b377b810f6b95e569fc6323c4d8ea1f85b030a6dd524df"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-2-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "observed": "No unwanted reload; closure assertion based on Playwright WebSocket close event failed. Next probe reads the browser WebSocket.readyState directly.",
+  "paidCalls": 0
+}

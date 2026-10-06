@@ -1,0 +1,94 @@
+{
+  "rerun": "STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern=\"account creation accepts explicit login\" dist/tests/account-navigation.integration.js",
+  "evidence": [
+    {
+      "mode": "auto",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "signedUp": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790494306142,
+          "completedAtMs": 1790494306304,
+          "durationMs": 162,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "Alice-scope",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "manual",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "browser-interaction-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the page did not respond in time",
+        "finding": {
+          "kind": "page-timeout",
+          "fields": {
+            "detail": "locator.waitFor: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#current-user').first() to be visible\u001b[22m\n\u001b[2m    6 × locator resolved to hidden <strong hidden=\"\" id=\"current-user\"></strong>\u001b[22m\n"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790494306390,
+          "completedAtMs": 1790494306984,
+          "durationMs": 594,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "",
+      "privilegedStatus": null
+    }
+  ]
+}

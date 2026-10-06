@@ -1,0 +1,4314 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "grade",
+  "id": "grade-051615c5-eb7c-45",
+  "attempt": {
+    "id": "grade-051615c5-eb7c-45",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T16:16:11.399Z",
+    "completedAt": "2026-09-27T16:17:11.890Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7fa11ad07acb2fc8799439dd009e621b5abfa30b057d4148eb144910e4142494"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "definitionSchemaVersion": 1,
+    "recipeRelease": null,
+    "label": null,
+    "url": "http://127.0.0.1:6473",
+    "level": 1,
+    "runId": "051615c5-eb7c-45",
+    "total": 0,
+    "max": 0,
+    "features": [
+      {
+        "id": 101,
+        "name": "Purchase requires an account",
+        "score": 0,
+        "max": 0,
+        "criteria": [
+          {
+            "id": "101a",
+            "desc": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+            "points": 0,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790525786862,
+                "completedAtMs": 1790525830875,
+                "durationMs": 44013
+              },
+              "actions": [
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "recordedAtMs": 1790525787081,
+                      "key": "before-rejected-access"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525786862,
+                      "completedAtMs": 1790525787081,
+                      "durationMs": 219,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "guest",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": false,
+                      "status": 530,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": "application",
+                      "applicationRejected": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525787081,
+                      "completedAtMs": 1790525789106,
+                      "durationMs": 2025,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "guest",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "application-refused",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525789107,
+                      "completedAtMs": 1790525789107,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-rejected-access",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525789107,
+                      "completedAtMs": 1790525789281,
+                      "durationMs": 174,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 99,
+                      "expected": {
+                        "equals": 99
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525789281,
+                      "completedAtMs": 1790525789828,
+                      "durationMs": 547,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "wrong-password",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "kim051615c5-eb7c-45f101",
+                      "authenticationPath": "local-form",
+                      "expectedFailure": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525789829,
+                      "completedAtMs": 1790525792080,
+                      "durationMs": 2251,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "wrong-password",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525792080,
+                      "completedAtMs": 1790525792098,
+                      "durationMs": 18,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "wrong-password",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true,
+                      "application": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525792098,
+                      "completedAtMs": 1790525794081,
+                      "durationMs": 1983,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "wrong-password",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525794081,
+                      "completedAtMs": 1790525795153,
+                      "durationMs": 1072,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "wrong-password",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": false,
+                      "status": 530,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": "application",
+                      "applicationRejected": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525795154,
+                      "completedAtMs": 1790525797223,
+                      "durationMs": 2069,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "wrong-password",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "application-refused",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525797223,
+                      "completedAtMs": 1790525797223,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-rejected-access",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525797223,
+                      "completedAtMs": 1790525797430,
+                      "durationMs": 207,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 99,
+                      "expected": {
+                        "equals": 99
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525797430,
+                      "completedAtMs": 1790525797946,
+                      "durationMs": 516,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "query-input",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "kim051615c5-eb7c-45f101",
+                      "authenticationPath": "local-form",
+                      "expectedFailure": true,
+                      "requestPatch": {
+                        "shape": "positional",
+                        "success": false,
+                        "transport": "spacetime-websocket",
+                        "bodySha256": "58aa6ca77f6b4040ff963e3062120380c86d0d82c74d42e7c0196f69ea23f29a"
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525797947,
+                      "completedAtMs": 1790525800278,
+                      "durationMs": 2331,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "query-input",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": false,
+                      "status": 530,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": "application",
+                      "applicationRejected": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525800278,
+                      "completedAtMs": 1790525802306,
+                      "durationMs": 2028,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "query-input",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "completed",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525802306,
+                      "completedAtMs": 1790525802306,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-rejected-access",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525802306,
+                      "completedAtMs": 1790525802493,
+                      "durationMs": 187,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 99,
+                      "expected": {
+                        "equals": 99
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525802493,
+                      "completedAtMs": 1790525803029,
+                      "durationMs": 536,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "query-input",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "application-refused",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525803029,
+                      "completedAtMs": 1790525803030,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "duplicate",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signUp",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "kim051615c5-eb7c-45f101",
+                      "authenticationPath": "local-form",
+                      "expectedFailure": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525803030,
+                      "completedAtMs": 1790525805278,
+                      "durationMs": 2248,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "duplicate",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525805279,
+                      "completedAtMs": 1790525805337,
+                      "durationMs": 58,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "duplicate",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true,
+                      "application": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525805337,
+                      "completedAtMs": 1790525807183,
+                      "durationMs": 1846,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "duplicate",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525807183,
+                      "completedAtMs": 1790525808241,
+                      "durationMs": 1058,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "duplicate",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": false,
+                      "status": 530,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": "application",
+                      "applicationRejected": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525808242,
+                      "completedAtMs": 1790525810307,
+                      "durationMs": 2065,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "duplicate",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "application-refused",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525810307,
+                      "completedAtMs": 1790525810308,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-rejected-access",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525810308,
+                      "completedAtMs": 1790525810607,
+                      "durationMs": 299,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 99,
+                      "expected": {
+                        "equals": 99
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525810607,
+                      "completedAtMs": 1790525811144,
+                      "durationMs": 537,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525811144,
+                      "completedAtMs": 1790525813178,
+                      "durationMs": 2034,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525813178,
+                      "completedAtMs": 1790525813178,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 98,
+                      "expected": {
+                        "equals": 98
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525813178,
+                      "completedAtMs": 1790525813690,
+                      "durationMs": 512,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "recordedAtMs": 1790525813870,
+                      "key": "before-forgery"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525813690,
+                      "completedAtMs": 1790525813871,
+                      "durationMs": 181,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": false,
+                      "status": 401,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": "access",
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525813871,
+                      "completedAtMs": 1790525814897,
+                      "durationMs": 1026,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "completed",
+                      "status": 401,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525814897,
+                      "completedAtMs": 1790525814897,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-forgery",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525814897,
+                      "completedAtMs": 1790525815091,
+                      "durationMs": 194,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 98,
+                      "expected": {
+                        "equals": 98
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525815091,
+                      "completedAtMs": 1790525815646,
+                      "durationMs": 555,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "application-refused",
+                      "status": 401,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525815646,
+                      "completedAtMs": 1790525815646,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525815646,
+                      "completedAtMs": 1790525815689,
+                      "durationMs": 43,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525815689,
+                      "completedAtMs": 1790525815690,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 97,
+                      "expected": {
+                        "equals": 97
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525815690,
+                      "completedAtMs": 1790525816145,
+                      "durationMs": 455,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "recordedAtMs": 1790525816346,
+                      "key": "before-same-site"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525816145,
+                      "completedAtMs": 1790525816347,
+                      "durationMs": 202,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "site": "same-site",
+                      "sourceOrigin": "http://127.0.0.1:18081",
+                      "targetOrigin": "http://127.0.0.1:18000",
+                      "localNetworkAccess": "granted",
+                      "method": "POST",
+                      "cookieSent": false,
+                      "responseStatus": 415,
+                      "browserResponseType": "opaque"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525816347,
+                      "completedAtMs": 1790525817726,
+                      "durationMs": 1379,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-same-site",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525817726,
+                      "completedAtMs": 1790525817972,
+                      "durationMs": 246,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 97,
+                      "expected": {
+                        "equals": 97
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525817972,
+                      "completedAtMs": 1790525818582,
+                      "durationMs": 610,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525818582,
+                      "completedAtMs": 1790525818619,
+                      "durationMs": 37,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525818619,
+                      "completedAtMs": 1790525818620,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 96,
+                      "expected": {
+                        "equals": 96
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525818620,
+                      "completedAtMs": 1790525819106,
+                      "durationMs": 486,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "4",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "recordedAtMs": 1790525819298,
+                      "key": "before-cross-site"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525819107,
+                      "completedAtMs": 1790525819298,
+                      "durationMs": 191,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "site": "cross-site",
+                      "sourceOrigin": "http://127.0.0.2:18081",
+                      "targetOrigin": "http://127.0.0.1:18000",
+                      "localNetworkAccess": "granted",
+                      "method": "POST",
+                      "cookieSent": false,
+                      "responseStatus": 415,
+                      "browserResponseType": "opaque"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525819298,
+                      "completedAtMs": 1790525820517,
+                      "durationMs": 1219,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "4",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-cross-site",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525820518,
+                      "completedAtMs": 1790525820693,
+                      "durationMs": 175,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 96,
+                      "expected": {
+                        "equals": 96
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525820694,
+                      "completedAtMs": 1790525821142,
+                      "durationMs": 448,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821142,
+                      "completedAtMs": 1790525821184,
+                      "durationMs": 42,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821184,
+                      "completedAtMs": 1790525821184,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 95,
+                      "expected": {
+                        "equals": 95
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821184,
+                      "completedAtMs": 1790525821701,
+                      "durationMs": 517,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "4",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "5",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "recordedAtMs": 1790525821876,
+                      "key": "before-signout"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821701,
+                      "completedAtMs": 1790525821876,
+                      "durationMs": 175,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "signout"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821876,
+                      "completedAtMs": 1790525821907,
+                      "durationMs": 31,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "signout"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821907,
+                      "completedAtMs": 1790525821963,
+                      "durationMs": 56,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "waitUntilAbsent",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525821963,
+                      "completedAtMs": 1790525822979,
+                      "durationMs": 1016,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "catalog-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525822979,
+                      "completedAtMs": 1790525823168,
+                      "durationMs": 189,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": false,
+                      "status": 530,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": "application",
+                      "applicationRejected": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525823169,
+                      "completedAtMs": 1790525825193,
+                      "durationMs": 2024,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "completed",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525825193,
+                      "completedAtMs": 1790525825194,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectNoPurchase",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "kim051615c5-eb7c-45f101",
+                        "itemId": "2",
+                        "priceMinor": 7950,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "4",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "5",
+                            "accountId": "kim051615c5-eb7c-45f101",
+                            "totalMinor": 7950,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "2",
+                                "quantity": 1,
+                                "priceMinor": 7950,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": false,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "55f5d655c532ccfee47fa1efa3835c8c82cb9e8e75d92230d7dd4ebb456cde87"
+                      },
+                      "before": "before-signout",
+                      "differences": []
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525825194,
+                      "completedAtMs": 1790525825425,
+                      "durationMs": 231,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 95,
+                      "expected": {
+                        "equals": 95
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525825425,
+                      "completedAtMs": 1790525826044,
+                      "durationMs": 619,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "application-refused",
+                      "status": 530,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525826044,
+                      "completedAtMs": 1790525826044,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "kim051615c5-eb7c-45f101",
+                      "authenticationPath": "local-form",
+                      "submitted": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525826044,
+                      "completedAtMs": 1790525826276,
+                      "durationMs": 232,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525826276,
+                      "completedAtMs": 1790525828293,
+                      "durationMs": 2017,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525828293,
+                      "completedAtMs": 1790525828334,
+                      "durationMs": 41,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "spacetime-reducer",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525828334,
+                      "completedAtMs": 1790525830390,
+                      "durationMs": 2056,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "buyer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "buy",
+                      "outcome": "accepted",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525830390,
+                      "completedAtMs": 1790525830391,
+                      "durationMs": 1,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectStock",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "backend": "spacetime",
+                      "item": "Bluetooth Speaker",
+                      "quantity": 94,
+                      "expected": {
+                        "equals": 94
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790525830391,
+                      "completedAtMs": 1790525830874,
+                      "durationMs": 483,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "network-address",
+                "user-content"
+              ]
+            },
+            "statedBy": "the server refuses a purchase without an authenticated customer",
+            "serverCheck": "verified",
+            "stableKey": null
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790525781090,
+            "completedAtMs": 1790525786854,
+            "durationMs": 5764
+          },
+          "actions": [
+            {
+              "actor": "buyer",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signUp",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "kim051615c5-eb7c-45f101",
+                  "authenticationPath": "local-form",
+                  "signedUp": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790525781091,
+                  "completedAtMs": 1790525783597,
+                  "durationMs": 2506,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": null,
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "dbRecordStock",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "database-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "backend": "spacetime",
+                  "item": "Bluetooth Speaker",
+                  "quantity": 100,
+                  "key": "speaker-before-control"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790525783598,
+                  "completedAtMs": 1790525784204,
+                  "durationMs": 606,
+                  "deadlineMs": 90000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            },
+            {
+              "actor": "buyer",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790525784204,
+                  "completedAtMs": 1790525784257,
+                  "durationMs": 53,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "buyer",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "callAction",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "transport-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "action": "buy",
+                  "accepted": true,
+                  "status": 200,
+                  "responseContract": "spacetime-reducer",
+                  "refusalKind": null,
+                  "applicationRejected": false
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790525784257,
+                  "completedAtMs": 1790525786309,
+                  "durationMs": 2052,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content",
+                  "network-address"
+                ]
+              }
+            },
+            {
+              "actor": "buyer",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expectActionOutcome",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "transport-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "action": "buy",
+                  "outcome": "accepted",
+                  "status": 200,
+                  "classification": "verified"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790525786310,
+                  "completedAtMs": 1790525786311,
+                  "durationMs": 1,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content",
+                  "network-address"
+                ]
+              }
+            },
+            {
+              "actor": null,
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "dbExpectStock",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "database-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "backend": "spacetime",
+                  "item": "Bluetooth Speaker",
+                  "quantity": 99,
+                  "expected": {
+                    "equals": 99
+                  }
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790525786311,
+                  "completedAtMs": 1790525786854,
+                  "durationMs": 543,
+                  "deadlineMs": 90000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "network-address",
+            "user-content"
+          ]
+        },
+        "verified": [
+          "buyer: server accepted action \"buy\" (HTTP 200)",
+          "guest: server refused action \"buy\" (HTTP 530)",
+          "wrong-password: server refused action \"buy\" (HTTP 530)",
+          "query-input: server refused action \"buy\" (HTTP 530)",
+          "query-input: server refused action \"buy\" (HTTP 530)",
+          "duplicate: server refused action \"buy\" (HTTP 530)",
+          "buyer: server accepted action \"buy\" (HTTP 200)",
+          "buyer: server refused action \"buy\" (HTTP 401)",
+          "buyer: server refused action \"buy\" (HTTP 401)",
+          "buyer: server accepted action \"buy\" (HTTP 200)",
+          "buyer: server accepted action \"buy\" (HTTP 200)",
+          "buyer: server accepted action \"buy\" (HTTP 200)",
+          "buyer: server refused action \"buy\" (HTTP 530)",
+          "buyer: server refused action \"buy\" (HTTP 530)",
+          "buyer: server accepted action \"buy\" (HTTP 200)"
+        ]
+      }
+    ],
+    "selection": null,
+    "inconclusive": []
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "87830d6241c32e21de273c40a36a701ca795e380",
+  "image": "sha256:0f1c0f4af1d685b1acbdab2d94ffa74d005003b17ba8738a23632c3b3b0fbab5",
+  "change": "Account creation may establish its session automatically or through one separate sign-in with the same credentials. The request does not require automatic sign-in. Do not retry registration, replay authority claims during sign-in, hide explicit refusal, or use sign-in errors to replace a captured registration refusal.",
+  "sources": [
+    {
+      "path": "src/actions/chat-action-executors.ts",
+      "sha256": "f66e1f3058908499a55413aa93b8d8784feea650ddfd0da6bb2e2b9bcead9e2f"
+    },
+    {
+      "path": "dist/src/actions/chat-action-executors.js",
+      "sha256": "5f8a58ff1275440ff7babf4204af36fd63ba6cca090a78d55f951bddf97bd497"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-account-create.json",
+      "sha256": "51cdb0725ac8347176e65c03d1c9df485a76d8e5ba399e8e86e81e62c91faa9f"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "sha256": "9355bc96366135d6704c1eecfc5f3a952f424db0e97aa6247dd560edb63a52c1"
+    },
+    {
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "sha256": "c61da5c0bc48492239741cc34f277a75747210b9660495551a93324c00d0bfaf"
+    }
+  ],
+  "replacedChecks": [
+    "ecommerce.feature.accounts.accounts.1a",
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+  ],
+  "retainedChecks": 109,
+  "reuse": "Replace complete account-create and admin-write scenario slices. Retained 109 keys must pass unchangedQualificationChecks and normal mutation/fixture/budget validation. Duplicate expected-failure signup returns before the new helper. Wrong-password sign-in and purchase-session refusal probes retain their original path. Existing automatic-sign-in reference setups take the unchanged completed-session path. Null apps fail required entry controls before the helper; changed null keys receive new evidence. All shared executable closures, including null, get exact reviewed mappings. Prior reviews remain cumulative.",
+  "validation": {
+    "observed": "Final v3 four-stack clean baselines passed three checks/four points each; all 26 registered controls were caught without collateral, off-assertion, harness or inconclusive failures. All three null checks failed as expected. Browser controls cover automatic/separate/delayed signup, wrong or missing identity, refusal and patched native claims. The unchanged saved SpacetimeDB app passed 1/1 with native marker proof and clean recovery; no model calls.",
+    "rerun": "Use the exact image and controller arguments in signup-v3-controls-launch.json; run the three selected null keys through commands/null-control.js. Browser rerun is recorded in signup-v3-green.json. Null uses the recorded appliance environment and Docker observation. Initial local-controller diagnostic is preserved in local/state evidence and was rejected by calibration; only the appliance result qualifies.",
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/spacetime-controls.json",
+        "sha256": "04e1f6fcc6aae1c0f302d6d9b57583a3471dffb0861371020202857230115e56"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/inputs-c976f299af18.json",
+        "sha256": "c976f299af18e11939e0cbbd5cf0d50e56b68df551c138f88c2e02db950c1318"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/spacetime-checkpoint.json",
+        "sha256": "09e5f73449d3adb1dea289a15190160ae48672ece1c5d8c6b721c0c87f094fab"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/postgres-controls.json",
+        "sha256": "2570a146dd44d55aab4250c50be0dc7ac1fb1e8f077ecdca8f36d06badaa5b99"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/postgres-checkpoint.json",
+        "sha256": "22b8b12a332d612dfb4496dc88892198bd861da65e95e27ef8c22eefaf5a8ce6"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/mongodb-controls.json",
+        "sha256": "885621424fd2c633b49c70b97bf10cf549163ddaeff4b3a38849671b8fd379ae"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/mongodb-checkpoint.json",
+        "sha256": "2b4cf8d05e8127fa2faa6b23923dce174a0ed6546c31d15f3f88dc7d9f8d263d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/convex-controls.json",
+        "sha256": "254df573258d713cb2e3249fd2e8e157d59d33cd8bf168c439c51765002b4e14"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/convex-checkpoint.json",
+        "sha256": "d3e80293d470a11f980fa1b633703caad5c461d437cfe9bf154a14cf06abfe39"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/null-appliance.json",
+        "sha256": "d4c535e3b0e3e50c0dc7a21d9345cea26b392fd6d606b48071c0c5953ab6a16e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-v3-green.json",
+        "sha256": "682ef5cde6ce4fd0335d60fa381dc27c2c8140b614fbd4623528f9d3b91a0e73"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-v3-typecheck.json",
+        "sha256": "be382160c50fe4d6f3614f6166cdc232dbcd4364659714fefab3cf667a696877"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-red.json",
+        "sha256": "fd512b8cf09a202fba1dde090e172fd4c1a1a454716987c24aefeb572b205ec1"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-silent-refusal-red.json",
+        "sha256": "fcc8c799ec5346e6655536742ec6efcde4b40c2577ae77094ba064c92cf94255"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-missing-identity-red.json",
+        "sha256": "fe8989dac5fa4dc103f1aa4c0f0d0f1a558ea75d5f5ec54ca1e20099658eb2bc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-stdb-r2-verification.json",
+        "sha256": "69fca57a9104ddb9ea4f2909433fcee557a2e5e3d111b83920a2fc1e826f6ed5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-v3-controls-launch.json",
+        "sha256": "75b31f07e20c461033892952d0f43e9c16d602994a3d813b5a0ce773ceadc4a1"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-v3-controls-verification.json",
+        "sha256": "811f39a5b3d64a7ba944974ec4e035318e497c40f93fb1b48fc483b19970a35e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/signup-scope-review.json",
+        "sha256": "d126a22a90a3cdcd7430e80477e31504673f3bcb5d65f468d49f27e4c4519d3f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/diagnostic-inputs.json",
+        "sha256": "f9fa93186a64d2adc825c3b3282de1aa819fecb85e7481279d4ed2194e8681fa"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/null-appliance-launch.json",
+        "sha256": "cff39cd2175ac0e6bacdc7ae866b86899481e76fda8d47b3d84efe6bee8e4008"
+      }
+    ]
+  },
+  "limits": "Scoped qualification plus evidence-backed reuse, not a new full run. Preserve historical campaign grades and development failures. Normal check-calibration and an immutable official build remain required."
+}

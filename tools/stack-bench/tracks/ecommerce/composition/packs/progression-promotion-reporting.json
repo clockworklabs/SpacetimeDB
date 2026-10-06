@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.promotion-reporting",
+  "moduleType": "feature",
+  "title": "Promotion reporting",
+  "description": "Exact promotion redemptions and revenue.",
+  "requiresPacks": [
+    "ecommerce.progression.promotion-checkout"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 40000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.promotion-reporting",
+        "path": "prompts/modular/promotion-reporting.md",
+        "order": 4200,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.promotion-reporting-hooks",
+        "path": "contracts/promotion-reporting.md",
+        "order": 4950,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "redemptions",
+      "stableId": "promotion-report-redemptions",
+      "source": "scenarios/progression-promotion-reporting.json",
+      "feature": 622,
+      "criteria": [
+        "622a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "revenue",
+      "stableId": "promotion-report-revenue",
+      "source": "scenarios/progression-promotion-reporting.json",
+      "feature": 622,
+      "criteria": [
+        "622b"
+      ],
+      "role": "feature"
+    }
+  ]
+}

@@ -1,0 +1,177 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T12-56-58-408Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T12-56-58-408Z",
+    "parentId": "ecommerce-spacetime-run32-20260927125617-72f01805"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T12:56:58.409Z",
+    "completedAt": "2026-09-27T12:58:04.971Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 66562,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-jqL1hG/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-jqL1hG/selected-mutations.json",
+    "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-staff-roles.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "staff-can-assign-roles"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "be1a6fccbb4bef859c385d3bafc0c20416656fdc3eefc69c9ab2f8bbfd2a5e2e"
+      },
+      "total": 7,
+      "max": 7,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "identitySha256": "2553e9893b58d13407bddef78cd30c36401bda8388782e21ecd373a97edfca51",
+          "total": 7,
+          "max": 7
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "staff-can-assign-roles",
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "targets": [
+          "ecommerce.spec.access-control.staff-role-boundary.621b",
+          "ecommerce.spec.access-control.staff-role-revocation.621d"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.staff-role-boundary.621b",
+          "ecommerce.spec.access-control.staff-role-revocation.621d"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 621,
+            "criterion": "621b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "a request replayed as staff, who must be refused, was accepted (HTTP 200)",
+            "failedAction": "expectReplayRejected",
+            "key": "ecommerce.spec.access-control.staff-role-boundary.621b",
+            "expected": true
+          },
+          {
+            "feature": 621,
+            "criterion": "621d",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "a request replayed as promotedStaff, who must be refused, was accepted (HTTP 200)",
+            "failedAction": "expectReplayRejected",
+            "key": "ecommerce.spec.access-control.staff-role-revocation.621d",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "f387daf907fd2b63a8b0bf6612204d1224b8ce0b7907cec09dca38d0160b158b",
+      "recipeSha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe",
+      "fixtureSha256": "77cad701e8e251b8d8ec026f749d1aa188e347462f00bbc08456e0942142c3d3",
+      "calibrationSha256": "92ca9b28199ffb4d3dcef11fecda778b03b2925efffb3d31f57b4807dc9a20f3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "staff-can-assign-roles"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "scenarioSha256": "bfe392b6cfb5b918b847778ee9fbf94521a647859617970e1e0d44109567c784",
+          "mutationSha256": "2db547aca231021832138e17aff849a710eb293b198f282f56d93198fb4b4698",
+          "selectionSha256": "c22761b31be21bcc70de2c8911188a0b47c36eca3f65e6d7fa8f2e5d08edf8fe",
+          "identitySha256": "2553e9893b58d13407bddef78cd30c36401bda8388782e21ecd373a97edfca51",
+          "mutationIds": [
+            "staff-can-assign-roles"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T12:58:04.971Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "mutationId": "staff-can-assign-roles",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-DbKRmd/grade.json",
+          "sha256": "838149924aab9d481d7c1e4c2ddf8f17c639411d6c216414407452dbfbbf11d2"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

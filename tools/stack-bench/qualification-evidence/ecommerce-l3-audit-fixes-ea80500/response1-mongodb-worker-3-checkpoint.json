@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T18-54-58-003Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T18-54-58-003Z",
+    "parentId": "ecommerce-mongodb-run158-20260927185415-8465ac27"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:54:58.003Z",
+    "completedAt": "2026-09-27T18:55:47.006Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "8a6b9f7f96b7bbefc9e9592c1020843c7a57131f9b351cdcf9d546494db67255"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 49004,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-L80rxE/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-L80rxE/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-duplicate-checkout.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "checkout-rejects-every-request"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "ea731fc4a087da2fa7f961d31a43a019e65f21285f88920fc7a023535a605da0"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+          "identitySha256": "486aacb28cb0746250a3a3362d30fe883b74a9fce6afa3ccd841fb21efc9eee5",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "checkout-rejects-every-request",
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 203,
+            "criterion": "203b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the cart-count control did not become available in time",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "8a6b9f7f96b7bbefc9e9592c1020843c7a57131f9b351cdcf9d546494db67255",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "checkout-rejects-every-request"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+          "scenarioSha256": "276812622448dc64a35f804550d5786df82ee398caafd6d76628f61a67c61fef",
+          "mutationSha256": "cf42a54b7f4359b18b7eaab755aae423e236ba7552cb006e167d2c44c1acd7f8",
+          "selectionSha256": "6c5e67fd5d8817423b6526cc17e4c1802834b1d4b3c793485f39e4faf2fbdf0d",
+          "identitySha256": "486aacb28cb0746250a3a3362d30fe883b74a9fce6afa3ccd841fb21efc9eee5",
+          "mutationIds": [
+            "checkout-rejects-every-request"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T18:55:47.007Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "mutationId": "checkout-rejects-every-request",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-75R2tE/grade.json",
+          "sha256": "f74bfa4f388dd30c54759623f433a9651b8551c53b3cba2b6edea1c349e15152"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

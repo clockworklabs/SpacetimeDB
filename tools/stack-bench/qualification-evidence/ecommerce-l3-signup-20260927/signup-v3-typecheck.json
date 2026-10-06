@@ -1,0 +1,6 @@
+{
+  "command": "npm run typecheck --silent",
+  "executionSession": 92533,
+  "completedBeforeDiagnosticImage": "sha256:0f1c0f4af1d685b1acbdab2d94ffa74d005003b17ba8738a23632c3b3b0fbab5",
+  "exitCode": 0
+}

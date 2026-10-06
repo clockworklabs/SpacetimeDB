@@ -1,0 +1,125 @@
+TAP version 13
+# Subtest: ordinary profile, notification and promotion saves finish before verification reload
+    # Subtest: profile-immediate
+    ok 1 - profile-immediate
+      ---
+      duration_ms: 2510.7067
+      type: 'test'
+      ...
+    # Subtest: profile-delayed
+    ok 2 - profile-delayed
+      ---
+      duration_ms: 4475.4953
+      type: 'test'
+      ...
+    # Subtest: profile-delayed-request-start
+    ok 3 - profile-delayed-request-start
+      ---
+      duration_ms: 4703.4628
+      type: 'test'
+      ...
+    # Subtest: profile-stale-success
+    ok 4 - profile-stale-success
+      ---
+      duration_ms: 4481.0188
+      type: 'test'
+      ...
+    # Subtest: profile-close-after-save
+    ok 5 - profile-close-after-save
+      ---
+      duration_ms: 4451.9309
+      type: 'test'
+      ...
+    # Subtest: profile-refused
+    ok 6 - profile-refused
+      ---
+      duration_ms: 10291.9945
+      type: 'test'
+      ...
+    # Subtest: profile-missing-receipt
+    ok 7 - profile-missing-receipt
+      ---
+      duration_ms: 10477.0213
+      type: 'test'
+      ...
+    # Subtest: profile-lying-success
+    ok 8 - profile-lying-success
+      ---
+      duration_ms: 7645.3763
+      type: 'test'
+      ...
+    # Subtest: notification-immediate
+    ok 9 - notification-immediate
+      ---
+      duration_ms: 4456.3795
+      type: 'test'
+      ...
+    # Subtest: notification-delayed
+    ok 10 - notification-delayed
+      ---
+      duration_ms: 6434.2733
+      type: 'test'
+      ...
+    # Subtest: notification-delayed-request-start
+    ok 11 - notification-delayed-request-start
+      ---
+      duration_ms: 6683.1505
+      type: 'test'
+      ...
+    # Subtest: notification-stale-success
+    ok 12 - notification-stale-success
+      ---
+      duration_ms: 6515.1864
+      type: 'test'
+      ...
+    # Subtest: notification-close-after-save
+    ok 13 - notification-close-after-save
+      ---
+      duration_ms: 6415.2311
+      type: 'test'
+      ...
+    # Subtest: notification-refused
+    ok 14 - notification-refused
+      ---
+      duration_ms: 10460.0152
+      type: 'test'
+      ...
+    # Subtest: notification-missing-receipt
+    ok 15 - notification-missing-receipt
+      ---
+      duration_ms: 10505.533
+      type: 'test'
+      ...
+    # Subtest: notification-lying-success
+    ok 16 - notification-lying-success
+      ---
+      duration_ms: 9843.4708
+      type: 'test'
+      ...
+    # Subtest: promotion-immediate
+    ok 17 - promotion-immediate
+      ---
+      duration_ms: 1437.1988
+      type: 'test'
+      ...
+    # Subtest: promotion-delayed
+    ok 18 - promotion-delayed
+      ---
+      duration_ms: 3732.6075
+      type: 'test'
+      ...
+    1..18
+ok 1 - ordinary profile, notification and promotion saves finish before verification reload
+  ---
+  duration_ms: 115804.8426
+  type: 'test'
+  ...
+1..1
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 116671.9036

@@ -1,0 +1,157 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-26T16-29-59-627Z",
+  "attempt": {
+    "id": "null-control-2026-09-26T16-29-59-627Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-26T16:29:59.628Z",
+    "completedAt": "2026-09-26T16:30:24.006Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "2b28ac4d498d096cb540e98ca7855a6a602777cef159d442c186f4b1e5d24783"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a0f52cdeb956117b2cc2b6c0e8e3689b69c9e86f8e9ce2674f803ab22b963a3d"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "2e041a7e7f9909b0db48329f4fa13d5fe02523be0d39f03e646d6229115201ed"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 24378,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 33,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "77a54248df123bf42ae2c24f4bb0063a61f382b090b00f1330d31c527d2c2894",
+      "executableSha256": "2848a35e33a739df6d8ff87709f97b7d84b4ff83d4ca2ca792dcbbaebd2ed6bd",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "a0f52cdeb956117b2cc2b6c0e8e3689b69c9e86f8e9ce2674f803ab22b963a3d",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "c672a41a1dcf7d4f238e5b5e943ea637a45c16015ca11cc6d318acc6197b1ee0"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 4,
+      "points": 7,
+      "expectedFailures": {
+        "criteria": 4,
+        "points": 7
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 4,
+          "points": 7
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-102",
+        "scenario": "scenarios/progression-staff-roles.json",
+        "feature": 621,
+        "featureName": "Staff roles",
+        "criterion": "621c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-102",
+        "scenario": "scenarios/progression-staff-roles.json",
+        "feature": 621,
+        "featureName": "Staff roles",
+        "criterion": "621a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-102",
+        "scenario": "scenarios/progression-staff-roles.json",
+        "feature": 621,
+        "featureName": "Staff roles",
+        "criterion": "621b",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-102",
+        "scenario": "scenarios/progression-staff-roles.json",
+        "feature": 621,
+        "featureName": "Staff roles",
+        "criterion": "621d",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

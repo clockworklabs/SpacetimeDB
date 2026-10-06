@@ -1,0 +1,232 @@
+{
+  "candidate": "49b405390274f5c4e692c3978acb9ed06319ebe3",
+  "baseImage": "sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133",
+  "qualified": false,
+  "purpose": "Model-free qualification and saved-source regrades for declared catalog scope",
+  "files": [
+    {
+      "path": "grader/grade.ts",
+      "sha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c",
+      "sourceSha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c"
+    },
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sha256": "5eeaadb0e64b59d9af130c1f081ed849b66352a13c08c4217df905ac24592afa",
+      "sourceSha256": "5eeaadb0e64b59d9af130c1f081ed849b66352a13c08c4217df905ac24592afa"
+    },
+    {
+      "path": "dist/grader/grade.js",
+      "sha256": "73cd98ee959d7bc0f9674dde9ddae3d20dd27cf8324e9cb35cea0d4924a90397",
+      "sourceSha256": "73cd98ee959d7bc0f9674dde9ddae3d20dd27cf8324e9cb35cea0d4924a90397"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js",
+      "sha256": "6c95269f98117867bce7f077f31b398a6bbf481c6571b87f2ed12a3d44f7bc50",
+      "sourceSha256": "6c95269f98117867bce7f077f31b398a6bbf481c6571b87f2ed12a3d44f7bc50"
+    },
+    {
+      "sha256": "b1d6f0d2648576757c496a82e94bab767645697d71d7526233c61956d70263e6",
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sourceSha256": "f034266c446ea2b8890dc163ddad610681f6531524acf7a54ad68f2a02b43513"
+    }
+  ],
+  "stagedReviewSha256": "d251811fdcbe99a2efe71ae828190ef2ced5fd4c1846f08ebda18593e101a360",
+  "checks": [
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.search-ordering.search-ordering.402b"
+  ],
+  "referenceRuns": 4,
+  "targetMutations": 12,
+  "nullChecks": 3,
+  "promptChanged": false,
+  "modelCalls": 0,
+  "calibrationMode": "Diagnostic overlay only: empty qualification evidence and no reuse claims. Source calibration and historical evidence are unchanged.",
+  "dependencyVolume": "stack-bench-release-deps-3943a8eaab",
+  "imageInputsSha256": "96c1911c2fe35ce153c7576db8e1769a1ddde32cdf3f141482ec5ce8aa95f24e",
+  "scopeSha256": "61e5ade8ebf2bbd9964bcfbaae6a6f5cdf241652dc7cf295457b49da540204a8",
+  "launcherSha256": "84205f2b350a75edba66d7abb0ed259a6497cef92acf10bc28c409004312cff3",
+  "reviewedScopeSha256": "4beaabc6264b17a5c6a8baf1a010dd5d648b06f7a4a4a8a393149e1e01482ef5",
+  "image": "sha256:a9ca1e632b91927f0e6fc093c63c097ac59eca8412789ca6c082569382367e8c",
+  "inputsSha256": "14785118a01c941c06045d1dc69debc68301b497a5a201bae0b132e442510c9e",
+  "launchScope": {
+    "track": "ecommerce",
+    "level": 3,
+    "recipe": "ecommerce.progression-catalog",
+    "featureCatalog": "progression/ecommerce.json",
+    "checks": [
+      "ecommerce.feature.catalog.catalog-ranking.2b",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.spec.search-ordering.search-ordering.402b"
+    ],
+    "slots": {
+      "spacetime": 400,
+      "postgres": 408,
+      "mongodb": 416,
+      "convex": 424
+    },
+    "mutations": {
+      "spacetime": [
+        "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+        "purchase-does-not-update-ranking-count",
+        "active-search-uses-purchase-ranking"
+      ],
+      "postgres": [
+        "purchase-does-not-broadcast-ranking",
+        "active-search-uses-purchase-ranking",
+        "progression-catalog-ranking-is-reversed"
+      ],
+      "mongodb": [
+        "purchase-counts-never-affect-ranking",
+        "catalog-initial-ranking-is-reversed",
+        "active-search-uses-purchase-ranking"
+      ],
+      "convex": [
+        "catalog-initial-ranking-is-reversed",
+        "active-search-uses-purchase-ranking",
+        "purchase-counts-never-affect-ranking"
+      ]
+    },
+    "controls": {
+      "spacetime": [
+        {
+          "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+          "targets": [
+            "ecommerce.feature.catalog.catalog-ranking.2b"
+          ]
+        },
+        {
+          "id": "purchase-does-not-update-ranking-count",
+          "targets": [
+            "ecommerce.spec.live-state.ranking.2c"
+          ]
+        },
+        {
+          "id": "active-search-uses-purchase-ranking",
+          "targets": [
+            "ecommerce.spec.search-ordering.search-ordering.402b"
+          ]
+        }
+      ],
+      "postgres": [
+        {
+          "id": "purchase-does-not-broadcast-ranking",
+          "targets": [
+            "ecommerce.spec.live-state.ranking.2c"
+          ]
+        },
+        {
+          "id": "active-search-uses-purchase-ranking",
+          "targets": [
+            "ecommerce.spec.search-ordering.search-ordering.402b"
+          ]
+        },
+        {
+          "id": "progression-catalog-ranking-is-reversed",
+          "targets": [
+            "ecommerce.feature.catalog.catalog-ranking.2b"
+          ]
+        }
+      ],
+      "mongodb": [
+        {
+          "id": "purchase-counts-never-affect-ranking",
+          "targets": [
+            "ecommerce.spec.live-state.ranking.2c"
+          ]
+        },
+        {
+          "id": "catalog-initial-ranking-is-reversed",
+          "targets": [
+            "ecommerce.feature.catalog.catalog-ranking.2b"
+          ]
+        },
+        {
+          "id": "active-search-uses-purchase-ranking",
+          "targets": [
+            "ecommerce.spec.search-ordering.search-ordering.402b"
+          ]
+        }
+      ],
+      "convex": [
+        {
+          "id": "catalog-initial-ranking-is-reversed",
+          "targets": [
+            "ecommerce.feature.catalog.catalog-ranking.2b"
+          ]
+        },
+        {
+          "id": "active-search-uses-purchase-ranking",
+          "targets": [
+            "ecommerce.spec.search-ordering.search-ordering.402b"
+          ]
+        },
+        {
+          "id": "purchase-counts-never-affect-ranking",
+          "targets": [
+            "ecommerce.spec.live-state.ranking.2c"
+          ]
+        }
+      ]
+    },
+    "mutationManifestSha256": {
+      "spacetime": "e5fd8b8752cc89f12c019b72df9959b3632c2abedcf08a5dc5de943a0b3c67f0",
+      "postgres": "2c757bf0ededa88d5b8d4d078ed74dc16bea090e9ce688f10d7e1ba71bd87155",
+      "mongodb": "255140a2cc0c4ffcdd026cc25418c1bda80f15e4eb7829bbca43d06206ebc07d",
+      "convex": "f08b9fd2ae3e6f9ebe60908110861e188bede3e639c7264a45f7e41c6d1a313e"
+    },
+    "ports": [
+      3710,
+      3711,
+      3712,
+      6709,
+      6710,
+      6711,
+      6817,
+      6818,
+      6819,
+      6873,
+      6874,
+      6875,
+      6981,
+      6982,
+      6983,
+      7139,
+      7140,
+      7141,
+      7347,
+      7348,
+      7349,
+      7425,
+      7426,
+      7427,
+      13634,
+      13635,
+      13636
+    ],
+    "locks": [
+      "listener:http://127.0.0.1:3710",
+      "listener:http://127.0.0.1:3711",
+      "listener:http://127.0.0.1:3712",
+      "slot:ecommerce:spacetime:run400",
+      "slot:ecommerce:spacetime:run401",
+      "slot:ecommerce:spacetime:run402",
+      "slot:ecommerce:postgres:run408",
+      "slot:ecommerce:postgres:run409",
+      "slot:ecommerce:postgres:run410",
+      "slot:ecommerce:mongodb:run416",
+      "slot:ecommerce:mongodb:run417",
+      "slot:ecommerce:mongodb:run418",
+      "listener:http://127.0.0.1:13634",
+      "listener:http://127.0.0.1:13635",
+      "listener:http://127.0.0.1:13636",
+      "slot:ecommerce:convex:run424",
+      "slot:ecommerce:convex:run425",
+      "slot:ecommerce:convex:run426"
+    ],
+    "repetitions": 1,
+    "mutationWorkers": 3,
+    "modelCalls": 0,
+    "qualified": false
+  }
+}

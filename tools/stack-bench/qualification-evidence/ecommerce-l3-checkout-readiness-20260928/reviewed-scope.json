@@ -1,0 +1,161 @@
+{
+  "qualificationClaim": false,
+  "replacementChecks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "sourceBindings": [
+    {
+      "afterLfSha256": "bc7890b26ab4bd21da63cc8ac1e2fccdef3eacbaecd99b1caaea09b042641d08",
+      "currentRawSha256": "bc7890b26ab4bd21da63cc8ac1e2fccdef3eacbaecd99b1caaea09b042641d08",
+      "path": "container/broker-protocols.ts",
+      "reviewedSnapshotSha256": "bc7890b26ab4bd21da63cc8ac1e2fccdef3eacbaecd99b1caaea09b042641d08"
+    },
+    {
+      "afterLfSha256": "982caf9b8e032a0e83e4bc65aa9413db6c1d3960e2013c0230e247630dfb7287",
+      "currentRawSha256": "982caf9b8e032a0e83e4bc65aa9413db6c1d3960e2013c0230e247630dfb7287",
+      "path": "container/credential-broker.ts",
+      "reviewedSnapshotSha256": "982caf9b8e032a0e83e4bc65aa9413db6c1d3960e2013c0230e247630dfb7287"
+    },
+    {
+      "afterLfSha256": "33ea24d440c55b3f8105e10dd441c9b3fa0bb9bda219950d35c6728abf14e08f",
+      "currentRawSha256": "931fa438e048f76b8205112b46c6cd9c292d9e6c94faf98dc279d15ef5594599",
+      "path": "dashboard/check-guide-steps.ts",
+      "reviewedSnapshotSha256": "931fa438e048f76b8205112b46c6cd9c292d9e6c94faf98dc279d15ef5594599"
+    },
+    {
+      "afterLfSha256": "d1b7cb1ef62ed719aefbf329462ac27bce6d7e41c66a369f3369094f9d4d1ea5",
+      "currentRawSha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c",
+      "path": "grader/grade.ts",
+      "reviewedSnapshotSha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c"
+    },
+    {
+      "afterLfSha256": "24b42635a974ded957fafc128c41644c09e0edc0e935dbeb9109a8859f60acb5",
+      "currentRawSha256": "22f5d0bbe5d96a5df766ea9e4f478b383c082c89dbec272ed054d1dbad5ed230",
+      "path": "src/actions/action-catalog.ts",
+      "reviewedSnapshotSha256": "22f5d0bbe5d96a5df766ea9e4f478b383c082c89dbec272ed054d1dbad5ed230"
+    },
+    {
+      "afterLfSha256": "caa6f983f7321acede15c18d6536153a8b0098072a84e6bb6d4de98d50399a42",
+      "currentRawSha256": "caa6f983f7321acede15c18d6536153a8b0098072a84e6bb6d4de98d50399a42",
+      "path": "src/actions/actor-action-runtime.ts",
+      "reviewedSnapshotSha256": "caa6f983f7321acede15c18d6536153a8b0098072a84e6bb6d4de98d50399a42"
+    },
+    {
+      "afterLfSha256": "82bc3bd1a9dabab4715f48851fac296cfcad063dbac48af6f1a7c86a0a030be6",
+      "currentRawSha256": "a71a7b2d936a213b6ace91de9af610dcdc78aed7e31a436b4cc8bc6c1f4ddc2e",
+      "path": "src/actions/browser-action-executors.ts",
+      "reviewedSnapshotSha256": "a71a7b2d936a213b6ace91de9af610dcdc78aed7e31a436b4cc8bc6c1f4ddc2e"
+    },
+    {
+      "afterLfSha256": "40d0d16e2eb04c8adc1e501ffaccd7b09ee3d92d7bafbc7b150efde76f3d600a",
+      "currentRawSha256": "40d0d16e2eb04c8adc1e501ffaccd7b09ee3d92d7bafbc7b150efde76f3d600a",
+      "path": "src/actions/crash-action-executors.ts",
+      "reviewedSnapshotSha256": "40d0d16e2eb04c8adc1e501ffaccd7b09ee3d92d7bafbc7b150efde76f3d600a"
+    },
+    {
+      "afterLfSha256": "445d8dae59998455c8adf8f5f9dd37a44b42d1cfb6171c2c178480b3e297568c",
+      "currentRawSha256": "a4248f6311f9cf5fa0f139ce2ad3d045f58aacdad4191a96915cd766dabb654d",
+      "path": "src/actions/named-action-executors.ts",
+      "reviewedSnapshotSha256": "a4248f6311f9cf5fa0f139ce2ad3d045f58aacdad4191a96915cd766dabb654d"
+    },
+    {
+      "afterLfSha256": "3d4bd17eeb12bf982cb5e4416cf2327fb584147cb4edc547050579c65cd6f1f0",
+      "currentRawSha256": "58c301af193aa4f3b3f6ffd8bb1774a81423a0db947438fc3982be1705d91c40",
+      "path": "src/composition/definition-compiler.ts",
+      "reviewedSnapshotSha256": "58c301af193aa4f3b3f6ffd8bb1774a81423a0db947438fc3982be1705d91c40"
+    },
+    {
+      "afterLfSha256": "40e80f8745991d887bef1d408d9b025a98566301d9053357e9e2b36567527531",
+      "currentRawSha256": "40e80f8745991d887bef1d408d9b025a98566301d9053357e9e2b36567527531",
+      "path": "src/runtime/backend-control.ts",
+      "reviewedSnapshotSha256": "40e80f8745991d887bef1d408d9b025a98566301d9053357e9e2b36567527531"
+    },
+    {
+      "afterLfSha256": "7c59ce771982adeac65960db1d59400d5ec916c766a27cb7e73088946c6cf2b2",
+      "currentRawSha256": "7c59ce771982adeac65960db1d59400d5ec916c766a27cb7e73088946c6cf2b2",
+      "path": "src/stacks/process-crash.ts",
+      "reviewedSnapshotSha256": "96b7850a707997d7eefbb276002eb7b4c1e4f67e35638240e31157d8c339aaf2"
+    },
+    {
+      "afterLfSha256": "c609f6f6aa5fa4dbfde294dfe66233a37acbf592c70cd5a04c263638f7799a07",
+      "currentRawSha256": "4933df77596f6249c6342da01959d44b1fcd599d646e4df174361595082de775",
+      "path": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "reviewedSnapshotSha256": "4933df77596f6249c6342da01959d44b1fcd599d646e4df174361595082de775"
+    },
+    {
+      "afterLfSha256": "3c3994fe33c2c371ca293fbcff3cf7f0ffaeac19fa632840316b309aea733d2d",
+      "currentRawSha256": "fb7ec9cf42565d1f607f7433cb2cec9f9e682b421121f59b202823a78199ac1c",
+      "path": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "reviewedSnapshotSha256": "fb7ec9cf42565d1f607f7433cb2cec9f9e682b421121f59b202823a78199ac1c"
+    },
+    {
+      "afterLfSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+      "currentRawSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+      "path": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "reviewedSnapshotSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e"
+    },
+    {
+      "afterLfSha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6",
+      "currentRawSha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6",
+      "path": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "reviewedSnapshotSha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6"
+    },
+    {
+      "afterLfSha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47",
+      "currentRawSha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47",
+      "path": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "reviewedSnapshotSha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47"
+    },
+    {
+      "afterLfSha256": "0e1f05b529f712f8b0296819f8b71455d292e0c2302735823d089cfa78976aba",
+      "currentRawSha256": "95ced495d967609e53a4c69193552a1d6170e5e6f6ba57f621b0a6bc495c1ce3",
+      "path": "tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "reviewedSnapshotSha256": "95ced495d967609e53a4c69193552a1d6170e5e6f6ba57f621b0a6bc495c1ce3"
+    },
+    {
+      "afterLfSha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5",
+      "currentRawSha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5",
+      "path": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "reviewedSnapshotSha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5"
+    },
+    {
+      "afterLfSha256": "ff5d5db9f1a5820ead5b991cc31e5dd9346776702e94a678c9bd03cd68ab7aa3",
+      "currentRawSha256": "ff5d5db9f1a5820ead5b991cc31e5dd9346776702e94a678c9bd03cd68ab7aa3",
+      "path": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "reviewedSnapshotSha256": "ff5d5db9f1a5820ead5b991cc31e5dd9346776702e94a678c9bd03cd68ab7aa3"
+    }
+  ],
+  "reuseDecision": "97 retained checks have reviewed supporting evidence; final executable mappings and validation remain required. No historical grades changed.",
+  "priorScopeReviewSha256": "45891bc7311bc26246fd5cf25f7d28b2f33de5217b8591ca212cbf0a04dac520",
+  "candidateCommit": "d9cf20f6d7512b7b8e8e7c2cb17d433624da9712",
+  "changedSinceScopeReview": [
+    "tools/stack-bench/src/stacks/process-crash.ts"
+  ],
+  "crashReview": {
+    "diffSha256": "10208110280dadbbe97cd4b9c4e128909ca3f780975de0fe927e0cabeaa65527",
+    "limits": "Process admission controls do not replace registered checkout conservation controls.",
+    "greenEvidence": "../l3-new-inconclusive/crash-dead-leader-green-1.json",
+    "findings": "No blockers after task-aware correction",
+    "checks": [
+      "910a",
+      "910b"
+    ]
+  },
+  "readyInputReuseSha256": "bb5c32c69f7813726d6fce0ba480db87bbb0a3cb02157a77501c1c585de8ce62",
+  "baseCommit": "3943a8eaab4b94d5246e0b6d7c63739feda83294",
+  "scopeSha256": "2de58edf99c392b8a10506fb9f10c8c2834a0312de9a79b335fd38a0f2802b71"
+}

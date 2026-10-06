@@ -1,0 +1,665 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T14-49-41-463Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T14-49-41-463Z",
+    "parentId": "ecommerce-mongodb-run498-20260928144910-4427cfcb"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T14:49:41.463Z",
+    "completedAt": "2026-09-28T14:55:20.074Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "9531e90fdb874cc5f7588b4977e5d717892b3750e87ae722c97e3b1704682de1"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "aada3dfbfd205afed9ac7019f0b5ea21985f94263efbffc126485fb305e1e316"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 338611,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-0IaDRJ/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-0IaDRJ/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/02-strengthened.json",
+      "../tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "../tracks/ecommerce/scenarios/01-restock-race.json",
+      "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "../tracks/ecommerce/scenarios/02-server-actions.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "operator-authorization-allows-customer-transfer",
+        "staff-can-see-admin-navigation",
+        "pagination-repeats-first-page",
+        "purchase-read-write-loses-concurrent-stock",
+        "checkout-crash-sibling-stock",
+        "mixed-history-wrong-price",
+        "mixed-history-repeat-cancel",
+        "checkout-rejects-every-request",
+        "cancel-trusts-submitted-owner"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "6235707f1fbca89e44d6d3ad16cf7c93cf22ada9a1a670f0af4d519a0e59d1d9"
+      },
+      "total": 18,
+      "max": 18,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "590574bcc6891f435cd5b34a6c495238ef079df97731457e44f5ba04cfe6ff45",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+          "identitySha256": "9c74090b5d43e4de66b1145a74269a7e6244f57bf1b25fe32f25cd2e978a8430",
+          "total": 2,
+          "max": 2
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+          "identitySha256": "365fcb979c91dbeec4b1929242d71bdae55a640f38cddcc5e85b9197be2b5936",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "identitySha256": "01282bf281b0e7b22dc5158b5f4a9152667a9e2708185e6603e7475d8a11fc23",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "identitySha256": "715a10c55d6a212ec202851c7e953b9751c51149a53dd99c359d4464c4f168f1",
+          "total": 2,
+          "max": 2
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+          "identitySha256": "86d3ae58ca5584d86e39dff64cc9bc68999c98b09bd383b540d6cdeda219e447",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+          "identitySha256": "26bb6352dc8527c6af92d59f7915b9e01b9bb79a008dec4ff40599545daafaa9",
+          "total": 2,
+          "max": 2
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-server-actions.json",
+          "identitySha256": "ecf4e09e74ce4d70820e033e09bbc127d99b1c3ffa38d4760f4290ef531259b7",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 9,
+      "completed": 9,
+      "total": 9,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "operator-authorization-allows-customer-transfer",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the transfer action was accepted for customer, who must be refused",
+            "failedAction": "expectActionOutcome",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "staff-can-see-admin-navigation",
+        "scenario": "../tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 7,
+            "criterion": "7a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the admin-item-row control was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "pagination-repeats-first-page",
+        "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+        "targets": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.faceted-search.faceted-search.402a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 402,
+            "criterion": "402a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.progression.faceted-search.faceted-search.402a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "purchase-read-write-loses-concurrent-stock",
+        "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 202,
+            "criterion": "202a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Bluetooth Speaker control reads 103, expected exactly 106",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-crash-sibling-stock",
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 910,
+            "criterion": "910a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the remaining cart lines after checkout control reads 2, expected exactly 0",
+            "failedAction": "expectCrashCheckout",
+            "key": "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "mixed-history-wrong-price",
+        "scenario": "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 202,
+            "criterion": "202f",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase order total control reads 0, expected exactly 4200",
+            "failedAction": "dbExpectOperation",
+            "key": "ecommerce.inventory-operations.stock-conservation.202f",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "mixed-history-repeat-cancel",
+        "scenario": "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+        "targets": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.inventory-operations.stock-conservation.202f"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 202,
+            "criterion": "202f",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the history cancel: stock control reads 0, expected exactly 1",
+            "failedAction": "dbExpectOperation",
+            "key": "ecommerce.inventory-operations.stock-conservation.202f",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "checkout-rejects-every-request",
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 203,
+            "criterion": "203b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the remaining cart lines after checkout control reads 1, expected exactly 0",
+            "failedAction": "dbExpectCheckout",
+            "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "cancel-trusts-submitted-owner",
+        "scenario": "../tracks/ecommerce/scenarios/02-server-actions.json",
+        "targets": [
+          "ecommerce.operations-access.order-owner.204a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.operations-access.order-owner.204a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 204,
+            "criterion": "204a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the order-status control shows \"cancelled\", expected \"pending\"",
+            "failedAction": "expect",
+            "key": "ecommerce.operations-access.order-owner.204a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "9531e90fdb874cc5f7588b4977e5d717892b3750e87ae722c97e3b1704682de1",
+      "recipeSha256": "aada3dfbfd205afed9ac7019f0b5ea21985f94263efbffc126485fb305e1e316",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "711df37ccab86a8815f065d58b478a3bf75e932805502a3292a0adc9ec981fcc",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "operator-authorization-allows-customer-transfer",
+          "staff-can-see-admin-navigation",
+          "pagination-repeats-first-page",
+          "purchase-read-write-loses-concurrent-stock",
+          "checkout-crash-sibling-stock",
+          "mixed-history-wrong-price",
+          "mixed-history-repeat-cancel",
+          "checkout-rejects-every-request",
+          "cancel-trusts-submitted-owner"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "90fea18da987214a56ad56424c5f912eff28edc4ed291c43fc8bd838fe62b87e",
+          "mutationSha256": "154d3fed62965d5c5dfaf0cad9943ade0a722f3157b2c84ff2743568facbc951",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "590574bcc6891f435cd5b34a6c495238ef079df97731457e44f5ba04cfe6ff45",
+          "mutationIds": [
+            "operator-authorization-allows-customer-transfer"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+          "scenarioSha256": "fb7ec9cf42565d1f607f7433cb2cec9f9e682b421121f59b202823a78199ac1c",
+          "mutationSha256": "732878f21d4905370db68990630c9473216ad7f04a8ff457084b6785c90ed89b",
+          "selectionSha256": "af829c06fdbbc8f59260f8cb119234eb84a5d1151dc3ba24b6be3bbd9f2855f5",
+          "identitySha256": "9c74090b5d43e4de66b1145a74269a7e6244f57bf1b25fe32f25cd2e978a8430",
+          "mutationIds": [
+            "staff-can-see-admin-navigation"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+          "scenarioSha256": "a92eff52c1045400f116dd6e9b2ebb05d4021a8e93daf27400ee80ce6053b7c5",
+          "mutationSha256": "6a4360b0d2150238c34674da54843f285d2a6e0296766574b09ddb8a59d09b70",
+          "selectionSha256": "19e283cd503dba6c6746a112bf504f066be0a7461a32854bac18be3aedc45f54",
+          "identitySha256": "365fcb979c91dbeec4b1929242d71bdae55a640f38cddcc5e85b9197be2b5936",
+          "mutationIds": [
+            "pagination-repeats-first-page"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "scenarioSha256": "bf9d2f1740365f651cec193396067c1977f80c51e586fc19786de7e31f60fe2f",
+          "mutationSha256": "5d20fc0b9c6335e703602dffdfee0fda0995725017ab9994c063115fff67b05b",
+          "selectionSha256": "927ccffa556c5c1183b5d6aa48d3e485f05efca8d3a3d821acae647245dfea3e",
+          "identitySha256": "01282bf281b0e7b22dc5158b5f4a9152667a9e2708185e6603e7475d8a11fc23",
+          "mutationIds": [
+            "purchase-read-write-loses-concurrent-stock"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "scenarioSha256": "637dae784eabcccc0d7b2d84bf5c90cb0fc12dfe6be6b3e14451a3bd37b3ca47",
+          "mutationSha256": "2062bf7d37188431630fb2e8eda27635c5ea7ff97414edae8dd20e6267ad938a",
+          "selectionSha256": "2a39cea079f06a3090f95fbbdddb808f63dbc34af61d1478c3d5c3bc111bf981",
+          "identitySha256": "715a10c55d6a212ec202851c7e953b9751c51149a53dd99c359d4464c4f168f1",
+          "mutationIds": [
+            "checkout-crash-sibling-stock"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+          "scenarioSha256": "82f127d75e5a84e73c167e0c90e56b620d7c0d675f1a85b9179cab7eb071d5b6",
+          "mutationSha256": "d109b9c3fcec22dc2a5b1b2ff40cbd07458d84a588ca380536b2fb8ed5df28d6",
+          "selectionSha256": "cac6abdf311b84c0ed055e9271dd591789c488e582475d3c8d4c7bde8c69542c",
+          "identitySha256": "86d3ae58ca5584d86e39dff64cc9bc68999c98b09bd383b540d6cdeda219e447",
+          "mutationIds": [
+            "mixed-history-wrong-price",
+            "mixed-history-repeat-cancel"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+          "scenarioSha256": "4933df77596f6249c6342da01959d44b1fcd599d646e4df174361595082de775",
+          "mutationSha256": "cf42a54b7f4359b18b7eaab755aae423e236ba7552cb006e167d2c44c1acd7f8",
+          "selectionSha256": "ae7807501d4cb00b39937e7ee621e3063ed066c59e86f4973a37a10fc31fc354",
+          "identitySha256": "26bb6352dc8527c6af92d59f7915b9e01b9bb79a008dec4ff40599545daafaa9",
+          "mutationIds": [
+            "checkout-rejects-every-request"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-server-actions.json",
+          "scenarioSha256": "452698d51d79c646d6e62413033b118abfff1f7342aaf937caac91e658d517e0",
+          "mutationSha256": "809e441683e4d4b1c7032056fbfe1327e3eb40bbc2654749ca4f02a05545daf1",
+          "selectionSha256": "4acfeef13ab24058f41a528d5bc7c37a906c07f7e238cce2414f37e8cbabd7bf",
+          "identitySha256": "ecf4e09e74ce4d70820e033e09bbc127d99b1c3ffa38d4760f4290ef531259b7",
+          "mutationIds": [
+            "cancel-trusts-submitted-owner"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T14:55:20.074Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "operator-authorization-allows-customer-transfer",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-Rehdgw/grade.json",
+          "sha256": "e59185c8a6452720b7602c0f65eabfa5510cb717ca5777661c7466fe3c227db5"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+        "mutationId": "staff-can-see-admin-navigation",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-49H2Za/grade.json",
+          "sha256": "0dd83362362cb6736c022436136cdc1c89e7bdaf80a99923d5a544caf065b9b5"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+        "mutationId": "pagination-repeats-first-page",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-DYbg7B/grade.json",
+          "sha256": "f94b246f438b80e83d85559561372a1fcb427889cbf4b4299800fdeedcd6c836"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+        "mutationId": "purchase-read-write-loses-concurrent-stock",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-DAsbsN/grade.json",
+          "sha256": "ad69d0e7259012aad0c7186a3ce59142d9b8e5f6b563023844701633a7da53b9"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "mutationId": "checkout-crash-sibling-stock",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-DdTdAI/grade.json",
+          "sha256": "cd3bf4c7be6ff53fb8d33a3a0cad68ec083ddd2e97e07f6bf7c4df3056a33e19"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+        "mutationId": "mixed-history-wrong-price",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-efcxpG/grade.json",
+          "sha256": "2252c9c43e915cdc586018b0c68009801428f31f60b15c1cc2fd5fd5c4ee939a"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/mixed-operation-history.json",
+        "mutationId": "mixed-history-repeat-cancel",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-lFSEva/grade.json",
+          "sha256": "94da2ebe6d36fad75513034ea649ed3b15c96c3e86a9b818079ed2bd2de30ba7"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+        "mutationId": "checkout-rejects-every-request",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-N1horT/grade.json",
+          "sha256": "49f8aa0c675b0c24a55953e725f9c11cf010805b4ee99f68130a5c6097957276"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-server-actions.json",
+        "mutationId": "cancel-trusts-submitted-owner",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-sM840q/grade.json",
+          "sha256": "01dc5ae30a4a728c9a77a817cb0ad61c5f41b68fd7db29a70e64e3f8c2a3c978"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

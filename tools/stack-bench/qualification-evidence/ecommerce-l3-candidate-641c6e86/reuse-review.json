@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "targetCommit": "641c6e86fa",
+  "priorReview": "qualification-evidence/ecommerce-l3-stack-isolation-20260925/reuse-review.json",
+  "changedBehavior": {
+    "portAdmission": "Docker host-port admission now checks the Windows host before assigning a backend port. Grading and application behavior are unchanged.",
+    "spacetimeAuth": "Native authentication replay accepts localhost as an alias for the leased SpacetimeDB host, while retaining the leased port and path checks.",
+    "contractLint": "The linter no longer starts a browser when every selected contract hook is scenario-stage. Selected lintable hooks still use the browser.",
+    "transport": "A failed response-body read still marks evidence incomplete before bounded diagnostic logging. Logging errors no longer abort grading.",
+    "modelDiscovery": "Account-mode model listing receives an access token on stdin, not a refresh token. It is outside reference, mutation, and null grading.",
+    "supabase": "The Supabase mutation catalog is registered outside this four-stack calibration. It does not qualify Supabase."
+  },
+  "validation": [
+    "Host-port occupied, available, and Docker-error admission cases: local-notes/sol6-four-stack-20260925/rerun-incident.md.",
+    "Saved Sol SpacetimeDB L2 sources: 101a and 103b each measured in repetitions 1 and 3 after the localhost fix, with native WebSocket receipts: local-notes/sol6-four-stack-20260925/rerun-incident.md.",
+    "Native 101a correct/defective pair: results/diagnostics/native-auth-101a-20260926-v3.json (SHA-256 e068c2d38622e7f6027485cb4d4de5d5fb12fcc75590829f3167faf611aa9904). The correct app passed; the vulnerable app failed after one unauthorized purchase. Both had native WebSocket receipts and clean leases.",
+    "Native 103b correct/defective pair and positive 103a: results/diagnostics/native-auth-103b-20260926.json; local-notes/sol6-four-stack-20260925/native-auth-control.md.",
+    "Direct and localhost 622c write-capture controls both stored one replayed product: results/diagnostics/socket-alias-write-20260926.json; local-notes/sol6-four-stack-20260925/socket-alias-write-control.md.",
+    "Selected L3 null control for 101a and 103b: results/diagnostics/null-auth-candidate-641c6e86.json (SHA-256 6fd0208ed8930118931ce27a62f68658f21bd00cec1b501a44e326826be423ec). Both criteria failed as expected; zero vacuous passes and zero oracle gaps.",
+    "Saved MongoDB L2 positive grade and selected Chat lintable-hook failure: results/diagnostics/sol6-20260925-mongo-l2-lint-skip-replay-2; local-notes/sol6-four-stack-20260925/mongo-linter-skip.md.",
+    "Existing transport-frame failure-path tests passed 10/10; local-notes/sol6-four-stack-20260925/transport-frames-641c6e86.tap (SHA-256 ada407db70ac08002fd3b2100fffac83b0b72d6480041f9fa79c9762ebb73c2b).",
+    "Synthetic access-token-only model listing and expired-token refusal: local-notes/sol6-four-stack-20260925/model-discovery-boundary.md. A live-account check was blocked by automatic approval review and remains unverified."
+  ],
+  "reuseBoundary": "The ecommerce recipe, scenarios, scoring definitions, registered four-stack reference sources, and mutation manifests are unchanged. The prior qualified slices remain valid outside the affected authentication, write-capture, and lint branches named above. The targeted controls cover those branches. A coarse executable-scope hash changed for every existing stack and the null control; this review does not treat the hash change alone as a content change or claim that Supabase is qualified. The historical Sol campaign stays 12 planned, 8 measured, 4 invalid."
+}

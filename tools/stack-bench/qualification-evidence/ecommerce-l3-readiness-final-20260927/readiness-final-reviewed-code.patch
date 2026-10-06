@@ -1,0 +1,390 @@
+diff --git a/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/App.tsx b/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/App.tsx
+index 21ce5fa3e7..a23e6105ae 100644
+--- a/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/App.tsx
++++ b/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/App.tsx
+@@ -6,6 +6,7 @@ import { CreditPanel } from "./CreditPanel";
+ import { SubscriptionPanel } from "./SubscriptionPanel";
+ 
+ const TOKEN_KEY = "mongodb_shop_token";
++Object.assign(window, { getSessionToken: () => localStorage.getItem(TOKEN_KEY) });
+ const CATALOG_PAGE_SIZE = 10;
+ 
+ interface ItemT {
+@@ -133,7 +134,9 @@ async function apiFetch(path: string, token: string | null, options: RequestInit
+   const headers: Record<string, string> = { "Content-Type": "application/json" };
+   if (token) headers.Authorization = `Bearer ${token}`;
+   const res = await fetch(path, { ...options, headers: { ...headers, ...(options.headers as any) } });
+-  const data = await res.json().catch(() => ({}));
++  const text = await res.text();
++  let data: any = {};
++  try { data = JSON.parse(text); } catch { /* A complete non-JSON response has no fields. */ }
+   if (!res.ok) throw new Error(data.error || "Request failed");
+   return data;
+ }
+diff --git a/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/request.ts b/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/request.ts
+index 7b6c77566d..ce5cdedfe9 100644
+--- a/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/request.ts
++++ b/tools/stack-bench/reference-apps/ecommerce/mongodb/client/src/request.ts
+@@ -2,7 +2,9 @@ export async function request(path: string, token: string | null, options: Reque
+   const response = await fetch(path, { ...options, headers: {
+     "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}),
+   } });
+-  const data = await response.json().catch(() => ({}));
++  const text = await response.text();
++  let data: any = {};
++  try { data = JSON.parse(text); } catch { /* A complete non-JSON response has no fields. */ }
+   if (!response.ok) throw new Error(data.error || "Request failed");
+   return data;
+ }
+diff --git a/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/App.tsx b/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/App.tsx
+index d02fe39d60..b4d5de6992 100644
+--- a/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/App.tsx
++++ b/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/App.tsx
+@@ -5,6 +5,8 @@ import { BundlePanel } from "./BundlePanel";
+ import { CreditPanel } from "./CreditPanel";
+ import { SubscriptionPanel } from "./SubscriptionPanel";
+ 
++Object.assign(window, { getSessionToken: () => null });
++
+ type Item = { id: number; name: string; price: number; stock: number; purchaseCount: number; category: string; variants?: string[] };
+ type Account = { id: number; username: string; isAdmin: boolean; isStaff: boolean } | null;
+ type CartLine = { isBundle?: boolean; itemId: number; name: string; price: number; quantity: number; lineTotal: number; expired?: boolean; reservationSeconds?: number };
+@@ -39,9 +41,10 @@ async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
+     headers: { "Content-Type": "application/json" },
+     ...opts,
+   });
++  const text = await res.text();
+   let body: any = null;
+   try {
+-    body = await res.json();
++    body = JSON.parse(text);
+   } catch {
+     body = null;
+   }
+diff --git a/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/request.ts b/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/request.ts
+index fa1f0e99d3..27bcf06507 100644
+--- a/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/request.ts
++++ b/tools/stack-bench/reference-apps/ecommerce/postgres/client/src/request.ts
+@@ -5,7 +5,9 @@ export async function request(path: string, method = "GET", body?: unknown) {
+     headers: { "Content-Type": "application/json" },
+     body: body === undefined ? undefined : JSON.stringify(body),
+   });
+-  const result = await response.json().catch(() => ({}));
++  const text = await response.text();
++  let result: any = {};
++  try { result = JSON.parse(text); } catch { /* A complete non-JSON response has no fields. */ }
+   if (!response.ok) throw new Error(result.error || "request failed");
+   return result;
+ }
+diff --git a/tools/stack-bench/src/actions/browser-action-executors.ts b/tools/stack-bench/src/actions/browser-action-executors.ts
+index 0b543c68be..8727e216b0 100644
+--- a/tools/stack-bench/src/actions/browser-action-executors.ts
++++ b/tools/stack-bench/src/actions/browser-action-executors.ts
+@@ -13,6 +13,8 @@ import type { Page as PlaywrightPage } from 'playwright';
+ 
+ interface ScrollTarget {
+   readonly tagName: string;
++  readonly value?: string;
++  readonly innerText: string;
+   readonly options?: ArrayLike<{ value: string; label: string }>;
+   scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
+   readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
+@@ -23,7 +25,7 @@ interface ScrollTarget {
+ interface Locator {
+   click(options?: unknown): Promise<void>;
+   count(): Promise<number>;
+-  evaluate<Result>(callback: (element: ScrollTarget) => Result): Promise<Result>;
++  evaluate<Result>(callback: (element: ScrollTarget) => Result, arg?: undefined, options?: { timeout?: number }): Promise<Result>;
+   evaluateAll<Result>(callback: (elements: ScrollTarget[]) => Result): Promise<Result>;
+   fill(value: string): Promise<void>;
+   filter(options: unknown): Locator;
+@@ -176,12 +178,11 @@ function inputScope(browser: BrowserCapability, value: LocatorScope | undefined)
+   return { testid: value.testid, contains: browser.expand(value.contains) };
+ }
+ 
+-async function readValue(loc: Locator): Promise<string> {
+-  const tag = await loc.evaluate(element => element.tagName);
+-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+-    return (await loc.inputValue()) || '';
+-  }
+-  return ((await loc.innerText()) || '').trim();
++async function readValue(loc: Locator, timeout?: number): Promise<string> {
++  return loc.evaluate(element => {
++    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)) return element.value || '';
++    return (element.innerText || '').trim();
++  }, undefined, { timeout });
+ }
+ 
+ export function parseRenderedNumber(text: string | null | undefined): number | null {
+@@ -201,51 +202,62 @@ async function clearInput({ input, capabilities }: BrowserArguments<{ actor: str
+ }
+ 
+ async function click({ input, capabilities, signal }:
+-    BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string }>) {
++    BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string | string[] }>) {
+   const actor = actorFor(capabilities, input.actor);
+   const browser = interaction(capabilities);
+   const deadline = Date.now() + (input.within ?? browser.defaultWithin);
++  const destinations = typeof input.unlessVisible === 'string'
++    ? [input.unlessVisible] : input.unlessVisible ?? [];
++  let visibleDestination: string | undefined;
+   const destinationVisible = async (): Promise<boolean> => {
+-    if (!input.unlessVisible) return false;
+-    while (true) {
+-      try {
+-        const sentinel = actor.loc(input.unlessVisible);
+-        if (!await sentinel.isVisible()) return false;
+-        // Native scrolling does not wait for animation stability. A translated
+-        // closed drawer remains offscreen; ordinary inline content becomes visible.
+-        return await sentinel.evaluateAll(elements => {
+-          // Resolve once. A destination removed by navigation is absent, not a timeout.
+-          const element = elements[0];
+-          if (!element) return false;
+-          return new Promise<boolean>(resolve => {
+-            element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+-            const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
+-              observer.disconnect();
+-              resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
++    visibleDestination = undefined;
++    for (const testid of destinations) {
++      while (true) {
++        try {
++          const sentinel = actor.loc(testid);
++          if (!await sentinel.isVisible()) break;
++          // Native scrolling does not wait for animation stability. A translated
++          // closed drawer remains offscreen; ordinary inline content becomes visible.
++          const visible = await sentinel.evaluateAll(elements => {
++            // Resolve once. A destination removed by navigation is absent, not a timeout.
++            const element = elements[0];
++            if (!element) return false;
++            return new Promise<boolean>(resolve => {
++              element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
++              const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
++                observer.disconnect();
++                resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
++              });
++              observer.observe(element);
+             });
+-            observer.observe(element);
+           });
+-        });
+-      } catch (error) {
+-        // An unreadable destination does not establish whether a toggle is open.
+-        // Preserve that failure instead of clicking blindly and changing app state.
+-        // A render can replace the destination between visibility and scrolling.
+-        // Retry that read only; never repeat the navigation click.
+-        if (!/Element is not attached to the DOM/i.test(String(error))
+-          || Date.now() >= deadline || signal.aborted) throw error;
+-        await browser.sleep(Math.min(100, deadline - Date.now()), signal);
++          if (visible) {
++            visibleDestination = testid;
++            return true;
++          }
++          break;
++        } catch (error) {
++          // An unreadable destination does not establish whether a toggle is open.
++          // Preserve that failure instead of clicking blindly and changing app state.
++          // A render can replace the destination between visibility and scrolling.
++          // Retry that read only; never repeat the navigation click.
++          if (!/Element is not attached to the DOM/i.test(String(error))
++            || Date.now() >= deadline || signal.aborted) throw error;
++          await browser.sleep(Math.min(100, deadline - Date.now()), signal);
++        }
+       }
+     }
++    return false;
+   };
+   if (await destinationVisible()) {
+-    return { clicked: false, testid: input.testid, visible: input.unlessVisible };
++    return { clicked: false, testid: input.testid, visible: visibleDestination };
+   }
+   const scope = inputScope(browser, input.in);
+   const target = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
+   if (input.ifAvailable) {
+     while (!await target.isVisible() || await target.isDisabled()) {
+       if (await destinationVisible()) {
+-        return { clicked: false, testid: input.testid, visible: input.unlessVisible };
++        return { clicked: false, testid: input.testid, visible: visibleDestination };
+       }
+       if (Date.now() >= deadline) return { clicked: false, testid: input.testid };
+       await browser.sleep(Math.min(100, deadline - Date.now()), signal);
+@@ -260,7 +272,7 @@ async function click({ input, capabilities, signal }:
+       && /intercepts pointer events/i.test(String(error))
+       && await Promise.race([destinationVisible(), browser.sleep(250, signal).then(() => false)])
+       && !signal.aborted) {
+-      return { clicked: false, testid: input.testid, visible: input.unlessVisible };
++      return { clicked: false, testid: input.testid, visible: visibleDestination };
+     }
+     throw error;
+   }
+@@ -648,6 +660,7 @@ async function expectNumber({ input, capabilities, signal }:
+   const actor = actorFor(capabilities, input.actor);
+   const browser = observation(capabilities);
+   const within = input.within ?? browser.defaultWithin;
++  const deadline = Date.now() + within;
+   const contains = browser.expand(input.contains);
+   const scope = input.in
+     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
+@@ -670,13 +683,13 @@ async function expectNumber({ input, capabilities, signal }:
+   };
+   const matches = (number: number): boolean => numberMatches(number, expected);
+ 
+-  const deadline = Date.now() + within;
+   let last = null;
+   for (;;) {
+-    last = readControlNumber(await readValue(loc), input.testid);
+-    if (last !== null && matches(last)) return { value: last };
++    if (Date.now() >= deadline) break;
++    last = readControlNumber(await readValue(loc, Math.max(1, deadline - Date.now())), input.testid);
+     if (Date.now() > deadline) break;
+-    await browser.sleep(250, signal);
++    if (last !== null && matches(last)) return { value: last };
++    await browser.sleep(Math.min(250, deadline - Date.now()), signal);
+   }
+   fail('number-mismatch', { control: input.testid, observed: last, expected,
+     ...(scope?.contains && !/password|secret|token/i.test(scope.testid)
+diff --git a/tools/stack-bench/src/composition/calibration-compiler.ts b/tools/stack-bench/src/composition/calibration-compiler.ts
+index 656d135000..af44b7216f 100644
+--- a/tools/stack-bench/src/composition/calibration-compiler.ts
++++ b/tools/stack-bench/src/composition/calibration-compiler.ts
+@@ -102,6 +102,9 @@ export interface CalibrationDefinition {
+     sourceRecipe?: { id: string; contentSha256: string; executionSha256: string };
+     sourceCalibration?: { id: string; contentSha256: string };
+     contractTextEquivalences?: Array<{ fromTaskSha256: string; toTaskSha256: string }>;
++    referenceSourceEquivalences?: Array<{
++      stack: string; referenceId: string; fromSourceSha256: string; toSourceSha256: string; checks: string[];
++    }>;
+     rationale: string;
+     evidence: Array<{ path: string; sha256: string }>;
+     scopes: Array<{
+@@ -241,7 +244,8 @@ const EQUIVALENCE_FIELDS = new Set([
+   'fromExecutionSha256', 'toExecutionSha256', 'rationale', 'evidence',
+ ]);
+ const QUALIFICATION_REUSE_FIELDS = new Set([
+-  'sourceRecipe', 'sourceCalibration', 'contractTextEquivalences', 'rationale', 'evidence', 'scopes',
++  'sourceRecipe', 'sourceCalibration', 'contractTextEquivalences', 'referenceSourceEquivalences',
++  'rationale', 'evidence', 'scopes',
+ ]);
+ const QUALIFICATION_REUSE_RECIPE_FIELDS = new Set([
+   'id', 'contentSha256', 'executionSha256',
+@@ -475,6 +479,26 @@ export function compileCalibrationDefinition(input: unknown,
+         pairs.add(pair);
+       });
+     }
++    if (reuse.referenceSourceEquivalences !== undefined) {
++      const reviews = array(reuse.referenceSourceEquivalences, `${at}.referenceSourceEquivalences`, { nonEmpty: true });
++      const pairs = new Set<string>();
++      reviews.forEach((review: unknown, index: number) => {
++        const reviewAt = `${at}.referenceSourceEquivalences[${index}]`;
++        strictObject(review, reviewAt, new Set(['stack', 'referenceId', 'fromSourceSha256', 'toSourceSha256', 'checks']));
++        exactId(review.stack, `${reviewAt}.stack`);
++        exactId(review.referenceId, `${reviewAt}.referenceId`);
++        exactHash(review.fromSourceSha256, `${reviewAt}.fromSourceSha256`);
++        exactHash(review.toSourceSha256, `${reviewAt}.toSourceSha256`);
++        const pair = `${review.stack}:${review.referenceId}:${review.fromSourceSha256}:${review.toSourceSha256}`;
++        if (review.fromSourceSha256 === review.toSourceSha256 || pairs.has(pair)) {
++          fail(reviewAt, 'must compare unique, different reference source hashes');
++        }
++        pairs.add(pair);
++        const checks = array(review.checks, `${reviewAt}.checks`, { nonEmpty: true });
++        checks.forEach((check, checkIndex) => string(check, `${reviewAt}.checks[${checkIndex}]`));
++        if (new Set(checks).size !== checks.length) fail(`${reviewAt}.checks`, 'duplicates checks');
++      });
++    }
+     const reuseEvidence = array(reuse.evidence, `${at}.evidence`, { nonEmpty: true });
+     reuseEvidence.forEach((entry: unknown, index: number) => {
+       const evidenceAt = `${at}.evidence[${index}]`;
+@@ -885,6 +909,12 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
+   const source = validateQualificationDocuments(snapshot.documents);
+   if (!isObject(snapshot.calibration)) evidenceFailure(at, 'has no source calibration');
+   const sourceCalibration = snapshot.calibration as unknown as CalibrationPlan;
++  const reuse = calibration.qualificationReuse;
++  if (reuse?.contractTextEquivalences?.length || reuse?.referenceSourceEquivalences?.length) {
++    if (!reuse.rationale.trim() || !reuse.evidence.length) evidenceFailure(at,
++      'input equivalence requires a rationale and evidence');
++    verifyEvidence(reuse.evidence, stackBenchRoot, `${at}.inputEquivalences.evidence`);
++  }
+   const sourceIdentity = calibrationQualificationIdentity(sourceCalibration);
+   if (sourceCalibration.recipe.id !== source.release.id
+     || sourceCalibration.recipe.contentSha256 !== source.release.contentSha256
+@@ -904,8 +934,20 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
+   const scopedReferences = (plan: Pick<CalibrationDefinition, 'references'>) => ({ ...plan.references,
+     entries: plan.references.entries.filter(reference => entry.kind !== 'null'
+       && reference.backend === entry.stack) });
++  const sourceReference = sourceCalibration.references.entries.find(reference => reference.backend === entry.stack);
++  const currentReference = calibration.references.entries.find(reference => reference.backend === entry.stack);
++  const reviewedReference = entry.kind !== 'null' && sourceReference && currentReference
++    && sourceReference.id === currentReference.id
++    && reuse?.referenceSourceEquivalences?.some(review => review.stack === entry.stack
++      && review.referenceId === sourceReference.id
++      && review.fromSourceSha256 === sourceReference.sourceSha256
++      && review.toSourceSha256 === currentReference.sourceSha256
++      && slice.checks.every(key => review.checks.includes(key)));
++  const currentReferences = scopedReferences(calibration);
++  if (reviewedReference) currentReferences.entries = currentReferences.entries.map(reference =>
++    ({ ...reference, sourceSha256: sourceReference.sourceSha256 }));
+   if (canonicalDefinitionJson(scopedReferences(sourceCalibration))
+-    !== canonicalDefinitionJson(scopedReferences(calibration))) {
++    !== canonicalDefinitionJson(currentReferences)) {
+     evidenceFailure(at, 'source references differs');
+   }
+   const { evidence: _oldEvidence, buildImage: _oldImage, stacks: oldStacks,
+@@ -924,12 +966,6 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
+   const trackRoot = resolve(stackBenchRoot, 'tracks', release.track);
+   const current = context.qualificationDocuments ?? validateQualificationDocuments(buildRecipeQualificationDocuments(
+     resolve(trackRoot, calibration.recipe.path), { trackRoot }));
+-  const reuse = calibration.qualificationReuse;
+-  if (reuse?.contractTextEquivalences?.length) {
+-    if (!reuse.rationale.trim() || !reuse.evidence.length) evidenceFailure(at,
+-      'contract text equivalence requires a rationale and evidence');
+-    verifyEvidence(reuse.evidence, stackBenchRoot, `${at}.contractTextEquivalences.evidence`);
+-  }
+   const unchanged = unchangedQualificationChecks(source, current, reuse?.contractTextEquivalences);
+   if (slice.checks.some(key => !unchanged.has(key))) evidenceFailure(at,
+     'claims a changed check, setup, or shared dependency');
+@@ -975,8 +1011,14 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
+     if (mutationExecutionSha256(subset(oldManifest, sourceCalibration.qualification.checks!, source.release))
+       !== oldMutation.executionSha256) evidenceFailure(at, 'mutation snapshot differs from source calibration');
+     const currentManifest = readDefinitionJson(resolve(stackBenchRoot, newMutation.path), 'mutations');
++    // The source review covers only the fixture binding. Every selected defect
++    // edit and target must still be identical to the original control.
++    const comparableManifest = reviewedReference && isObject(currentManifest)
++      && read(oldManifest, 'fixtureSha256') === sourceReference.sourceSha256
++      && currentManifest.fixtureSha256 === currentReference!.sourceSha256
++      ? { ...currentManifest, fixtureSha256: sourceReference.sourceSha256 } : currentManifest;
+     if (mutationExecutionSha256(subset(oldManifest, slice.checks, source.release))
+-      !== mutationExecutionSha256(subset(currentManifest, slice.checks, current.release))) {
++      !== mutationExecutionSha256(subset(comparableManifest, slice.checks, current.release))) {
+       evidenceFailure(at, 'slice mutation controls changed');
+     }
+     const selected = subset(oldManifest, sourceKeys as string[], source.release);
+@@ -989,12 +1031,13 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
+   }
+   validateQualificationEvidenceArtifact(artifact, { ...entry, kind: measuredKind }, {
+     ...context, calibration: sourceCalibration, qualificationIdentity: sourceIdentity,
++    references: sourceCalibration.references.entries,
+     ...sourceSelection, enforceQualificationScope: false, allowTargeted: true,
+   });
+   const actual = validateQualificationScopeIdentity(read(artifact, 'payload', 'qualificationScope'));
+   const expected = qualificationScopeIdentity({ kind: measuredKind, release: sourceSelection.release,
+     stack: entry.stack ?? null, reference: entry.kind === 'null' ? null
+-      : context.references.find(reference => reference.backend === entry.stack),
++      : sourceReference,
+     mutation: selectedMutation, stackBenchRoot });
+   const { sha256: _actualSha, executableSha256: actualExecutable, ...actualInputs } = actual;
+   const { sha256: _expectedSha, executableSha256: expectedExecutable, ...expectedInputs } = expected;
+diff --git a/tools/stack-bench/src/composition/definition-compiler.ts b/tools/stack-bench/src/composition/definition-compiler.ts
+index 98670e9d10..4cd9449f6f 100644
+--- a/tools/stack-bench/src/composition/definition-compiler.ts
++++ b/tools/stack-bench/src/composition/definition-compiler.ts
+@@ -190,7 +190,9 @@ export const ACTION_DEFINITIONS = Object.freeze({
+       within: value => positiveNumber(value) && Number(value) <= 80000 }),
+   clearInput: fields(actor),
+   click: fields({ ...actor, testid: nonEmptyString },
+-    { contains: string, ifAvailable: boolean, unlessVisible: nonEmptyString, ...locator, ...settle, ...within }),
++    { contains: string, ifAvailable: boolean,
++      unlessVisible: value => nonEmptyString(value) || (stringArray(value) && value.length > 0),
++      ...locator, ...settle, ...within }),
+   clickConcurrently: fields({ ...actors, testid: nonEmptyString, settleMs: nonNegativeNumber },
+     { ...locator, targets: anyArray, readyWithin: positiveNumber, ...within }),
+   closeClient: fields(actor),
