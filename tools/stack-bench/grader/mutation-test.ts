@@ -742,7 +742,8 @@ async function main(): Promise<void> {
         }
         for (const file of files) {
           writeFileSync(file.target,
-            file.edits.reduce((src, edit) => src.replace(edit.find, edit.replace),
+            // A function inserts the replacement as written; a string would expand $' and $&.
+            file.edits.reduce((src, edit) => src.replace(edit.find, () => edit.replace),
               file.original));
         }
         if (clientChanged) rebuildClientAfterSourceChange(args, deadline);
