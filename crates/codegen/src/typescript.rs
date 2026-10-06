@@ -34,7 +34,33 @@ fn ts_string_literal(s: &str) -> String {
     serde_json::to_string(s).expect("serializing a string literal cannot fail")
 }
 
-pub struct TypeScript;
+/// The extension generated files add to their imports of each other.
+///
+/// `None` suits bundlers and `moduleResolution: "bundler"`. TypeScript's `node16` and `nodenext`
+/// resolution require an extension: `Js` works there without extra compiler options, and `Ts` suits
+/// runtimes that execute TypeScript directly, with `allowImportingTsExtensions`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImportExtension {
+    #[default]
+    None,
+    Js,
+    Ts,
+}
+
+impl ImportExtension {
+    fn suffix(self) -> &'static str {
+        match self {
+            ImportExtension::None => "",
+            ImportExtension::Js => ".js",
+            ImportExtension::Ts => ".ts",
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct TypeScript {
+    pub import_extension: ImportExtension,
+}
 
 impl Lang for TypeScript {
     fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
@@ -82,6 +108,7 @@ impl Lang for TypeScript {
             out,
             product_def.element_types(),
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
+            self.import_extension.suffix(),
         );
 
         writeln!(out);
@@ -119,6 +146,7 @@ impl Lang for TypeScript {
             reducer.params_for_generate.element_types(),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
+            self.import_extension.suffix(),
         );
 
         define_body_for_reducer(module, out, &reducer.params_for_generate.elements);
@@ -150,6 +178,7 @@ impl Lang for TypeScript {
                 .chain([&procedure.return_type_for_generate]),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
+            self.import_extension.suffix(),
         );
 
         writeln!(out, "export const params = {{");
@@ -169,6 +198,7 @@ impl Lang for TypeScript {
     }
 
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
+        let ext = self.import_extension.suffix();
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -183,7 +213,7 @@ impl Lang for TypeScript {
             }
             let reducer_module_name = reducer_module_name(&reducer.accessor_name);
             let args_type = reducer_args_type_name(&reducer.accessor_name);
-            writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
+            writeln!(out, "import {args_type} from \"./{reducer_module_name}{ext}\";");
         }
 
         writeln!(out);
@@ -191,7 +221,7 @@ impl Lang for TypeScript {
         for procedure in iter_procedures(module, options.visibility) {
             let procedure_module_name = procedure_module_name(&procedure.accessor_name);
             let args_type = procedure_args_type_name(&procedure.accessor_name);
-            writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
+            writeln!(out, "import * as {args_type} from \"./{procedure_module_name}{ext}\";");
         }
 
         writeln!(out);
@@ -201,7 +231,10 @@ impl Lang for TypeScript {
             let table_name_pascalcase = accessor_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
             // `__t.object(...)`s.
-            writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
+            writeln!(
+                out,
+                "import {table_name_pascalcase}Row from \"./{table_module_name}{ext}\";"
+            );
         }
 
         // Import row types for submodule namespace tables (public only)
@@ -232,13 +265,13 @@ impl Lang for TypeScript {
                 let ns_path = submodule_ns_path(owning.accessor_path());
                 let file_stem = table_module_name(&table.accessor_name);
                 let row_type = submodule_row_type_name(owning.accessor_path(), table.accessor_name.deref());
-                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
+                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}{ext}\";");
             }
             for (_, owning, view) in &ns_views {
                 let ns_path = submodule_ns_path(owning.accessor_path());
                 let file_stem = table_module_name(&view.accessor_name);
                 let row_type = submodule_row_type_name(owning.accessor_path(), view.accessor_name.deref());
-                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
+                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}{ext}\";");
             }
         }
         if !ns_reducers.is_empty() {
@@ -251,7 +284,7 @@ impl Lang for TypeScript {
                 let ns_path = submodule_ns_path(owning.accessor_path());
                 let module_name = reducer_module_name(&reducer.accessor_name);
                 let args_type = submodule_reducer_args_type_name(owning.accessor_path(), &reducer.accessor_name);
-                writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}\";");
+                writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}{ext}\";");
             }
         }
         if !ns_procedures.is_empty() {
@@ -261,7 +294,7 @@ impl Lang for TypeScript {
                 let ns_path = submodule_ns_path(owning.accessor_path());
                 let module_name = procedure_module_name(&procedure.accessor_name);
                 let args_type = submodule_procedure_args_type_name(owning.accessor_path(), &procedure.accessor_name);
-                writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}\";");
+                writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}{ext}\";");
             }
         }
 
@@ -808,8 +841,8 @@ impl Lang for TypeScript {
             code: output.into_inner(),
         };
 
-        let reducers_file = generate_reducers_file(module, options);
-        let procedures_file = generate_procedures_file(module, options);
+        let reducers_file = generate_reducers_file(module, options, ext);
+        let procedures_file = generate_procedures_file(module, options, ext);
         let types_file = generate_types_file(module);
 
         let mut files = vec![index_file, reducers_file, procedures_file, types_file];
@@ -829,7 +862,7 @@ impl Lang for TypeScript {
     }
 }
 
-fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
+fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions, ext: &str) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -842,7 +875,7 @@ fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> Outpu
     for reducer in iter_reducers(module, options.visibility) {
         let reducer_module_name = reducer_module_name(&reducer.accessor_name);
         let args_type = reducer_args_type_name(&reducer.accessor_name);
-        writeln!(out, "import {args_type} from \"../{reducer_module_name}\";");
+        writeln!(out, "import {args_type} from \"../{reducer_module_name}{ext}\";");
     }
 
     writeln!(out);
@@ -862,7 +895,7 @@ fn generate_reducers_file(module: &ModuleDef, options: &CodegenOptions) -> Outpu
     }
 }
 
-fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> OutputFile {
+fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions, ext: &str) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -875,7 +908,7 @@ fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> Out
     for procedure in iter_procedures(module, options.visibility) {
         let procedure_module_name = procedure_module_name(&procedure.accessor_name);
         let args_type = procedure_args_type_name(&procedure.accessor_name);
-        writeln!(out, "import * as {args_type} from \"../{procedure_module_name}\";");
+        writeln!(out, "import * as {args_type} from \"../{procedure_module_name}{ext}\";");
     }
 
     writeln!(out);
@@ -1650,6 +1683,7 @@ fn gen_and_print_imports<'a>(
     out: &mut Indenter,
     roots: impl Iterator<Item = &'a AlgebraicTypeUse>,
     dont_import: &[AlgebraicTypeRef],
+    ext: &str,
 ) {
     let mut imports = BTreeSet::new();
 
@@ -1670,7 +1704,7 @@ fn gen_and_print_imports<'a>(
             writeln!(out, "{type_name},");
         }
         out.dedent(1);
-        writeln!(out, "}} from \"./types\";");
+        writeln!(out, "}} from \"./types{ext}\";");
         out.newline()
     }
 }
