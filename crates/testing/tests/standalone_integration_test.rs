@@ -22,6 +22,10 @@ fn init() {
 }
 
 async fn read_logs(module: &ModuleHandle) -> Vec<String> {
+    read_logs_allowing_warnings(module, &[]).await
+}
+
+async fn read_logs_allowing_warnings(module: &ModuleHandle, expected_warnings: &[&str]) -> Vec<String> {
     module
         .read_log(None)
         .await
@@ -29,7 +33,9 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
         .split('\n')
         .map(|line| {
             let record: LoggerRecord = serde_json::from_str(line).unwrap();
-            if matches!(record.level, LogLevel::Panic | LogLevel::Error | LogLevel::Warn) {
+            if matches!(record.level, LogLevel::Panic | LogLevel::Error)
+                || (matches!(record.level, LogLevel::Warn) && !expected_warnings.contains(&record.message.as_str()))
+            {
                 panic!("Found an error-like log line: {line}");
             }
             record.message
@@ -158,7 +164,9 @@ fn namespace_csharp_cross_namespace_calls() {
                 )
                 .await
                 .unwrap();
-            assert_eq!(read_logs(&module).await, ["Auth users: 1"]);
+            let warning = "HTTP routes declared in submodule 'MyAuth' are ignored. Define HTTP routes in the root module instead.";
+            assert!(module.read_log(None).await.contains(warning));
+            assert_eq!(read_logs_allowing_warnings(&module, &[warning]).await, ["Auth users: 1"]);
             assert_eq!(
                 module.call_procedure_with_args("count_auth_users", "[]").await.unwrap(),
                 AlgebraicValue::U64(1)
@@ -168,8 +176,16 @@ fn namespace_csharp_cross_namespace_calls() {
                 b"1"
             );
 
-            // The library's own route remains registered alongside the root's route.
-            assert_eq!(module.call_http_route_get("/auth-count").await.unwrap().as_ref(), b"1");
+            // Mounted routes must not leak into the root HTTP router.
+            assert!(module
+                .client
+                .module()
+                .info
+                .module_def
+                .match_http_route(&spacetimedb_lib::http::Method::Get, "/auth-count")
+                .is_none());
+            // Dependencies in public still contribute routes and use root dispatch.
+            assert_eq!(module.call_http_route_get("/extra-hello").await.unwrap().as_ref(), b"public");
             assert_eq!(
                 module
                     .call_procedure_with_args("class.count_users", "[]")
