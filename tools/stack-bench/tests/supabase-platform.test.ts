@@ -162,6 +162,8 @@ test('the platform starts in order, reaches readiness through the gateway, then 
     const secretFile = calls.find(call => kind(call) === 'write:/run/stack-bench/supabase.env')!;
     assert(secretFile.input === formatSupabaseSecrets(secrets), 'secrets reach the anchor on stdin');
     assert.match(secretFile.args.join(' '), /umask 077/);
+    // pg_cron holds no password, so its job connections use the trusted socket.
+    assert.match(calls.find(call => kind(call) === 'start-db')!.args.at(-1)!, / -c cron\.host=\/var\/run\/postgresql'/);
     const hba = calls.find(call => kind(call) === 'write:/etc/postgresql/pg_hba.conf')!.input!;
     assert.match(hba, /host {2}all {2}all {2}127\.0\.0\.1\/32 {2}scram-sha-256/);
     assert.doesNotMatch(hba, /127\.0\.0\.1\/32\s+trust/);
@@ -189,13 +191,16 @@ test('reset empties data through the baseline function and storage files, only o
       image: `sha256:${'e'.repeat(64)}`, owned: true, networkMode: `container:${ANCHOR}` };
     lease.resources.serviceContainers = { storage };
     const calls: { args: string[]; input?: string }[] = [];
-    resetSupabase({ lease, exec: fakeExec(calls, args => args[0] === 'inspect' ? storage.id : '') });
-    assert.deepEqual(calls.map(call => call.input ?? call.args.slice(0, 2).join(' ')),
-      ['inspect --format', 'inspect --format', 'select stackbench_reset.reset();\n', `exec ${storage.id}`]);
+    const inspect = (running: string) => (args: readonly string[]) =>
+      args[0] !== 'inspect' ? '' : args[2] === '{{.Id}}' ? storage.id : running;
+    resetSupabase({ lease, exec: fakeExec(calls, inspect('true\n')) });
+    assert.deepEqual(calls.map(call => call.input ?? call.args.slice(0, 2).join(' ')), ['inspect --format',
+      'inspect --format', 'inspect --format', 'select stackbench_reset.reset();\n', `exec ${storage.id}`]);
     assert.match(calls.at(-1)!.args.at(-1)!, /find \/var\/lib\/storage -mindepth 1 -maxdepth 1 -exec rm -rf/);
     const replaced: { args: string[]; input?: string }[] = [];
     assert.throws(() => resetSupabase({ lease, exec: fakeExec(replaced, () => 'other') }), /changed after lease creation/);
     assert(!replaced.some(call => call.input?.includes('reset()')), 'no data is reset for a replaced storage service');
+    assert.throws(() => resetSupabase({ lease, exec: fakeExec([], inspect('false\n')) }), /is not running/);
     assert.throws(() => resetSupabase({ lease: { ...lease, state: 'released' } }), /active lease/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

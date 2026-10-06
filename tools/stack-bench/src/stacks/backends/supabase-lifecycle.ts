@@ -101,6 +101,13 @@ function succeeds(run: () => unknown): boolean {
   try { run(); return true; } catch { return false; }
 }
 
+function dockerExecutor(docker: Docker): TextCommandExecutor {
+  return (file, args, options) => {
+    if (file !== 'docker') throw new Error(`unexpected command ${file}`);
+    return docker([...args], options.input);
+  };
+}
+
 function writeInto(docker: Docker, containerId: string, path: string, content: string, umask = '022'): void {
   if (!/^\/[A-Za-z0-9_./-]+$/.test(path) || path.split('/').includes('..')) throw new Error(`unsafe container path ${path}`);
   docker(['exec', '-i', containerId, 'sh', '-ec', `umask ${umask}; mkdir -p "$(dirname "$1")"; cat > "$1"`,
@@ -109,6 +116,8 @@ function writeInto(docker: Docker, containerId: string, path: string, content: s
 
 // The image's own entrypoint initializes an empty data directory on first start
 // and drops to the postgres user. The recorded group is what a crash kills.
+// pg_cron runs each job over a new connection; without a password it can only
+// use the socket, since loopback TCP is not trusted here.
 export function startSupabaseDatabase(lease: BackendLease, { docker = attemptDocker, timeoutMs = 120_000,
   sleep = sleepSync }: { docker?: Docker; timeoutMs?: number; sleep?: (ms: number) => void } = {}): void {
   const anchor = lease.resources.container;
@@ -119,6 +128,7 @@ export function startSupabaseDatabase(lease: BackendLease, { docker = attemptDoc
     + `exec setsid bash -ec 'stat=$(cat /proc/$$/stat); rest=\${stat##*) }; set -- $rest; `
     + `printf "%s %s\\n" "$$" "\${20}" > ${SUPABASE_DB_PROCESS_RECORD}; `
     + 'exec docker-entrypoint.sh postgres -c config_file=/etc/postgresql/postgresql.conf -c log_min_messages=fatal'
+    + ` -c cron.host=${SUPABASE_DB_SOCKET}`
     + `' > ${CODING_CONTAINER_CONTROL_DIR}/stack-bench-backend.log 2>&1`]);
   // TCP answers only after first-start initialization; its temporary server uses the socket.
   waitUntil(() => succeeds(() => docker(['exec', anchor.id, 'pg_isready', '-h', '127.0.0.1', '-p', '5432',
@@ -183,10 +193,7 @@ export function startSupabasePlatform({ leasePath, leaseToken, ports, app, docke
   probes = CONTROLLER_PROBES, sleep = sleepSync, secrets = generateSupabaseSecrets() }: SupabaseLifecycleInput & {
   app: string; docker?: Docker; probes?: SupabaseProbes; sleep?: (ms: number) => void; secrets?: SupabasePlatformSecrets;
 }): BackendLease {
-  const exec: TextCommandExecutor = (file, args, options) => {
-    if (file !== 'docker') throw new Error(`unexpected command ${file}`);
-    return docker([...args], options.input);
-  };
+  const exec = dockerExecutor(docker);
   let lease = readBackendLease(leasePath, { token: leaseToken, backend: 'supabase' });
   supabaseAnchor(lease, exec);
   installDatabase(lease, secrets, docker);
@@ -245,10 +252,12 @@ function requireAnchorIdentity(lease: BackendLease, docker: Docker): void {
 }
 
 // A crash must leave a valid record and no live process at that PID. Never
-// adopt a new process or erase data to make recovery succeed.
+// adopt a new process or erase data to make recovery succeed. Recovery ends
+// with every service answering, as activation does.
 export function recoverSupabase({ leasePath, leaseToken, ports, signal, docker = attemptDocker }: SupabaseLifecycleInput & {
   signal?: AbortSignal; docker?: Docker;
 }): void {
+  const exec = dockerExecutor(docker);
   signal?.throwIfAborted();
   const lease = readBackendLease(leasePath, { token: leaseToken, backend: 'supabase', active: true });
   claimedPorts(lease, ports);
@@ -260,6 +269,12 @@ export function recoverSupabase({ leasePath, leaseToken, ports, signal, docker =
     + '[ "$pid" -gt 1 ] && [ "$started" -gt 0 ] && [ ! -e /proc/$pid ]']);
   updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'restarting'; return next; });
   startSupabaseDatabase(lease, { docker, timeoutMs: 30_000 });
+  // Realtime exits when it loses the database, and nothing else restarts a
+  // service. Starting a running container changes nothing.
+  for (const [role, service] of Object.entries(lease.resources.serviceContainers ?? {})) {
+    startAttemptContainer(service.id, `${role} service`, docker);
+  }
+  waitForSupabaseGateway(lease, readSupabasePlatformSecrets(lease, exec), exec, { timeoutMs: 30_000 });
   updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'active'; return next; });
   signal?.throwIfAborted();
 }
@@ -276,6 +291,13 @@ export function resetSupabase({ lease, exec = execFileSync }: { lease: BackendLe
   const actual = exec('docker', ['inspect', '--format', '{{.Id}}', storage.name],
     { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 }).trim();
   if (actual !== storage.id) throw new Error(`${storage.name} changed after lease creation; refusing reset`);
+  // A stopped service would fail the next case for the platform's reason, not the application's.
+  for (const service of Object.values(lease.resources.serviceContainers!)) {
+    if (exec('docker', ['inspect', '--format', '{{.State.Running}}', service.id],
+      { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 }).trim() !== 'true') {
+      throw new Error(`${service.name} is not running; refusing reset`);
+    }
+  }
   supabaseSql(lease, 'select stackbench_reset.reset();\n', { exec, timeoutMs: 120_000 });
   exec('docker', ['exec', storage.id, 'sh', '-ec', `test "$(readlink -f ${SUPABASE_STORAGE_ROOT})" = ${SUPABASE_STORAGE_ROOT}; `
     + `find ${SUPABASE_STORAGE_ROOT} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +`],

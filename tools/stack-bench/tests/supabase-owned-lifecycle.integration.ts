@@ -120,7 +120,7 @@ test('Supabase owned platform: activation, gateway readiness, secrets, reset, cr
     assert.equal(supabaseSql(active, "select count(*) from pg_extension where extname = 'pg_cron';\n").trim(), '0');
     evidence.reset = 'schemas, extensions with their schemas, accounts and stored files removed; Realtime publications kept';
 
-    // A database process crash leaves the namespace and services; recovery restarts only the database.
+    // A database process crash leaves the namespace; recovery restarts the database and any service it took down.
     await assert.rejects(async () => recoverSupabase({ leasePath: path, leaseToken: lease.ownershipToken, ports }),
       /Command failed/, 'recovery refuses a live database');
     const crash = await prepareProcessCrash(active, 'database');
@@ -129,9 +129,15 @@ test('Supabase owned platform: activation, gateway readiness, secrets, reset, cr
       assert.equal(attemptDocker(['inspect', '--format', '{{.State.Running}}', anchor.id]), 'true');
       recoverSupabase({ leasePath: path, leaseToken: lease.ownershipToken, ports });
     } finally { await crash.close(); }
-    const deadline = Date.now() + 30_000;
-    while ((await fetch(`${environment.SUPABASE_URL}/rest/v1/`, { headers: service })).status !== 200) {
-      assert(Date.now() < deadline, 'REST serves again after database recovery');
+    assert.equal((await fetch(`${environment.SUPABASE_URL}/rest/v1/`, { headers: service })).status, 200);
+    for (const container of Object.values(services)) {
+      assert.equal(attemptDocker(['inspect', '--format', '{{.State.Running}}', container.id]), 'true', container.name);
+    }
+    // A scheduled job connects without a password.
+    supabaseSql(active, "create extension pg_cron;\nselect cron.schedule('owned', '1 seconds', 'select 1');\n");
+    const deadline = Date.now() + 15_000;
+    while (supabaseSql(active, "select count(*) from cron.job_run_details where status = 'succeeded';\n").trim() === '0') {
+      assert(Date.now() < deadline, 'a pg_cron job runs');
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     requireAttemptNetwork(readBackendLease(path));
