@@ -16,18 +16,19 @@ fn cli_build_bun_windows_module() -> anyhow::Result<()> {
 
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.toml");
+    let project_dir = temp_dir.path().join("bun-build");
     cli_cmd()
         .arg("--config-path")
         .arg(&config_path)
         .args(["init", "--non-interactive", "--lang", "typescript", "--project-path"])
-        .arg(temp_dir.path())
+        .arg(&project_dir)
         .arg("bun-build")
         .current_dir(temp_dir.path())
         .assert()
         .success();
 
     build_typescript_sdk()?;
-    let module_dir = temp_dir.path().join("spacetimedb");
+    let module_dir = project_dir.join("spacetimedb");
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     std::fs::write(
         module_dir.join("package.json"),
@@ -43,8 +44,6 @@ fn cli_build_bun_windows_module() -> anyhow::Result<()> {
         .current_dir(&module_dir)
         .assert()
         .success();
-    let bin_dir = module_dir.join("node_modules/.bin");
-
     cli_cmd()
         .arg("--config-path")
         .arg(&config_path)
