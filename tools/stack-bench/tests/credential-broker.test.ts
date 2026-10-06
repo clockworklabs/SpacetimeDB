@@ -1478,9 +1478,9 @@ test('a SuperGrok broker signs chat proxy calls itself and forwards account read
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user', headers: reads, body: '' })).status, 200);
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/conversations', headers: reads, body: '' })).status, 404);
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user', body: '' })).status, 401);
-    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', input: [] }))).status, 400,
-      'a model call must declare the output cap the reservation prices');
-    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 1000, input: [] }))).status, 200);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 128_001, input: [] }))).status, 400);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', input: [] }))).status, 200);
+    assert.equal(JSON.parse(seen[1]!.body).max_output_tokens, undefined, 'an account call goes as sent');
     assert.deepEqual(seen.map(request => [request.method, request.url]), [['GET', '/v1/user'], ['POST', '/v1/responses']]);
     for (const request of seen) {
       assert.equal(request.headers.authorization, `Bearer ${credential}`);
@@ -1494,7 +1494,8 @@ test('a SuperGrok broker signs chat proxy calls itself and forwards account read
   await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user',
       headers: { authorization: `Bearer ${sessionToken}` }, body: '' })).status, 404, 'an API key has no session service');
-    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 1000, input: [] }))).status, 200);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', input: [] }))).status, 200);
+    assert.equal(JSON.parse(seen[0]!.body).max_output_tokens, 128_000, 'an API call gets the plan cap');
     assert.equal(seen[0]!.headers.authorization, `Bearer ${credential}`);
     assert.equal(seen[0]!.headers['x-xai-token-auth'], undefined);
     assert.equal(seen[0]!.headers['x-api-key'], undefined);

@@ -442,8 +442,9 @@ const GROK_READ_PATHS = new Set(['/v1/login-config', '/v1/user', '/v1/settings',
   '/v1/subagents/bundle', '/v1/feedback/config']);
 
 // A SuperGrok sign-in reaches the CLI chat proxy, which also needs the CLI's token marker;
-// an API key reaches the public API. Both speak the Responses API, and every request
-// declares the output cap the reservation prices.
+// an API key reaches the public API. Both speak the Responses API. The CLI's model
+// calls name no output cap: an API request gets the plan's, and an account request
+// goes as sent with the plan's cap reserved, as Codex account requests do.
 function grokProtocol(config: BrokerConfig): BrokerProtocol {
   const account = config.mode === 'subscription-token';
   return {
@@ -464,16 +465,16 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
       const payload = JSON.parse(body.toString('utf8'));
       if (!isRecord(payload) || payload.model !== config.model) fail('request model does not match');
       const requested = payload.max_output_tokens;
-      if (!Number.isSafeInteger(requested) || (requested as number) < 1 || (requested as number) > config.maxOutputTokens) {
-        fail('invalid max_output_tokens');
-      }
+      if (requested !== undefined && (!Number.isSafeInteger(requested) || (requested as number) < 1
+        || (requested as number) > config.maxOutputTokens)) fail('invalid max_output_tokens');
+      if (!account) payload.max_output_tokens = requested ?? config.maxOutputTokens;
       return payload;
     },
     requestPricing: payload => {
       const feature = responsesRequestFeature(payload);
       return { unpriced: feature, requiresUsage: null, bounded: feature === null };
     },
-    outputLimit: payload => payload.max_output_tokens as number,
+    outputLimit: payload => (payload.max_output_tokens as number | undefined) ?? config.maxOutputTokens,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
     responseRejection: responsesRejection,
   };
