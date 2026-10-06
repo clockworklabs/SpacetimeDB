@@ -173,13 +173,24 @@ async fn inspect_observed(
                 biased;
                 _ = send.closed() => Err(anyhow::anyhow!("Module inspection cancelled")),
                 result = tokio::time::timeout(deadline, async {
-                    let (schema_read, diagnostics) = tokio::join!(
-                        stdout.read_to_end(&mut output),
-                        read_bounded(&mut stderr, MAX_DIAGNOSTIC_BYTES),
-                    );
-                    schema_read.context("Cannot read local module schema")?;
-                    let diagnostics = diagnostics.context("Cannot read local module inspector diagnostics")?;
-                    ensure!(output.len() as u64 <= MAX_SCHEMA_BYTES, "Local module schema exceeds output limit");
+                    let (_, diagnostics) = tokio::try_join!(
+                        async {
+                            stdout
+                                .read_to_end(&mut output)
+                                .await
+                                .context("Cannot read local module schema")?;
+                            ensure!(
+                                output.len() as u64 <= MAX_SCHEMA_BYTES,
+                                "Local module schema exceeds output limit"
+                            );
+                            Ok::<(), anyhow::Error>(())
+                        },
+                        async {
+                            read_bounded(&mut stderr, MAX_DIAGNOSTIC_BYTES)
+                                .await
+                                .context("Cannot read local module inspector diagnostics")
+                        },
+                    )?;
                     let status = child.wait().await.context("Cannot reap local module inspector")?;
                     observation.reaped(status);
                     ensure!(
