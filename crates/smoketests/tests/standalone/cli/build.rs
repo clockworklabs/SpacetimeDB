@@ -1,5 +1,6 @@
 #![cfg(windows)]
 
+use assert_cmd::prelude::*;
 use spacetimedb_guard::ensure_binaries_built;
 use std::process::Command;
 
@@ -15,20 +16,15 @@ fn cli_build_bun_windows_module() -> anyhow::Result<()> {
 
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.toml");
-    let output = cli_cmd()
+    cli_cmd()
         .arg("--config-path")
         .arg(&config_path)
         .args(["init", "--non-interactive", "--lang", "typescript", "--project-path"])
         .arg(temp_dir.path())
         .arg("bun-build")
         .current_dir(temp_dir.path())
-        .output()?;
-    assert!(
-        output.status.success(),
-        "init failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+        .assert()
+        .success();
 
     build_typescript_sdk()?;
     let module_dir = temp_dir.path().join("spacetimedb");
@@ -42,13 +38,11 @@ fn cli_build_bun_windows_module() -> anyhow::Result<()> {
             "devDependencies": { "typescript": "5.9.3" }
         }))?,
     )?;
-    let output = Command::new("bun").arg("install").current_dir(&module_dir).output()?;
-    assert!(
-        output.status.success(),
-        "bun install failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    Command::new("bun")
+        .arg("install")
+        .current_dir(&module_dir)
+        .assert()
+        .success();
     let bin_dir = module_dir.join("node_modules/.bin");
     assert!(bin_dir.join("tsc.exe").is_file(), "Bun must install tsc.exe");
     assert!(
@@ -56,18 +50,13 @@ fn cli_build_bun_windows_module() -> anyhow::Result<()> {
         "Bun should install tsc.exe rather than tsc.cmd"
     );
 
-    let output = cli_cmd()
+    cli_cmd()
         .arg("--config-path")
         .arg(&config_path)
         .args(["build", "--module-path"])
         .arg(&module_dir)
         .current_dir(temp_dir.path())
-        .output()?;
-    assert!(
-        output.status.success(),
-        "build failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+        .assert()
+        .success();
     Ok(())
 }
