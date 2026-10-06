@@ -16,4 +16,11 @@ public static partial class Functions
 
     [View(Accessor = "ExtraRows", Public = true)]
     public static ExtraRow? Rows(ViewContext ctx) => ctx.Db.ExtraRow.Id.Find(7);
+
+    [HttpHandler]
+    public static HttpResponse ExtraHello(HandlerContext ctx, HttpRequest request) =>
+        new(200, HttpVersion.Http11, [], HttpBody.FromString("public"));
+
+    [HttpRouter]
+    public static Router Routes() => Router.New().Get("/extra-hello", Handlers.ExtraHello);
 }

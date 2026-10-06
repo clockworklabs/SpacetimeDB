@@ -82,8 +82,10 @@ An explicit `Name` is used as supplied, without case conversion.
   [the integration fixture](../../modules/namespace-test-cs/Lib.cs).
   Library-defined RLS in a named namespace is unsupported; it must not be relied
   on to protect data.
-- HTTP routes retain the existing root-level routing and environment authority;
-  mounting a dependency does not add an HTTP namespace prefix.
+- HTTP routes declared in named submodules are ignored, with a warning in the
+  module log during publication. Define routes in the root instead; root handlers
+  may call dependency helpers. Dependencies registered in `public` still contribute
+  HTTP routes, using root-level routing and environment authority.
 - Cross-language module composition is not currently supported.
 
 ### Declared environment

@@ -2956,7 +2956,11 @@ public class Module : IIncrementalGenerator
                     var descriptors = new[]
                     {
                         $"global::{extensionNamespaceName}.AssemblyDescriptor",
-                    }.Concat(registrationOrder.Select(assembly => assembly.DescriptorTypeName));
+                    }.Concat(
+                        (
+                            category == "HttpHandler" ? publicScopeAssemblies : registrationOrder
+                        ).Select(assembly => assembly.DescriptorTypeName)
+                    );
                     var routes = descriptors.Select(descriptor =>
                         $$"""
                         if ((uint)localId < (uint){{descriptor}}.{{category}}Count)
@@ -3097,7 +3101,7 @@ public class Module : IIncrementalGenerator
                         $"var child{i} = new global::SpacetimeDB.Internal.ModuleBuilder();"
                     );
                     compositionRegistration.Add(
-                        $"{assembly.DescriptorTypeName}.Register(child{i}, global::SpacetimeDB.Internal.Module.RootBuilder);"
+                        $"{assembly.DescriptorTypeName}.Register(child{i});"
                     );
                     compositionRegistration.Add(
                         $"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Accessor, true)}, {(mountByIdentity[assembly.Identity].Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, child{i});"
@@ -3567,9 +3571,8 @@ public class Module : IIncrementalGenerator
                             );
 
                             public static void Register(
-                                global::SpacetimeDB.Internal.ModuleBuilder builder,
-                                global::SpacetimeDB.Internal.ModuleBuilder? httpBuilder = null)
-                                => global::ModuleRegistration.Register(builder, httpBuilder);
+                                global::SpacetimeDB.Internal.ModuleBuilder builder)
+                                => global::ModuleRegistration.Register(builder);
 
                             public readonly struct Tables {
                                 {{IndentGeneratedCode(string.Join("\n", tableAccessors.Select(v => v.Getter)), 12)}}
@@ -3676,11 +3679,8 @@ public class Module : IIncrementalGenerator
                         }
 
                         internal static void Register(
-                            global::SpacetimeDB.Internal.ModuleBuilder builder,
-                            global::SpacetimeDB.Internal.ModuleBuilder? httpBuilder = null)
+                            global::SpacetimeDB.Internal.ModuleBuilder builder)
                         {
-                            // HTTP routes retain the root routing API even for mounted modules.
-                            httpBuilder ??= builder;
                             {{IndentGeneratedCode(preRegistrations, 8)}}
                             var __memoryStream = new MemoryStream();
                             var __writer = new BinaryWriter(__memoryStream);
@@ -3700,7 +3700,7 @@ public class Module : IIncrementalGenerator
                             {{IndentGeneratedCode(string.Join(
                                 "\n",
                                 addHttpHandlers.Select(r =>
-                                    $"httpBuilder.RegisterHttpHandler<{EscapeIdentifier(r.Name)}>();"
+                                    $"builder.RegisterHttpHandler<{EscapeIdentifier(r.Name)}>();"
                                 )
                             ), 8)}}
 
@@ -3727,7 +3727,7 @@ public class Module : IIncrementalGenerator
                             ), 8)}}
                             {{IndentGeneratedCode((
                                 httpRouters.Array.FirstOrDefault(r => r.IsValid) is { } router
-                                    ? $"httpBuilder.RegisterHttpRouter({router.FullName}());"
+                                    ? $"builder.RegisterHttpRouter({router.FullName}());"
                                     : string.Empty
                             ), 8)}}
                             {{IndentGeneratedCode(string.Join(

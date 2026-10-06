@@ -872,10 +872,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             global::SpacetimeDB.Internal.BytesSink sink
         ) => global::ModuleRegistration.CallLocalAnonymousView(id, args, sink);
 
-        public static void Register(
-            global::SpacetimeDB.Internal.ModuleBuilder builder,
-            global::SpacetimeDB.Internal.ModuleBuilder? httpBuilder = null
-        ) => global::ModuleRegistration.Register(builder, httpBuilder);
+        public static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder) =>
+            global::ModuleRegistration.Register(builder);
 
         public readonly struct Tables
         {
@@ -3480,14 +3478,8 @@ static class ModuleRegistration
 #endif
     }
 
-    internal static void Register(
-        global::SpacetimeDB.Internal.ModuleBuilder builder,
-        global::SpacetimeDB.Internal.ModuleBuilder? httpBuilder = null
-    )
+    internal static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder)
     {
-        // HTTP routes retain the root routing API even for mounted modules.
-        httpBuilder ??= builder;
-
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 

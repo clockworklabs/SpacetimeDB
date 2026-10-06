@@ -420,10 +420,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
             global::SpacetimeDB.Internal.BytesSink sink
         ) => global::ModuleRegistration.CallLocalAnonymousView(id, args, sink);
 
-        public static void Register(
-            global::SpacetimeDB.Internal.ModuleBuilder builder,
-            global::SpacetimeDB.Internal.ModuleBuilder? httpBuilder = null
-        ) => global::ModuleRegistration.Register(builder, httpBuilder);
+        public static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder) =>
+            global::ModuleRegistration.Register(builder);
 
         public readonly struct Tables
         {
@@ -854,13 +852,8 @@ static class ModuleRegistration
 #endif
     }
 
-    internal static void Register(
-        global::SpacetimeDB.Internal.ModuleBuilder builder,
-        global::SpacetimeDB.Internal.ModuleBuilder? httpBuilder = null
-    )
+    internal static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder)
     {
-        // HTTP routes retain the root routing API even for mounted modules.
-        httpBuilder ??= builder;
         builder.SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy.SnakeCase);
         builder.RegisterExplicitTableName("DemoTable", "canonical_table");
         builder.RegisterExplicitFunctionName("DemoReducer", "canonical_reducer");

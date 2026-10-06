@@ -21,8 +21,8 @@ The test publishes a real value, replaces it, sets it to empty, and removes it. 
 - A rejected call does not prevent subsequent root reads, or expose the value in errors.
 - Root callers still cannot read undeclared keys.
 - A dependency registered in `public` can declare and read environment keys.
-- HTTP routes remain root entries, including dependency-defined routes; handlers
-  and handler transactions retain root authority.
+- Root HTTP handlers and handler transactions retain root authority, including
+  calls to dependency helpers. Routes declared by named submodules are ignored.
 
 Root views intentionally expose the test value as a positive control. Child views
 intentionally fail, so this fixture is separate from the general namespace client

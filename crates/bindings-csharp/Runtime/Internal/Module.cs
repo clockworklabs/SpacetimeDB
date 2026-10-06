@@ -2,6 +2,7 @@ namespace SpacetimeDB.Internal;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
@@ -409,6 +410,22 @@ public static class Module
         try
         {
             var module = RootBuilder.BuildModuleDefinition();
+            foreach (var submodules in module.Sections.OfType<RawModuleDefV10Section.Submodules>())
+            {
+                foreach (var submodule in submodules.Submodules_)
+                {
+                    if (
+                        submodule
+                            .Module.Sections.OfType<RawModuleDefV10Section.HttpRoutes>()
+                            .Any(routes => routes.HttpRoutes_.Count > 0)
+                    )
+                    {
+                        Log.Warn(
+                            $"HTTP routes declared in submodule '{submodule.Namespace}' are ignored. Define HTTP routes in the root module instead."
+                        );
+                    }
+                }
+            }
             RawModuleDef versioned = new RawModuleDef.V10(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
