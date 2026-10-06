@@ -94,7 +94,7 @@ const CSHARP_SCOPE: SubmoduleScopeCases = SubmoduleScopeCases {
             "my_auth.anonymous_environment_value",
         ),
     ],
-    root_http_routes: &["/root-environment", "/auth-environment"],
+    root_http_routes: &["/root-environment"],
     secret_marker: "root-secret-",
 };
 
@@ -410,6 +410,11 @@ fn namespace_csharp_environment_security() {
                     values.insert("NAMESPACE_TEST".into(), value.into());
                 }
                 let module = publish(&handle, &values).await;
+                assert!(module
+                    .info
+                    .module_def
+                    .match_http_route(&spacetimedb_lib::http::Method::Get, "/auth-environment")
+                    .is_none());
                 let expected = value.unwrap_or("unset");
                 handle
                     .call_reducer_binary("expect_environment", &product![value])
