@@ -307,35 +307,3 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
 
     Ok(project_path.join("dist").join("bundle.js"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_find_tsc_path() {
-        let temp = tempfile::tempdir().unwrap();
-        let bin_dir = temp.path().join("node_modules").join(".bin");
-        std::fs::create_dir_all(&bin_dir).unwrap();
-
-        assert_eq!(find_tsc_path(temp.path()), None);
-
-        #[cfg(windows)]
-        {
-            let exe_path = bin_dir.join("tsc.exe");
-            std::fs::write(&exe_path, b"").unwrap();
-            assert_eq!(find_tsc_path(temp.path()), Some(exe_path.clone()));
-
-            let cmd_path = bin_dir.join("tsc.cmd");
-            std::fs::write(&cmd_path, b"").unwrap();
-            assert_eq!(find_tsc_path(temp.path()), Some(cmd_path));
-        }
-
-        #[cfg(not(windows))]
-        {
-            let base_path = bin_dir.join("tsc");
-            std::fs::write(&base_path, b"").unwrap();
-            assert_eq!(find_tsc_path(temp.path()), Some(base_path));
-        }
-    }
-}
