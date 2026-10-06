@@ -2480,7 +2480,7 @@ impl ModuleHost {
     async fn call_idc_reducer_with_params(
         &self,
         sender_identity: Identity,
-        sender_outbox_table_id: u32,
+        sender_outbox_table_id: u64,
         seq: u64,
         ack_prefix: u64,
         reducer_name: &ReducerName,
@@ -2684,13 +2684,61 @@ impl ModuleHost {
         .await
     }
 
+    pub(in crate::host) async fn call_reducer_with_success_action(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        on_success: ReducerSuccessAction,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let (reducer_def, params) = self.reducer_call_params(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+        )?;
+
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(&reducer_def.name);
+        let result = match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                executor
+                    .run_sync_job(move |state| {
+                        state.with_instance(move |inst| {
+                            drop(timer_guard);
+                            inst.call_reducer_with_success_action(params, on_success).result
+                        })
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                drop(timer_guard);
+                host.main_instance
+                    .with_instance(|inst| async move {
+                        inst.call_reducer_with_success_action(params, on_success).await.result
+                    })
+                    .await
+            }
+        };
+
+        Ok(result)
+    }
+
     pub async fn call_idc_reducer(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         reducer_name: &str,
         args: FunctionArgs,
-        sender_outbox_table_id: u32,
+        sender_outbox_table_id: u64,
         seq: u64,
         ack_prefix: u64,
     ) -> Result<IdcReducerCallOutcome, IdcReducerCallError> {

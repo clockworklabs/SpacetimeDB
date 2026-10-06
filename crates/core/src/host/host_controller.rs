@@ -1,3 +1,4 @@
+use super::idc_actor::{IdcActor, IdcActorConfig, IdcActorStarter};
 use super::module_host::{
     DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule, UpdateEnvironmentResult,
 };
@@ -225,6 +226,7 @@ pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
     module_http: ModuleHttpConfig,
+    idc_http_port: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -232,11 +234,17 @@ pub struct HostRuntimeConfig {
     pub wasm: WasmConfig,
     pub v8: V8Config,
     pub module_http: ModuleHttpConfig,
+    pub idc_http_port: Option<u16>,
 }
 
 impl HostRuntimeConfig {
     pub fn new(wasm: WasmConfig, v8: V8Config, module_http: ModuleHttpConfig) -> Self {
-        Self { wasm, v8, module_http }
+        Self {
+            wasm,
+            v8,
+            module_http,
+            idc_http_port: None,
+        }
     }
 }
 
@@ -245,10 +253,12 @@ impl HostRuntimes {
         let wasmtime = WasmtimeRuntime::new(data_dir, config.wasm);
         let v8 = V8Runtime::new(config.v8);
         let module_http = config.module_http;
+        let idc_http_port = config.idc_http_port;
         Arc::new(Self {
             wasmtime,
             v8,
             module_http,
+            idc_http_port,
         })
     }
 }
@@ -1014,6 +1024,7 @@ async fn make_module_host(
     runtimes: Arc<HostRuntimes>,
     replica_ctx: Arc<ReplicaContext>,
     scheduler: Scheduler,
+    idc_sender: crate::host::idc_actor::IdcActorSender,
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
@@ -1029,6 +1040,7 @@ async fn make_module_host(
     let mcc = ModuleCreationContext {
         replica_ctx,
         scheduler,
+        idc_sender,
         program_hash: program.hash,
         energy_monitor,
     };
@@ -1066,6 +1078,7 @@ struct LaunchedModule {
     module_host: ModuleHost,
     scheduler: Scheduler,
     scheduler_starter: SchedulerStarter,
+    idc_starter: IdcActorStarter,
 }
 
 struct HostInit {
@@ -1110,10 +1123,12 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         .await
         .map(Arc::new)?;
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
+        let (idc_starter, idc_sender) = IdcActor::open();
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
             scheduler.clone(),
+            idc_sender.clone(),
             self.program,
             self.energy_monitor,
             self.on_panic,
@@ -1130,6 +1145,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
                 module_host,
                 scheduler,
                 scheduler_starter,
+                idc_starter,
             },
         ))
     }
@@ -1213,6 +1229,7 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
+    _idc_actor: Option<IdcActor>,
 }
 
 impl Host {
@@ -1442,6 +1459,7 @@ impl Host {
             module_host,
             scheduler,
             scheduler_starter,
+            idc_starter,
         } = launched;
 
         // Disconnect dangling clients.
@@ -1465,6 +1483,16 @@ impl Host {
         module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
+        let idc_actor = host_controller.runtimes.idc_http_port.map(|http_port| {
+            idc_starter.start(
+                replica_ctx.relational_db().clone(),
+                IdcActorConfig {
+                    sender_identity: replica_ctx.database_identity,
+                    http_port,
+                },
+                module_host.downgrade(),
+            )
+        });
         let disk_metrics_recorder_task: spacetimedb_runtime::AbortHandle =
             tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
@@ -1480,6 +1508,7 @@ impl Host {
                 disk_metrics_recorder_task,
                 tx_metrics_recorder_task,
                 view_cleanup_task,
+                _idc_actor: idc_actor,
             },
             bootstrap_completion,
         })
@@ -1557,11 +1586,14 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
+        let (idc_starter, idc_sender) = IdcActor::open();
+        let mut idc_starter = Some(idc_starter);
 
         let (program, module) = make_module_host(
-            runtimes,
+            runtimes.clone(),
             replica_ctx.clone(),
             scheduler.clone(),
+            idc_sender,
             program,
             energy_monitor,
             on_panic,
@@ -1588,6 +1620,19 @@ impl Host {
             UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
+                self._idc_actor = runtimes.idc_http_port.map(|http_port| {
+                    idc_starter
+                        .take()
+                        .expect("IDC actor should start once per module update")
+                        .start(
+                            replica_ctx.relational_db().clone(),
+                            IdcActorConfig {
+                                sender_identity: replica_ctx.database_identity,
+                                http_port,
+                            },
+                            module.downgrade(),
+                        )
+                });
                 let old_module = self.module.send_replace(module);
                 old_module.exit().await;
             }
@@ -1612,6 +1657,19 @@ impl Host {
 
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
+                self._idc_actor = runtimes.idc_http_port.map(|http_port| {
+                    idc_starter
+                        .take()
+                        .expect("IDC actor should start once per module update")
+                        .start(
+                            replica_ctx.relational_db().clone(),
+                            IdcActorConfig {
+                                sender_identity: replica_ctx.database_identity,
+                                http_port,
+                            },
+                            module.downgrade(),
+                        )
+                });
                 // exit the old module, drop the `old_watcher` afterwards,
                 // which will signal websocket clients that the module is gone.
                 let old_module = old_watcher.borrow().clone();

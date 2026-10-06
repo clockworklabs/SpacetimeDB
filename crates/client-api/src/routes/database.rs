@@ -281,7 +281,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                 Some(connection_id),
                 &reducer,
                 FunctionArgs::Bsatn(body),
-                query.outbox_table_id,
+                query.outbox_table_id.into(),
                 query.seq,
                 query.ack_prefix,
             )

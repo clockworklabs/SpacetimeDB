@@ -181,6 +181,11 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         .or_else(|| cert_dir.map(CertificateAuthority::in_cli_config_dir))
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
+    let idc_http_port = listen_addr
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u16>().ok())
+        .filter(|port| *port != 0);
+
     let data_dir = Arc::new(data_dir.clone());
     let ctx = StandaloneEnv::init(
         StandaloneOptions {
@@ -190,6 +195,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             },
             websocket: config.websocket,
             module_http: config.common.module_http,
+            idc_http_port,
             wasm: config.common.wasm,
             v8: config.common.v8,
         },
