@@ -75,7 +75,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       requiredExecutables: ['codex'], usesStackSkills: true, costLimit: 'native',
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
   // A SuperGrok sign-in reaches the CLI chat proxy; an API key reaches api.x.ai.
-  adapter('grok-build', join('commands', 'agent.js'), 'grok-4.6',
+  adapter('grok-build', join('commands', 'agent.js'), 'grok-4.7',
     { provider: 'xai', apiKeyEnvironmentVariable: 'XAI_API_KEY',
       credentialEnvironmentVariables: ['GROK_AUTH'],
       outboundDestinations: ['https://cli-chat-proxy.grok.com', 'https://api.x.ai', 'https://auth.x.ai'],

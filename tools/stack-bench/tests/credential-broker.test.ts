@@ -9,6 +9,7 @@ import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { zstdCompressSync } from 'node:zlib';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
@@ -41,7 +42,7 @@ interface SendOptions {
   method?: string;
   path?: string;
   headers?: OutgoingHttpHeaders;
-  body?: string;
+  body?: string | Buffer;
 }
 
 interface SendResult {
@@ -1478,17 +1479,29 @@ test('a SuperGrok broker signs chat proxy calls itself and forwards account read
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user', headers: reads, body: '' })).status, 200);
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/conversations', headers: reads, body: '' })).status, 404);
     assert.equal((await send(brokerPort, { method: 'GET', path: '/v1/user', body: '' })).status, 401);
-    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 128_001, input: [] }))).status, 400);
-    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', input: [] }))).status, 200);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.7', max_output_tokens: 128_001, input: [] }))).status, 400);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.7', input: [] }))).status, 200);
     assert.equal(JSON.parse(seen[1]!.body).max_output_tokens, undefined, 'an account call goes as sent');
-    assert.deepEqual(seen.map(request => [request.method, request.url]), [['GET', '/v1/user'], ['POST', '/v1/responses']]);
+    // The CLI compresses large bodies; the broker forwards them as plain JSON.
+    const compressed = call(sessionToken, { model: 'grok-4.7', input: [] });
+    assert.equal((await send(brokerPort, { ...compressed, headers: { ...compressed.headers, 'content-encoding': 'zstd' },
+      body: zstdCompressSync(Buffer.from(compressed.body)) })).status, 200);
+    assert.equal(JSON.parse(seen[2]!.body).model, 'grok-4.7');
+    assert.equal(seen[2]!.headers['content-encoding'], undefined);
+    assert.equal((await send(brokerPort, { ...compressed, headers: { ...compressed.headers, 'content-encoding': 'br' } })).status, 400);
+    // A grok-4.7 session still titles itself on grok-4.6; only that capped call is accepted.
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 100, input: [] }))).status, 200);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.6', max_output_tokens: 101, input: [] }))).status, 400);
+    assert.equal((await send(brokerPort, call(sessionToken, { model: 'grok-4.5', input: [] }))).status, 400);
+    assert.deepEqual(seen.map(request => [request.method, request.url]),
+      [['GET', '/v1/user'], ['POST', '/v1/responses'], ['POST', '/v1/responses'], ['POST', '/v1/responses']]);
     for (const request of seen) {
       assert.equal(request.headers.authorization, `Bearer ${credential}`);
       assert.equal(request.headers['x-xai-token-auth'], 'xai-grok-cli');
     }
-    await waitFor(() => stats().completedBillableRequests === 1);
-    assert.equal(stats().billableRequests, 1, 'account reads are not provider spend');
-  }, { provider: 'xai', model: 'grok-4.6', maxOutputTokens: 128_000, upstreamBody: completed,
+    await waitFor(() => stats().completedBillableRequests === 3);
+    assert.equal(stats().billableRequests, 3, 'account reads are not provider spend');
+  }, { provider: 'xai', model: 'grok-4.7', maxOutputTokens: 128_000, upstreamBody: completed,
     upstreamHeaders: { 'content-type': 'text/event-stream' }, maxBudgetUsd: 10,
     pricingRates: { input: 2, output: 6, cacheRead: 0.5, cacheWrite5m: 2, cacheWrite1h: 2 } });
   await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {

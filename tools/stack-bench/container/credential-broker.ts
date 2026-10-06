@@ -8,6 +8,7 @@ import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
+import { zstdDecompressSync } from 'node:zlib';
 import type { AddressInfo } from 'node:net';
 import { classifyProviderFailure } from '../src/agents/provider-failure.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
@@ -24,6 +25,14 @@ import type { BrokerConfig, EstimateReason, PricingRates, UnpricedReason }
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
 const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade'];
+
+// Grok Build zstd-compresses large request bodies. The broker reads them as JSON and
+// forwards the plain body it re-serialises.
+function requestBody(body: Buffer, encoding: string | undefined, limit: number): Buffer {
+  if (!encoding || encoding === 'identity') return body;
+  if (encoding === 'zstd') return zstdDecompressSync(body, { maxOutputLength: limit });
+  throw new Error('unsupported request content-encoding');
+}
 export type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 type JsonRecord = Record<string, unknown>;
 export interface BrokerStats {
@@ -203,7 +212,7 @@ export function createCredentialBroker(configInput: unknown, {
       if (tooLarge) return;
       const body = Buffer.concat(chunks);
       let payload: JsonRecord;
-      try { payload = protocol.parseRequest(body, path); }
+      try { payload = protocol.parseRequest(requestBody(body, request.headers['content-encoding'], maxRequestBytes), path); }
       catch {
         recordFailure(requestOrdinal, { category: 'request', status: 400, code: 'broker-request-invalid' });
         recordLedger();
@@ -265,7 +274,7 @@ export function createCredentialBroker(configInput: unknown, {
         recordLedger();
       };
       const headers = protocol.headers(request);
-      for (const name of HOP_BY_HOP) delete headers[name];
+      for (const name of [...HOP_BY_HOP, 'content-encoding']) delete headers[name];
       const forwardedBody = Buffer.from(JSON.stringify(payload));
       headers['content-length'] = String(forwardedBody.length);
       const upstreamRequest = requestUpstream({

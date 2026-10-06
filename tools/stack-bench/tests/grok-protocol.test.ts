@@ -17,6 +17,9 @@ test('Grok runs headless from stdin with files and a shell only, and resumes by 
   assert(tools.includes('run_terminal_command') && tools.includes('read_file'));
   // --no-subagents leaves the subagent tool callable; only the allowlist removes it.
   assert(!tools.includes('spawn_subagent'));
+  // The allowlist does not govern Grok's other built-in tools; they are removed by name.
+  const removed = args[args.indexOf('--disallowed-tools') + 1]!.split(',');
+  assert(removed.includes('workflow') && removed.includes('image_gen') && removed.includes('ask_user_question'));
   assert.deepEqual(grokArguments({ model: 'grok-4.6', effort: 'high', resumeSession: SESSION }).slice(-2),
     ['--resume', SESSION]);
 });

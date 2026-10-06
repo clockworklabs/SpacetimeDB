@@ -437,6 +437,11 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
   };
 }
 
+// Grok Build titles every session with this model and a 100-token cap, whatever model
+// the session runs on. That one call is accepted and priced at the plan's rates.
+const GROK_TITLE_MODEL = 'grok-4.6';
+const GROK_TITLE_OUTPUT_TOKENS = 100;
+
 // The reads Grok Build makes against its session service before and between model calls.
 const GROK_READ_PATHS = new Set(['/v1/login-config', '/v1/user', '/v1/settings', '/v1/models', '/v1/bundle/archive',
   '/v1/subagents/bundle', '/v1/feedback/config']);
@@ -463,8 +468,11 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
     },
     parseRequest: body => {
       const payload = JSON.parse(body.toString('utf8'));
-      if (!isRecord(payload) || payload.model !== config.model) fail('request model does not match');
+      if (!isRecord(payload)) fail('request model does not match');
       const requested = payload.max_output_tokens;
+      const title = payload.model === GROK_TITLE_MODEL && Number.isSafeInteger(requested)
+        && (requested as number) <= GROK_TITLE_OUTPUT_TOKENS;
+      if (payload.model !== config.model && !title) fail('request model does not match');
       if (requested !== undefined && (!Number.isSafeInteger(requested) || (requested as number) < 1
         || (requested as number) > config.maxOutputTokens)) fail('invalid max_output_tokens');
       if (!account) payload.max_output_tokens = requested ?? config.maxOutputTokens;

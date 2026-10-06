@@ -6,9 +6,13 @@ export function grokTranscriptDirectory(appDir: string): string {
   return join(homedir(), '.grok', 'stack-bench', resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
 }
 
-// Files and a shell, as the other agents have. Leaving subagents and background
-// tasks out of this list removes them; `--no-subagents` alone does not.
-const GROK_TOOLS = ['run_terminal_command', 'read_file', 'search_replace', 'list_dir', 'grep', 'write', 'todo_write'];
+// Files and a shell, as the other agents have. The allowlist governs only the file and
+// shell tools; the rest must be removed by name. Removed: subagent workflows (as
+// `--no-subagents`), media generation, MCP tools, and prompts for an absent user.
+const GROK_TOOLS = ['run_terminal_command', 'monitor', 'read_file', 'search_replace', 'list_dir', 'grep', 'write',
+  'todo_write'];
+const GROK_REMOVED_TOOLS = ['workflow', 'image_gen', 'image_edit', 'image_to_video', 'reference_to_video', 'search_tool',
+  'use_tool', 'send_feedback', 'ask_user_question', 'enter_plan_mode', 'exit_plan_mode'];
 
 // Claude's audit names for Grok's file and shell tools, and the input field holding the path.
 export const GROK_AUDIT_TOOLS: Readonly<Record<string, { name: string; path?: string }>> = {
@@ -25,6 +29,7 @@ export function grokArguments({ model, effort, resumeSession }: {
 }): string[] {
   return ['--prompt-file', '/dev/stdin', '--output-format', 'streaming-messages-json', '-m', model, '--effort', effort,
     '--always-approve', '--disable-web-search', '--no-subagents', '--tools', GROK_TOOLS.join(','),
+    '--disallowed-tools', GROK_REMOVED_TOOLS.join(','),
     ...(resumeSession ? ['--resume', resumeSession] : [])];
 }
 

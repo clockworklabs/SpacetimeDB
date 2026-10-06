@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateClaudeContinuationTranscript, validateCodexContinuationTranscript } from '../src/agents/native-session-validation.js';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { validateClaudeContinuationTranscript, validateCodexContinuationTranscript, validateGrokNativeSession }
+  from '../src/agents/native-session-validation.js';
 import { classifyProviderFailure } from '../src/agents/provider-failure.js';
 
 test('native continuation requires a complete conversation with settled tools', () => {
@@ -80,4 +84,17 @@ test('Codex continuation validates native task, model, and settled tool exchange
   assert.doesNotThrow(() => validateCodexContinuationTranscript(encode([...rows, compacted]), sessionId, 'gpt-test'));
   assert.doesNotThrow(() => validateCodexContinuationTranscript(encode([...rows, { type: 'compacted', payload: { message: 'App work summary' } }]), sessionId, 'gpt-test'));
   assert.throws(() => validateCodexContinuationTranscript(encode([...rows, { ...compacted, payload: { replacement_history: [rows[4]!.payload] } }]), sessionId, 'gpt-test'), /unresolved/);
+});
+
+test('Grok continuation needs the one native session, on the selected model', () => {
+  const root = mkdtempSync(join(tmpdir(), 'grok-native-'));
+  try {
+    const sessionId = '01a112ee-d364-74d3-9b51-ebf31972aaac';
+    const session = join(root, '%2Fapp', sessionId);
+    mkdirSync(session, { recursive: true });
+    writeFileSync(join(session, 'summary.json'), JSON.stringify({ info: { id: sessionId, cwd: '/app' }, current_model_id: 'grok-4.6' }));
+    assert.doesNotThrow(() => validateGrokNativeSession(root, sessionId, 'grok-4.6'));
+    assert.throws(() => validateGrokNativeSession(root, sessionId, 'grok-4.7'), /selected session and model/);
+    assert.throws(() => validateGrokNativeSession(root, '01a112ee-d364-74d3-9b51-000000000000', 'grok-4.6'), /missing/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

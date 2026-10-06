@@ -173,7 +173,7 @@ export function validateCodexNativeSession(directory: string, sessionId: string,
   validateCodexContinuationTranscript(readFileSync(paths[0]!, 'utf8'), sessionId, model);
 }
 
-// Grok keeps a session at `<encoded cwd>/<session id>/`; its usage record names the session and model.
+// Grok keeps a session at `<encoded cwd>/<session id>/`; its summary names the session and current model.
 export function validateGrokNativeSession(directory: string, sessionId: string, model: string): void {
   const sessions = readdirSync(directory, { recursive: true, withFileTypes: true })
     .filter(entry => {
@@ -181,10 +181,10 @@ export function validateGrokNativeSession(directory: string, sessionId: string, 
       return entry.isDirectory() && entry.name === sessionId;
     }).map(entry => join(entry.parentPath, entry.name));
   if (sessions.length !== 1) throw new Error('Native Grok session is missing or ambiguous');
-  let usage: { sessionId?: unknown; session?: { primaryModelId?: unknown } };
-  try { usage = JSON.parse(readFileSync(join(sessions[0]!, 'usage.json'), 'utf8')); }
-  catch { throw new Error('Native Grok session has no readable usage record'); }
-  if (usage.sessionId !== sessionId || usage.session?.primaryModelId !== model) {
+  let summary: { info?: { id?: unknown }; current_model_id?: unknown };
+  try { summary = JSON.parse(readFileSync(join(sessions[0]!, 'summary.json'), 'utf8')); }
+  catch { throw new Error('Native Grok session has no readable summary'); }
+  if (summary.info?.id !== sessionId || summary.current_model_id !== model) {
     throw new Error('Native Grok session does not match the selected session and model');
   }
 }

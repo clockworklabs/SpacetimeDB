@@ -66,9 +66,10 @@ const grokProvider: CodingProvider = {
   executable: 'sh', apiKeyEnvironment: 'XAI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.grok/sessions`,
   tokenEnvironment: 'GROK_BROKER_TOKEN',
+  // Telemetry and session uploads would reach the broker as refused requests.
   environment: baseUrl => [`GROK_CLI_CHAT_PROXY_BASE_URL=${baseUrl}/v1`, `GROK_AUTH_PROVIDER_COMMAND=${GROK_SIGN_IN}`,
-    'GROK_DISABLE_AUTOUPDATER=1'],
-  projects: appDir => grokTranscriptDirectory(appDir),
+    'GROK_DISABLE_AUTOUPDATER=1', 'GROK_TELEMETRY_ENABLED=0', 'GROK_TELEMETRY_TRACE_UPLOAD=0', 'DISABLE_TELEMETRY=1'],
+  projects: appDir => join(grokTranscriptDirectory(appDir), 'sessions'),
   rates: () => null,
   args: options => ['-c', 'grok login < /dev/null > /dev/null && exec grok "$@"', 'grok', ...grokArguments(options)],
   run: runCodexProcess,
