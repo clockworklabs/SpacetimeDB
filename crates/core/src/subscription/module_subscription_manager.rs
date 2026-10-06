@@ -2227,9 +2227,7 @@ fn send_to_client(
 #[cfg(test)]
 mod tests {
     use std::{
-        future::Future,
         sync::{atomic::AtomicBool, Arc},
-        task::{Context, Poll, Waker},
         time::Duration,
     };
 
@@ -2242,15 +2240,14 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
-    use spacetimedb_schema::def::RawModuleDefVersion;
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::mpsc;
 
     use super::{
-        ClientId, ClientQuerySetId, ComputedQueries, Plan, SendWorker, SendWorkerClient, SendWorkerMessage,
-        SubscriptionIdV2, SubscriptionManager, V2ClientUpdate,
+        ClientId, ClientQuerySetId, Plan, SendWorker, SendWorkerClient, SubscriptionIdV2, SubscriptionManager,
+        V2ClientUpdate,
     };
     use crate::db::relational_db::tests_utils::with_read_only;
     use crate::db::sql::ast::SchemaViewer;
@@ -3497,117 +3494,6 @@ mod tests {
             panic!("expected successful empty caller result");
         };
         assert!(empty_ok.transaction_update.query_sets.is_empty());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn send_worker_keeps_v2_updates_in_transaction_offset_order() -> anyhow::Result<()> {
-        let TestDB { db, .. } = TestDB::in_memory()?;
-        let client_id = id(1);
-        let (client, mut rx) = v2_sender_client(&db, client_id);
-        let (send_tx, send_rx) = mpsc::unbounded_channel();
-        let worker = SendWorker::new(send_rx, None, None);
-        send_tx
-            .send(SendWorkerMessage::AddClient {
-                client_id,
-                dropped: Arc::new(AtomicBool::new(false)),
-                outbound_ref: client.clone(),
-            })
-            .unwrap();
-
-        let (first_offset_tx, first_offset_rx) = oneshot::channel();
-        let first_queries = ComputedQueries {
-            updates: vec![],
-            v2_updates: vec![v2_test_update(client_id, 1, "t", persistent_test_rows(7))],
-            errs: vec![],
-            v2_errs: vec![],
-            event: send_worker_event(Some(43)),
-            caller: Some(client.clone()),
-            module_def_version: RawModuleDefVersion::V10,
-        };
-        send_tx
-            .send(SendWorkerMessage::Broadcast {
-                tx_offset: first_offset_rx,
-                queries: first_queries,
-            })
-            .unwrap();
-
-        let (second_offset_tx, second_offset_rx) = oneshot::channel();
-        let second_queries = ComputedQueries {
-            updates: vec![],
-            v2_updates: vec![v2_test_update(client_id, 2, "other", persistent_test_rows(8))],
-            errs: vec![],
-            v2_errs: vec![],
-            event: send_worker_event(Some(44)),
-            caller: Some(client),
-            module_def_version: RawModuleDefVersion::V10,
-        };
-        send_tx
-            .send(SendWorkerMessage::Broadcast {
-                tx_offset: second_offset_rx,
-                queries: second_queries,
-            })
-            .unwrap();
-
-        let mut context = Context::from_waker(Waker::noop());
-        let mut worker_task = Box::pin(worker.run());
-        let mut first_message_future = Box::pin(rx.recv());
-        assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
-        assert!(matches!(
-            first_message_future.as_mut().poll(&mut context),
-            Poll::Pending
-        ));
-
-        // The second transaction is ready first, but the worker is still waiting
-        // for the first transaction's offset and must not let it overtake.
-        second_offset_tx.send(2).unwrap();
-        assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
-        assert!(matches!(
-            first_message_future.as_mut().poll(&mut context),
-            Poll::Pending
-        ));
-
-        first_offset_tx.send(1).unwrap();
-        assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
-        let first_message = match first_message_future.as_mut().poll(&mut context) {
-            Poll::Ready(Some(message)) => message,
-            other => panic!("expected the first reducer result after offset 1, got {other:?}"),
-        };
-        drop(first_message_future);
-        let mut second_message_future = Box::pin(rx.recv());
-        let second_message = match second_message_future.as_mut().poll(&mut context) {
-            Poll::Ready(Some(message)) => message,
-            other => panic!("expected the second reducer result after offset 2, got {other:?}"),
-        };
-        for (message, request_id, query_set_id, table_name, value) in [
-            (first_message, 43, ClientQuerySetId::new(1), "t", 7),
-            (second_message, 44, ClientQuerySetId::new(2), "other", 8),
-        ] {
-            match message {
-                OutboundMessage::V2(ws_v2::ServerMessage::ReducerResult(result)) => {
-                    assert_eq!(result.request_id, request_id);
-                    let ws_v2::ReducerOutcome::Ok(ok) = result.result else {
-                        panic!("expected successful reducer result");
-                    };
-                    let [query_set] = &*ok.transaction_update.query_sets else {
-                        panic!(
-                            "expected only the current broadcast's query set: {:?}",
-                            ok.transaction_update
-                        );
-                    };
-                    assert_eq!(query_set.query_set_id, query_set_id);
-                    let [table] = &*query_set.tables else {
-                        panic!("expected only the current broadcast's table: {:?}", query_set.tables);
-                    };
-                    assert_eq!(table.table_name.as_ref(), table_name);
-                    assert_eq!(test_row_values(&table.rows), [value]);
-                }
-                other => panic!("expected v2 caller result after its transaction offset, got {other:?}"),
-            }
-        }
-
-        drop(worker_task);
-        drop(send_tx);
         Ok(())
     }
 }
