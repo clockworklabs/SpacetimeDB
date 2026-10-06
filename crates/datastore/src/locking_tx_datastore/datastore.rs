@@ -1056,11 +1056,12 @@ pub(crate) mod tests {
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
         system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
-        StConstraintFields, StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow,
-        StOutboundMsgRow, StOutboundStreamRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields,
-        StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME,
-        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID,
-        ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME,
+        StConstraintFields, StConstraintRow, StEventTableFields, StInboundMsgResultStatus, StInboundMsgRow,
+        StInboundStreamRow, StIndexAlgorithm, StIndexFields, StIndexRow, StOutboundMsgRow, StOutboundStreamRow,
+        StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields,
+        StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME,
+        ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID,
+        ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_STREAM_ID,
         ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_OUTBOUND_MSG_ID,
         ST_OUTBOUND_STREAM_ID, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME,
         ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ACCESSOR_ID,
@@ -1074,6 +1075,7 @@ pub(crate) mod tests {
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
+    use bytes::Bytes;
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -3003,17 +3005,18 @@ pub(crate) mod tests {
     fn test_outbox_insert_records_dense_stream_sequence() -> ResultTest<()> {
         let mut schema = user_public_table(
             [
-                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
-                ColumnSchema::for_test(1, "target", AlgebraicType::U256),
+                ColumnSchema::for_test(0, "target", AlgebraicType::U256),
+                ColumnSchema::for_test(1, "msg_id", AlgebraicType::U64),
             ],
             [],
             [],
             [],
             None,
-            Some(ColId(0)),
+            Some(ColId(1)),
         );
         schema.outbox = Some(OutboxSchema {
             remote_reducer: Identifier::new_unsafe_assume_valid("receive".into()),
+            target_column: ColId(0),
             signature_hash: Some("test-signature".into()),
         });
 
@@ -3023,7 +3026,7 @@ pub(crate) mod tests {
         let target = Identity::ONE;
 
         for msg_id in [10u64, 11] {
-            let row = to_vec(&product![msg_id, IdentityViaU256(target)]).unwrap();
+            let row = to_vec(&product![IdentityViaU256(target), msg_id]).unwrap();
             let (row_ptr, insert_flags) = {
                 let (_, row_ref, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
                 (row_ref.pointer(), insert_flags)
@@ -3037,10 +3040,10 @@ pub(crate) mod tests {
             .map(StOutboundStreamRow::try_from)
             .collect::<Result<Vec<_>>>()?;
         assert_eq!(stream_rows.len(), 1);
-        assert_eq!(stream_rows[0].outbox_table_id, table_id.0);
+        assert_eq!(stream_rows[0].outbox_table_id, table_id);
         assert_eq!(stream_rows[0].target_identity, IdentityViaU256(target));
         assert_eq!(stream_rows[0].next_seq, 3);
-        assert_eq!(stream_rows[0].results_received_through, 0);
+        assert_eq!(stream_rows[0].ack_prefix, 0);
 
         let mut outbound_rows = tx
             .iter(ST_OUTBOUND_MSG_ID)?
@@ -3052,6 +3055,53 @@ pub(crate) mod tests {
             outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
             vec![10, 11]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inbound_idc_records_replays_and_trims_outcomes() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let sender = Identity::ONE;
+        let outbox_table_id = 7;
+
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, outbox_table_id)?, 0);
+        assert!(tx.inbound_idc_outcome(sender, outbox_table_id, 1)?.is_none());
+
+        tx.record_inbound_idc_outcome(
+            sender,
+            outbox_table_id,
+            1,
+            StInboundMsgResultStatus::Ok,
+            Bytes::from_static(b"ok"),
+        )?;
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, outbox_table_id)?, 1);
+
+        let outcome = tx
+            .inbound_idc_outcome(sender, outbox_table_id, 1)?
+            .expect("outcome should be retained for replay");
+        assert_eq!(outcome.result_status, StInboundMsgResultStatus::Ok);
+        assert_eq!(&outcome.result_payload[..], b"ok");
+
+        tx.trim_inbound_idc_outcomes(sender, outbox_table_id, 1)?;
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, outbox_table_id)?, 1);
+        assert!(tx.inbound_idc_outcome(sender, outbox_table_id, 1)?.is_none());
+
+        let stream_rows = tx
+            .iter(ST_INBOUND_STREAM_ID)?
+            .map(StInboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].sender_identity, IdentityViaU256(sender));
+        assert_eq!(stream_rows[0].sender_outbox_table_id, outbox_table_id);
+        assert_eq!(stream_rows[0].applied_prefix, 1);
+
+        let msg_rows = tx
+            .iter(ST_INBOUND_MSG_ID)?
+            .map(StInboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert!(msg_rows.is_empty());
 
         Ok(())
     }
