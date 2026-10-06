@@ -69,13 +69,19 @@ export function supabaseAuthReadEndpoints(lease: BackendLease, exec?: TextComman
     .split('\n').filter(Boolean).map(name => rpcEndpoint(lease, name));
 }
 
+// The platform's own paths on loopback, which is all an attempt can reach. An
+// application may serve the platform through its own origin behind a path prefix.
+function platformPath(url: string, path: RegExp): URL | null {
+  const target = new URL(url);
+  return ['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) && path.test(target.pathname) ? target : null;
+}
+
 // Realtime stores nothing a client sends. Joins, leaves, heartbeats and token
 // refreshes only keep a subscription alive. A broadcast or presence frame reaches
 // other clients, so it stays an unobserved channel.
-export function supabasePassiveSocketFrame(lease: BackendLease): (url: string, payload: string | Buffer) => boolean {
-  const socket = `${supabaseGatewayUrl(lease).replace(/^http/, 'ws')}/realtime/v1/websocket`;
+export function supabasePassiveSocketFrame(_lease: BackendLease): (url: string, payload: string | Buffer) => boolean {
   return (url, payload) => {
-    if (typeof payload !== 'string' || url.split('?')[0] !== socket) return false;
+    if (typeof payload !== 'string' || !platformPath(url, /\/realtime\/v1\/websocket$/)) return false;
     let frame: unknown;
     try { frame = JSON.parse(payload); } catch { return false; }
     // Protocol 2 sends [join_ref, ref, topic, event, payload]; protocol 1 sends an object.
@@ -100,17 +106,15 @@ export function supabaseSignatureRefusal(request: { url?: string | null }, respo
   return psql(leased, exec, READ_TIMEOUT_MS)(`select count(*) ${PUBLIC_FUNCTIONS} and p.proname = '${name}';\n`).trim() !== '0';
 }
 
-// Password sign-up and sign-in at the leased gateway. Applications may send
+// Password sign-up and sign-in at the platform's Auth paths. Applications may send
 // Auth any encoding of the typed username and password, so the endpoint alone
 // identifies the credential request: a changed password replaces whatever
 // the application sent, and claimed fields go at the top level and into
 // `data`, the user metadata a sign-up stores.
-export function supabaseAuthRequestPatch(lease: BackendLease): PlatformAuthPatch {
-  const gateway = supabaseGatewayUrl(lease);
+export function supabaseAuthRequestPatch(_lease: BackendLease): PlatformAuthPatch {
   return (url: string, body: unknown, patch: AuthRequestPatch) => {
-    const target = new URL(url);
-    if (target.origin !== gateway || !(target.pathname === '/auth/v1/signup'
-      || target.pathname === '/auth/v1/token' && target.searchParams.get('grant_type') === 'password')) return undefined;
+    const target = platformPath(url, /\/auth\/v1\/(signup|token)$/);
+    if (!target || target.pathname.endsWith('/token') && target.searchParams.get('grant_type') !== 'password') return undefined;
     if (!record(body) || Array.isArray(body) || typeof body.password !== 'string') return null;
     const copy = structuredClone(body);
     const define = (object: Record<string, unknown>, key: string, value: unknown) =>

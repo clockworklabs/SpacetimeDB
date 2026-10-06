@@ -104,8 +104,12 @@ test('Supabase Auth password requests are found by endpoint whatever credential 
   assert.deepEqual(JSON.parse(patch(`${SUPABASE_GATEWAY}/auth/v1/signup`, raw, { fields: { role: 'admin' } })!.body),
     { ...raw, role: 'admin', data: { role: 'admin' } });
   assert.deepEqual(JSON.parse(patch(token, raw, { password: "' OR '1'='1" })!.body), { ...raw, password: "' OR '1'='1" });
+  // An application can serve Auth through its own origin, behind a prefix.
+  for (const url of ['http://127.0.0.1:5173/auth/v1/signup', 'http://localhost:8124/supabase/auth/v1/token?grant_type=password']) {
+    assert.equal(patch(url, signIn, { fields })!.shape, 'supabase-auth', url);
+  }
   for (const url of [`${SUPABASE_GATEWAY}/auth/v1/token?grant_type=refresh_token`, `${SUPABASE_GATEWAY}/rest/v1/rpc/signup`,
-    'http://127.0.0.1:5173/auth/v1/signup']) {
+    'http://example.com/auth/v1/signup', 'http://localhost:8124/auth/v1/signup/extra']) {
     assert.equal(patch(url, signUp, { fields }), undefined, url);
   }
   for (const body of [{ email }, { ...signIn, password: 7 }, ['secret'], null]) {
@@ -146,7 +150,10 @@ test('only Realtime subscription upkeep on the leased gateway is a passive socke
   }
   assert.equal(passive(socket, Buffer.from([3, 0])), false, 'a binary broadcast');
   assert.equal(passive(socket, 'not json'), false);
-  assert.equal(passive('ws://127.0.0.1:5173/realtime/v1/websocket', JSON.stringify(['1', '2', 'phoenix', 'heartbeat', {}])), false);
+  const heartbeat = JSON.stringify(['1', '2', 'phoenix', 'heartbeat', {}]);
+  assert.equal(passive('ws://localhost:8124/supabase/realtime/v1/websocket?apikey=key', heartbeat), true, 'proxied Realtime');
+  assert.equal(passive('ws://example.com/realtime/v1/websocket', heartbeat), false);
+  assert.equal(passive('ws://127.0.0.1:5173/socket', heartbeat), false);
 });
 
 test('Supabase provenance scans public application columns through privileged SQL', () => {
