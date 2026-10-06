@@ -73,7 +73,7 @@
     {
       "backend": "supabase",
       "path": "grader/mutations/supabase-ecommerce.json",
-      "sha256": "32b4756e4f47cfbaf57500825abb5c478fe2e4dfc32b0b65b12971f8aea94032",
+      "sha256": "24fa59b45569a446c98f7796092493a06f287c94e7758b6b9c89e68600e30ebc",
       "referenceId": "ecommerce-reference-supabase"
     }
   ],
