@@ -209,10 +209,7 @@ fn generic_decode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallba
     let encoding = args.get(0).cast::<v8::String>().to_rust_cow_lossy(scope, &mut scratch);
     let encoding = encoding_rs::Encoding::for_label(encoding.as_bytes()).unwrap();
 
-    let buf = args
-        .get(1)
-        .try_cast::<v8::ArrayBufferView>()
-        .map_err(|_| TypeError("argument is not an `ArrayBuffer` or a view on one").throw(scope))?;
+    let buf = cast_buffer(scope, args.get(1))?;
     let fatal = args.get(2).boolean_value(scope);
     let ignore_bom = args.get(3).boolean_value(scope);
 
@@ -283,7 +280,7 @@ mod test {
                 eval_user_module(scope, include_str!("text_encoding.test.js"))?;
                 Ok(())
             })
-            .expect("TextDecoder regression module should evaluate successfully");
+            .unwrap_or_else(|e| panic!("TextDecoder regression module should evaluate successfully:\n{e}"));
         });
     }
 }

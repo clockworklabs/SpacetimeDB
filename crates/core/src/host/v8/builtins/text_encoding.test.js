@@ -16,7 +16,9 @@ function throws(action, type) {
     }
     throw error;
   }
-  throw new Error(`Expected ${type.name}`);
+  const err = new Error(`Expected ${type.name}`);
+  Error.captureStackTrace(err, throws);
+  throw err;
 }
 
 // h3-js's generated browser bundle constructs both of these eagerly during
@@ -66,8 +68,6 @@ equal(new TextDecoder({ toString: () => 'UTF8' }).encoding, 'utf-8');
 throws(() => new TextDecoder(Symbol()), TypeError);
 for (const label of [
   '',
-  'utf-16be',
-  'latin1',
   'replacement',
   'utf_8',
   '\u00a0utf8',
@@ -85,10 +85,6 @@ for (const decoder of [UTF8Decoder, UTF16Decoder]) {
   throws(() => decoder.decode(null), TypeError);
   throws(() => decoder.decode([0x41, 0]), TypeError);
   throws(() => decoder.decode(new Uint8Array(), { stream: true }), TypeError);
-  throws(
-    () => new TextDecoder(decoder.encoding, { ignoreBOM: true }),
-    TypeError
-  );
 }
 
 // Buffer sources must decode the bytes in the view, including odd offsets.

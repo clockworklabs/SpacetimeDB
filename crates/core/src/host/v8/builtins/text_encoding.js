@@ -71,6 +71,7 @@ globalThis.TextDecoder = class TextDecoder {
     if (options.stream) {
       throw new TypeError("Option 'stream' not supported");
     }
+    if (input === undefined) return '';
     if (this.#utf8FastPath) {
       return utf8_decode(input, this.#ignoreBOM);
     }
