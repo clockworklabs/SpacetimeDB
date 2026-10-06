@@ -760,6 +760,19 @@ test('multi-parent work waits for both parents and an ancestor regression closes
   assert.equal(regressed.nodes.recommendations!.status, 'passed');
 });
 
+test('a failed feature stays failed and replayable when its prerequisite later regresses', () => {
+  const definition = fixture();
+  definition.repair = { selection: 'feature', budget: { total: 0, perFeature: 0 } };
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'roots', {}));
+  state = progressionEngine.recordResult(state, grade(state, 'children', { ownership: 'fail' }));
+  assert.equal(state.nodes.ownership!.status, 'failed');
+  state = progressionEngine.recordResult(state, grade(state, 'regression', { accounts: 'fail' }));
+  assert.equal(state.nodes.ownership!.status, 'failed');
+  assert.equal(state.nodes.ownership!.exhaustedAtLevel, 2);
+  assert.deepEqual(progressionEngine.replay(definition, state.events), state);
+});
+
 test('a repair grant reopens the exact exhausted branch', () => {
   const definition = fixture();
   definition.repair.budget = { total: 0 };

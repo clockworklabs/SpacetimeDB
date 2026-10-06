@@ -490,6 +490,8 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
   if (nodeState.status === 'locked' && Object.values(nodeState.checks).every(value => value === null)) {
     return;
   }
+  nodeState.exhaustedAtLevel = null;
+  nodeState.exhaustionReason = null;
   if (state.definition.workSelection !== 'all-at-once' && brokenByParents(state, node)) {
     nodeState.status = 'blocked';
     return;
@@ -499,8 +501,6 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
     nodeState.status = 'locked';
     return;
   }
-  nodeState.exhaustedAtLevel = null;
-  nodeState.exhaustionReason = null;
   if (allChecksPass(state, node)) {
     nodeState.status = 'passed';
   } else if (hasFailedCheck(state, node) && !canRepair(state, node)) {
@@ -545,6 +545,8 @@ function openLevel(state: DependencyState, level: number): void {
         unlocksDependents(getNodeState(state, parentId).status));
       const dependenciesFailed = brokenByParents(state, node);
       const before = nodeState.status;
+      // A node that already failed keeps that result, as in blockBrokenDescendants.
+      if (before === 'failed') continue;
       if (dependenciesFailed) {
         nodeState.status = 'blocked';
       } else if (dependenciesReady
