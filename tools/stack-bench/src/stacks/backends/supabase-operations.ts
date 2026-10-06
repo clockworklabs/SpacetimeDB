@@ -57,6 +57,34 @@ export function supabaseWriteEndpoints(lease: BackendLease): readonly string[] {
   return [`${gateway}/rest/v1/`, `${gateway}/functions/v1/`];
 }
 
+const rpcEndpoint = (lease: BackendLease, name: string) =>
+  `${supabaseGatewayUrl(lease)}/rest/v1/rpc/${encodeURIComponent(name)}`;
+const PUBLIC_FUNCTIONS = "from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'";
+
+// The data API runs a function marked stable or immutable in a read-only
+// transaction, whatever the request method, so such a POST cannot write.
+export function supabaseAuthReadEndpoints(lease: BackendLease, exec?: TextCommandExecutor): readonly string[] {
+  return psql(lease, exec, READ_TIMEOUT_MS)(
+    `select p.proname ${PUBLIC_FUNCTIONS} group by p.proname having bool_and(p.provolatile in ('s', 'i'));\n`)
+    .split('\n').filter(Boolean).map(name => rpcEndpoint(lease, name));
+}
+
+// The data API answers 404 PGRST202 for a function that does not exist and for
+// arguments that match none of its signatures. Only the second refuses the
+// call's input, as a native argument check does on other platforms.
+export function supabaseSignatureRefusal(request: { url?: string | null }, response: { status: number; text: string },
+  { lease, exec }: { lease?: BackendLease; exec?: TextCommandExecutor } = {}): boolean {
+  if (response.status !== 404 || !request.url) return false;
+  let error: unknown;
+  try { error = JSON.parse(response.text); } catch { return false; }
+  if (!record(error) || error.code !== 'PGRST202') return false;
+  const leased = lease ?? leaseFromEnv(process.env, { backend: 'supabase', active: true }).lease;
+  const target = new URL(request.url);
+  const name = /^\/rest\/v1\/rpc\/([A-Za-z_][A-Za-z0-9_]*)$/.exec(target.pathname)?.[1];
+  if (target.origin !== supabaseGatewayUrl(leased) || !name) return false;
+  return psql(leased, exec, READ_TIMEOUT_MS)(`select count(*) ${PUBLIC_FUNCTIONS} and p.proname = '${name}';\n`).trim() !== '0';
+}
+
 // Password sign-up and sign-in at the leased gateway. Applications may send
 // Auth any encoding of the typed username and password, so the endpoint alone
 // identifies the credential request: a changed password replaces whatever
@@ -108,7 +136,7 @@ export function supabaseNamedActionRequest({ action, input, lease, exec }: {
   const leased = lease ?? leaseFromEnv(process.env, { backend: 'supabase', active: true }).lease;
   const { anonKey } = readSupabasePlatformSecrets(leased, exec);
   return {
-    url: `${supabaseGatewayUrl(leased)}/rest/v1/rpc/${encodeURIComponent(action.reducer)}`,
+    url: rpcEndpoint(leased, action.reducer),
     method: 'POST',
     body: JSON.stringify(values),
     headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },

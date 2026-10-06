@@ -8,8 +8,9 @@ import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { activateSupabase, controlSupabaseApplication, resetSupabase, supabaseApplicationEnvironment,
   supabaseOrchestratorConfig, SUPABASE_RUNTIME } from './supabase-lifecycle.js';
-import { getSupabaseCheckoutState, getSupabaseStock, proveSupabaseUse, setSupabaseStock,
-  supabaseAuthRequestPatch, supabaseNamedActionRequest, supabaseWriteEndpoints } from './supabase-operations.js';
+import { getSupabaseCheckoutState, getSupabaseStock, proveSupabaseUse, setSupabaseStock, supabaseAuthReadEndpoints,
+  supabaseAuthRequestPatch, supabaseNamedActionRequest, supabaseSignatureRefusal,
+  supabaseWriteEndpoints } from './supabase-operations.js';
 import { supabaseSetupMetadata } from './supabase-agent.js';
 import { deploySupabaseReference, SUPABASE_REFERENCE_LAYOUT } from './supabase-reference.js';
 import { SUPABASE_ADAPTER_VERSION } from './supabase-identity.js';
@@ -34,8 +35,9 @@ export const supabaseAdapter = defineStackAdapter('supabase', {
   // observers act on the whole platform lease, which also names the database container.
   grading: { context: createHttpGradingContext, transport: 'http', capabilities, namedActionBinding: 'reducer',
     databaseLease: (lease: BackendLease) => { requireLeasedDatabase(lease); return lease as BackendLease & LeasedDatabase; },
-    writeEndpoints: supabaseWriteEndpoints, authRequestPatch: supabaseAuthRequestPatch },
-  namedAction: { request: supabaseNamedActionRequest },
+    writeEndpoints: supabaseWriteEndpoints, authReadEndpoints: supabaseAuthReadEndpoints,
+    authRequestPatch: supabaseAuthRequestPatch },
+  namedAction: { request: supabaseNamedActionRequest, signatureRefusal: supabaseSignatureRefusal },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,
     supervisorEnvironment: (_input: { spacetimePort: number | null }) => ({}) },

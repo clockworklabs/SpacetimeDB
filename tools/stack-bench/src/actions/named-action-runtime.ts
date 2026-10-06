@@ -316,7 +316,10 @@ export function createNamedActionsCapability({
           responseContract = `convex-${kind}` as ResponseContract;
         }
       }
-      return classifyResponseContract({ ...request, ...(responseContract ? { responseContract } : {}) }, response);
+      const classified = classifyResponseContract({ ...request, ...(responseContract ? { responseContract } : {}) }, response);
+      // A platform can refuse arguments that match no declared signature before the application runs.
+      return adapter && 'signatureRefusal' in adapter && adapter.signatureRefusal(request, response)
+        ? { ...classified, refusalKind: 'validation' as const } : classified;
     },
     spacetime,
     applicationWriteEndpoints,

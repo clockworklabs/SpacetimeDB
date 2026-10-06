@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { bindBrowserRequest } from '../src/actions/named-action-runtime.js';
 import type { Actor } from '../src/actions/actor-action-runtime.js';
-import { proveSupabaseUse, supabaseAuthRequestPatch, supabaseNamedActionRequest,
-  supabaseWriteEndpoints } from '../src/stacks/backends/supabase-operations.js';
+import { proveSupabaseUse, supabaseAuthReadEndpoints, supabaseAuthRequestPatch, supabaseNamedActionRequest,
+  supabaseSignatureRefusal, supabaseWriteEndpoints } from '../src/stacks/backends/supabase-operations.js';
 import { SUPABASE_GATEWAY, SUPABASE_SECRETS, supabaseExec, supabaseLease,
   withSupabaseLeaseEnvironment } from './helpers/supabase-lease.js';
 
@@ -112,6 +112,26 @@ test('Supabase Auth password requests are found by endpoint whatever credential 
     assert.equal(patch(token, body, { fields }), null, JSON.stringify(body));
   }
   assert.throws(() => patch(token, { ...signUp, data: ['x'] }, { fields }), /metadata is not an object/);
+});
+
+test('read-only functions are not sign-up writes, and unmatched arguments refuse only an existing function', () => {
+  const lease = supabaseLease();
+  let sql = '';
+  const exec = (output: string) => supabaseExec(lease, input => { sql = input; return output; });
+  assert.deepEqual(supabaseAuthReadEndpoints(lease, exec('shop_state\nprogression_state\n')),
+    [`${SUPABASE_GATEWAY}/rest/v1/rpc/shop_state`, `${SUPABASE_GATEWAY}/rest/v1/rpc/progression_state`]);
+  assert.match(sql, /having bool_and\(p\.provolatile in \('s', 'i'\)\)/, 'a volatile overload keeps the name a write');
+  const unmatched = { status: 404, text: JSON.stringify({ code: 'PGRST202', message: 'Could not find the function' }) };
+  const call = { url: `${SUPABASE_GATEWAY}/rest/v1/rpc/checkout` };
+  assert.equal(supabaseSignatureRefusal(call, unmatched, { lease, exec: exec('1\n') }), true);
+  assert.match(sql, /p\.proname = 'checkout'/);
+  assert.equal(supabaseSignatureRefusal(call, unmatched, { lease, exec: exec('0\n') }), false, 'the function does not exist');
+  const unused = { lease, exec: supabaseExec(lease, () => { throw new Error('no lookup'); }) };
+  assert.equal(supabaseSignatureRefusal(call, { status: 404, text: '{"code":"PGRST205"}' }, unused), false);
+  assert.equal(supabaseSignatureRefusal(call, { status: 400, text: unmatched.text }, unused), false);
+  assert.equal(supabaseSignatureRefusal(call, { status: 404, text: 'Not Found' }, unused), false);
+  assert.equal(supabaseSignatureRefusal({ url: 'http://127.0.0.1:5173/rest/v1/rpc/checkout' }, unmatched, unused), false);
+  assert.equal(supabaseSignatureRefusal({ url: `${SUPABASE_GATEWAY}/rest/v1/rpc/a'b` }, unmatched, unused), false);
 });
 
 test('Supabase provenance scans public application columns through privileged SQL', () => {
