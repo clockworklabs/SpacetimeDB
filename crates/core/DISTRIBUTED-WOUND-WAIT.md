@@ -6,6 +6,9 @@ It describes that revision, not a guarantee about other branches or production
 behavior. It consolidates the original implementation plan with an explanation
 of the protocol and later refinements.
 
+For a proposed extension that releases execution locks before durability and
+commit finish, see [Pipelined Two-Phase Commit](PIPELINED-2PC.md).
+
 ## Why 2PC needs deadlock prevention
 
 Two-phase commit (2PC) coordinates a single commit or abort decision across
