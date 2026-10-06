@@ -555,7 +555,93 @@ struct V2ClientUpdate {
     id: ClientId,
     query_set_id: ClientQuerySetId,
     table_name: TableName,
+    original_order: usize,
     rows: TableUpdateRows,
+}
+
+fn filter_and_sort_v2_client_updates(
+    updates: &mut Vec<V2ClientUpdate>,
+    subscriptions_with_errors: &HashSet<&SubscriptionIdV2>,
+) {
+    // Break ties by input order so an unstable sort keeps duplicate row fragments in bag order.
+    let mut original_order = 0;
+    updates.retain_mut(|update| {
+        update.original_order = original_order;
+        original_order += 1;
+        !subscriptions_with_errors.contains(&(update.id, update.query_set_id))
+    });
+    updates.sort_unstable_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.query_set_id.cmp(&right.query_set_id))
+            .then_with(|| left.table_name.cmp(&right.table_name))
+            .then_with(|| left.original_order.cmp(&right.original_order))
+    });
+}
+
+fn grouped_v2_rows<I>(
+    first_rows: TableUpdateRows,
+    updates: &mut std::iter::Peekable<I>,
+    client_id: ClientId,
+    query_set_id: ClientQuerySetId,
+    table_name: &TableName,
+) -> Box<[TableUpdateRows]>
+where
+    I: Iterator<Item = V2ClientUpdate>,
+{
+    let mut first_rows = Some(first_rows);
+    let mut grouped_rows = None;
+    while updates.peek().is_some_and(|update| {
+        update.id == client_id && update.query_set_id == query_set_id && update.table_name == *table_name
+    }) {
+        let rows = updates.next().expect("peeked v2 update").rows;
+        grouped_rows
+            .get_or_insert_with(|| {
+                let mut rows = Vec::with_capacity(2);
+                rows.push(first_rows.take().expect("first v2 row fragment"));
+                rows
+            })
+            .push(rows);
+    }
+    match grouped_rows {
+        Some(rows) => rows.into_boxed_slice(),
+        None => Box::new([first_rows.expect("single v2 row fragment")]),
+    }
+}
+
+/// Builds an owned boxed slice without growing a temporary vector for one item.
+struct BoxedSliceBuilder<T> {
+    first: Option<T>,
+    rest: Vec<T>,
+}
+
+impl<T> BoxedSliceBuilder<T> {
+    fn new() -> Self {
+        Self { first: None, rest: Vec::new() }
+    }
+
+    fn push(&mut self, value: T) {
+        match self.first.take() {
+            Some(first) => {
+                let mut rest = Vec::with_capacity(2);
+                rest.push(first);
+                rest.push(value);
+                self.rest = rest;
+            }
+            None if self.rest.is_empty() => self.first = Some(value),
+            None => self.rest.push(value),
+        }
+    }
+
+    fn into_boxed_slice(self) -> Box<[T]> {
+        match self.first {
+            Some(first) => {
+                debug_assert!(self.rest.is_empty());
+                Box::new([first])
+            }
+            None => self.rest.into_boxed_slice(),
+        }
+    }
 }
 
 /// The computed incremental update queries with sufficient information
@@ -1509,6 +1595,7 @@ impl SubscriptionManager {
                                 id: client_id,
                                 query_set_id,
                                 table_name: table_name.clone(),
+                                original_order: 0,
                                 // This clone is cheap, since it is just cloning a reference to the row data.
                                 rows: rows.clone(),
                             });
@@ -2050,48 +2137,34 @@ impl SendWorker {
         let subscriptions_with_errors: HashSet<&SubscriptionIdV2> =
             v2_errs.iter().map(|(id, _)| id).collect::<HashSet<_>>();
 
-        type UpdateMapKey = (ClientId, ClientQuerySetId, TableName);
-        let mut grouped_updates: BTreeMap<UpdateMapKey, Vec<ws_v2::TableUpdateRows>> = BTreeMap::new();
-
         let mut sent_to_caller = false;
+        let mut v2_updates = v2_updates;
+        filter_and_sort_v2_client_updates(&mut v2_updates, &subscriptions_with_errors);
 
-        for V2ClientUpdate {
-            id: client_id,
-            query_set_id,
-            // table_update,
-            table_name,
-            rows,
-        } in v2_updates
-        {
-            if subscriptions_with_errors.contains(&(client_id, query_set_id)) {
-                continue;
-            }
-            grouped_updates
-                .entry((client_id, query_set_id, table_name))
-                .or_default()
-                // .push(table_update);
-                .push(rows);
-        }
-
-        let grouped_by_client = grouped_updates.into_iter().group_by(|((client_id, ..), _)| *client_id);
+        let grouped_by_client = v2_updates.into_iter().group_by(|update| update.id);
 
         for (client, updates) in &grouped_by_client {
             if self.is_client_dropped_or_cancelled(&client) {
                 continue;
             }
 
-            let mut query_set_updates: Vec<ws_v2::QuerySetUpdate> = vec![];
-
-            let grouped_by_query_set = updates.group_by(|((_, query_set_id, _), _)| *query_set_id);
-
-            for (query_set_id, qs_updates) in &grouped_by_query_set {
-                let table_updates: Vec<ws_v2::TableUpdate> = qs_updates
-                    .into_iter()
-                    .map(|((_, _, table_name), rows)| ws_v2::TableUpdate {
+            let mut query_set_updates = BoxedSliceBuilder::new();
+            let mut updates = updates.peekable();
+            while let Some(first_update) = updates.next() {
+                let query_set_id = first_update.query_set_id;
+                let mut table_updates = BoxedSliceBuilder::new();
+                let mut first_table_update = Some(first_update);
+                while let Some(table_update) = first_table_update.take() {
+                    let table_name = table_update.table_name;
+                    let rows = grouped_v2_rows(table_update.rows, &mut updates, client, query_set_id, &table_name);
+                    table_updates.push(ws_v2::TableUpdate {
                         table_name: RawIdentifier::new(&*table_name),
-                        rows: rows.into_boxed_slice(),
-                    })
-                    .collect();
+                        rows,
+                    });
+                    if updates.peek().is_some_and(|update| update.query_set_id == query_set_id) {
+                        first_table_update = updates.next();
+                    }
+                }
                 query_set_updates.push(ws_v2::QuerySetUpdate {
                     query_set_id,
                     tables: table_updates.into_boxed_slice(),
@@ -2188,9 +2261,18 @@ fn send_to_client(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        future::Future,
+        sync::{atomic::AtomicBool, Arc},
+        task::{Context, Poll, Wake, Waker},
+        time::Duration,
+    };
 
-    use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
+    use bytes::Bytes;
+    use spacetimedb_client_api_messages::websocket::{
+        common::{BsatnRowList, RowSizeHint},
+        v1 as ws_v1, v2 as ws_v2,
+    };
     use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
@@ -2199,9 +2281,12 @@ mod tests {
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
-    use tokio::sync::oneshot;
+    use tokio::sync::{mpsc, oneshot};
 
-    use super::{Plan, SubscriptionManager};
+    use super::{
+        ClientId, ClientQuerySetId, ComputedQueries, Plan, SendWorker, SendWorkerClient, SendWorkerMessage,
+        SubscriptionIdV2, SubscriptionManager, V2ClientUpdate,
+    };
     use crate::db::relational_db::tests_utils::with_read_only;
     use crate::db::sql::ast::SchemaViewer;
     use crate::host::module_host::DatabaseTableUpdate;
@@ -2209,7 +2294,9 @@ mod tests {
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::tx::DeltaTx;
     use crate::{
-        client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
+        client::{
+            ClientActorId, ClientConfig, ClientConnectionSender, ClientName, OutboundMessage, Protocol, WsVersion,
+        },
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         energy::FunctionBudget,
         host::{
@@ -2217,6 +2304,7 @@ mod tests {
             ArgsTuple,
         },
         subscription::execution_unit::QueryHash,
+        worker_metrics::ClientDisconnectCause,
     };
     use spacetimedb_datastore::execution_context::Workload;
 
@@ -3219,6 +3307,337 @@ mod tests {
             .expect("Timed out waiting for a message to the client");
         });
 
+        Ok(())
+    }
+
+    fn v2_sender_client(
+        db: &Arc<RelationalDB>,
+        client_id: ClientId,
+    ) -> (Arc<ClientConnectionSender>, crate::client::ClientConnectionReceiver) {
+        let actor_id = ClientActorId {
+            identity: client_id.0,
+            connection_id: client_id.1,
+            name: ClientName(0),
+        };
+        let config = ClientConfig {
+            protocol: Protocol::Binary,
+            version: WsVersion::V2,
+            compression: ws_v1::Compression::None,
+            tx_update_full: true,
+            confirmed_reads: false,
+        };
+        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(actor_id, config, db.clone());
+        (Arc::new(sender), receiver)
+    }
+
+    fn v2_test_update(
+        client_id: ClientId,
+        query_set_id: u32,
+        table_name: &str,
+        rows: ws_v2::TableUpdateRows,
+    ) -> V2ClientUpdate {
+        V2ClientUpdate {
+            id: client_id,
+            query_set_id: ws_v2::QuerySetId::new(query_set_id),
+            table_name: TableName::for_test(table_name),
+            original_order: 0,
+            rows,
+        }
+    }
+
+    fn persistent_test_rows(value: u8) -> ws_v2::TableUpdateRows {
+        ws_v2::TableUpdateRows::PersistentTable(ws_v2::PersistentTableRows {
+            inserts: BsatnRowList::new(RowSizeHint::FixedSize(1), Bytes::from(vec![value])),
+            deletes: BsatnRowList::default(),
+        })
+    }
+
+    fn event_test_rows(value: u8) -> ws_v2::TableUpdateRows {
+        ws_v2::TableUpdateRows::EventTable(ws_v2::EventTableRows {
+            events: BsatnRowList::new(RowSizeHint::FixedSize(1), Bytes::from(vec![value])),
+        })
+    }
+
+    fn test_row_values(rows: &[ws_v2::TableUpdateRows]) -> Vec<u8> {
+        rows.iter()
+            .map(|rows| match rows {
+                ws_v2::TableUpdateRows::PersistentTable(rows) => rows.inserts.get(0).unwrap()[0],
+                ws_v2::TableUpdateRows::EventTable(rows) => rows.events.get(0).unwrap()[0],
+            })
+            .collect()
+    }
+
+    fn send_worker_event(request_id: Option<u32>) -> Arc<ModuleEvent> {
+        Arc::new(ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: Identity::ZERO,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            execution_budget_used: FunctionBudget::ZERO,
+            host_execution_duration: Duration::ZERO,
+            request_id,
+            timer: None,
+        })
+    }
+
+    fn add_send_worker_client(worker: &mut SendWorker, id: ClientId, outbound_ref: Arc<ClientConnectionSender>) {
+        worker.clients.insert(
+            id,
+            SendWorkerClient {
+                dropped: Arc::new(AtomicBool::new(false)),
+                outbound_ref,
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn v2_send_preserves_composite_order_fragments_bags_events_and_failed_sets() -> anyhow::Result<()> {
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let client_a = id(1);
+        let client_b = id(2);
+        let (sender_a, mut rx_a) = v2_sender_client(&db, client_a);
+        let (sender_b, mut rx_b) = v2_sender_client(&db, client_b);
+        let (_send_tx, send_rx) = mpsc::unbounded_channel();
+        let mut worker = SendWorker::new(send_rx, None, None);
+        add_send_worker_client(&mut worker, client_a, sender_a);
+        add_send_worker_client(&mut worker, client_b, sender_b);
+
+        let failed_set: SubscriptionIdV2 = (client_a, ClientQuerySetId::new(3));
+        worker.send_v2_computed_queries(
+            0,
+            vec![
+                v2_test_update(client_a, 2, "z", event_test_rows(9)),
+                v2_test_update(client_a, 1, "a", persistent_test_rows(2)),
+                v2_test_update(client_a, 1, "b", persistent_test_rows(5)),
+                v2_test_update(client_b, 1, "a", persistent_test_rows(7)),
+                v2_test_update(client_a, 1, "a", persistent_test_rows(1)),
+                v2_test_update(client_a, 3, "failed", persistent_test_rows(8)),
+                v2_test_update(client_a, 2, "z", event_test_rows(9)),
+                v2_test_update(client_a, 1, "a", persistent_test_rows(1)),
+                v2_test_update(client_a, 2, "b", persistent_test_rows(6)),
+            ],
+            vec![(failed_set, "subscription failed".into())],
+            send_worker_event(None),
+            None,
+        );
+
+        match rx_a.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscriptionError(error))) => {
+                assert_eq!(error.query_set_id, failed_set.1);
+            }
+            other => panic!("expected failed-set error before updates, got {other:?}"),
+        }
+        let update_a = match rx_a.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update))) => update,
+            other => panic!("expected client A transaction update, got {other:?}"),
+        };
+        assert_eq!(update_a.query_sets.len(), 2);
+        let [set_a1, set_a2] = &*update_a.query_sets else {
+            panic!("expected query sets in sorted order: {:?}", update_a.query_sets);
+        };
+        assert_eq!(set_a1.query_set_id, ClientQuerySetId::new(1));
+        assert_eq!(set_a1.tables.len(), 2);
+        assert_eq!(set_a1.tables[0].table_name.as_ref(), "a");
+        assert!(matches!(
+            set_a1.tables[0].rows[0],
+            ws_v2::TableUpdateRows::PersistentTable(_)
+        ));
+        assert_eq!(test_row_values(&set_a1.tables[0].rows), [2, 1, 1]);
+        assert_eq!(set_a1.tables[1].table_name.as_ref(), "b");
+        assert_eq!(test_row_values(&set_a1.tables[1].rows), [5]);
+
+        assert_eq!(set_a2.query_set_id, ClientQuerySetId::new(2));
+        assert_eq!(set_a2.tables.len(), 2);
+        assert_eq!(set_a2.tables[0].table_name.as_ref(), "b");
+        assert_eq!(test_row_values(&set_a2.tables[0].rows), [6]);
+        assert_eq!(set_a2.tables[1].table_name.as_ref(), "z");
+        assert!(matches!(
+            set_a2.tables[1].rows[0],
+            ws_v2::TableUpdateRows::EventTable(_)
+        ));
+        assert_eq!(test_row_values(&set_a2.tables[1].rows), [9, 9]);
+
+        let update_b = match rx_b.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update))) => update,
+            other => panic!("expected client B transaction update, got {other:?}"),
+        };
+        assert_eq!(update_b.query_sets.len(), 1);
+        assert_eq!(update_b.query_sets[0].query_set_id, ClientQuerySetId::new(1));
+        assert_eq!(update_b.query_sets[0].tables[0].table_name.as_ref(), "a");
+        assert_eq!(test_row_values(&update_b.query_sets[0].tables[0].rows), [7]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn v2_send_preserves_populated_empty_and_cancelled_client_paths() -> anyhow::Result<()> {
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let caller_id = id(1);
+        let other_id = id(2);
+        let cancelled_id = id(3);
+        let (caller, mut caller_rx) = v2_sender_client(&db, caller_id);
+        let (other, mut other_rx) = v2_sender_client(&db, other_id);
+        let (cancelled, mut cancelled_rx) = v2_sender_client(&db, cancelled_id);
+        cancelled.kick(ClientDisconnectCause::ClientClose);
+
+        let (_send_tx, send_rx) = mpsc::unbounded_channel();
+        let mut worker = SendWorker::new(send_rx, None, None);
+        add_send_worker_client(&mut worker, caller_id, caller.clone());
+        add_send_worker_client(&mut worker, other_id, other);
+        add_send_worker_client(&mut worker, cancelled_id, cancelled);
+
+        worker.send_v2_computed_queries(
+            1,
+            vec![
+                v2_test_update(caller_id, 1, "t", persistent_test_rows(17)),
+                v2_test_update(other_id, 1, "t", persistent_test_rows(18)),
+                v2_test_update(cancelled_id, 1, "t", persistent_test_rows(19)),
+            ],
+            vec![],
+            send_worker_event(Some(41)),
+            Some(caller.clone()),
+        );
+
+        let caller_result = match caller_rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::ReducerResult(result))) => result,
+            other => panic!("expected populated caller ReducerResult, got {other:?}"),
+        };
+        assert_eq!(caller_result.request_id, 41);
+        let ws_v2::ReducerOutcome::Ok(caller_ok) = caller_result.result else {
+            panic!("expected successful caller result");
+        };
+        assert_eq!(caller_ok.transaction_update.query_sets.len(), 1);
+        assert_eq!(
+            test_row_values(&caller_ok.transaction_update.query_sets[0].tables[0].rows),
+            [17]
+        );
+
+        let other_update = match other_rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update))) => update,
+            other => panic!("expected subscriber TransactionUpdate, got {other:?}"),
+        };
+        assert_eq!(test_row_values(&other_update.query_sets[0].tables[0].rows), [18]);
+        assert!(tokio::time::timeout(Duration::from_millis(5), cancelled_rx.recv())
+            .await
+            .is_err());
+
+        worker.send_v2_computed_queries(2, vec![], vec![], send_worker_event(Some(42)), Some(caller));
+        let empty_result = match caller_rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::ReducerResult(result))) => result,
+            other => panic!("expected empty caller ReducerResult, got {other:?}"),
+        };
+        assert_eq!(empty_result.request_id, 42);
+        let ws_v2::ReducerOutcome::Ok(empty_ok) = empty_result.result else {
+            panic!("expected successful empty caller result");
+        };
+        assert!(empty_ok.transaction_update.query_sets.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_worker_keeps_v2_updates_in_transaction_offset_order() -> anyhow::Result<()> {
+        struct NoopWake;
+        impl Wake for NoopWake {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let client_id = id(1);
+        let (client, mut rx) = v2_sender_client(&db, client_id);
+        let (send_tx, send_rx) = mpsc::unbounded_channel();
+        let worker = SendWorker::new(send_rx, None, None);
+        send_tx
+            .send(SendWorkerMessage::AddClient {
+                client_id,
+                dropped: Arc::new(AtomicBool::new(false)),
+                outbound_ref: client.clone(),
+            })
+            .unwrap();
+
+        let (first_offset_tx, first_offset_rx) = oneshot::channel();
+        let first_queries = ComputedQueries {
+            updates: vec![],
+            v2_updates: vec![v2_test_update(client_id, 1, "t", persistent_test_rows(7))],
+            errs: vec![],
+            v2_errs: vec![],
+            event: send_worker_event(Some(43)),
+            caller: Some(client.clone()),
+            module_def_version: RawModuleDefVersion::V10,
+        };
+        send_tx
+            .send(SendWorkerMessage::Broadcast {
+                tx_offset: first_offset_rx,
+                queries: first_queries,
+            })
+            .unwrap();
+
+        let (second_offset_tx, second_offset_rx) = oneshot::channel();
+        let second_queries = ComputedQueries {
+            updates: vec![],
+            v2_updates: vec![v2_test_update(client_id, 1, "t", persistent_test_rows(8))],
+            errs: vec![],
+            v2_errs: vec![],
+            event: send_worker_event(Some(44)),
+            caller: Some(client),
+            module_def_version: RawModuleDefVersion::V10,
+        };
+        send_tx
+            .send(SendWorkerMessage::Broadcast {
+                tx_offset: second_offset_rx,
+                queries: second_queries,
+            })
+            .unwrap();
+
+        let waker = Waker::from(Arc::new(NoopWake));
+        let mut context = Context::from_waker(&waker);
+        let mut worker_task = Box::pin(worker.run());
+        let mut first_message_future = Box::pin(rx.recv());
+        assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
+        assert!(matches!(
+            first_message_future.as_mut().poll(&mut context),
+            Poll::Pending
+        ));
+
+        // The second transaction is ready first, but the worker is still waiting
+        // for the first transaction's offset and must not let it overtake.
+        second_offset_tx.send(2).unwrap();
+        assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
+        assert!(matches!(
+            first_message_future.as_mut().poll(&mut context),
+            Poll::Pending
+        ));
+
+        first_offset_tx.send(1).unwrap();
+        assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
+        let first_message = match first_message_future.as_mut().poll(&mut context) {
+            Poll::Ready(Some(message)) => message,
+            other => panic!("expected the first reducer result after offset 1, got {other:?}"),
+        };
+        drop(first_message_future);
+        let mut second_message_future = Box::pin(rx.recv());
+        let second_message = match second_message_future.as_mut().poll(&mut context) {
+            Poll::Ready(Some(message)) => message,
+            other => panic!("expected the second reducer result after offset 2, got {other:?}"),
+        };
+        for (message, request_id, value) in [(first_message, 43, 7), (second_message, 44, 8)] {
+            match message {
+                OutboundMessage::V2(ws_v2::ServerMessage::ReducerResult(result)) => {
+                    assert_eq!(result.request_id, request_id);
+                    let ws_v2::ReducerOutcome::Ok(ok) = result.result else {
+                        panic!("expected successful reducer result");
+                    };
+                    assert_eq!(
+                        test_row_values(&ok.transaction_update.query_sets[0].tables[0].rows),
+                        [value]
+                    );
+                }
+                other => panic!("expected v2 caller result after its transaction offset, got {other:?}"),
+            }
+        }
+
+        drop(worker_task);
+        drop(send_tx);
         Ok(())
     }
 }
