@@ -609,41 +609,6 @@ where
     }
 }
 
-/// Builds an owned boxed slice without growing a temporary vector for one item.
-struct BoxedSliceBuilder<T> {
-    first: Option<T>,
-    rest: Vec<T>,
-}
-
-impl<T> BoxedSliceBuilder<T> {
-    fn new() -> Self {
-        Self { first: None, rest: Vec::new() }
-    }
-
-    fn push(&mut self, value: T) {
-        match self.first.take() {
-            Some(first) => {
-                let mut rest = Vec::with_capacity(2);
-                rest.push(first);
-                rest.push(value);
-                self.rest = rest;
-            }
-            None if self.rest.is_empty() => self.first = Some(value),
-            None => self.rest.push(value),
-        }
-    }
-
-    fn into_boxed_slice(self) -> Box<[T]> {
-        match self.first {
-            Some(first) => {
-                debug_assert!(self.rest.is_empty());
-                Box::new([first])
-            }
-            None => self.rest.into_boxed_slice(),
-        }
-    }
-}
-
 /// The computed incremental update queries with sufficient information
 /// to not depend on the transaction lock so that further work can be
 /// done in a separate worker: [`SubscriptionManager::send_worker`].
@@ -2148,11 +2113,11 @@ impl SendWorker {
                 continue;
             }
 
-            let mut query_set_updates = BoxedSliceBuilder::new();
+            let mut query_set_updates: Vec<ws_v2::QuerySetUpdate> = Vec::with_capacity(1);
             let mut updates = updates.peekable();
             while let Some(first_update) = updates.next() {
                 let query_set_id = first_update.query_set_id;
-                let mut table_updates = BoxedSliceBuilder::new();
+                let mut table_updates: Vec<ws_v2::TableUpdate> = Vec::with_capacity(1);
                 let mut first_table_update = Some(first_update);
                 while let Some(table_update) = first_table_update.take() {
                     let table_name = table_update.table_name;
