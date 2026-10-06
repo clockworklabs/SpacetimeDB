@@ -1,5 +1,6 @@
 use crate::{
     bflatn_to::required_var_len_granules_for_row,
+    page,
     tiered::{PageError, PageEvictionPolicy, PageHandle, PageManager, PageSet, PreparedCommit, ReservedPage},
 };
 
@@ -669,6 +670,68 @@ impl Table {
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) }?;
         Ok((hash, row_ref))
+    }
+
+    pub(crate) fn insert_prepared<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        prepared: &PreparedInsert,
+        reservation: Option<(PageIndex, ReservedPage)>,
+    ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
+        let (row_ref, blob_bytes) = match &prepared.inner {
+            PreparedInsertInner::Product(row) => self.insert_physically_pv(blob_store, row, reservation),
+            PreparedInsertInner::CopyFixed {
+                source_page,
+                source_offset,
+            } => self.insert_physically_copy_bflatn(blob_store, source_page, *source_offset, reservation),
+        }?;
+
+        let row_ptr = row_ref.into_pointer();
+
+        // Confirm the insertion, checking any constraints, removing the physical row on error.
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        // Re. `CHECK_SAME_ROW = true`,
+        // where `insert` is called, we are not dealing with transactions,
+        // and we already know there cannot be a duplicate row error,
+        // but we check just in case it isn't.
+        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
+        // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) }?;
+
+        Ok((hash, row_ref))
+    }
+
+    fn insert_physically_copy_bflatn<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        source_page: &PageHandle,
+        source_offset: PageOffset,
+        reservation: Option<(PageIndex, ReservedPage)>,
+    ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
+        assert!(self.inner.row_layout.layout().fixed);
+
+        let fixed_row_size = self.row_size();
+        let source_page = source_page.read();
+        let source = source_page.get_row_data(source_offset, fixed_row_size);
+        let squashed_offset = self.squashed_offset;
+        let (page_index, fixed_offset) =
+            self.inner
+                .pages
+                .with_page_to_insert_row(fixed_row_size, 0, reservation, |page| {
+                    // SAFETY: The page and source table use the same fixed row layout.
+                    let fixed_offset = unsafe { page.alloc_fixed_len(fixed_row_size) }?;
+                    let (mut fixed, _) = page.split_fixed_var_mut();
+                    fixed.get_row_mut(fixed_offset, fixed_row_size).copy_from_slice(source);
+
+                    Ok::<_, page::Error>(fixed_offset)
+                })?;
+        let fixed_offset = fixed_offset?;
+        let ptr = RowPointer::new(false, page_index, fixed_offset, squashed_offset);
+
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, squashed_offset, ptr) }?;
+
+        Ok((row_ref, BlobNumBytes::default()))
     }
 
     /// Physically inserts `row` into the page
@@ -1906,19 +1969,37 @@ impl Table {
     pub fn prepare_commit(
         &self,
         deletes: impl IntoIterator<Item = RowPointer>,
-        inserts: impl IntoIterator<Item = Result<ProductValue, PageError>>,
+        inserts: impl IntoIterator<Item = Result<PreparedInsert, PageError>>,
     ) -> Result<PreparedCommit, PageError> {
         self.inner.pages.prepare_commit(
             self.row_size(),
             &self.inner.visitor_prog,
             deletes,
-            inserts.into_iter().map(|row| {
-                row.map(|row| {
-                    let num_granules = self.required_var_len_granules_for_insert(&row);
-                    (row, num_granules)
+            inserts.into_iter().map(|res| {
+                res.map(|insert| {
+                    let num_granules = match &insert.inner {
+                        PreparedInsertInner::Product(row) => self.required_var_len_granules_for_insert(row),
+                        PreparedInsertInner::CopyFixed { .. } => 0,
+                    };
+                    (insert, num_granules)
                 })
             }),
         )
+    }
+
+    pub fn prepare_insert(&self, row: RowRef<'_>) -> PreparedInsert {
+        debug_assert_eq!(self.row_layout(), row.row_layout());
+
+        if !self.schema.is_event && self.inner.row_layout.layout().fixed {
+            let (source_page, source_offset) = row.page_and_offset();
+            PreparedInsertInner::CopyFixed {
+                source_page: source_page.clone(),
+                source_offset,
+            }
+            .into()
+        } else {
+            PreparedInsertInner::Product(row.to_product_value()).into()
+        }
     }
 
     fn required_var_len_granules_for_insert(&self, row: &ProductValue) -> usize {
@@ -2737,6 +2818,39 @@ impl Table {
 
         Ok(())
     }
+}
+
+/// An insert planned during [Table::prepare_commit].
+///
+/// If possible, a planned insert will copy the row from the transaction into
+/// the committed state table without serialization roundtrips.
+/// Otherwise, it stores the [ProductValue] and the row is inserted via the
+/// normal insert path.
+pub struct PreparedInsert {
+    inner: PreparedInsertInner,
+}
+
+impl PreparedInsert {
+    pub(crate) fn into_product_value(self, inserted: Option<&RowRef<'_>>) -> ProductValue {
+        match self.inner {
+            PreparedInsertInner::Product(pv) => pv,
+            PreparedInsertInner::CopyFixed { .. } => inserted.unwrap().to_product_value(),
+        }
+    }
+}
+
+impl From<PreparedInsertInner> for PreparedInsert {
+    fn from(inner: PreparedInsertInner) -> Self {
+        Self { inner }
+    }
+}
+
+enum PreparedInsertInner {
+    Product(ProductValue),
+    CopyFixed {
+        source_page: PageHandle,
+        source_offset: PageOffset,
+    },
 }
 
 #[cfg(test)]

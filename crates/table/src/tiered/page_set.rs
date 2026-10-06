@@ -12,7 +12,7 @@ use crate::{
     blob_store::BlobStore,
     indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
-    table::{BlobNumBytes, Table},
+    table::{BlobNumBytes, PreparedInsert, Table},
     tiered::page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlotHandle, ReservedPage},
     var_len::VarLenMembers,
 };
@@ -359,7 +359,7 @@ impl PageSet {
         fixed_row_size: Size,
         visitor: &impl VarLenMembers,
         deletes: impl IntoIterator<Item = RowPointer>,
-        inserts: impl IntoIterator<Item = Result<(ProductValue, usize), PageError>>,
+        inserts: impl IntoIterator<Item = Result<(PreparedInsert, usize), PageError>>,
     ) -> Result<PreparedCommit, PageError> {
         let mut allocator = PageAllocator::new(self, fixed_row_size);
         let mut pinned = BTreeMap::new();
@@ -539,16 +539,18 @@ impl PreparedCommit {
             if !schema.is_event {
                 let reservation = self.reserved.remove(&page_index).map(|page| (page_index, page));
                 let row_ref = table
-                    .insert_with_reservation(blob_store, &row, reservation)
+                    .insert_prepared(blob_store, &row, reservation)
                     .map(|(_, row_ref)| row_ref)
                     .expect("failed to insert during transaction commit");
                 let (page, _) = row_ref.page_and_offset();
                 let inserted_index = row_ref.pointer().page_index();
                 pinned.entry(inserted_index).or_insert_with(|| page.clone());
                 assert_eq!(inserted_index, page_index, "planned and actual placement differ");
-            }
 
-            row
+                row.into_product_value(Some(&row_ref))
+            } else {
+                row.into_product_value(None)
+            }
         });
 
         drop(pinned);
@@ -576,7 +578,7 @@ impl AppliedCommit {
 /// Constructed during [PageSet::prepare_commit].
 pub struct PlannedInsert {
     page_index: PageIndex,
-    row: ProductValue,
+    row: PreparedInsert,
 }
 
 enum PlannedPage {

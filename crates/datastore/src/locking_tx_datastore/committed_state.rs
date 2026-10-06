@@ -601,7 +601,7 @@ impl CommittedState {
             let inserts = maybe_inserts.into_iter().flat_map(|tx_insert_table| {
                 tx_insert_table
                     .scan_rows(&tx_state.blob_store)
-                    .map(|row| Ok(row?.to_product_value()))
+                    .map(|row| Ok(commit_table.prepare_insert(row?)))
             });
 
             let commit = commit_table.prepare_commit(deletes, inserts)?;
