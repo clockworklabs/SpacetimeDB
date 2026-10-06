@@ -2229,7 +2229,7 @@ mod tests {
     use std::{
         future::Future,
         sync::{atomic::AtomicBool, Arc},
-        task::{Context, Poll, Wake, Waker},
+        task::{Context, Poll, Waker},
         time::Duration,
     };
 
@@ -3502,11 +3502,6 @@ mod tests {
 
     #[tokio::test]
     async fn send_worker_keeps_v2_updates_in_transaction_offset_order() -> anyhow::Result<()> {
-        struct NoopWake;
-        impl Wake for NoopWake {
-            fn wake(self: Arc<Self>) {}
-        }
-
         let TestDB { db, .. } = TestDB::in_memory()?;
         let client_id = id(1);
         let (client, mut rx) = v2_sender_client(&db, client_id);
@@ -3554,8 +3549,7 @@ mod tests {
             })
             .unwrap();
 
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut context = Context::from_waker(&waker);
+        let mut context = Context::from_waker(Waker::noop());
         let mut worker_task = Box::pin(worker.run());
         let mut first_message_future = Box::pin(rx.recv());
         assert!(matches!(worker_task.as_mut().poll(&mut context), Poll::Pending));
