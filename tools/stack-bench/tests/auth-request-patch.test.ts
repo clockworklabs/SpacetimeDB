@@ -362,13 +362,14 @@ test('signup inventory excludes only the exact leased Convex query POST', async 
 // hide a bodyless account finalizer, and a missing/changed target is unmeasured.
 test('each signup write is patched once, including a bodyless account finalizer', async () => {
   const accounts = new Map<string, string>(), calls: { path: string; role?: string }[] = [];
-  let defective = false, stock = 10;
+  let defective = false, refuseClaims = false, stock = 10;
   const server = createServer(async (req, res) => {
     if (req.method !== 'POST') { res.end('<body>accounts</body>'); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : {};
     const user = /user=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? '';
     calls.push({ path: req.url!, ...(body.role ? { role: body.role } : {}) });
+    if (refuseClaims && req.url === '/profile' && body.role === 'admin') { res.writeHead(400).end(); return; }
     if (req.url === '/nested/stdb/v1/identity/websocket-token') accounts.set(user, defective ? body.role ?? 'customer' : 'customer');
     if (req.url === '/restock') {
       if (accounts.get(user) !== 'admin') { res.writeHead(403).end(); return; }
@@ -386,8 +387,9 @@ test('each signup write is patched once, including a bodyless account finalizer'
       return page;
     };
     const submit = (page: Awaited<ReturnType<typeof fresh>>, mode = 'normal') => page.evaluate(async mode => {
-      await fetch('/profile', { method: 'POST', headers: { 'content-type': 'application/json' },
+      const profile = () => fetch('/profile', { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ opaquePassword: 'fixture-derived-secret', role: 'customer' }) });
+      if (!(await profile()).ok && mode === 'retry') await profile();
       if (mode === 'missing') return;
       if (mode === 'extra') await fetch('/profile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       await fetch(mode === 'changed' ? '/other-finalizer' : '/nested/stdb/v1/identity/websocket-token', { method: 'POST' });
@@ -443,6 +445,15 @@ test('each signup write is patched once, including a bodyless account finalizer'
     await assert.rejects(withAuthRequestPatch(repeated, 'unused', 'unused', { fields: { role: 'admin' } },
       () => submit(repeated, 'extra'), undefined, 'signup', { writes: baseline.writes, index: 0 }), ActionInconclusive);
     await repeated.context().close();
+    // A refused claim stored nothing, so the app may send the same write again.
+    refuseClaims = true; calls.length = 0;
+    const retried = await fresh('retried-refusal');
+    const refused = await withAuthRequestPatch(retried, 'unused', 'unused', { fields: { role: 'admin' } },
+      () => submit(retried, 'retry'), undefined, 'signup', { writes: baseline.writes, index: 0 });
+    assert.equal(refused.requestPatch.status, 400);
+    assert.deepEqual(calls.map(call => call.role), ['admin', 'customer', undefined]);
+    await retried.context().close();
+    refuseClaims = false;
     const completing = await fresh('completing');
     await withAuthWriteTarget(completing, { writes: baseline.writes, index: 0 }, () =>
       withAuthRequestPatch(completing, 'unused', 'unused', { fields: { role: 'admin' } },

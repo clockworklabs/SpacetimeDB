@@ -402,8 +402,11 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
       // that grants the claimed role can do more). They are recorded, not refused.
       // A repeat of the target itself would be unpatched and could undo the claim.
       const target = probe.target.writes[probe.target.index]!;
-      if (selected === 1 && index > probe.target.index
-        && !(write.transport === target.transport && write.destination === target.destination)) return false;
+      const repeatsTarget = write.transport === target.transport && write.destination === target.destination;
+      if (selected === 1 && index > probe.target.index && !repeatsTarget) return false;
+      // A request the server refused stored no claim, so the app's repeat of it cannot undo one.
+      if (selected === 1 && repeatsTarget && requestPatch
+        && (requestPatch.status === undefined ? requestPatch.success === false : requestPatch.status >= 400)) return false;
       fail(); return false;
     }
     return index === probe.target.index && ++selected === 1;
