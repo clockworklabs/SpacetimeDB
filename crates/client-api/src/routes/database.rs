@@ -106,9 +106,9 @@ pub struct CallFromDatabaseQuery {
     outbox_table_id: u32,
     /// Dense, one-based sequence number within (sender, receiver, outbox table).
     seq: u64,
-    /// Highest contiguous sequence whose result the sender has already retired.
+    /// Highest contiguous sequence whose result the sender has already acknowledged.
     #[serde(default)]
-    results_received_through: u64,
+    ack_prefix: u64,
     /// Signature hash from the sender's receiver bindings.
     #[serde(default)]
     signature_hash: Option<String>,
@@ -283,18 +283,18 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                 FunctionArgs::Bsatn(body),
                 query.outbox_table_id,
                 query.seq,
-                query.results_received_through,
+                query.ack_prefix,
             )
             .await
             .map_err(|e| map_idc_call_error(e, &reducer))?;
 
         debug!(
-            "IDC delivery accepted: sender={}, receiver={}, outbox_table_id={}, seq={}, results_received_through={}, signature_hash={:?}",
+            "IDC delivery accepted: sender={}, receiver={}, outbox_table_id={}, seq={}, ack_prefix={}, signature_hash={:?}",
             caller_identity,
             owner_identity,
             query.outbox_table_id,
             query.seq,
-            query.results_received_through,
+            query.ack_prefix,
             query.signature_hash,
         );
 
@@ -318,7 +318,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                 let (status, body) = idc_stored_outcome_response(outcome.result_status, outcome.result_payload);
                 Ok((status, body).into_response())
             }
-            IdcReducerCallOutcome::AlreadyRetired => Ok((StatusCode::ALREADY_REPORTED, "").into_response()),
+            IdcReducerCallOutcome::AlreadyAcked => Ok((StatusCode::ALREADY_REPORTED, "").into_response()),
         }
     };
 
@@ -568,7 +568,6 @@ fn idc_stored_outcome_response(result_status: StInboundMsgResultStatus, result_p
     match result_status {
         StInboundMsgResultStatus::Ok => (StatusCode::OK, result_payload),
         StInboundMsgResultStatus::Err => (StatusCode::UNPROCESSABLE_ENTITY, result_payload),
-        StInboundMsgResultStatus::AlreadyRetired => (StatusCode::ALREADY_REPORTED, Bytes::new()),
     }
 }
 

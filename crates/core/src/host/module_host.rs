@@ -410,7 +410,7 @@ enum ModuleHostInner {
 enum IdcDeliveryDecision {
     Ready,
     Replayed(StInboundMsgRow),
-    AlreadyRetired,
+    AlreadyAcked,
     OutOfOrder { expected: u64 },
 }
 
@@ -1650,7 +1650,7 @@ pub struct NoSuchModule;
 pub enum IdcReducerCallOutcome {
     Applied(ReducerCallResultWithTxOffset),
     Replayed(IdcStoredReducerOutcome),
-    AlreadyRetired,
+    AlreadyAcked,
 }
 
 #[derive(Debug)]
@@ -2482,7 +2482,7 @@ impl ModuleHost {
         sender_identity: Identity,
         sender_outbox_table_id: u32,
         seq: u64,
-        results_received_through: u64,
+        ack_prefix: u64,
         reducer_name: &ReducerName,
         params: CallReducerParams,
     ) -> Result<IdcReducerCallOutcome, IdcReducerCallError> {
@@ -2490,16 +2490,16 @@ impl ModuleHost {
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let (tx, decision) = stdb
             .with_auto_rollback(tx, |tx| {
-                tx.trim_inbound_idc_outcomes(sender_identity, sender_outbox_table_id, results_received_through)?;
-                let applied_through = tx.inbound_idc_applied_through(sender_identity, sender_outbox_table_id)?;
-                let decision = if seq <= applied_through {
+                tx.trim_inbound_idc_outcomes(sender_identity, sender_outbox_table_id, ack_prefix)?;
+                let applied_prefix = tx.inbound_idc_applied_prefix(sender_identity, sender_outbox_table_id)?;
+                let decision = if seq <= applied_prefix {
                     match tx.inbound_idc_outcome(sender_identity, sender_outbox_table_id, seq)? {
                         Some(row) => IdcDeliveryDecision::Replayed(row),
-                        None => IdcDeliveryDecision::AlreadyRetired,
+                        None => IdcDeliveryDecision::AlreadyAcked,
                     }
-                } else if seq != applied_through + 1 {
+                } else if seq != applied_prefix + 1 {
                     IdcDeliveryDecision::OutOfOrder {
-                        expected: applied_through + 1,
+                        expected: applied_prefix + 1,
                     }
                 } else {
                     IdcDeliveryDecision::Ready
@@ -2583,7 +2583,7 @@ impl ModuleHost {
                 result_status: row.result_status,
                 result_payload: row.result_payload,
             })),
-            IdcDeliveryDecision::AlreadyRetired => Ok(IdcReducerCallOutcome::AlreadyRetired),
+            IdcDeliveryDecision::AlreadyAcked => Ok(IdcReducerCallOutcome::AlreadyAcked),
             IdcDeliveryDecision::OutOfOrder { expected } => {
                 Err(IdcReducerCallError::OutOfOrder { expected, actual: seq })
             }
@@ -2692,7 +2692,7 @@ impl ModuleHost {
         args: FunctionArgs,
         sender_outbox_table_id: u32,
         seq: u64,
-        results_received_through: u64,
+        ack_prefix: u64,
     ) -> Result<IdcReducerCallOutcome, IdcReducerCallError> {
         let (reducer_def, params) = self
             .reducer_call_params(
@@ -2710,7 +2710,7 @@ impl ModuleHost {
             caller_identity,
             sender_outbox_table_id,
             seq,
-            results_received_through,
+            ack_prefix,
             &reducer_def.name,
             params,
         )
