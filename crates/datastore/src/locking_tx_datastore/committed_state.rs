@@ -35,6 +35,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
+use itertools::Either;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro128PlusPlus;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
@@ -54,8 +55,8 @@ use spacetimedb_table::{
     table::{RowRef, Table, TableAndIndex},
     tiered::{ByteBudget, ByteBudgetConfig, PageEvictionPolicy, PageManager, PreparedCommit},
 };
-use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::{collections::BTreeMap, iter};
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -592,17 +593,21 @@ impl CommittedState {
                 .get_table_and_blob_store(table_id)
                 .expect("commit table must already exist");
 
-            // Collect the deleted row pointers from the [TxState] table.
-            let deletes = maybe_deletes
-                .into_iter()
-                .flat_map(|tx_delete_table| tx_delete_table.iter());
-
-            // Collect the inserted product values from the [TxState] table.
-            let inserts = maybe_inserts.into_iter().flat_map(|tx_insert_table| {
-                tx_insert_table
-                    .scan_rows(&tx_state.blob_store)
-                    .map(|row| Ok(commit_table.prepare_insert(row?)))
-            });
+            // Collect deletes and inserts from the tx table.
+            // NOTE: This intentionally avoids `.flat_map()`, which showed up in
+            // profiling.
+            let deletes = match maybe_deletes {
+                Some(tx_delete_table) => Either::Left(tx_delete_table.iter()),
+                None => Either::Right(iter::empty()),
+            };
+            let inserts = match maybe_inserts {
+                Some(tx_insert_table) => Either::Left(
+                    tx_insert_table
+                        .scan_rows(&tx_state.blob_store)
+                        .map(|row| Ok(commit_table.prepare_insert(row?))),
+                ),
+                None => Either::Right(iter::empty()),
+            };
 
             let commit = commit_table.prepare_commit(deletes, inserts)?;
             prepared.insert(table_id, commit);
