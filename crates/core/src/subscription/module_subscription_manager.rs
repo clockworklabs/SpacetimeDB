@@ -2240,10 +2240,11 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_schema::def::RawModuleDefVersion;
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_subscription::SubscriptionPlan;
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
 
     use super::{
         ClientId, ClientQuerySetId, Plan, SendWorker, SendWorkerClient, SubscriptionIdV2, SubscriptionManager,
