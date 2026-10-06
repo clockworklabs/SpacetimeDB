@@ -337,6 +337,7 @@ namespace SpacetimeDB
                     var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
                     for (var i = 0; i < insertRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(insertReader, persistent.Inserts, i);
                         var obj = Decode(insertReader, out var pk);
                         delta.Delta.Add(pk, obj);
                     }
@@ -347,6 +348,7 @@ namespace SpacetimeDB
                     delta.EventRows ??= new();
                     for (var i = 0; i < eventRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(eventReader, events.Events, i);
                         var obj = DecodeValue(eventReader);
                         delta.EventRows.Add(obj);
                     }
@@ -373,6 +375,7 @@ namespace SpacetimeDB
                     var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
                     for (var i = 0; i < deleteRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(deleteReader, persistent.Deletes, i);
                         var obj = Decode(deleteReader, out var pk);
                         delta.Delta.Remove(pk, obj);
                     }
@@ -401,6 +404,7 @@ namespace SpacetimeDB
                     var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
                     for (var i = 0; i < insertRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(insertReader, persistent.Inserts, i);
                         var obj = Decode(insertReader, out var pk);
                         delta.Delta.Add(pk, obj);
                     }
@@ -408,6 +412,7 @@ namespace SpacetimeDB
                     var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
                     for (var i = 0; i < deleteRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(deleteReader, persistent.Deletes, i);
                         var obj = Decode(deleteReader, out var pk);
                         delta.Delta.Remove(pk, obj);
                     }
@@ -418,6 +423,7 @@ namespace SpacetimeDB
                     delta.EventRows ??= new();
                     for (var i = 0; i < eventRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(eventReader, events.Events, i);
                         var obj = DecodeValue(eventReader);
                         delta.EventRows.Add(obj);
                     }
