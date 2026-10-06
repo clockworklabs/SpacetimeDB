@@ -1013,6 +1013,7 @@ namespace SpacetimeDB
             var output = new T[resultCount];
             for (int i = 0; i < resultCount; i++)
             {
+                CompressionHelpers.SeekRow(resultReader, resultTable.Rows, i);
                 output[i] = IStructuralReadWrite.Read<T>(resultReader);
             }
             return output;
