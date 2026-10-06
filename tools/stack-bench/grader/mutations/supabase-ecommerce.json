@@ -278,7 +278,7 @@
       "edits": [
         {
           "find": "  if account_name !~ '^[A-Za-z0-9-]{1,48}$' then\n    raise exception 'Invalid username';\n  end if;",
-          "replace": "  if account_name !~ '^[A-Za-z0-9-]{1,48}$' then\n    raise exception 'Invalid username';\n  end if;\n  if account_name not in ('admin', 'staff', 'customer') then\n    raise exception 'Registration disabled';\n  end if;"
+          "replace": "  if account_name !~ '^[A-Za-z0-9-]{1,48}$' then\n    raise exception 'Invalid username';\n  end if;\n  if account_name not in ('admin', 'staff', 'staff2', 'customer') then\n    raise exception 'Registration disabled';\n  end if;"
         }
       ]
     },
@@ -1815,12 +1815,12 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
       ],
-      "desc": "The start-up seed path that runs when the crashed application restarts writes a wrong cart quantity for every account with an order, producing neither the prepared cart nor a completed checkout.",
-      "file": "supabase/seed.sql",
+      "desc": "A recovery worker started when the Realtime channel fails restores a wrong cart quantity through the data API, producing neither the prepared cart nor a completed checkout. The worker retries data API calls while the database is down; it does not wait for the Realtime reconnect backoff.",
+      "file": "client/src/request.ts",
       "edits": [
         {
-          "find": "  if exists (select 1 from public.item) then return; end if;",
-          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restart recovery restores a wrong cart quantity.\n    insert into public.order_cart (account_id, item_id, quantity)\n      select header.account_id, min(line.item_id), 2 from public.order_header header\n      join public.order_line line on line.order_id = header.id group by header.account_id\n      on conflict (account_id, item_id) do update set quantity = 2;\n    return;\n  end if;"
+          "find": "    .subscribe();\n}",
+          "replace": "    .subscribe(status => {\n      if (status === 'SUBSCRIBED') subscribedOnce = true;\n      else if (subscribedOnce && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) startRecovery();\n    });\n}\nlet subscribedOnce = false, recoveryStarted = false;\nfunction startRecovery() {\n  if (recoveryStarted) return;\n  recoveryStarted = true;\n  void (async () => {\n    const deadline = Date.now() + 20000;\n    while (true) {\n      try {\n        const current = await mutate('shop_state');\n        const line = current.cart.items[0] || current.orders[0]?.items[0];\n        if (!line) throw new Error('Crash control has no cart or prior order');\n        await mutate('update_cart_quantity', { itemId: line.itemId, quantity: 2 });\n        console.error('Crash control committed', Date.now());\n        return;\n      } catch (error) {\n        if (Date.now() >= deadline) throw error;\n        await new Promise(resolve => setTimeout(resolve, 25));\n      }\n    }\n  })().catch(error => console.error('Crash control failed', String(error)));\n}"
         }
       ]
     },
@@ -1830,12 +1830,17 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
       ],
-      "desc": "The start-up seed path that runs when the crashed application restarts removes Coffee Grinder stock while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
-      "file": "supabase/seed.sql",
+      "desc": "A recovery worker started when the Realtime channel fails removes Coffee Grinder stock while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity. The worker retries data API calls while the database is down; it does not wait for the Realtime reconnect backoff.",
+      "file": "client/src/request.ts",
       "edits": [
         {
-          "find": "  if exists (select 1 from public.item) then return; end if;",
-          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restart recovery removes sibling-product stock.\n    update public.stock set quantity = quantity - 1 where item_id = (select id from public.item where name = 'Coffee Grinder')\n      and exists (select 1 from public.order_header);\n    return;\n  end if;"
+          "find": "    .subscribe();\n}",
+          "replace": "    .subscribe(status => {\n      if (status === 'SUBSCRIBED') subscribedOnce = true;\n      else if (subscribedOnce && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) startRecovery();\n    });\n}\nlet subscribedOnce = false, recoveryStarted = false;\nfunction startRecovery() {\n  if (recoveryStarted) return;\n  recoveryStarted = true;\n  void (async () => {\n    const deadline = Date.now() + 20000;\n    while (true) {\n      try {\n        const current = await mutate('shop_state');\n        const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n        if (!priorOrder) throw new Error('Crash control has no pending order');\n        await mutate('cancel_order', { orderId: priorOrder.id });\n        console.error('Crash control committed', Date.now());\n        return;\n      } catch (error) {\n        if (Date.now() >= deadline) throw error;\n        await new Promise(resolve => setTimeout(resolve, 25));\n      }\n    }\n  })().catch(error => console.error('Crash control failed', String(error)));\n}"
+        },
+        {
+          "file": "supabase/migrations/20260925000100_shop.sql",
+          "find": "  for line in select * from order_line where order_id = target.id loop\n    perform private.restore_line(line);\n  end loop;\n  update order_header set status = 'cancelled', refunded = total where id = target.id;",
+          "replace": "  -- Defect: the recovery call removes sibling-product stock and changes nothing else.\n  update stock set quantity = quantity - 1\n    where item_id = (select id from item where name = 'Coffee Grinder')\n      and warehouse_id = (select min(warehouse_id) from stock where item_id = (select id from item where name = 'Coffee Grinder'));"
         }
       ]
     },
@@ -1845,12 +1850,17 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-durability.910b"
       ],
-      "desc": "The start-up seed path that runs when the crashed application restarts corrupts the totals of earlier acknowledged orders without changing stock, allocations or cart state.",
-      "file": "supabase/seed.sql",
+      "desc": "A recovery worker started when the Realtime channel fails corrupts the total of an earlier acknowledged order through the data API, without changing stock, allocations or cart state. The worker retries data API calls while the database is down; it does not wait for the Realtime reconnect backoff.",
+      "file": "client/src/request.ts",
       "edits": [
         {
-          "find": "  if exists (select 1 from public.item) then return; end if;",
-          "replace": "  if exists (select 1 from public.item) then\n    -- Defect: restart recovery rewrites acknowledged order totals.\n    update public.order_header set total = 0;\n    return;\n  end if;"
+          "find": "    .subscribe();\n}",
+          "replace": "    .subscribe(status => {\n      if (status === 'SUBSCRIBED') subscribedOnce = true;\n      else if (subscribedOnce && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) startRecovery();\n    });\n}\nlet subscribedOnce = false, recoveryStarted = false;\nfunction startRecovery() {\n  if (recoveryStarted) return;\n  recoveryStarted = true;\n  void (async () => {\n    const deadline = Date.now() + 20000;\n    while (true) {\n      try {\n        const current = await mutate('shop_state');\n        const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n        if (!priorOrder) throw new Error('Crash control has no pending order');\n        await mutate('cancel_order', { orderId: priorOrder.id });\n        console.error('Crash control committed', Date.now());\n        return;\n      } catch (error) {\n        if (Date.now() >= deadline) throw error;\n        await new Promise(resolve => setTimeout(resolve, 25));\n      }\n    }\n  })().catch(error => console.error('Crash control failed', String(error)));\n}"
+        },
+        {
+          "file": "supabase/migrations/20260925000100_shop.sql",
+          "find": "  for line in select * from order_line where order_id = target.id loop\n    perform private.restore_line(line);\n  end loop;\n  update order_header set status = 'cancelled', refunded = total where id = target.id;",
+          "replace": "  -- Defect: the recovery call rewrites an acknowledged order total.\n  update order_header set total = 0 where id = target.id;"
         }
       ]
     },
