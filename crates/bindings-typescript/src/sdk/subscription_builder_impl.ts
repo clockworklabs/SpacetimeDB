@@ -1,18 +1,18 @@
-import type { DbConnectionImpl } from './db_connection_impl';
-import { INTERNAL_REMOTE_MODULE } from './internal';
+import type { DbConnectionImpl } from './db_connection_impl.ts';
+import { INTERNAL_REMOTE_MODULE } from './internal.ts';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
-} from './event_context';
-import { EventEmitter } from './event_emitter';
-import type { UntypedRemoteModule } from './spacetime_module';
+} from './event_context.ts';
+import { EventEmitter } from './event_emitter.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
 import {
   isRowTypedQuery,
   toSql,
   type NamespacedQueryBuilder,
   type RowTypedQuery,
-} from '../lib/query';
-import type { UntypedSchemaDef } from '../lib/schema';
+} from '../lib/query.ts';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =

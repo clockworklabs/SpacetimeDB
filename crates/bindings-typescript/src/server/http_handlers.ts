@@ -1,22 +1,22 @@
-import type { EnvironmentFor } from '../lib/environment';
-import type { Identity } from '../lib/identity';
+import type { EnvironmentFor } from '../lib/environment.ts';
+import type { Identity } from '../lib/identity.ts';
 import type {
   HttpMethod,
   HttpVersion,
   MethodOrAny,
-} from '../lib/autogen/types';
-import type { UntypedSchemaDef } from '../lib/schema';
-import type { Timestamp } from '../lib/timestamp';
-import type { Uuid } from '../lib/uuid';
-import type { TransactionCtx } from './procedures';
-import type { HttpClient } from './http_internal';
-import type { Random } from './rng';
+} from '../lib/autogen/types.ts';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
+import type { Timestamp } from '../lib/timestamp.ts';
+import type { Uuid } from '../lib/uuid.ts';
+import type { TransactionCtx } from './procedures.ts';
+import type { HttpClient } from './http_internal.ts';
+import type { Random } from './rng.ts';
 import {
   exportContext,
   registerExport,
   type ModuleExport,
   type SchemaInner,
-} from './schema';
+} from './schema.ts';
 import {
   Headers,
   makeResponse,
@@ -26,7 +26,7 @@ import {
   type BodyInit,
   type HeadersInit,
   type ResponseInit,
-} from './http_shared';
+} from './http_shared.ts';
 
 export { Headers };
 export { SyncResponse };

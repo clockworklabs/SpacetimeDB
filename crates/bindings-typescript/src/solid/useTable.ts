@@ -5,11 +5,11 @@ import {
   createComputed,
   untrack,
 } from 'solid-js';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import { type EventContextInterface } from '../sdk/db_connection_impl';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
-import type { Prettify } from '../lib/type_util';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import { type EventContextInterface } from '../sdk/db_connection_impl.ts';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { Prettify } from '../lib/type_util.ts';
 import {
   type Query,
   type BooleanExpr,
@@ -17,7 +17,7 @@ import {
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
-} from '../lib/query';
+} from '../lib/query.ts';
 import { createStore, reconcile } from 'solid-js/store';
 
 export interface UseTableCallbacks<RowType> {
@@ -75,7 +75,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   const whereExpr = createMemo(() => getQueryWhereClause(q()));
   const querySql = createMemo(() => toSql(q()));
 
-  let connectionState: import('./connection_state').ConnectionState;
+  let connectionState: import('./connection_state.ts').ConnectionState;
   try {
     connectionState = useSpacetimeDB();
   } catch {

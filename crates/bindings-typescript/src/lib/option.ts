@@ -1,4 +1,4 @@
-import { AlgebraicType } from './algebraic_type';
+import { AlgebraicType } from './algebraic_type.ts';
 
 export type OptionAlgebraicType<T extends AlgebraicType = AlgebraicType> = {
   tag: 'Sum';

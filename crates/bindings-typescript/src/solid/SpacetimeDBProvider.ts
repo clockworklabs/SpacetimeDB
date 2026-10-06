@@ -1,16 +1,16 @@
 import {
   DbConnectionBuilder,
   type DbConnectionImpl,
-} from '../sdk/db_connection_impl';
+} from '../sdk/db_connection_impl.ts';
 import { onCleanup, createMemo, createComputed, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { SpacetimeDBContext } from './useSpacetimeDB';
-import type { ConnectionState } from './connection_state';
-import { ConnectionId } from '../lib/connection_id';
+import { SpacetimeDBContext } from './useSpacetimeDB.ts';
+import type { ConnectionState } from './connection_state.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
 import {
   ConnectionManager,
   type ConnectionState as ManagerConnectionState,
-} from '../sdk/connection_manager';
+} from '../sdk/connection_manager.ts';
 
 export interface SpacetimeDBProviderProps<
   DbConnection extends DbConnectionImpl<any>,
