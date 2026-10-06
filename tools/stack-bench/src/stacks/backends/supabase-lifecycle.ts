@@ -16,7 +16,7 @@ import type { StackLifecycleInput, StackRunPorts } from '../stack-adapter-contra
 import { controlHostedAppServer } from '../hosted-lifecycle.js';
 import { DEFAULT_SUPABASE_GATEWAY_URI, SUPABASE_IMAGES } from './supabase-identity.js';
 import { SUPABASE_CONTAINER_LIMITS, SUPABASE_DB_PROCESS_RECORD, SUPABASE_DB_SOCKET, SUPABASE_HOSTS,
-  SUPABASE_JWT_EXPIRY_SECONDS, SUPABASE_PSQL, SUPABASE_SECRET_FILE, SUPABASE_SERVICE_ROLES,
+  SUPABASE_JWT_EXPIRY_SECONDS, SUPABASE_SECRET_FILE, SUPABASE_SERVICE_ROLES,
   SUPABASE_STORAGE_ROOT, formatSupabaseSecrets, generateSupabaseSecrets, supabaseAnchor, supabaseAsset,
   readSupabasePlatformSecrets, supabaseDatabaseUrl, supabaseGatewayUrl, supabasePsqlArguments, supabaseServiceSpecs,
   supabaseSql } from './supabase-platform.js';
@@ -333,10 +333,12 @@ export function supabaseOrchestratorConfig({ env }: { env: NodeJS.ProcessEnv }) 
     lifecycle: {}, windowsEnvironmentBridge: ['STACK_BENCH_SUPABASE_URI'] };
 }
 
-// Realtime drops its sockets when the database restarts, but the application
-// server is a separate process: not a combined boundary.
+// Named operations are database functions the data API calls in one
+// transaction each. The application server only serves the client, so the
+// database is the one boundary a checkout can be interrupted at.
 export const SUPABASE_RUNTIME: StackDatabaseRuntime = {
-  combinedBoundary: false,
+  combinedBoundary: true,
+  transactionalRequests: true,
   databaseUser: 'postgres',
   processRecord: SUPABASE_DB_PROCESS_RECORD,
   recoverDatabase: ({ leasePath, lease, signal }) => recoverSupabase({ leasePath, leaseToken: lease.ownershipToken,
@@ -345,9 +347,4 @@ export const SUPABASE_RUNTIME: StackDatabaseRuntime = {
     return succeeds(() => attemptDocker(['exec', lease.resources.container!.id, 'pg_isready', '-h', '127.0.0.1',
       '-p', '5432', '-U', 'postgres']));
   },
-  // Work the application's own database connections and REST requests still hold.
-  // Platform services keep idle pooled connections; they are not pending work.
-  drainCommand: () => [...SUPABASE_PSQL, '-c',
-    "SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid() "
-    + "AND usename IN ('postgres','authenticator') AND state<>'idle'"],
 };

@@ -32,6 +32,7 @@ export interface PreparedRuntimeCrash {
   recover(signal: AbortSignal): Promise<DatabaseDrainReceipt | null>;
   spacetime: { uri: string; mod: string } | null;
   combinedBoundary?: boolean;
+  transactionalRequests?: boolean;
 }
 
 export interface DatabaseDrainReceipt {
@@ -126,6 +127,7 @@ export async function prepareRuntimeCrash(spec: RuntimeControlSpec, target: Cras
   return {
     ...prepared,
     combinedBoundary: stackDatabaseRuntime(lease.backend)?.combinedBoundary ?? false,
+    transactionalRequests: stackDatabaseRuntime(lease.backend)?.transactionalRequests ?? false,
     spacetime: lease.backend === 'spacetime'
       ? { uri: lease.resources.serverUri!, mod: lease.resources.module! } : null,
     async recover(signal) {

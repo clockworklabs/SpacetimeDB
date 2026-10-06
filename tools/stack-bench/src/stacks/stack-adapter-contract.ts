@@ -2,7 +2,7 @@ import type { BackendLease } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 import type { GradingCapabilityId } from '../actions/action-contract.js';
-import type { PlatformAuthPatch } from '../actions/auth-request-patch.js';
+import type { PassiveSocketFrame, PlatformAuthPatch } from '../actions/auth-request-patch.js';
 import type { LeasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 import type { LeasedDatabase } from './backend-reset-guard.js';
 import type { CheckoutState } from './checkout-state.js';
@@ -25,6 +25,8 @@ export interface StackGradingSupport {
   authRequestPatch?(lease: BackendLease): PlatformAuthPatch;
   // Exact platform POST endpoints whose implementation cannot perform writes.
   authReadEndpoints?(lease: BackendLease): readonly string[];
+  // Frames the application sends on a platform socket that cannot carry a write.
+  passiveSocketFrame?(lease: BackendLease): PassiveSocketFrame;
 }
 
 // A stack's operator-reviewed reader for a saved application, bound to its source.

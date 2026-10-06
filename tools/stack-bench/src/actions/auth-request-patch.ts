@@ -108,6 +108,9 @@ function patchWriteFields(body: unknown, patch: AuthRequestPatch, parameters?: r
 export type PlatformAuthPatch = (url: string, body: unknown, patch: AuthRequestPatch)
   => { body: string; shape: string } | null | undefined;
 
+// A platform's own socket frames that cannot carry an application write, supplied by its stack adapter.
+export type PassiveSocketFrame = (url: string, payload: string | Buffer) => boolean;
+
 type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string;
   transport?: 'convex-websocket' | 'spacetime-websocket' | 'socketio';
   absentParameters?: string[] };
@@ -122,15 +125,16 @@ const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
 
 // Install before navigation: Playwright cannot route an already-open socket.
 // Context routing lets the later response-loss gate replace this passive route.
-export async function installAuthWebSocketCapture(page: Page): Promise<void> {
+export async function installAuthWebSocketCapture(page: Page, passive?: PassiveSocketFrame): Promise<void> {
   const state: { active?: SocketPatch } = {};
   socketPatches.set(page, state);
   await installSocketIoAuthCapture(page);
-  page.on('websocket', socket => socket.on('framesent', () => {
+  page.on('websocket', socket => socket.on('framesent', frame => {
     const owner = state.active;
     if (owner?.captureAll && !/\/api\/[^/]+\/sync(?:\?|$)/.test(socket.url())
       && !socketIoTransport(socket.url(), 'websocket')
-      && !(owner.nativeCapture && /\/v1\/database\/[^/]+\/subscribe(?:\?|$)/.test(socket.url()))) owner.fail();
+      && !(owner.nativeCapture && /\/v1\/database\/[^/]+\/subscribe(?:\?|$)/.test(socket.url()))
+      && !passive?.(socket.url(), frame.payload)) owner.fail();
   }));
   await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
     const server = client.connectToServer();

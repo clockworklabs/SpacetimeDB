@@ -226,10 +226,10 @@ test('Supabase identity, orchestration and crash boundary are its own', () => {
   const helpers = { requireString: (value: unknown) => value, loopbackHttpUri: (value: unknown) => new URL(String(value)) };
   assert.throws(() => SUPABASE_IDENTITY.lease.validateResources({ helpers,
     resources: { serverUri: 'http://127.0.0.1:13410', database: 'app', container: null } }), /postgres database/);
-  assert.equal(SUPABASE_RUNTIME.combinedBoundary, false);
+  // Checkout is a database function: the database is the only boundary that can interrupt it.
+  assert.equal(SUPABASE_RUNTIME.combinedBoundary, true);
+  assert.equal(SUPABASE_RUNTIME.transactionalRequests, true);
+  assert.equal(SUPABASE_RUNTIME.drainCommand, undefined);
   assert.equal(SUPABASE_RUNTIME.databaseUser, 'postgres');
   assert.equal(SUPABASE_RUNTIME.processRecord, '/run/application/restart-supabase-db.pid');
-  const drain = SUPABASE_RUNTIME.drainCommand!({} as BackendLease, 'postgres');
-  assert.deepEqual(drain.slice(0, 5), ['psql', '-h', '/var/run/postgresql', '-U', 'supabase_admin']);
-  assert.match(drain.at(-1)!, /usename IN \('postgres','authenticator'\) AND state<>'idle'/);
 });

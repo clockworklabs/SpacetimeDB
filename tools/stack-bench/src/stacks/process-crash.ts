@@ -19,6 +19,9 @@ export type CrashTarget = 'application' | 'database';
 export interface StackDatabaseRuntime {
   // The application runs inside the database process: one fault boundary.
   readonly combinedBoundary: boolean;
+  // Every named operation is one database transaction behind the platform's
+  // own API, so a failed response is final: the call cannot commit later.
+  readonly transactionalRequests?: boolean;
   // The container user that owns the database processes and may signal them.
   readonly databaseUser: string;
   // The recorded database process group, or null to crash that user's processes.

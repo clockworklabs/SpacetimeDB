@@ -69,6 +69,21 @@ export function supabaseAuthReadEndpoints(lease: BackendLease, exec?: TextComman
     .split('\n').filter(Boolean).map(name => rpcEndpoint(lease, name));
 }
 
+// Realtime stores nothing a client sends. Joins, leaves, heartbeats and token
+// refreshes only keep a subscription alive. A broadcast or presence frame reaches
+// other clients, so it stays an unobserved channel.
+export function supabasePassiveSocketFrame(lease: BackendLease): (url: string, payload: string | Buffer) => boolean {
+  const socket = `${supabaseGatewayUrl(lease).replace(/^http/, 'ws')}/realtime/v1/websocket`;
+  return (url, payload) => {
+    if (typeof payload !== 'string' || url.split('?')[0] !== socket) return false;
+    let frame: unknown;
+    try { frame = JSON.parse(payload); } catch { return false; }
+    // Protocol 2 sends [join_ref, ref, topic, event, payload]; protocol 1 sends an object.
+    const event = Array.isArray(frame) ? frame[3] : record(frame) ? frame.event : undefined;
+    return typeof event === 'string' && ['phx_join', 'phx_leave', 'heartbeat', 'access_token'].includes(event);
+  };
+}
+
 // The data API answers 404 PGRST202 for a function that does not exist and for
 // arguments that match none of its signatures. Only the second refuses the
 // call's input, as a native argument check does on other platforms.

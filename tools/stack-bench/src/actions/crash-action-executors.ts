@@ -8,7 +8,7 @@ import type { NamedAction, NamedActionsCapability } from './named-action-runtime
 import { checkoutExpectation, type CheckoutQuantity, type createDatabaseReadCapability } from './runtime-action-executors.js';
 import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences } from '../stacks/checkout-state.js';
 import { openCrashReducerConnection } from '../stacks/spacetime-crash-transport.js';
-import type { CrashTarget, ProcessCrashReceipt } from '../stacks/process-crash.js';
+import { stackDatabaseRuntime, type CrashTarget, type ProcessCrashReceipt } from '../stacks/process-crash.js';
 import type { DatabaseDrainReceipt, PreparedRuntimeCrash } from '../runtime/backend-control.js';
 import { finding, renderFinding } from './action-findings.js';
 import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
@@ -108,7 +108,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   if (input.reuseCombinedFrom && capabilities['process-crash'].combinedBoundary) {
     const previous = capabilities['browser-observation'].recorded.get(input.reuseCombinedFrom) as
       { receipt?: ProcessCrashReceipt; verdicts?: { atomicity: unknown[]; durability: unknown[] } } | undefined;
-    if (!previous?.receipt || !['spacetime', 'convex'].includes(previous.receipt.backend) || previous.receipt.target !== 'database'
+    if (!previous?.receipt || !stackDatabaseRuntime(previous.receipt.backend)?.combinedBoundary || previous.receipt.target !== 'database'
       || !Array.isArray(previous.verdicts?.atomicity) || !Array.isArray(previous.verdicts?.durability)) {
       inconclusive('assertion-without-action', { action: 'crashCheckout' });
     }
@@ -136,7 +136,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   let unsettled = false;
   try {
     caller = await checkoutCaller(input, capabilities, signal, runtime.spacetime);
-    if (runtime.combinedBoundary && !runtime.spacetime && caller.protocol !== 'convex-mutation') {
+    if (runtime.combinedBoundary && !runtime.spacetime && !runtime.transactionalRequests && caller.protocol !== 'convex-mutation') {
       inconclusive('invalid-input', { detail: 'combined backend crash requires a native mutation checkout' });
     }
     // Reference reservations last 90 seconds. Leave time for recovery and mark
@@ -228,7 +228,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       receipt.clockOffsetBeforeMs - receipt.clockOffsetAfterMs);
     const durabilityUnlinked = outcomes.some((ack, index) => ack.outcome === 'committed'
       && ack.completedAtMs <= latestFaultEndMs && outcomes.some((other, otherIndex) => otherIndex !== index
-        && !(other.protocol === 'websocket-v1-confirmed' && other.responseFailed)));
+        && !((other.protocol === 'websocket-v1-confirmed' || runtime.transactionalRequests) && other.responseFailed)));
     const unmeasuredVerdicts = durabilityUnlinked
       ? { durability: 'acknowledged checkout cannot be linked to the recovered order' } : undefined;
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed,

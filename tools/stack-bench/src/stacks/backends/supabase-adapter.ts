@@ -9,7 +9,7 @@ import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { activateSupabase, controlSupabaseApplication, resetSupabase, supabaseApplicationEnvironment,
   supabaseOrchestratorConfig, SUPABASE_RUNTIME } from './supabase-lifecycle.js';
 import { getSupabaseCheckoutState, getSupabaseStock, proveSupabaseUse, setSupabaseStock, supabaseAuthReadEndpoints,
-  supabaseAuthRequestPatch, supabaseNamedActionRequest, supabaseSignatureRefusal,
+  supabaseAuthRequestPatch, supabaseNamedActionRequest, supabasePassiveSocketFrame, supabaseSignatureRefusal,
   supabaseWriteEndpoints } from './supabase-operations.js';
 import { supabaseSetupMetadata } from './supabase-agent.js';
 import { deploySupabaseReference, SUPABASE_REFERENCE_LAYOUT } from './supabase-reference.js';
@@ -36,7 +36,7 @@ export const supabaseAdapter = defineStackAdapter('supabase', {
   grading: { context: createHttpGradingContext, transport: 'http', capabilities, namedActionBinding: 'reducer',
     databaseLease: (lease: BackendLease) => { requireLeasedDatabase(lease); return lease as BackendLease & LeasedDatabase; },
     writeEndpoints: supabaseWriteEndpoints, authReadEndpoints: supabaseAuthReadEndpoints,
-    authRequestPatch: supabaseAuthRequestPatch },
+    authRequestPatch: supabaseAuthRequestPatch, passiveSocketFrame: supabasePassiveSocketFrame },
   namedAction: { request: supabaseNamedActionRequest, signatureRefusal: supabaseSignatureRefusal },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,

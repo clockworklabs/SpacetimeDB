@@ -32,6 +32,7 @@ import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
+import { stackDatabaseRuntime } from '../src/stacks/process-crash.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import {
   createNamedActionsCapability,
@@ -55,7 +56,7 @@ import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport, requestDiagnostic } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
-import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
+import { installAuthWebSocketCapture, type PassiveSocketFrame } from '../src/actions/auth-request-patch.js';
 import type { PlatformAuthPatch } from '../src/actions/auth-request-patch.js';
 import { applicationWrites } from '../src/actions/named-action-runtime.js';
 import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
@@ -134,6 +135,7 @@ type GradeRunContext = {
   convexOrderReader?: ReturnType<typeof createConvexOrderDataReader>;
   authRequestPatch?: PlatformAuthPatch | null;
   authReadEndpoints?: readonly string[];
+  passiveSocketFrame?: PassiveSocketFrame;
   applicationWriteEndpoints?: readonly string[];
   actionCancellation?: { reason: string | null };
   timeLimit?: { limitMs: number; deadlineAtMs: number };
@@ -334,7 +336,7 @@ export class Actor {
     readonly replaySpacetime = false, readonly spacetimeBackend = false,
     // A stack's platform endpoints that receive the application's writes, whatever they are named.
     readonly writeEndpoints: readonly string[] = [], readonly freshResponses = false,
-    networkInterruption?: NetworkInterruption) {
+    networkInterruption?: NetworkInterruption, readonly passiveSocketFrame?: PassiveSocketFrame) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -346,7 +348,7 @@ export class Actor {
   }
   async attach(page: Page): Promise<void> {
     this.page = page;
-    if (this.patchAuthentication) await installAuthWebSocketCapture(page);
+    if (this.patchAuthentication) await installAuthWebSocketCapture(page, this.passiveSocketFrame);
     if (this.replaySpacetime || this.patchAuthentication && this.spacetimeBackend) await installSpacetimeWriteCapture(page);
     // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
@@ -633,7 +635,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         if (interruption) await interruption.attach(context, fresh);
         fresh.setDefaultTimeout(defaultWithin);
         const observer = new Actor(`${actor.name}-fresh`, fresh, context, actor.patchAuthentication, actor.replaySpacetime,
-          actor.spacetimeBackend, actor.writeEndpoints, ctx.privacyActors?.has(name), interruption);
+          actor.spacetimeBackend, actor.writeEndpoints, ctx.privacyActors?.has(name), interruption, actor.passiveSocketFrame);
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -768,7 +770,8 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       expand: (value: string) => String(expand(value, ctx)),
     }),
     'named-actions': namedActions,
-    'process-crash': Object.freeze({ combinedBoundary: !ctx.nullControl && ['spacetime', 'convex'].includes(ctx.restartSpec?.backend ?? ''),
+    'process-crash': Object.freeze({ combinedBoundary: !ctx.nullControl
+      && Boolean(stackDatabaseRuntime(ctx.restartSpec?.backend ?? '')?.combinedBoundary),
       prepare: async (target: 'application' | 'database') => {
       if (!ctx.restartSpec || ctx.nullControl) throw new Error('process crash requires an owned grading runtime');
       await closeOrderReaders(ctx);
@@ -1043,7 +1046,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
         networkInterruption.attach(context, page));
       page.setDefaultTimeout(SETUP_WITHIN);
       const actor = new Actor(name, page, context, patchAuthentication, replayActors.has(name), args.backend === 'spacetime',
-        ctx.applicationWriteEndpoints, privacyActors.has(name), networkInterruption);
+        ctx.applicationWriteEndpoints, privacyActors.has(name), networkInterruption, ctx.passiveSocketFrame);
       await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);
@@ -1282,6 +1285,8 @@ async function main(): Promise<void> {
     databaseLease, authRequestPatch: args.backend ? platformAuthPatch(args.backend) : null,
     authReadEndpoints: args.backend && STACK_ADAPTER_REGISTRY.get(args.backend).grading.authReadEndpoints
       ? STACK_ADAPTER_REGISTRY.get(args.backend).grading.authReadEndpoints!(leaseFromEnv(process.env, { backend: args.backend, active: true }).lease) : [],
+    passiveSocketFrame: args.backend ? STACK_ADAPTER_REGISTRY.get(args.backend).grading.passiveSocketFrame
+      ?.(leaseFromEnv(process.env, { backend: args.backend, active: true }).lease) : undefined,
     applicationWriteEndpoints: args.backend ? applicationWrites(args.backend) : [],
     nullControl: args.nullControl,
     contractIds: selectedTask?.task.contractIds,

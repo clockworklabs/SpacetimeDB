@@ -4,7 +4,7 @@ import test from 'node:test';
 import { bindBrowserRequest } from '../src/actions/named-action-runtime.js';
 import type { Actor } from '../src/actions/actor-action-runtime.js';
 import { proveSupabaseUse, supabaseAuthReadEndpoints, supabaseAuthRequestPatch, supabaseNamedActionRequest,
-  supabaseSignatureRefusal, supabaseWriteEndpoints } from '../src/stacks/backends/supabase-operations.js';
+  supabasePassiveSocketFrame, supabaseSignatureRefusal, supabaseWriteEndpoints } from '../src/stacks/backends/supabase-operations.js';
 import { SUPABASE_GATEWAY, SUPABASE_SECRETS, supabaseExec, supabaseLease,
   withSupabaseLeaseEnvironment } from './helpers/supabase-lease.js';
 
@@ -132,6 +132,21 @@ test('read-only functions are not sign-up writes, and unmatched arguments refuse
   assert.equal(supabaseSignatureRefusal(call, { status: 404, text: 'Not Found' }, unused), false);
   assert.equal(supabaseSignatureRefusal({ url: 'http://127.0.0.1:5173/rest/v1/rpc/checkout' }, unmatched, unused), false);
   assert.equal(supabaseSignatureRefusal({ url: `${SUPABASE_GATEWAY}/rest/v1/rpc/a'b` }, unmatched, unused), false);
+});
+
+test('only Realtime subscription upkeep on the leased gateway is a passive socket frame', () => {
+  const passive = supabasePassiveSocketFrame(supabaseLease());
+  const socket = `${SUPABASE_GATEWAY.replace('http', 'ws')}/realtime/v1/websocket?apikey=key&vsn=2.0.0`;
+  for (const event of ['phx_join', 'phx_leave', 'heartbeat', 'access_token']) {
+    assert.equal(passive(socket, JSON.stringify(['1', '2', 'realtime:shop', event, {}])), true, event);
+    assert.equal(passive(socket, JSON.stringify({ topic: 'realtime:shop', event, payload: {}, ref: '2' })), true, event);
+  }
+  for (const event of ['broadcast', 'presence']) {
+    assert.equal(passive(socket, JSON.stringify(['1', '2', 'realtime:shop', event, {}])), false, event);
+  }
+  assert.equal(passive(socket, Buffer.from([3, 0])), false, 'a binary broadcast');
+  assert.equal(passive(socket, 'not json'), false);
+  assert.equal(passive('ws://127.0.0.1:5173/realtime/v1/websocket', JSON.stringify(['1', '2', 'phoenix', 'heartbeat', {}])), false);
 });
 
 test('Supabase provenance scans public application columns through privileged SQL', () => {
