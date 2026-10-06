@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "a6745bd1cc094f22f50490786dc269ea749111b9c1c6e0324cfbe19701a7a6bd",
+  "fixtureSha256": "944d538b7ddb8bc703308e666071fb50809ce394e6198d7391b6955ece082deb",
   "backend": "supabase",
   "track": "ecommerce",
   "note": "Native Supabase selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Restart and crash-recovery controls act through the start-up seed path that every application start runs; reconnect controls act on the real Realtime channel.",
@@ -582,8 +582,8 @@
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "        <button data-role=\"staff-role-save\" onClick={() => act(\"assign_staff_role\", {\n          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n        })}>Save</button>",
-          "replace": "        <button data-role=\"staff-role-save\" onClick={() => {\n          setRoles(value => ({ ...value, [entry.username]: entry.roles?.[0] ?? \"staff\" })); // Defect: the editor snaps back to the previously stored role.\n          return act(\"assign_staff_role\", {\n          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n        }); }}>Save</button>"
+          "find": "        <button data-role=\"staff-role-save\" onClick={() => {\n          setRoleSaveState(value => ({ ...value, [entry.username]: \"pending\" }));\n          return act(\"assign_staff_role\", {\n            accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n          }, (state: string) => setRoleSaveState(value => ({ ...value, [entry.username]: state })));\n        }}>Save</button>",
+          "replace": "        <button data-role=\"staff-role-save\" onClick={() => {\n          setRoles(value => ({ ...value, [entry.username]: entry.roles?.[0] ?? \"staff\" })); // Defect: the editor snaps back to the previously stored role.\n          setRoleSaveState(value => ({ ...value, [entry.username]: \"pending\" }));\n          return act(\"assign_staff_role\", {\n            accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n          }, (state: string) => setRoleSaveState(value => ({ ...value, [entry.username]: state })));\n        }}>Save</button>"
         }
       ]
     },

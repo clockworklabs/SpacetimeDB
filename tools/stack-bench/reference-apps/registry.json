@@ -143,7 +143,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/supabase",
-        "sourceSha256": "a6745bd1cc094f22f50490786dc269ea749111b9c1c6e0324cfbe19701a7a6bd"
+        "sourceSha256": "944d538b7ddb8bc703308e666071fb50809ce394e6198d7391b6955ece082deb"
       },
       "mutationManifests": [
         "grader/mutations/supabase-ecommerce.json"

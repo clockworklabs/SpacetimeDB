@@ -33,6 +33,8 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
   const [supportMessage, setSupportMessage] = useState("");
   const [supportReference, setSupportReference] = useState("");
   const [preference, setPreference] = useState({ order: false, stock: false });
+  const [profileSaveState, setProfileSaveState] = useState("idle");
+  const [notificationSaveState, setNotificationSaveState] = useState("idle");
 
   useEffect(() => {
     setPreference({ order: !!state.preference?.order, stock: !!state.preference?.stock });
@@ -74,9 +76,16 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
     if (result) setSupportReference(result.ticket.reference);
   };
 
-  const saveProfile = () => act("save_profile", { name: profileName, address: profileAddress });
+  const saveProfile = () => {
+    setProfileSaveState("pending");
+    return act("save_profile", { name: profileName, address: profileAddress }, setProfileSaveState);
+  };
 
   return <section className="progression-panel">
+    {user && <>
+      <span data-role="profile-save-state" data-submit-state={profileSaveState}>{profileSaveState}</span>
+      <span data-role="notification-save-state" data-submit-state={notificationSaveState}>{notificationSaveState}</span>
+    </>}
     {!user ? <div className="progression-card staff-signin">
       <h3>Staff sign in</h3>
       <input data-role="staff-signin-username" value={staffName}
@@ -124,7 +133,10 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
         Stock notifications {preference.stock ? "on" : "off"}
       </button>
       <span data-role="notification-unread-count">{(state.notifications || []).length}</span>
-      <button data-role="notification-save" className="btn btn-primary" onClick={() => act("save_preferences", preference)}>Save</button>
+      <button data-role="notification-save" className="btn btn-primary" onClick={() => {
+        setNotificationSaveState("pending");
+        return act("save_preferences", preference, setNotificationSaveState);
+      }}>Save</button>
       {(state.notifications || []).map((notification: any) =>
         <div data-role="notification-item" key={notification.id}><span data-role={notification.type === 'stock' ? 'stock-alert-delivery' : undefined}>{notification.message}</span></div>)}
     </div>}
@@ -166,6 +178,7 @@ function StaffTools({ user, state, items, orders, act }: any) {
     end: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10) });
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "" });
   const [roles, setRoles] = useState<Record<string, string>>({});
+  const [roleSaveState, setRoleSaveState] = useState<Record<string, string>>({});
   const [now, setNow] = useState(Date.now);
   const hasPendingRestocks = (state.scheduledRestocks || []).length > 0;
   useEffect(() => {
@@ -182,16 +195,19 @@ function StaffTools({ user, state, items, orders, act }: any) {
 
     {user.isAdmin && <div className="progression-card">
       <h3>Staff roles</h3>
-      {(state.staffUsers || []).map((entry: any) => <div data-role="staff-role-row" id={`staff-role-account-${encodeURIComponent(entry.username)}`} data-account-id={entry.id} key={entry.username}>
+      {(state.staffUsers || []).map((entry: any) => <div data-role="staff-role-row" data-submit-state={roleSaveState[entry.username] ?? "idle"} id={`staff-role-account-${encodeURIComponent(entry.username)}`} data-account-id={entry.id} key={entry.username}>
         <span>{entry.username} {entry.roles?.join(", ")}</span>
         <select data-role="staff-role-select"
           value={roles[entry.username] ?? entry.roles?.[0] ?? "staff"}
           onChange={event => setRoles(value => ({ ...value, [entry.username]: event.target.value }))}>
           <option>staff</option><option>inventory</option><option>admin</option>
         </select>
-        <button data-role="staff-role-save" onClick={() => act("assign_staff_role", {
-          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? "staff",
-        })}>Save</button>
+        <button data-role="staff-role-save" onClick={() => {
+          setRoleSaveState(value => ({ ...value, [entry.username]: "pending" }));
+          return act("assign_staff_role", {
+            accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? "staff",
+          }, (state: string) => setRoleSaveState(value => ({ ...value, [entry.username]: state })));
+        }}>Save</button>
       </div>)}
     </div>}
 
