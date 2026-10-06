@@ -271,7 +271,7 @@ namespace SpacetimeDB
         /// </summary>
         public void UnsubscribeThen(Action<SubscriptionEventContext>? onEnded)
         {
-            if (state is SubscriptionState.Ended || (state is not SubscriptionState.Active && !conn.AutomaticReconnectEnabled))
+            if (state is SubscriptionState.Ended)
             {
                 throw new Exception("Cannot unsubscribe from ended subscription.");
             }
