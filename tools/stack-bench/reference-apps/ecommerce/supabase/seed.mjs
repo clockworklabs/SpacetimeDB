@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 
-const ROLES = { admin: ['admin'], staff: ['staff'], customer: [] };
+const ROLES = { admin: ['admin'], staff: ['staff'], staff2: ['staff'], customer: [] };
 
 // Same account address as client/src/request.ts.
 const accountEmail = username => `${Buffer.from(username, 'utf8').toString('hex')}@accounts.invalid`;

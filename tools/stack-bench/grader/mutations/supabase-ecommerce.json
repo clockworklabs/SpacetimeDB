@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "944d538b7ddb8bc703308e666071fb50809ce394e6198d7391b6955ece082deb",
+  "fixtureSha256": "e48af6d57b62c4aa1eec175ecc20fb2954feabd6d6a77ae05c65e5209a3bfb76",
   "backend": "supabase",
   "track": "ecommerce",
   "note": "Native Supabase selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Restart and crash-recovery controls act through the start-up seed path that every application start runs; reconnect controls act on the real Realtime channel.",

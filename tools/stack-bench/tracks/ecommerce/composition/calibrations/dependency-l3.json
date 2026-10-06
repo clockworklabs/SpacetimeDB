@@ -41,7 +41,7 @@
       {
         "backend": "supabase",
         "id": "ecommerce-reference-supabase",
-        "sourceSha256": "944d538b7ddb8bc703308e666071fb50809ce394e6198d7391b6955ece082deb"
+        "sourceSha256": "e48af6d57b62c4aa1eec175ecc20fb2954feabd6d6a77ae05c65e5209a3bfb76"
       }
     ]
   },
@@ -73,7 +73,7 @@
     {
       "backend": "supabase",
       "path": "grader/mutations/supabase-ecommerce.json",
-      "sha256": "40b1b6411bf7f31f2c1b23e6295b4b1bf07cacb0341ad93fa158940e380ce4d5",
+      "sha256": "219c8d0fe248cd3dcd79ddbf47f0e74836bf39847b343d9ff3bdc2d4910085c5",
       "referenceId": "ecommerce-reference-supabase"
     }
   ],
