@@ -1,8 +1,8 @@
-import { getByAccessorPath } from '../../lib/accessor_path';
+import { getByAccessorPath } from '../../lib/accessor_path.ts';
 import { assertInInjectionContext, inject, effect } from '@angular/core';
-import { SPACETIMEDB_CONNECTION } from '../connection_state';
-import type { ParamsType } from '../../sdk';
-import type { UntypedReducerDef } from '../../sdk/reducers';
+import { SPACETIMEDB_CONNECTION } from '../connection_state.ts';
+import type { ParamsType } from '../../sdk/index.ts';
+import type { UntypedReducerDef } from '../../sdk/reducers.ts';
 
 export function injectReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef

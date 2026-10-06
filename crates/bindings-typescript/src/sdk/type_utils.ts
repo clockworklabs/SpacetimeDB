@@ -1,7 +1,7 @@
-import type { Infer, InferTypeOfParams } from '.';
-import type { Prettify } from '../lib/type_util';
-import type { UntypedProcedureDef } from './procedures';
-import type { UntypedReducerDef } from './reducers';
+import type { Infer, InferTypeOfParams } from './index.ts';
+import type { Prettify } from '../lib/type_util.ts';
+import type { UntypedProcedureDef } from './procedures.ts';
+import type { UntypedReducerDef } from './reducers.ts';
 
 export type IsEmptyObject<T> = [keyof T] extends [never] ? true : false;
 export type MaybeParams<T> = IsEmptyObject<T> extends true ? [] : [params: T];
