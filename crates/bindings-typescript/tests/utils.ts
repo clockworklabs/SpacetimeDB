@@ -4,6 +4,7 @@ import type { Infer } from '../src/lib/type_builders';
 import { RowSizeHint, TableUpdateRows } from '../src/sdk/client_api/types';
 import PlayerRow from '../test-app/src/module_bindings/player_table';
 import { Point } from '../test-app/src/module_bindings/types';
+import UnindexedPlayerRow from '../test-app/src/module_bindings/unindexed_player_table';
 import UserRow from '../test-app/src/module_bindings/user_table';
 
 export const anIdentity = Identity.fromString(
@@ -19,6 +20,14 @@ export const sallyIdentity = Identity.fromString(
 export function encodePlayer(value: Infer<typeof PlayerRow>): Uint8Array {
   const writer = new BinaryWriter(1024);
   PlayerRow.serialize(writer, value);
+  return writer.getBuffer();
+}
+
+export function encodeUnindexedPlayer(
+  value: Infer<typeof UnindexedPlayerRow>
+): Uint8Array {
+  const writer = new BinaryWriter(1024);
+  UnindexedPlayerRow.serialize(writer, value);
   return writer.getBuffer();
 }
 
