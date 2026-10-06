@@ -415,6 +415,12 @@ jobs:
 
       - uses: ./.github/actions/setup-pnpm
 
+      - name: Set up Bun for Windows compiler discovery smoketest
+        if: runner.os == 'Windows'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.3
+
       - name: Install TypeScript SDK dependencies
         run: pnpm --filter spacetimedb install
 
