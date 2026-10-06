@@ -11,7 +11,7 @@ mod util;
 
 pub use self::csharp::Csharp;
 pub use self::rust::Rust;
-pub use self::typescript::TypeScript;
+pub use self::typescript::{ImportExtension, TypeScript};
 pub use self::unrealcpp::UnrealCpp;
 pub use util::private_table_names;
 pub use util::CodegenVisibility;
