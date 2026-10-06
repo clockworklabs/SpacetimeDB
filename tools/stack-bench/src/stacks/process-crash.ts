@@ -177,6 +177,8 @@ while [ "$attempt" -lt 50 ]; do
       *) invalid=1;;
     esac` : ''}
     at=$(date +%s%3N)
+    # BusyBox date prints whole seconds; bash keeps the time in microseconds.
+    [ "\${#at}" -ge 13 ] || { at=$(LC_ALL=C bash -c 'printf %s "\${EPOCHREALTIME%.*}\${EPOCHREALTIME#*.}"'); at=\${at%???}; }
     if kill -KILL "$pid"; then echo "KILLED $pid $started $at"; killed=$((killed + 1)); fi
   done
   attempt=$((attempt + 1)); sleep 0.1; scan
