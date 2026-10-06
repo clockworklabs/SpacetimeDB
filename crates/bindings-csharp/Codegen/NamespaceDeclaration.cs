@@ -6,13 +6,19 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using static Utils;
 
-internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string? Name)
+internal record NamespaceDeclaration(
+    string DeclaringAssemblyIdentity,
+    string AssemblyIdentity,
+    string Accessor,
+    string? Name
+)
 {
     public string AccessorIdentifier => EscapeIdentifier(Accessor);
 
     public static EquatableArray<NamespaceDeclaration> Parse(
         Compilation compilation,
-        EquatableArray<AssemblyDeclaration> assemblies,
+        IAssemblySymbol declaringAssembly,
+        IEnumerable<string> knownAssemblyIdentities,
         IEnumerable<string> tableAccessors,
         DiagReporter diag,
         CancellationToken cancellationToken
@@ -25,21 +31,22 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, s
             return new EquatableArray<NamespaceDeclaration>(result.ToImmutable());
         }
 
-        var identities = new Dictionary<string, AttributeData>(StringComparer.Ordinal);
         var accessors = new Dictionary<string, AttributeData>(StringComparer.OrdinalIgnoreCase);
         var tables = new HashSet<string>(tableAccessors, StringComparer.Ordinal);
         var assemblyIdentities = new HashSet<string>(
-            assemblies.Select(static assembly => assembly.Identity),
+            knownAssemblyIdentities,
             StringComparer.Ordinal
         );
-        var supported = compilation.SyntaxTrees.Any(static tree =>
-            tree.Options is CSharpParseOptions options
-            && options.PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER")
-            // Use the numeric value to keep the analyzer compatible with Roslyn 4.3.
-            && (int)options.LanguageVersion >= 1400
-        );
+        var supported =
+            !SymbolEqualityComparer.Default.Equals(declaringAssembly, compilation.Assembly)
+            || compilation.SyntaxTrees.Any(static tree =>
+                tree.Options is CSharpParseOptions options
+                && options.PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER")
+                // Use the numeric value to keep the analyzer compatible with Roslyn 4.3.
+                && (int)options.LanguageVersion >= 1400
+            );
 
-        foreach (var attribute in compilation.Assembly.GetAttributes())
+        foreach (var attribute in declaringAssembly.GetAttributes())
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, attributeType))
@@ -73,14 +80,14 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, s
             }
 
             var identity = marker.ContainingAssembly.Identity.ToString();
-            if (
-                SymbolEqualityComparer.Default.Equals(
-                    marker.ContainingAssembly,
-                    compilation.Assembly
-                )
-            )
+            if (SymbolEqualityComparer.Default.Equals(marker.ContainingAssembly, declaringAssembly))
             {
-                ReportError(diag, attribute, ref valid, "The root assembly cannot mount itself.");
+                ReportError(
+                    diag,
+                    attribute,
+                    ref valid,
+                    $"Assembly '{declaringAssembly.Identity}' cannot mount itself."
+                );
             }
             else if (supported && !assemblyIdentities.Contains(identity))
             {
@@ -136,14 +143,6 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, s
                 }
             }
 
-            CheckDuplicate(
-                diag,
-                attribute,
-                ref valid,
-                identities,
-                identity,
-                $"Assembly '{identity}' may only be mounted once."
-            );
             if (accessor.Length > 0)
             {
                 CheckDuplicate(
@@ -152,7 +151,7 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, s
                     ref valid,
                     accessors,
                     accessor,
-                    $"Namespace accessor '{accessor}' is declared more than once (case-insensitive)."
+                    $"Namespace accessor '{accessor}' is declared more than once (case-insensitive) in assembly '{declaringAssembly.Identity}'."
                 );
             }
 
@@ -162,7 +161,7 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, s
                     diag,
                     attribute,
                     ref valid,
-                    $"Namespace accessor '{accessor}' conflicts with a root table accessor."
+                    $"Namespace accessor '{accessor}' conflicts with a table accessor in assembly '{declaringAssembly.Identity}'."
                 );
             }
 
@@ -178,7 +177,14 @@ internal record NamespaceDeclaration(string AssemblyIdentity, string Accessor, s
 
             if (valid)
             {
-                result.Add(new NamespaceDeclaration(identity, accessor, name));
+                result.Add(
+                    new NamespaceDeclaration(
+                        declaringAssembly.Identity.ToString(),
+                        identity,
+                        accessor,
+                        name
+                    )
+                );
             }
         }
         return new EquatableArray<NamespaceDeclaration>(result.ToImmutable());
