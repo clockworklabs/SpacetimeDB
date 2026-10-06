@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NestedOuter</AssemblyName>
+    <TargetName>$(AssemblyName)</TargetName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Branch/Branch.csproj" />
+  </ItemGroup>
+</Project>
