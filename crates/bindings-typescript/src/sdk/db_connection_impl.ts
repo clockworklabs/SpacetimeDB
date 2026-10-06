@@ -1274,9 +1274,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const deserializeRow = this.#rowDeserializers[tableName];
     const { primaryKeyColName, primaryKeyColType } =
       this.#rowIdMetadata[tableName];
-    let previousOffset = 0;
-    while (reader.remaining > 0) {
-      const row = deserializeRow(reader);
+    const pushRow = (rowBytes: Uint8Array, row: any) => {
       let rowId: ComparablePrimitive | undefined = undefined;
       if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
         rowId = AlgebraicType.intoMapKey(
@@ -1284,19 +1282,41 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           row[primaryKeyColName]
         );
       } else {
-        // Get a view of the bytes for this row.
-        const rowBytes = buffer.subarray(previousOffset, reader.offset);
-        // Convert it to a base64 string, so we can use it as a map key.
-        const asBase64 = fromByteArray(rowBytes);
-        rowId = asBase64;
+        // Convert the row's bytes to a base64 string, so we can use it as a map key.
+        rowId = fromByteArray(rowBytes);
       }
-      previousOffset = reader.offset;
+      rows.push({ type, rowId, row });
+    };
 
-      rows.push({
-        type,
-        rowId,
-        row,
-      });
+    // Decode each row from its own slice, using the boundaries the server
+    // sends. A module can add columns to the end of a table without breaking
+    // clients built against the old schema: their bindings read the columns
+    // they know, and the rest of the row is skipped.
+    const sizeHint = rowList.sizeHint;
+    if (sizeHint.tag === 'RowOffsets' || sizeHint.value > 0) {
+      const rowCount =
+        sizeHint.tag === 'RowOffsets'
+          ? sizeHint.value.length
+          : Math.floor(buffer.length / sizeHint.value);
+      const rowStart = (i: number) =>
+        sizeHint.tag === 'RowOffsets'
+          ? Number(sizeHint.value[i])
+          : i * sizeHint.value;
+      for (let i = 0; i < rowCount; i++) {
+        const end = i + 1 < rowCount ? rowStart(i + 1) : buffer.length;
+        const rowBytes = buffer.subarray(rowStart(i), end);
+        reader.reset(rowBytes);
+        pushRow(rowBytes, deserializeRow(reader));
+      }
+      return rows;
+    }
+
+    // The server never sends a zero fixed size; read rows back to back.
+    let previousOffset = 0;
+    while (reader.remaining > 0) {
+      const row = deserializeRow(reader);
+      pushRow(buffer.subarray(previousOffset, reader.offset), row);
+      previousOffset = reader.offset;
     }
     return rows;
   }
