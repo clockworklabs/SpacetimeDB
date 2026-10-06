@@ -3535,7 +3535,7 @@ mod tests {
         let (second_offset_tx, second_offset_rx) = oneshot::channel();
         let second_queries = ComputedQueries {
             updates: vec![],
-            v2_updates: vec![v2_test_update(client_id, 1, "t", persistent_test_rows(8))],
+            v2_updates: vec![v2_test_update(client_id, 2, "other", persistent_test_rows(8))],
             errs: vec![],
             v2_errs: vec![],
             event: send_worker_event(Some(44)),
@@ -3579,17 +3579,28 @@ mod tests {
             Poll::Ready(Some(message)) => message,
             other => panic!("expected the second reducer result after offset 2, got {other:?}"),
         };
-        for (message, request_id, value) in [(first_message, 43, 7), (second_message, 44, 8)] {
+        for (message, request_id, query_set_id, table_name, value) in [
+            (first_message, 43, ClientQuerySetId::new(1), "t", 7),
+            (second_message, 44, ClientQuerySetId::new(2), "other", 8),
+        ] {
             match message {
                 OutboundMessage::V2(ws_v2::ServerMessage::ReducerResult(result)) => {
                     assert_eq!(result.request_id, request_id);
                     let ws_v2::ReducerOutcome::Ok(ok) = result.result else {
                         panic!("expected successful reducer result");
                     };
-                    assert_eq!(
-                        test_row_values(&ok.transaction_update.query_sets[0].tables[0].rows),
-                        [value]
-                    );
+                    let [query_set] = &*ok.transaction_update.query_sets else {
+                        panic!(
+                            "expected only the current broadcast's query set: {:?}",
+                            ok.transaction_update
+                        );
+                    };
+                    assert_eq!(query_set.query_set_id, query_set_id);
+                    let [table] = &*query_set.tables else {
+                        panic!("expected only the current broadcast's table: {:?}", query_set.tables);
+                    };
+                    assert_eq!(table.table_name.as_ref(), table_name);
+                    assert_eq!(test_row_values(&table.rows), [value]);
                 }
                 other => panic!("expected v2 caller result after its transaction offset, got {other:?}"),
             }
