@@ -305,13 +305,13 @@ async function click({ input, capabilities, signal }:
       return element.innerText;
     }, undefined, { timeout: 1000 }))().catch(() => null);
   let writeCompletion: Awaited<ReturnType<typeof withWriteCompletion>> | undefined;
+  const submit = async () => {
+    await target.click({ timeout: input.within ?? browser.defaultWithin });
+    if (clickedText !== null) {
+      await confirmReplacement(actor, browser, input.testid, scope, clickedText, signal).catch(() => {});
+    }
+  };
   try {
-    const submit = async () => {
-      await target.click({ timeout: input.within ?? browser.defaultWithin });
-      if (clickedText !== null) {
-        await confirmReplacement(actor, browser, input.testid, scope, clickedText, signal).catch(() => {});
-      }
-    };
     if (input.awaitWrites) writeCompletion = await withWriteCompletion(actor.page as PlaywrightPage, async () => {
       await submit();
       if (input.settleMs) await browser.sleep(input.settleMs, signal);
@@ -320,11 +320,22 @@ async function click({ input, capabilities, signal }:
   } catch (error) {
     // An already-open view can finish loading while its covered navigation
     // control waits for actionability. Observe that destination; do not click again.
-    if (input.unlessVisible && !signal.aborted && errorField(error, 'name') === 'TimeoutError'
-      && /intercepts pointer events/i.test(String(error))
-      && await Promise.race([destinationVisible(), browser.sleep(250, signal).then(() => false)])
+    const covered = input.unlessVisible && !signal.aborted && errorField(error, 'name') === 'TimeoutError'
+      && /intercepts pointer events/i.test(String(error));
+    if (covered && await Promise.race([destinationVisible(), browser.sleep(250, signal).then(() => false)])
       && !signal.aborted) {
       return { clicked: false, testid: input.testid, visible: visibleDestination };
+    }
+    // The contract gives an overlay that blocks navigation a visible overlay-close. A
+    // menu opened to reveal this control can cover it once the page finishes loading.
+    const overlayClose = actor.loc('overlay-close');
+    if (covered && !input.awaitWrites && await overlayClose.isVisible()) {
+      await overlayClose.click({ timeout: browser.defaultWithin });
+      await overlayClose.waitFor({ state: 'hidden', timeout: browser.defaultWithin }).catch(() => {});
+      if (await destinationVisible()) return { clicked: false, testid: input.testid, visible: visibleDestination };
+      await submit();
+      if (input.settleMs) await browser.sleep(input.settleMs, signal);
+      return { clicked: input.testid };
     }
     throw error;
   }

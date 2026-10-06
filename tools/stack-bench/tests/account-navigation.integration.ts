@@ -797,6 +797,37 @@ test('declared subview openers accept inline content and tabs without accepting 
   } finally { await browser.close(); }
 });
 
+test('a navigation link that renders under an opened account menu is reached through overlay-close', async () => {
+  const roles = compileScenarioDefinition(JSON.parse(readFileSync(
+    join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'))).features[0]!;
+  const steps = roles.criteria.find(criterion => criterion.id === '621d')!.steps;
+  const reveal = steps.findIndex(step => step.testid === 'current-user' && step.do === 'click');
+  const [menu, admin] = [steps[reveal]!, steps[reveal + 1]!];
+  assert.equal(admin.testid, 'admin-link');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+    const service = { defaultWithin: 1000, expand: (value: string) => value,
+      testId: stableElementSelector, sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+    for (const closable of [true, false]) {
+      // The admin link appears after the role loads, under a full-page account menu.
+      await page.setContent(`<button id="current-user" onclick="document.querySelector('#menu').hidden=false">admin</button>
+        <nav id="bar"></nav>
+        <div id="menu" hidden style="position:fixed;inset:0;background:#0008">
+          ${closable ? `<button id="overlay-close" onclick="document.querySelector('#menu').hidden=true">Close</button>` : ''}</div>
+        <script>setTimeout(() => document.querySelector('#bar').innerHTML =
+          '<button id="admin-link" onclick="document.body.dataset.admin=1">Administration</button>', 300)</script>`);
+      assert.equal((await executeAction(ACTION_REGISTRY, 'click', menu, { capabilities })).status, 'passed');
+      await page.waitForSelector('#admin-link');
+      const result = await executeAction(ACTION_REGISTRY, 'click', admin, { capabilities });
+      assert.equal(result.status, closable ? 'passed' : 'failed', result.summary ?? undefined);
+      assert.equal(await page.getAttribute('body', 'data-admin'), closable ? '1' : null);
+    }
+  } finally { await browser.close(); }
+});
+
 test('restock setup uses an open form and waits for delayed navigation without accepting broken forms', async () => {
   // Failure cases: closing an inline form, skipping a closed/delayed drawer,
   // accepting a broken opener or a form blocked by another modal.
