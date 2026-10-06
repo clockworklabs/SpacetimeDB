@@ -270,11 +270,17 @@ export function recoverSupabase({ leasePath, leaseToken, ports, signal, docker =
   updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'restarting'; return next; });
   startSupabaseDatabase(lease, { docker, timeoutMs: 30_000 });
   // Realtime exits when it loses the database, and nothing else restarts a
-  // service. Starting a running container changes nothing.
-  for (const [role, service] of Object.entries(lease.resources.serviceContainers ?? {})) {
-    startAttemptContainer(service.id, `${role} service`, docker);
-  }
-  waitForSupabaseGateway(lease, readSupabasePlatformSecrets(lease, exec), exec, { timeoutMs: 30_000 });
+  // service. It can still be shutting down when the database is back, so start
+  // any stopped service until every one answers.
+  const secrets = readSupabasePlatformSecrets(lease, exec);
+  waitUntil(() => {
+    for (const [role, service] of Object.entries(lease.resources.serviceContainers ?? {})) {
+      if (docker(['inspect', '--format', '{{.State.Running}}', service.id]) !== 'true') {
+        startAttemptContainer(service.id, `${role} service`, docker);
+      }
+    }
+    return succeeds(() => waitForSupabaseGateway(lease, secrets, exec, { timeoutMs: 0 }));
+  }, 30_000, 'Supabase services after database recovery');
   updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'active'; return next; });
   signal?.throwIfAborted();
 }
