@@ -10,8 +10,10 @@ on:
 
 jobs:
   build:
-    # This builds and uploads the documentation site, not SpacetimeDB binaries.
-    runs-on: spacetimedb-linux-small
+    # Docusaurus exceeds the small runner's roughly 2 GiB default Node heap.
+    runs-on: spacetimedb-linux
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -41,3 +43,63 @@ jobs:
           aws_bucket: spacetimedb-docs
           source_dir: docs/build
           destination_dir: 'docs'
+
+  notify-discord:
+    name: Notify Discord
+    needs: build
+    if: ${{ always() }}
+    runs-on: spacetimedb-linux-small
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}
+          RELEASE_OPS_ROLE_ID: ${{ secrets.DEV_OPS_ROLE_ID }}
+          RESULT: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+
+          STATUS="${RESULT^^}"
+          CONTENT="Docs release workflow ${STATUS}"
+
+          case "$RESULT" in
+            success)
+              COLOR=3066993 # green
+              ;;
+            failure)
+              COLOR=15158332 # red
+              CONTENT="<@&${RELEASE_OPS_ROLE_ID}> ${CONTENT}"
+              ;;
+            *)
+              COLOR=9807270 # gray
+              ;;
+          esac
+
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PAYLOAD=$(
+            jq -n \
+              --arg content "$CONTENT" \
+              --arg status "$STATUS" \
+              --arg color "$COLOR" \
+              --arg run_url "$RUN_URL" \
+              --arg commit "${{ github.sha }}" \
+              '{
+                "content": $content,
+                "embeds": [
+                  {
+                    "title": "Docs Release: \($status)",
+                    "url": $run_url,
+                    "color": ($color | tonumber),
+                    "fields": [
+                      { "name": "Result", "value": $status, "inline": true },
+                      { "name": "Commit", "value": "`\($commit)`", "inline": true }
+                    ]
+                  }
+                ]
+              }'
+          )
+
+          curl --fail-with-body \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$DISCORD_WEBHOOK_URL"
