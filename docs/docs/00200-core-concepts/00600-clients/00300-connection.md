@@ -29,6 +29,7 @@ import { DbConnection } from './module_bindings';
 const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
+    .withAutomaticReconnect()
     .build();
 ```
 
@@ -84,6 +85,7 @@ To connect to a database hosted on MainCloud:
 const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
+    .withAutomaticReconnect()
     .build();
 ```
 
@@ -245,17 +247,29 @@ const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 const conn = DbConnection.builder()
     .withUri(HOST)
     .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY) ?? undefined)
+    .withAutomaticReconnect()
     .onConnect((conn, identity, token) => {
         console.log(`Connected! Identity: ${identity.toHexString()}`);
         // Save token for reconnection — keyed per server/database
         localStorage.setItem(TOKEN_KEY, token);
     })
-    .onConnectError((_ctx, error) => {
-        console.error(`Connection failed:`, error);
+    .onAutomaticReconnect((_conn, identity, token) => {
+        console.log(`Reconnected! Identity: ${identity.toHexString()}`);
+        localStorage.setItem(TOKEN_KEY, token);
     })
-    .onDisconnect(() => {
-        console.log('Disconnected from SpacetimeDB');
-    });
+    .onConnectError((_ctx, error, attempt, delayMs) => {
+        console.error('Connection failed:', error);
+        if (attempt !== undefined) console.log(`Retry ${attempt} in ${delayMs} ms`);
+    })
+    .onDisconnect((_ctx, error, attempt, delayMs) => {
+        if (attempt !== undefined) {
+            console.log(`Connection lost; retry ${attempt} in ${delayMs} ms`, error);
+        } else {
+            console.log('Connection ended', error);
+        }
+    })
+    .build();
 ```
 
 </TabItem>
@@ -397,7 +411,15 @@ Conn->Disconnect();
 
 ### Reconnection Behavior
 
-:::note[Reconnection behavior]
+For TypeScript, add `.withAutomaticReconnect()` to the builder to recover after an established connection drops. The connection object, cache, table handles, and callbacks remain usable. Cache reads serve the last known data while `isReconnecting` is `true`; subscriptions are replayed and reconciled after reconnecting. `onConnect` fires once per connection object, so subscriptions and row callbacks can be initialized there or once after `build()`.
+
+Successful automatic reconnects invoke `onAutomaticReconnect(conn, identity, token)` instead of `onConnect`. Use it for recovery-specific work, and register work needed after every successful connection, such as token persistence, with both callbacks. Existing subscriptions are replayed automatically. `onAutomaticReconnect` runs before replay; wait for subscription `onApplied` callbacks when you need refreshed data.
+
+`onDisconnect` and `onConnectError` receive optional `nextReconnectAttempt` and `nextReconnectDelayMs` parameters. Both are `undefined` when the core SDK will not retry. Initial connection failures are not retried, and `disconnect()` cancels recovery. Reducer and procedure calls made during an outage fail immediately; in-flight calls fail with an unknown-result error because they may have executed.
+
+Use `.withTokenProvider(() => auth.getAccessToken())` alongside `.withToken(initialToken)` for expiring credentials. The provider runs before reconnect attempts when the retained token needs refreshing, not periodically while connected.
+
+Pass `{ minDelayMs, maxDelayMs }` to `.withAutomaticReconnect()` to tune the backoff; values below the 500 ms and 1 second floors are raised with a warning, so that retrying clients cannot overwhelm the database. The TypeScript React, Solid, and Svelte providers enable automatic reconnection through their shared connection manager. Vue and Angular require `.withAutomaticReconnect()` on the provider's builder. See the [TypeScript reference](./00700-typescript-reference.md#method-withautomaticreconnect) for retry policy, token refresh, and framework behavior. This feature requires a server that supports session IDs and batch subscriptions.
 
 C# connections support opt-in automatic reconnect through `.WithAutomaticReconnect()` on the builder. After an established connection is interrupted, the SDK retries with exponential backoff and jitter from `MinDelay` (default 1 second) up to `MaxDelay` (default 30 seconds); pass an `AutomaticReconnectOptions` to tune them. Values below the 500 ms and 1 second floors are raised with a warning, so that retrying clients cannot overwhelm the database. It retains the connection object, identity, cached rows, callbacks, and subscription handles, then replays subscriptions in one batch. `OnConnect` runs only on the first successful connection; register subscriptions and row callbacks there or once after `Build()`. [`OnAutomaticReconnect`](./00600-csharp-reference.md#callback-onautomaticreconnect) fires after each successful recovery, before subscription replay. Subscription `OnApplied` callbacks report when the cache has been reconciled. Do not register subscriptions or row callbacks again in `OnAutomaticReconnect`.
 
@@ -405,11 +427,7 @@ Keep calling `FrameTick()` during outages, including while `IsActive` is false. 
 
 For expiring C# credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`. The provider is used before reconnect attempts when the retained token is near expiry or cannot be read, and after a reused token is rejected. It must return a token for the same identity. See the [C# reconnect and token-provider reference](./00600-csharp-reference.md#method-withautomaticreconnect) for the full lifecycle, terminal errors, and pending-call behavior.
 
-Without `.WithAutomaticReconnect()`, C# applications must create a new `DbConnection` after a lost connection. Direct TypeScript, Rust, and Unreal connections also require application-managed reconnection.
-
-The TypeScript React, Solid, and Svelte providers manage their connections through the SDK's shared connection manager. While a provider is mounted, that manager automatically rebuilds unexpectedly closed connections with exponential backoff and re-checks connection liveness when the page becomes visible, regains focus, returns online, or is restored from the back-forward cache.
-
-:::
+For TypeScript and C# connections without automatic reconnect, and for Rust and Unreal, create a new connection to recover after a connection loss.
 
 ## Connection Identity
 
