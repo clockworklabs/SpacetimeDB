@@ -286,17 +286,30 @@ public static class GeneratorSnapshotTests
                 fixture.SampleCompilation.References.Concat(references),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
             );
-        MetadataReference Dependency(string name)
+        MetadataReference Emit(Compilation compilation)
+        {
+            using var dll = new MemoryStream();
+            var emitted = compilation.Emit(dll);
+            Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+            return MetadataReference.CreateFromImage(dll.ToArray());
+        }
+        MetadataReference Dependency(
+            string name,
+            string mounts = "",
+            params MetadataReference[] references
+        )
         {
             var compilation = Create(
                 name,
-                $$"""
-                namespace {{name}} {
-                    public class Marker { }
-                    [SpacetimeDB.Table(Accessor = "{{name}}Row")]
-                    public partial struct Row { public uint Id; }
-                }
-                """
+                mounts
+                    + $$"""
+                    namespace {{name}} {
+                        public class Marker { }
+                        [SpacetimeDB.Table(Accessor = "{{name}}Row")]
+                        public partial struct Row { public uint Id; }
+                    }
+                    """,
+                references
             );
             var driver = CSharpGeneratorDriver.Create(
                 [
@@ -312,10 +325,7 @@ public static class GeneratorSnapshotTests
                 out var diagnostics
             );
             Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-            using var dll = new MemoryStream();
-            var emitted = output.Emit(dll);
-            Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
-            return MetadataReference.CreateFromImage(dll.ToArray());
+            return Emit(output);
         }
         var auth = Dependency("Auth");
         var audit = Dependency("Audit");
@@ -377,13 +387,15 @@ public static class GeneratorSnapshotTests
         Reject("[assembly: SpacetimeDB.Namespace(null)]", "marker type");
         Reject(Mount("LocalMarker") + "public class LocalMarker { }", "cannot mount itself");
         Reject(Mount("System.String"), "no discovered module descriptor");
-        Reject(Mount() + Mount(accessor: "Other"), "only be mounted once");
+        var repeated = Run(Mount() + Mount(accessor: "Other", name: "other_auth"));
+        Assert.Equal(2, Parsed(repeated).Length);
+        Assert.Empty(repeated.GetRunResult().Diagnostics);
         Reject(Mount() + Mount("Audit.Marker", "MYAUTH"), "case-insensitive");
         Reject(Mount() + Mount("Audit.Marker", "MyAuth"), "accessor 'MyAuth'");
         Reject(
             Mount()
                 + "[SpacetimeDB.Table(Accessor = \"MyAuth\")] public partial struct Row { public uint Id; }",
-            "root table accessor"
+            "table accessor"
         );
 
         var oldLanguage = fixture.ParseOptions.WithLanguageVersion(LanguageVersion.CSharp13);
@@ -421,6 +433,178 @@ public static class GeneratorSnapshotTests
                 o => o.Reason == IncrementalStepRunReason.Modified
             );
         }
+
+        // Read declarations from emitted DLL metadata, not the dependency's source trees.
+        var parent = Dependency("Parent", Mount("Audit.Marker", "History", "audit_data"), audit);
+        var sibling = Dependency(
+            "Sibling",
+            Mount("Audit.Marker", "History", "sibling_data"),
+            audit
+        );
+        var compilation = Create(
+            "Outer",
+            Mount("Parent.Marker", "Left") + Mount("Sibling.Marker", "Right"),
+            parent,
+            sibling,
+            auth,
+            audit
+        );
+        var discoveryDriver = CSharpGeneratorDriver
+            .Create(
+                [new Module().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions,
+                driverOptions: new GeneratorDriverOptions(
+                    IncrementalGeneratorOutputKind.None,
+                    trackIncrementalGeneratorSteps: true
+                )
+            )
+            .RunGenerators(compilation);
+
+        static T Property<T>(object value, string name) =>
+            (T)value.GetType().GetProperty(name)!.GetValue(value)!;
+
+        static object Composition(GeneratorDriver driver) =>
+            driver
+                .GetRunResult()
+                .Results.Single()
+                .TrackedSteps["SpacetimeDB.Composition.Build"]
+                .Single()
+                .Outputs.Single()
+                .Value;
+        static object[] Nodes(object composition) =>
+            [.. Property<System.Collections.IEnumerable>(composition, "Nodes").Cast<object>()];
+
+        var tree = Composition(discoveryDriver);
+        Assert.Equal(
+            tree,
+            Composition(
+                discoveryDriver.RunGenerators(
+                    compilation
+                        .RemoveAllReferences()
+                        .AddReferences(compilation.References.Reverse())
+                )
+            )
+        );
+
+        // Names are checked within their declaring scope, not across sibling libraries.
+        Assert.Empty(discoveryDriver.GetRunResult().Diagnostics);
+
+        var changedParent = Dependency(
+            "Parent",
+            Mount("Audit.Marker", "OtherHistory", "other_data"),
+            audit
+        );
+        var changedDriver = discoveryDriver.RunGenerators(
+            compilation.ReplaceReference(parent, changedParent)
+        );
+        Assert.Contains(
+            changedDriver
+                .GetRunResult()
+                .Results.Single()
+                .TrackedSteps["SpacetimeDB.Assembly.Discover"]
+                .SelectMany(step => step.Outputs),
+            output => output.Reason == IncrementalStepRunReason.Modified
+        );
+        Assert.NotEqual(tree, Composition(changedDriver));
+
+        // Separate public contributors now share a scope: their identical History
+        // accessors conflict even though each dependency compiled independently.
+        var collision = discoveryDriver.RunGenerators(Create("Outer", "", parent, sibling, audit));
+        Assert.Contains(
+            collision.GetRunResult().Diagnostics,
+            diagnostic =>
+                diagnostic.GetMessage().Contains("scope 'public'")
+                && diagnostic.GetMessage().Contains("Parent,")
+                && diagnostic.GetMessage().Contains("Sibling,")
+        );
+        var sameName = Dependency(
+            "Sibling",
+            Mount("Audit.Marker", "OtherHistory", "audit_data"),
+            audit
+        );
+        var nameCollision = discoveryDriver.RunGenerators(
+            Create("Outer", "", parent, sameName, audit)
+        );
+        Assert.Contains(
+            nameCollision.GetRunResult().Diagnostics,
+            diagnostic => diagnostic.GetMessage().Contains("explicit database name 'audit_data'")
+        );
+
+        var publicLeft = Dependency("PublicLeft", Mount("Audit.Marker", "public", "public"), audit);
+        var publicRight = Dependency(
+            "PublicRight",
+            Mount("Audit.Marker", "public", "public"),
+            audit
+        );
+        var diamond = Composition(
+            discoveryDriver.RunGenerators(Create("Outer", "", publicLeft, publicRight, audit))
+        );
+        Assert.True(Property<bool>(diamond, "IsValid"));
+        var publicRoot = Assert.Single(Nodes(diamond));
+        var contributors = Property<System.Collections.IEnumerable>(publicRoot, "Contributors")
+            .Cast<string>()
+            .ToArray();
+        Assert.Equal(4, contributors.Length);
+        Assert.Single(contributors, identity => identity.StartsWith("Audit,"));
+
+        // Emit against an initial A, then replace it with an A that mounts B.
+        // This models a cycle in referenced metadata without recursively building projects.
+        MetadataReference Descriptor(
+            string name,
+            string mounts,
+            params MetadataReference[] references
+        ) =>
+            Emit(
+                Create(
+                    name,
+                    mounts
+                        + $$"""
+                        [assembly: SpacetimeDB.ModuleDescriptor(typeof({{name}}.Descriptor))]
+                        namespace {{name}} {
+                            public class Marker { }
+                            public static class Descriptor { }
+                        }
+                        """,
+                    references
+                )
+            );
+        var initialA = Descriptor("CycleA", "");
+        foreach (var accessor in new[] { "Child", "public" })
+        {
+            var cycleB = Descriptor("CycleB", Mount("CycleA.Marker", accessor, accessor), initialA);
+            var cycleA = Descriptor("CycleA", Mount("CycleB.Marker", accessor, accessor), cycleB);
+            var cycle = discoveryDriver.RunGenerators(Create("Outer", "", cycleA, cycleB));
+            Assert.Contains(
+                cycle.GetRunResult().Diagnostics,
+                diagnostic =>
+                    diagnostic.GetMessage().Contains("Namespace mount cycle:")
+                    && diagnostic.GetMessage().Contains("CycleA,")
+                    && diagnostic.GetMessage().Contains("CycleB,")
+            );
+        }
+
+        // Referenced attributes have no source location. Validate against their owner,
+        // not against the consuming root assembly.
+        var invalid = Emit(
+            Create(
+                "SelfMountingDependency",
+                """
+                [assembly: SpacetimeDB.ModuleDescriptor(typeof(Descriptor))]
+                [assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = "Self")]
+                public class Marker { }
+                public static class Descriptor { }
+                """
+            )
+        );
+        var invalidResult = discoveryDriver
+            .RunGenerators(Create("Outer", "", invalid))
+            .GetRunResult();
+        Assert.Contains(
+            invalidResult.Diagnostics,
+            diagnostic =>
+                diagnostic.GetMessage().Contains("SelfMountingDependency")
+                && diagnostic.GetMessage().Contains("cannot mount itself")
+        );
     }
 
     [Fact]
@@ -741,6 +925,18 @@ public static class GeneratorSnapshotTests
                         public const SpacetimeDB.CaseConversionPolicy Naming = SpacetimeDB.CaseConversionPolicy.{{policy}};
                     }
                     """;
+        MetadataReference EmitRejected(CSharpCompilation input, string title)
+        {
+            var driver = CSharpGeneratorDriver.Create(
+                [new Module().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions
+            );
+            driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
+            Assert.Contains(diagnostics, d => d.Descriptor.Title.ToString() == title);
+            // Model an already-built DLL: consumers must recheck its placements rather
+            // than trust that its own compilation ran the current generator's checks.
+            return Emit((CSharpCompilation)output);
+        }
         foreach (
             var (rootPolicy, dependencyPolicy) in new (string?, string?)[]
             {
@@ -800,29 +996,102 @@ public static class GeneratorSnapshotTests
             }
         }
 
+        // The same conflicting public contribution appears at two nested paths.
+        var policyLeaf = Emit(Generate(Create("PolicyLeaf", Policy("None") + Table("PolicyLeaf"))));
+        var policyParent = EmitRejected(
+            Create(
+                "PolicyParent",
+                "[assembly: SpacetimeDB.Namespace(typeof(PolicyLeaf.Sentinel), Accessor = \"public\")]\n"
+                    + "public class PolicyParentMarker { }",
+                policyLeaf
+            ),
+            "Conflicting case conversion policies"
+        );
+        var policyResult = CSharpGeneratorDriver
+            .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+            .RunGenerators(
+                Create(
+                    "PolicyRoot",
+                    """
+                    [assembly: SpacetimeDB.Namespace(typeof(PolicyParentMarker), Accessor = "Left")]
+                    [assembly: SpacetimeDB.Namespace(typeof(PolicyParentMarker), Accessor = "Right")]
+                    """,
+                    policyParent,
+                    policyLeaf
+                )
+            )
+            .GetRunResult();
+        foreach (var scope in new[] { "Left", "Right" })
+        {
+            Assert.Contains(
+                policyResult.Diagnostics,
+                d =>
+                    d.Descriptor.Title.ToString() == "Conflicting case conversion policies"
+                    && d.GetMessage().Contains($"scope '{scope}'")
+                    && d.GetMessage().Contains("PolicyParent,")
+                    && d.GetMessage().Contains("PolicyLeaf,")
+            );
+        }
+
+        void CheckNestedRootOnly(MetadataReference dependency, string marker, string declaration)
+        {
+            const string title = "Root-only declarations in mounted dependency";
+            var bridge = Emit(
+                Generate(
+                    Create(
+                        "PublicBridge",
+                        $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"public\")]\n"
+                            + "public class BridgeMarker { }",
+                        dependency
+                    )
+                )
+            );
+            var parent = EmitRejected(
+                Create(
+                    "RestrictedParent",
+                    "[assembly: SpacetimeDB.Namespace(typeof(BridgeMarker), Accessor = \"Child\")]\n"
+                        + "public class ParentMarker { }",
+                    bridge,
+                    dependency
+                ),
+                title
+            );
+            var result = CSharpGeneratorDriver
+                .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+                .RunGenerators(
+                    Create(
+                        "RestrictedRoot",
+                        $$"""
+                        [assembly: SpacetimeDB.Namespace(typeof(ParentMarker), Accessor = "Left")]
+                        [assembly: SpacetimeDB.Namespace(typeof(ParentMarker), Accessor = "Right")]
+                        [assembly: SpacetimeDB.Namespace(typeof({{marker}}), Accessor = "public")]
+                        """,
+                        parent,
+                        bridge,
+                        dependency
+                    )
+                )
+                .GetRunResult();
+            var errors = result
+                .Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+                .ToArray();
+            Assert.Equal(2, errors.Length);
+            foreach (var path in new[] { "Left.Child", "Right.Child" })
+            {
+                Assert.Contains(
+                    errors,
+                    d =>
+                        d.Descriptor.Title.ToString() == title
+                        && d.GetMessage().Contains($"namespace '{path}'")
+                        && d.GetMessage().Contains(declaration)
+                );
+            }
+        }
+
         // An unrelated utility alone must not cause an otherwise empty module to register.
         var plainUtility = Emit(Create("PlainUtility", "public class PlainUtility { }"));
         var empty = Generate(Create("Empty", "", plainUtility));
         Assert.Empty(empty.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
-
-        var nested = Emit(
-            Generate(
-                Create(
-                    "Nested",
-                    "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]",
-                    alpha,
-                    shared
-                )
-            )
-        );
-        var nestedResult = CSharpGeneratorDriver
-            .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
-            .RunGenerators(Create("Outer", "", nested, alpha, shared))
-            .GetRunResult();
-        Assert.Contains(
-            nestedResult.Diagnostics,
-            diagnostic => diagnostic.GetMessage().Contains("Only the consuming root")
-        );
 
         foreach (var kind in new[] { "Init", "ClientConnected", "ClientDisconnected" })
         {
@@ -840,25 +1109,7 @@ public static class GeneratorSnapshotTests
                     )
                 )
             );
-            var lifecycleResult = CSharpGeneratorDriver
-                .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
-                .RunGenerators(
-                    Create(
-                        "LifecycleConsumer",
-                        "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\")]",
-                        lifecycle
-                    )
-                )
-                .GetRunResult();
-            Assert.Contains(
-                lifecycleResult.Diagnostics,
-                diagnostic =>
-                    diagnostic.Severity == DiagnosticSeverity.Error
-                    && diagnostic.Descriptor.Title.ToString()
-                        == "Root-only declarations in mounted dependency"
-                    && diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
-                    && diagnostic.GetMessage().Contains("Auth")
-            );
+            CheckNestedRootOnly(lifecycle, "Marker", "LifecycleFunctions.Handle (" + kind + ")");
             // The same dependency can still be published alone or merged into the root scope.
             Generate(Create("FlatLifecycleConsumer", "", lifecycle));
             Generate(
@@ -897,6 +1148,7 @@ public static class GeneratorSnapshotTests
             );
             var dependencyDescriptor = Descriptor(dependencyCompilation);
             var dependency = Emit(dependencyCompilation);
+            CheckNestedRootOnly(dependency, "Entry", declaration);
             if (declaration == "row-level security filters")
             {
                 Assert.Contains(
@@ -909,25 +1161,6 @@ public static class GeneratorSnapshotTests
                             == "global::Rules.Visible"
                 );
             }
-            var result = CSharpGeneratorDriver
-                .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
-                .RunGenerators(
-                    Create(
-                        "RestrictedConsumer",
-                        "[assembly: SpacetimeDB.Namespace(typeof(Entry), Accessor = \"Auth\")]",
-                        dependency
-                    )
-                )
-                .GetRunResult();
-            Assert.Contains(
-                result.Diagnostics,
-                diagnostic =>
-                    diagnostic.Severity == DiagnosticSeverity.Error
-                    && diagnostic.GetMessage().Contains("RestrictedDependency")
-                    && diagnostic.GetMessage().Contains("'Auth'")
-                    && diagnostic.GetMessage().Contains(declaration)
-                    && diagnostic.GetMessage().Contains("root scope")
-            );
             foreach (
                 var mount in new[]
                 {

@@ -46,6 +46,21 @@ public static class Module
 
     private static NamespaceRegistry? namespaces;
 
+    private static NamespaceRegistry Namespaces =>
+        namespaces
+        ?? throw new InvalidOperationException("Module namespaces have not been installed.");
+
+    public static int InstanceCount => Namespaces.InstanceCount;
+
+    public static int ResolveInstance(int contextInstance, string assemblyIdentity) =>
+        Namespaces.ResolveInstance(contextInstance, assemblyIdentity);
+
+    public static string ResolveName(int instanceId, string localName) =>
+        Namespaces.Resolve(instanceId, localName);
+
+    internal static int[] BindNamespace(string? assemblyIdentity, string accessor) =>
+        Namespaces.BindNamespace(assemblyIdentity, accessor);
+
     public static void InstallNamespaces(NamespaceRegistry registry)
     {
         if (namespaces is not null)
@@ -57,26 +72,16 @@ public static class Module
     }
 
     public static string ResolveName(string assemblyIdentity, string localName) =>
-        (
-            namespaces
-            ?? throw new InvalidOperationException("Module namespaces have not been installed.")
-        ).Resolve(assemblyIdentity, localName);
+        Namespaces.Resolve(assemblyIdentity, localName);
 
     public static string ResolveFunctionName(
         string assemblyIdentity,
         string sourceName,
         string? explicitName
-    ) =>
-        (
-            namespaces
-            ?? throw new InvalidOperationException("Module namespaces have not been installed.")
-        ).ResolveFunction(assemblyIdentity, sourceName, explicitName);
+    ) => Namespaces.ResolveFunction(assemblyIdentity, sourceName, explicitName);
 
     public static SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
-        (
-            namespaces
-            ?? throw new InvalidOperationException("Module namespaces have not been installed.")
-        ).ResolveSqlName(assemblyIdentity, localName);
+        Namespaces.ResolveSqlName(assemblyIdentity, localName);
 
     private static Func<
         Identity,
@@ -326,6 +331,27 @@ public static class Module
         ulong conn_id_0,
         ulong conn_id_1,
         Timestamp timestamp
+    ) =>
+        CreateReducerContext(
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            conn_id_0,
+            conn_id_1,
+            timestamp,
+            0
+        );
+
+    public static IReducerContext CreateReducerContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        int instanceId
     )
     {
         var senderIdentity = Identity.From(
@@ -335,7 +361,11 @@ public static class Module
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
 
-        return newReducerContext!(senderIdentity, connectionId, random, time);
+        var context = newReducerContext!(senderIdentity, connectionId, random, time);
+#if NET10_0_OR_GREATER
+        ((ReducerContext)context).ModuleInstanceId = instanceId;
+#endif
+        return context;
     }
 
     public static IProcedureContext CreateProcedureContext(
@@ -346,6 +376,27 @@ public static class Module
         ulong conn_id_0,
         ulong conn_id_1,
         Timestamp timestamp
+    ) =>
+        CreateProcedureContext(
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            conn_id_0,
+            conn_id_1,
+            timestamp,
+            0
+        );
+
+    public static IProcedureContext CreateProcedureContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        int instanceId
     )
     {
         var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
@@ -353,7 +404,11 @@ public static class Module
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
 
-        return newProcedureContext!(sender, connectionId, random, time);
+        var context = newProcedureContext!(sender, connectionId, random, time);
+#if NET10_0_OR_GREATER
+        ((ProcedureContext)context).ModuleInstanceId = instanceId;
+#endif
+        return context;
     }
 
     public static SpacetimeDB.HandlerContextBase CreateHandlerContext(Timestamp timestamp)
@@ -368,13 +423,53 @@ public static class Module
         ulong sender_1,
         ulong sender_2,
         ulong sender_3
+    ) => CreateViewContext(sender_0, sender_1, sender_2, sender_3, 0);
+
+    public static IViewContext CreateViewContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        int instanceId
     )
     {
         var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
-        return newViewContext!(sender);
+        var context = newViewContext!(sender);
+#if NET10_0_OR_GREATER
+        ((ViewContext)context).ModuleInstanceId = instanceId;
+#endif
+        return context;
     }
 
-    public static IAnonymousViewContext CreateAnonymousViewContext() => newAnonymousViewContext!();
+    public static IAnonymousViewContext CreateAnonymousViewContext() =>
+        CreateAnonymousViewContext(0);
+
+    public static IAnonymousViewContext CreateAnonymousViewContext(int instanceId)
+    {
+        var context = newAnonymousViewContext!();
+#if NET10_0_OR_GREATER
+        ((AnonymousViewContext)context).ModuleInstanceId = instanceId;
+#endif
+        return context;
+    }
+
+#if NET10_0_OR_GREATER
+    public static int GetInstanceId(Local db) => db.InstanceId;
+
+    public static int GetInstanceId(LocalReadOnly db) => db.InstanceId;
+
+    public static int GetInstanceId(IReducerContext context) =>
+        ((ReducerContext)context).ModuleInstanceId;
+
+    public static int GetInstanceId(IProcedureContext context) =>
+        ((ProcedureContext)context).ModuleInstanceId;
+
+    public static int GetInstanceId(IViewContext context) =>
+        ((ViewContext)context).ModuleInstanceId;
+
+    public static int GetInstanceId(IAnonymousViewContext context) =>
+        ((AnonymousViewContext)context).ModuleInstanceId;
+#endif
 
     public static void EnsureNoUnreadBytes(MemoryStream stream, string description)
     {
@@ -410,22 +505,7 @@ public static class Module
         try
         {
             var module = RootBuilder.BuildModuleDefinition();
-            foreach (var submodules in module.Sections.OfType<RawModuleDefV10Section.Submodules>())
-            {
-                foreach (var submodule in submodules.Submodules_)
-                {
-                    if (
-                        submodule
-                            .Module.Sections.OfType<RawModuleDefV10Section.HttpRoutes>()
-                            .Any(routes => routes.HttpRoutes_.Count > 0)
-                    )
-                    {
-                        Log.Warn(
-                            $"HTTP routes declared in submodule '{submodule.Namespace}' are ignored. Define HTTP routes in the root module instead."
-                        );
-                    }
-                }
-            }
+            WarnIgnoredRoutes(module, "");
             RawModuleDef versioned = new RawModuleDef.V10(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
@@ -433,6 +513,28 @@ public static class Module
         catch (Exception e)
         {
             Log.Error($"Error while describing the module: {e}");
+        }
+    }
+
+    private static void WarnIgnoredRoutes(RawModuleDefV10 module, string path)
+    {
+        foreach (var section in module.Sections.OfType<RawModuleDefV10Section.Submodules>())
+        {
+            foreach (var child in section.Submodules_)
+            {
+                var childPath = path.Length == 0 ? child.Namespace : path + "." + child.Namespace;
+                if (
+                    child
+                        .Module.Sections.OfType<RawModuleDefV10Section.HttpRoutes>()
+                        .Any(routes => routes.HttpRoutes_.Count > 0)
+                )
+                {
+                    Log.Warn(
+                        $"HTTP routes declared in submodule '{childPath}' are ignored. Define HTTP routes in the root module instead."
+                    );
+                }
+                WarnIgnoredRoutes(child.Module, childPath);
+            }
         }
     }
 }
@@ -443,7 +545,9 @@ public static class Module
 /// </summary>
 public partial class Local
 {
-    // Intentionally empty – generated code adds table handles here.
+#if NET10_0_OR_GREATER
+    internal int InstanceId { get; set; }
+#endif
 }
 
 /// <summary>
@@ -451,4 +555,9 @@ public partial class Local
 /// On .NET 10 the generator provides assembly-scoped extension properties.
 /// On .NET 8 generated modules declare their own type with table accessors.
 /// </summary>
-public sealed partial class LocalReadOnly { }
+public sealed partial class LocalReadOnly
+{
+#if NET10_0_OR_GREATER
+    internal int InstanceId { get; set; }
+#endif
+}

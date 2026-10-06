@@ -105,6 +105,11 @@ public sealed class QueryBuilderTests
         Assert.Equal("SELECT * FROM \"auth.users\"", MakeTable("auth.users").ToSql());
         Assert.Equal("\"auth.users\".\"id\"", new Col<Row, int>("auth.users", "id").ToString());
         Assert.Equal("\"auth.users\".\"id\"", new IxCol<Row, int>("auth.users", "id").ToString());
+        var segments = new[] { "outer.data", "in\"ner" };
+        var nested = new SqlTableName(segments, "users");
+        segments[0] = "changed";
+        Assert.Equal("\"outer.data\".\"in\"\"ner\".\"users\"", nested.ToString());
+        Assert.Equal("\"users\"", new SqlTableName(Array.Empty<string>(), "users").ToString());
     }
 
     [Fact]

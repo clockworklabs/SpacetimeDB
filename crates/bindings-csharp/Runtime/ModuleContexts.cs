@@ -10,6 +10,11 @@ public sealed class Local : LocalBase { }
 
 public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
 {
+    internal int ModuleInstanceId
+    {
+        get => Db.InstanceId;
+        set => Db.InstanceId = value;
+    }
     public DatabaseEnvironment Env => default;
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
@@ -95,7 +100,11 @@ public readonly struct QueryBuilder { }
 
 public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
 {
-    private readonly Local _db = new();
+    internal int ModuleInstanceId
+    {
+        get => Db.InstanceId;
+        set => Db.InstanceId = value;
+    }
 
     internal ProcedureContext(
         Identity identity,
@@ -105,7 +114,7 @@ public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureCont
     )
         : base(identity, connectionId, random, time) { }
 
-    protected internal override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+    protected internal override global::SpacetimeDB.LocalBase CreateLocal() => Db;
 
     protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
         Internal.TxContext inner
@@ -113,7 +122,7 @@ public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureCont
 
     private ProcedureTxContext? _cached;
 
-    public Local Db => _db;
+    public Local Db { get; } = new();
 
     public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
         base.WithTx(tx => body((ProcedureTxContext)tx));
@@ -230,6 +239,11 @@ public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
 
 public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
 {
+    internal int ModuleInstanceId
+    {
+        get => Db.InstanceId;
+        set => Db.InstanceId = value;
+    }
     public DatabaseEnvironment Env => default;
     public Identity Sender { get; }
 
@@ -246,6 +260,11 @@ public sealed record AnonymousViewContext
     : DbContext<Internal.LocalReadOnly>,
         Internal.IAnonymousViewContext
 {
+    internal int ModuleInstanceId
+    {
+        get => Db.InstanceId;
+        set => Db.InstanceId = value;
+    }
     public DatabaseEnvironment Env => default;
     public QueryBuilder From => default;
 

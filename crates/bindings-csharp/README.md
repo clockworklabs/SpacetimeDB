@@ -58,14 +58,15 @@ An explicit `Name` is used as supplied, without case conversion.
 
 #### Restrictions and limitations
 
-- Only the consuming root chooses namespace placement. A dependency that itself
-  declares namespace mounts cannot be composed, even in `public`. Nested mounts,
-  multiple instances of one assembly, and runtime-created namespaces are unsupported.
-- An assembly can be mounted only once, and the root cannot mount itself.
-  Omitting the attribute, or explicitly using `Accessor = "public"`, registers
-  the dependency in the default scope with flat accessors.
-- Dependencies in `public` inherit the root's case-conversion policy (`SnakeCase`
-  by default). An explicitly different policy is a compilation error. Mount the
+- Dependencies may declare their own mounts. The same assembly can appear at
+  different paths, each with independent tables. Self-mounts, mount cycles,
+  sibling accessor collisions, and runtime-created namespaces are unsupported.
+- `Accessor = "public"` merges declarations into the containing scope, not
+  necessarily the root. A public dependency's named children become children of
+  that scope. Referenced modules not targeted by any mount register automatically
+  in the root's public scope.
+- Dependencies in `public` inherit the containing scope's case-conversion policy
+  (`SnakeCase` by default). An explicitly different policy is a compilation error. Mount the
   dependency in a named namespace to keep its independent naming policy.
 - `Accessor` must be a valid C# and database identifier; optional `Name` must be
   a valid database identifier. Both are limited to 63 UTF-8 bytes.
@@ -76,8 +77,9 @@ An explicit `Name` is used as supplied, without case conversion.
   The `public` scope cannot be renamed or targeted through a different accessor.
 - Named namespaces cannot declare lifecycle reducers, nonempty environment
   schemas, or RLS filters. The generator rejects these when composing the root.
-  They remain valid when the dependency is published alone or registered in
-  `public`, subject to ordinary host validation (including lifecycle uniqueness).
+  This applies at every depth, including public contributions inside a named
+  submodule. They remain valid when published alone or registered in the root's
+  public scope, subject to ordinary host validation (including lifecycle uniqueness).
 - Define RLS in the root, using canonical qualified table names, as in
   [the integration fixture](../../modules/namespace-test-cs/Lib.cs).
   Library-defined RLS in a named namespace is unsupported; it must not be relied
