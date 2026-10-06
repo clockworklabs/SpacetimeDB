@@ -27,6 +27,7 @@
     "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm -s build:js && pnpm -s build:types",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "fix:import-extensions": "node scripts/add-import-extensions.mjs src && prettier --write src --log-level warn --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "test": "vitest run",
     "test:typecheck": "vitest typecheck --run",

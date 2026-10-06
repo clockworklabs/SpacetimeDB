@@ -1,8 +1,8 @@
-import type { ProductType } from './algebraic_type';
-import type { RawReducerDefV9 } from './autogen/types';
-import type { ParamsObj } from './reducers';
-import type { RowBuilder, RowObj } from './type_builders';
-import type { CamelCase } from './type_util';
+import type { ProductType } from './algebraic_type.ts';
+import type { RawReducerDefV9 } from './autogen/types.ts';
+import type { ParamsObj } from './reducers.ts';
+import type { RowBuilder, RowObj } from './type_builders.ts';
+import type { CamelCase } from './type_util.ts';
 
 /**
  * Represents a handle to a database reducer, including its name and argument type.

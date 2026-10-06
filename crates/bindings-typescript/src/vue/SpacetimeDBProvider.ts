@@ -12,12 +12,12 @@ import {
   type DbConnectionImpl,
   type ErrorContextInterface,
   type RemoteModuleOf,
-} from '../sdk/db_connection_impl';
-import { ConnectionId } from '../lib/connection_id';
+} from '../sdk/db_connection_impl.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
 import {
   SPACETIMEDB_INJECTION_KEY,
   type ConnectionState,
-} from './connection_state';
+} from './connection_state.ts';
 
 export interface SpacetimeDBProviderProps<
   DbConnection extends DbConnectionImpl<any>,

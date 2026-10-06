@@ -119,6 +119,31 @@ export default tseslint.config(
     },
   },
   {
+    files: ['crates/bindings-typescript/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSEnumDeclaration',
+          message: 'Do not use enums; stick to JS-compatible types.',
+        },
+        {
+          selector: 'TSEnumDeclaration[const=true]',
+          message: 'Do not use const enum; use unions or objects.',
+        },
+        { selector: 'Decorator', message: 'Do not use decorators.' },
+        {
+          // tsc copies specifiers into the published .d.ts files verbatim, and
+          // NodeNext consumers cannot resolve extensionless relative imports.
+          selector:
+            ':matches(ImportDeclaration, ExportAllDeclaration, ExportNamedDeclaration, ImportExpression)[source.value=/^\\.(?!.*\\.(ts|tsx|js)$)/]',
+          message:
+            "Relative imports need an explicit extension (e.g. './foo.ts') so the published types resolve under NodeNext. `pnpm fix:import-extensions` adds them.",
+        },
+      ],
+    },
+  },
+  {
     files: ['templates/angular-ts/src/**/*.ts'],
     rules: {
       'no-restricted-syntax': [

@@ -1,7 +1,7 @@
 import { createEffect } from 'solid-js';
-import type { UntypedReducerDef } from '../sdk/reducers';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { ParamsType } from '../sdk';
+import type { UntypedReducerDef } from '../sdk/reducers.ts';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { ParamsType } from '../sdk/index.ts';
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef

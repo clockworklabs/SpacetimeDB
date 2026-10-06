@@ -1,11 +1,11 @@
 import { onDestroy } from 'svelte';
 import { writable, get, type Readable } from 'svelte/store';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { ConnectionState } from './connection_state';
-import type { EventContextInterface } from '../sdk/db_connection_impl';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
-import type { Prettify } from '../lib/type_util';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { ConnectionState } from './connection_state.ts';
+import type { EventContextInterface } from '../sdk/db_connection_impl.ts';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { Prettify } from '../lib/type_util.ts';
 import {
   type BooleanExpr,
   evaluateBooleanExpr,
@@ -13,7 +13,7 @@ import {
   getQueryWhereClause,
   type Query,
   toSql,
-} from '../lib/query';
+} from '../lib/query.ts';
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;

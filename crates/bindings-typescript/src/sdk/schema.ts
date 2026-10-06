@@ -3,8 +3,8 @@ import {
   tablesToSchema,
   type TablesToSchema,
   type UntypedSchemaDef,
-} from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
+} from '../lib/schema.ts';
+import type { UntypedTableSchema } from '../lib/table_schema.ts';
 
 class Tables<S extends UntypedSchemaDef> {
   constructor(readonly schemaType: S) {}

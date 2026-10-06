@@ -1,10 +1,10 @@
-import type { AlgebraicType } from './algebraic_type';
-import type { Typespace } from './autogen/types';
-import BinaryReader from './binary_reader';
-import BinaryWriter from './binary_writer';
-import type { ParamsObj } from './reducers';
-import type { ColumnBuilder, TypeBuilder } from './type_builders';
-import type { CamelCase, SnakeCase } from './type_util';
+import type { AlgebraicType } from './algebraic_type.ts';
+import type { Typespace } from './autogen/types.ts';
+import BinaryReader from './binary_reader.ts';
+import BinaryWriter from './binary_writer.ts';
+import type { ParamsObj } from './reducers.ts';
+import type { ColumnBuilder, TypeBuilder } from './type_builders.ts';
+import type { CamelCase, SnakeCase } from './type_util.ts';
 
 export function deepEqual(obj1: unknown, obj2: unknown): boolean {
   if (obj1 === obj2) return true;

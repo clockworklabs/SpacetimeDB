@@ -41,9 +41,9 @@ import type {
   DbConnectionBuilder,
   DbConnectionImpl,
   ErrorContextInterface,
-} from './db_connection_impl';
-import type { Identity } from '../lib/identity';
-import { ConnectionId } from '../lib/connection_id';
+} from './db_connection_impl.ts';
+import type { Identity } from '../lib/identity.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
 
 /** Represents the current state of a managed connection. */
 export type ConnectionState = {

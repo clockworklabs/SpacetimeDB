@@ -1,15 +1,15 @@
-import type { EnvironmentFor } from './environment';
-import type { DbView } from '../server/db_view';
-import type { Random } from '../server/rng';
-import type { ConnectionId } from './connection_id';
-import type { Identity } from './identity';
-import { type UntypedSchemaDef } from './schema';
-import { type Timestamp } from './timestamp';
+import type { EnvironmentFor } from './environment.ts';
+import type { DbView } from '../server/db_view.ts';
+import type { Random } from '../server/rng.ts';
+import type { ConnectionId } from './connection_id.ts';
+import type { Identity } from './identity.ts';
+import { type UntypedSchemaDef } from './schema.ts';
+import { type Timestamp } from './timestamp.ts';
 import {
   ColumnBuilder,
   type InferTypeOfRow,
   type TypeBuilder,
-} from './type_builders';
+} from './type_builders.ts';
 import { Uuid } from './uuid.ts';
 
 /**

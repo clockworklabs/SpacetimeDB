@@ -11,4 +11,4 @@ export {
   type HandlerFn,
   type HttpHandlerExport,
   type HttpHandlerOpts,
-} from './http_handlers';
+} from './http_handlers.ts';

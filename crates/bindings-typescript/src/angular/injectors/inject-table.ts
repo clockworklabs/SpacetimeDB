@@ -6,9 +6,9 @@ import {
   effect,
   type Signal,
 } from '@angular/core';
-import type { RowType, UntypedTableDef } from '../../lib/table';
-import type { Prettify } from '../../lib/type_util';
-import { SPACETIMEDB_CONNECTION } from '../connection_state';
+import type { RowType, UntypedTableDef } from '../../lib/table.ts';
+import type { Prettify } from '../../lib/type_util.ts';
+import { SPACETIMEDB_CONNECTION } from '../connection_state.ts';
 import {
   type Query,
   type BooleanExpr,
@@ -16,9 +16,9 @@ import {
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
-} from '../../lib/query';
-import type { EventContextInterface } from '../../sdk';
-import type { UntypedRemoteModule } from '../../sdk/spacetime_module';
+} from '../../lib/query.ts';
+import type { EventContextInterface } from '../../sdk/index.ts';
+import type { UntypedRemoteModule } from '../../sdk/spacetime_module.ts';
 
 export type RowTypeDef<TableDef extends UntypedTableDef> = Prettify<
   RowType<TableDef>
