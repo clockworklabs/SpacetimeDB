@@ -157,7 +157,7 @@ pub struct StInboundStreamRow {
     /// Sender database identity for this receiver-side stream.
     pub sender_identity: IdentityViaU256,
     /// Sender outbox table that owns this stream.
-    pub sender_outbox_table_id: u32,
+    pub sender_outbox_table_id: TableId,
     /// Highest contiguous sequence applied by this receiver.
     /// In ordered mode, the next new message must be this value plus one.
     /// In unordered mode, gaps may be accepted, but this prefix only moves when contiguous.
@@ -185,7 +185,7 @@ pub struct StInboundMsgRow {
     /// Sender database identity for this retained result.
     pub sender_identity: IdentityViaU256,
     /// Sender outbox table that owns this stream.
-    pub sender_outbox_table_id: u32,
+    pub sender_outbox_table_id: TableId,
     /// Dense stream sequence number this result belongs to.
     pub seq: u64,
     /// Stored reducer outcome kind to replay if the sender retries this sequence.

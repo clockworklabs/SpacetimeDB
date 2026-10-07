@@ -1652,11 +1652,11 @@ pub(crate) mod tests {
             ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 7, name: "result_payload", ty: AlgebraicType::option(AlgebraicType::bytes()) },
 
             ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
-            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 1, name: "sender_outbox_table_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 1, name: "sender_outbox_table_id", ty: TableId::get_type() },
             ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 2, name: "applied_prefix", ty: AlgebraicType::U64 },
 
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
-            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "sender_outbox_table_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "sender_outbox_table_id", ty: TableId::get_type() },
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_status", ty: AlgebraicType::U8 },
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 4, name: "result_payload", ty: AlgebraicType::bytes() },
