@@ -75,7 +75,9 @@ export function useTable<TableDef extends UntypedTableDef>(
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
 
-  const [subscribeApplied, setSubscribeApplied] = useState(false);
+  const [appliedConnectionId, setAppliedConnectionId] = useState<string | null>(
+    null
+  );
   let connectionState: ConnectionState | undefined;
   try {
     connectionState = useSpacetimeDB();
@@ -88,6 +90,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   }
 
   const querySql = toSql(query);
+  const connection = connectionState.getConnection();
 
   const latestTransactionEventId = useRef<string | null>(null);
   const lastSnapshotRef = useRef<
@@ -101,7 +104,6 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!enabled) {
       return [[], true];
     }
-    const connection = connectionState.getConnection();
     if (!connection) {
       return [[], false];
     }
@@ -114,42 +116,38 @@ export function useTable<TableDef extends UntypedTableDef>(
           evaluateBooleanExpr(whereExpr, row as Record<string, any>)
         ) as Prettify<UseTableRowType>[])
       : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
-    return [result, subscribeApplied];
+    return [
+      result,
+      connectionState.isActive &&
+        appliedConnectionId === connectionState.connectionId.toHexString(),
+    ];
     // TODO: investigating refactoring so that this is no longer necessary, as we have had genuine bugs with missed deps.
     // See https://github.com/clockworklabs/SpacetimeDB/pull/4580.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, accessorName, querySql, subscribeApplied, enabled]);
+  }, [
+    connection,
+    connectionState,
+    accessorName,
+    querySql,
+    appliedConnectionId,
+    enabled,
+  ]);
 
-  // Invalidate the cached snapshot when computeSnapshot changes (e.g. when
-  // subscribeApplied flips to true) so getSnapshot() recomputes on the next
-  // render instead of returning a stale [rows, false] tuple.
-  useEffect(() => {
-    lastSnapshotRef.current = null;
-  }, [computeSnapshot]);
+  const lastComputeSnapshotRef = useRef(computeSnapshot);
 
   useEffect(() => {
-    if (!enabled) {
-      setSubscribeApplied(false);
-      return;
-    }
-    const connection = connectionState.getConnection();
-    if (!connectionState.isActive || !connection) {
-      // The connection dropped (or was replaced and has not reconnected
-      // yet), so any previously applied subscription no longer reflects the
-      // current cache. Report not-ready until the new subscription applies.
-      setSubscribeApplied(false);
-      return;
-    }
-    const cancel = connection
+    setAppliedConnectionId(null);
+    if (!enabled || !connection) return;
+
+    const handle = connection
       .subscriptionBuilder()
       .onApplied(() => {
-        setSubscribeApplied(true);
+        setAppliedConnectionId(connection.connectionId.toHexString());
       })
+      .onError(() => setAppliedConnectionId(null))
       .subscribe(querySql);
-    return () => {
-      cancel.unsubscribe();
-    };
-  }, [querySql, connectionState.isActive, connectionState, enabled]);
+    return () => handle.unsubscribe();
+  }, [querySql, connection, enabled]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
@@ -215,7 +213,6 @@ export function useTable<TableDef extends UntypedTableDef>(
         }
       };
 
-      const connection = connectionState.getConnection();
       if (!connection) {
         return () => {};
       }
@@ -238,7 +235,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     // See https://github.com/clockworklabs/SpacetimeDB/pull/4580.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      connectionState,
+      connection,
       accessorName,
       querySql,
       computeSnapshot,
@@ -253,6 +250,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     readonly Prettify<UseTableRowType>[],
     boolean,
   ] => {
+    if (lastComputeSnapshotRef.current !== computeSnapshot) {
+      lastComputeSnapshotRef.current = computeSnapshot;
+      lastSnapshotRef.current = null;
+    }
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = computeSnapshot();
     }

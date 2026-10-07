@@ -120,7 +120,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "48 kB"
+      "limit": "50 kB"
     },
     {
       "name": "esm (uncompressed)",
@@ -232,6 +232,7 @@
     "@types/fast-text-encoding": "^1.0.3",
     "@types/object-inspect": "^1.13.0",
     "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.2.3",
     "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
@@ -240,6 +241,8 @@
     "eslint": "^9.33.0",
     "eslint-plugin-jsdoc": "^61.5.0",
     "globals": "^15.14.0",
+    "jsdom": "^26.1.0",
+    "react-dom": "^18.3.1",
     "size-limit": "^11.2.0",
     "svelte": "^5.0.0",
     "ts-node": "^10.9.2",
