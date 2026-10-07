@@ -313,6 +313,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules, environment) =
         (tables_types_reducers_procedures_views, submodules, environment)
             .combine_errors()
+            .and_then(|(defs, submodules, environment)| {
+                let (tables, _, reducers, procedures, views, _) = &defs;
+                check_names_do_not_conflict_with_namespaces(tables, reducers, procedures, views, &submodules)?;
+                Ok((defs, submodules, environment))
+            })
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
@@ -462,6 +467,59 @@ fn validate_submodules(
     }
 
     ValidationErrors::add_extra_errors(Ok(map), errors)
+}
+
+/// Reject any table, view, reducer or procedure whose accessor name is also the accessor
+/// name of a submodule mounted in this module.
+///
+/// Generated client bindings expose both under the same key (`conn.reducers.auth` for the
+/// reducer, `conn.reducers.auth.login` for the namespace), so one would shadow the other.
+/// Only accessor names can collide this way. Canonical names can't. On the wire a function
+/// `auth` and a namespace's functions `auth.*` are distinct, and `validate_submodules` already
+/// rejects two namespaces with the same canonical name.
+///
+/// `validate` runs this at every level of the module tree, so a submodule's own functions
+/// are checked against the namespaces it mounts in turn.
+fn check_names_do_not_conflict_with_namespaces(
+    tables: &IdentifierMap<TableDef>,
+    reducers: &IndexMap<Identifier, ReducerDef>,
+    procedures: &IndexMap<Identifier, ProcedureDef>,
+    views: &IndexMap<Identifier, ViewDef>,
+    submodules: &IndexMap<Identifier, ModuleDef>,
+) -> Result<()> {
+    let namespaces: HashMap<&str, &Identifier> = submodules
+        .values()
+        .filter_map(|submodule| submodule.mount_accessor_name())
+        .map(|accessor| (&**accessor, accessor))
+        .collect();
+    if namespaces.is_empty() {
+        return Ok(());
+    }
+
+    let mut errors = vec![];
+    let mut check = |kind: &'static str, accessor_name: &Identifier| {
+        if let Some(namespace) = namespaces.get(&**accessor_name) {
+            errors.push(ValidationError::NamespaceNameConflict {
+                kind,
+                name: accessor_name.as_raw().clone(),
+                namespace: namespace.as_raw().clone(),
+            });
+        }
+    };
+    for table in tables.values() {
+        check("table", &table.accessor_name);
+    }
+    for view in views.values() {
+        check("view", &view.accessor_name);
+    }
+    for reducer in reducers.values() {
+        check("reducer", reducer.accessor_name.local());
+    }
+    for procedure in procedures.values() {
+        check("procedure", &procedure.accessor_name);
+    }
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -1829,6 +1887,91 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateName { name } => {
             &name[..] == "my_auth"
         });
+    }
+
+    /// A function or table cannot share its accessor name with a namespace mounted beside it,
+    /// since generated client bindings would expose both under the same key.
+    #[test]
+    fn names_conflicting_with_submodule_namespaces_are_rejected() {
+        let conflict = |kind: &str, result: Result<ModuleDef>| {
+            expect_error_matching!(
+                result,
+                ValidationError::NamespaceNameConflict { kind: k, name, namespace } => {
+                    *k == kind && &name[..] == "auth" && &namespace[..] == "auth"
+                }
+            );
+        };
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.add_reducer("auth", ProductType::unit());
+        conflict("reducer", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.add_procedure("auth", ProductType::unit(), AlgebraicType::unit());
+        conflict("procedure", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        let row = root.add_algebraic_type([], "Row", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        root.add_view(
+            "auth",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(row)),
+        );
+        conflict("view", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.build_table_with_new_type("auth", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        conflict("table", root.finish().try_into());
+    }
+
+    /// The conflict is on accessor names. A function whose canonical name happens to match a
+    /// namespace's canonical name is fine: the two are distinct on the wire.
+    #[test]
+    fn canonical_names_matching_a_namespace_are_allowed() {
+        // Reducer `myAuth` canonicalizes to `my_auth`, which is also the canonical form of the
+        // `authLib` namespace once pinned, but the accessor names `myAuth` and `authLib` differ.
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("authLib", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("authLib", "my_auth");
+        root.add_explicit_names(explicit);
+        root.add_reducer("myAuth", ProductType::unit());
+        let def: ModuleDef = root
+            .finish()
+            .try_into()
+            .expect("canonical name overlap should validate");
+
+        assert!(def.submodules().contains_key("my_auth"));
+        assert!(def.reducer_by_name("my_auth").is_some());
+        assert!(def.reducer_by_name("my_auth.clean_expired_sessions").is_some());
+    }
+
+    /// The check applies at every level: a submodule's own functions are checked against the
+    /// namespaces it mounts.
+    #[test]
+    fn names_conflicting_with_nested_submodule_namespaces_are_rejected() {
+        let mut middle = RawModuleDefV10Builder::new();
+        middle.add_submodule("audit", sessions_submodule());
+        middle.add_reducer("audit", ProductType::unit());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", middle.finish());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(
+            result,
+            ValidationError::NamespaceNameConflict { kind, name, namespace } => {
+                *kind == "reducer" && &name[..] == "audit" && &namespace[..] == "audit"
+            }
+        );
     }
 
     /// Nested mounts carry both paths through every level.

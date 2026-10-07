@@ -1,3 +1,5 @@
+import type { UntypedClientTable } from '../sdk/client_table';
+import { getByAccessorPath } from '../lib/accessor_path';
 import {
   onUnmounted,
   computed,
@@ -96,7 +98,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     const connection = conn.getConnection();
     if (!connection) return [];
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName
+    );
     if (!table) return [];
 
     const allRows = Array.from(table.iter()) as Row[];
@@ -112,7 +117,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     const connection = conn.getConnection();
     if (!connection) return;
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName
+    );
     if (!table) return;
 
     const onInsert = (

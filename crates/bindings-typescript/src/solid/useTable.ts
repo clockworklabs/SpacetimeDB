@@ -1,3 +1,5 @@
+import type { UntypedClientTable } from '../sdk/client_table';
+import { getByAccessorPath } from '../lib/accessor_path';
 import {
   createSignal,
   onCleanup,
@@ -99,7 +101,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!connection) {
       return [];
     }
-    const table = connection.db[accessorName()];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName()
+    );
     const result: readonly Prettify<UseTableRowType>[] = whereExpr()
       ? (Array.from(table.iter()).filter(row =>
           evaluateBooleanExpr(whereExpr()!, row as Record<string, any>)
@@ -141,7 +146,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     });
 
     // Bind to table events
-    const table = connection.db[accessorName()];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName()
+    );
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,
