@@ -10,7 +10,7 @@ use crate::{
     error::TableError,
     execution_context::ExecutionContext,
     locking_tx_datastore::{
-        mut_tx::{ViewInstanceState, ViewInstanceTxState, ViewReadSets},
+        mut_tx::{ViewInstanceChange, ViewInstanceState, ViewInstanceTxState, ViewReadSets},
         state_view::ScanOrIndex,
         IterByColRangeTx,
     },
@@ -539,12 +539,28 @@ impl CommittedState {
     }
 
     fn merge_view_instances(&mut self, view_instances: ViewInstanceTxState) {
-        for (call, state) in view_instances.into_changes() {
-            match state {
-                Some(state) => {
+        for (call, change) in view_instances.into_changes() {
+            match change {
+                ViewInstanceChange::Created(state) => {
                     self.view_instances.insert(call, state);
                 }
-                None => {
+                ViewInstanceChange::Updated(delta) => {
+                    let state = self
+                        .view_instances
+                        .get_mut(&call)
+                        .expect("updated view instance must have committed state");
+                    for (subscriber, count) in delta.subscriber_counts {
+                        if count == 0 {
+                            state.active_subscribers.remove(&subscriber);
+                        } else {
+                            state.active_subscribers.insert(subscriber, count);
+                        }
+                    }
+                    if let Some(last_used) = delta.last_used {
+                        state.last_used = last_used;
+                    }
+                }
+                ViewInstanceChange::Deleted => {
                     self.view_instances.remove(&call);
                 }
             }

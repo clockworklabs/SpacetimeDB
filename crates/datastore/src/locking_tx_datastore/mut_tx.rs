@@ -133,7 +133,7 @@ impl ViewInstanceArgs {
 
 impl MemoryUsage for ViewInstanceArgs {}
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(super) struct ViewInstanceState {
     pub(super) args: ViewInstanceArgs,
     pub(super) active_subscribers: HashMap<Identity, u64>,
@@ -159,44 +159,160 @@ impl ViewInstanceState {
             last_used,
         }
     }
+}
 
+#[derive(Default)]
+pub(super) struct ViewInstanceDelta {
+    pub(super) subscriber_counts: HashMap<Identity, u64>,
+    pub(super) last_used: Option<Timestamp>,
+}
+
+pub(super) enum ViewInstanceChange {
+    Created(ViewInstanceState),
+    Updated(ViewInstanceDelta),
+    Deleted,
+}
+
+impl ViewInstanceChange {
+    fn set_subscriber_count(&mut self, subscriber: Identity, count: u64) {
+        match self {
+            Self::Created(state) => {
+                if count == 0 {
+                    state.active_subscribers.remove(&subscriber);
+                } else {
+                    state.active_subscribers.insert(subscriber, count);
+                }
+            }
+            Self::Updated(delta) => {
+                // Keep zero overrides to hide subscribers still present in committed state.
+                delta.subscriber_counts.insert(subscriber, count);
+            }
+            Self::Deleted => unreachable!("get_or_create_change_mut must precede field updates"),
+        }
+    }
+
+    fn set_last_used(&mut self, last_used: Timestamp) {
+        match self {
+            Self::Created(state) => state.last_used = last_used,
+            Self::Updated(delta) => delta.last_used = Some(last_used),
+            Self::Deleted => unreachable!("get_or_create_change_mut must precede field updates"),
+        }
+    }
+}
+
+struct EffectiveViewInstance<'a> {
+    base: &'a ViewInstanceState,
+    delta: Option<&'a ViewInstanceDelta>,
+}
+
+impl EffectiveViewInstance<'_> {
     fn has_subscribers(&self) -> bool {
-        !self.active_subscribers.is_empty()
+        let mut active_identities = self.base.active_subscribers.len();
+        if let Some(delta) = self.delta {
+            // Count membership changes, not changes to reference counts.
+            for (identity, count) in &delta.subscriber_counts {
+                let was_active = self.base.active_subscribers.contains_key(identity);
+                let is_active = *count > 0;
+                match (was_active, is_active) {
+                    (false, true) => active_identities += 1,
+                    (true, false) => active_identities -= 1,
+                    _ => {}
+                }
+            }
+        }
+        active_identities > 0
+    }
+
+    fn subscriber_count(&self, identity: &Identity) -> u64 {
+        self.delta
+            .and_then(|delta| delta.subscriber_counts.get(identity))
+            .copied()
+            .unwrap_or_else(|| self.base.active_subscribers.get(identity).copied().unwrap_or(0))
+    }
+
+    fn args(&self) -> ViewInstanceArgs {
+        self.base.args
+    }
+
+    fn last_used(&self) -> Timestamp {
+        self.delta
+            .and_then(|delta| delta.last_used)
+            .unwrap_or(self.base.last_used)
     }
 }
 
 /// Transaction-local overlay for materialized view lifecycle state.
 ///
-/// The overlay stores a full post-image for each touched view instead of a delta.
-/// This keeps same-transaction reads, rollback, and commit simple.
-///
-/// TODO: This will clone the `active_subscribers` from the committed state,
-/// which for a highly subscribed-to view can be expensive.
-/// Look into optimizing this later.
+/// Created instances own their state and are mutated in place. Updates to committed
+/// instances store only changed fields and replacement counts for touched identities;
+/// a zero count hides a committed subscriber. Deleted entries hide entire instances.
+/// Missing entries leave committed state unchanged.
 #[derive(Default)]
 pub(super) struct ViewInstanceTxState {
-    changes: HashMap<ViewCallInfo, Option<ViewInstanceState>>,
+    changes: HashMap<ViewCallInfo, ViewInstanceChange>,
 }
 
 impl ViewInstanceTxState {
-    fn get<'a>(&'a self, committed_state: &'a CommittedState, call: &ViewCallInfo) -> Option<&'a ViewInstanceState> {
+    fn get<'a>(
+        &'a self,
+        committed_state: &'a CommittedState,
+        call: &ViewCallInfo,
+    ) -> Option<EffectiveViewInstance<'a>> {
         match self.changes.get(call) {
-            Some(Some(state)) => Some(state),
-            Some(None) => None,
-            None => committed_state.view_instance(call),
+            Some(ViewInstanceChange::Created(state)) => Some(EffectiveViewInstance {
+                base: state,
+                delta: None,
+            }),
+            Some(ViewInstanceChange::Updated(delta)) => {
+                let base = committed_state
+                    .view_instance(call)
+                    .expect("updated view instance must have committed state");
+
+                Some(EffectiveViewInstance {
+                    base,
+                    delta: Some(delta),
+                })
+            }
+            Some(ViewInstanceChange::Deleted) => None,
+            None => committed_state
+                .view_instance(call)
+                .map(|base| EffectiveViewInstance { base, delta: None }),
         }
     }
 
-    fn get_cloned(&self, committed_state: &CommittedState, call: &ViewCallInfo) -> Option<ViewInstanceState> {
-        self.get(committed_state, call).cloned()
-    }
+    /// Retrieves or creates a writable pending change for `call`, recreating deleted instances.
+    /// `args` must match the supplied call key and remain fixed for an instance's lifetime.
+    /// Arguments and timestamp initialize new instances; existing fields are left unchanged.
+    fn get_or_create_change_mut(
+        &mut self,
+        committed_state: &CommittedState,
+        call: ViewCallInfo,
+        args: ViewInstanceArgs,
+        last_used: Timestamp,
+    ) -> &mut ViewInstanceChange {
+        use spacetimedb_data_structures::map::hash_map::Entry;
 
-    fn set(&mut self, call: ViewCallInfo, state: ViewInstanceState) {
-        self.changes.insert(call, Some(state));
+        let change = match self.changes.entry(call) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let change = if committed_state.view_instance(entry.key()).is_some() {
+                    ViewInstanceChange::Updated(ViewInstanceDelta::default())
+                } else {
+                    ViewInstanceChange::Created(ViewInstanceState::new(args, last_used))
+                };
+                entry.insert(change)
+            }
+        };
+
+        if matches!(change, ViewInstanceChange::Deleted) {
+            // Recreation must not inherit the deleted instance's committed subscribers.
+            *change = ViewInstanceChange::Created(ViewInstanceState::new(args, last_used));
+        }
+        change
     }
 
     fn remove(&mut self, call: ViewCallInfo) {
-        self.changes.insert(call, None);
+        self.changes.insert(call, ViewInstanceChange::Deleted);
     }
 
     fn active_view_calls_for_subscriber(
@@ -205,25 +321,20 @@ impl ViewInstanceTxState {
         subscriber: Identity,
     ) -> HashSet<ViewCallInfo> {
         let mut calls = committed_state.active_view_calls_for_subscriber(subscriber);
-        for (call, state) in &self.changes {
-            match state {
-                Some(state)
-                    if state
-                        .active_subscribers
-                        .get(&subscriber)
-                        .is_some_and(|count| *count > 0) =>
-                {
-                    calls.insert(call.clone());
-                }
-                _ => {
-                    calls.remove(call);
-                }
+        for call in self.changes.keys() {
+            let active = self
+                .get(committed_state, call)
+                .is_some_and(|state| state.subscriber_count(&subscriber) > 0);
+            if active {
+                calls.insert(call.clone());
+            } else {
+                calls.remove(call);
             }
         }
         calls
     }
 
-    pub(super) fn into_changes(self) -> HashMap<ViewCallInfo, Option<ViewInstanceState>> {
+    pub(super) fn into_changes(self) -> HashMap<ViewCallInfo, ViewInstanceChange> {
         self.changes
     }
 }
@@ -2938,32 +3049,49 @@ impl MutTxId {
         sender_view_arg_hash_value(sender)
     }
 
-    fn get_view_instance(&self, call: &ViewCallInfo) -> Option<&ViewInstanceState> {
+    fn get_view_instance(&self, call: &ViewCallInfo) -> Option<EffectiveViewInstance<'_>> {
         self.view_instances.get(&self.committed_state_write_lock, call)
     }
 
-    fn get_view_instance_cloned(&self, call: &ViewCallInfo) -> Option<ViewInstanceState> {
-        self.view_instances.get_cloned(&self.committed_state_write_lock, call)
-    }
-
-    fn effective_view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
+    fn effective_view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, EffectiveViewInstance<'_>)> + '_ {
         let committed = self
             .committed_state_write_lock
             .view_instances()
-            .filter_map(|(call, state)| match self.view_instances.changes.get(call) {
-                Some(Some(tx_state)) => Some((call, tx_state)),
-                Some(None) => None,
-                None => Some((call, state)),
+            .filter_map(|(call, base)| {
+                let state = match self.view_instances.changes.get(call) {
+                    Some(ViewInstanceChange::Created(state)) => EffectiveViewInstance {
+                        base: state,
+                        delta: None,
+                    },
+                    Some(ViewInstanceChange::Updated(delta)) => EffectiveViewInstance {
+                        base,
+                        delta: Some(delta),
+                    },
+                    Some(ViewInstanceChange::Deleted) => return None,
+                    None => EffectiveViewInstance { base, delta: None },
+                };
+                Some((call, state))
             });
 
         // The committed iterator above already applies tx-local overrides and
         // removals for committed calls. This second half yields only tx-local
         // inserts whose calls do not exist in committed state.
-        let tx_only = self.view_instances.changes.iter().filter_map(|(call, state)| {
+        let tx_only = self.view_instances.changes.iter().filter_map(|(call, change)| {
             if self.committed_state_write_lock.view_instance(call).is_some() {
-                None
-            } else {
-                state.as_ref().map(|state| (call, state))
+                return None;
+            }
+            match change {
+                ViewInstanceChange::Created(state) => Some((
+                    call,
+                    EffectiveViewInstance {
+                        base: state,
+                        delta: None,
+                    },
+                )),
+                ViewInstanceChange::Updated(_) => {
+                    unreachable!("updated view instance must have committed state")
+                }
+                ViewInstanceChange::Deleted => None,
             }
         });
 
@@ -2973,7 +3101,7 @@ impl MutTxId {
     fn effective_view_instances_for_view(
         &self,
         view_id: ViewId,
-    ) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
+    ) -> impl Iterator<Item = (&ViewCallInfo, EffectiveViewInstance<'_>)> + '_ {
         self.effective_view_instances()
             // FIXME: use a better data structure to store view instances in `CommittedState` and `MutTxId`,
             // so that this can behave like an index scan rather than a full scan and filter.
@@ -2987,27 +3115,38 @@ impl MutTxId {
 
     /// Returns the stored arguments needed to execute this materialized view argument.
     pub fn view_instance_args(&self, call: &ViewCallInfo) -> Option<ViewInstanceArgs> {
-        self.get_view_instance(call).map(|state| state.args)
+        self.get_view_instance(call).map(|state| state.args())
     }
 
     /// Returns all materialized view instances for `view_id`.
     pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
         self.effective_view_instances_for_view(view_id)
-            .map(|(_, state)| state.args)
+            .map(|(_, state)| state.args())
             .collect()
     }
 
     /// Returns active subscribers for a materialized view.
     #[cfg(any(test, feature = "test"))]
     pub fn active_subscribers_for_view(&self, view_id: ViewId) -> Vec<(Identity, u64)> {
-        self.effective_view_instances_for_view(view_id)
-            .flat_map(|(_, state)| {
-                state
-                    .active_subscribers
-                    .iter()
-                    .map(|(identity, count)| (*identity, *count))
-            })
-            .collect()
+        let mut subscribers = Vec::new();
+        for (_, state) in self.effective_view_instances_for_view(view_id) {
+            // Existing identities may have an overridden count, including zero.
+            for identity in state.base.active_subscribers.keys() {
+                let count = state.subscriber_count(identity);
+                if count > 0 {
+                    subscribers.push((*identity, count));
+                }
+            }
+            // Include new identities without repeating overridden base identities.
+            if let Some(delta) = state.delta {
+                for (identity, count) in &delta.subscriber_counts {
+                    if *count > 0 && !state.base.active_subscribers.contains_key(identity) {
+                        subscribers.push((*identity, *count));
+                    }
+                }
+            }
+        }
+        subscribers
     }
 
     /// Updates the `last_used` timestamp for a materialized view argument.
@@ -3025,42 +3164,45 @@ impl MutTxId {
         args: ViewInstanceArgs,
         last_used: Timestamp,
     ) -> Result<()> {
-        let mut state = self
-            .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, last_used));
-        state.args = args;
-        state.last_used = last_used;
-        self.view_instances.set(call, state);
+        let change =
+            self.view_instances
+                .get_or_create_change_mut(&self.committed_state_write_lock, call, args, last_used);
+        change.set_last_used(last_used);
         Ok(())
     }
 
     /// Increment this subscriber's refcount for a materialized view argument.
     pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
-        let mut state = self
-            .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
-        state.args = args;
-        *state.active_subscribers.entry(subscriber).or_default() += 1;
-        state.last_used = Timestamp::now();
-        self.view_instances.set(call, state);
+        let count = self
+            .get_view_instance(&call)
+            .map_or(0, |state| state.subscriber_count(&subscriber));
+        let last_used = Timestamp::now();
+        let change =
+            self.view_instances
+                .get_or_create_change_mut(&self.committed_state_write_lock, call, args, last_used);
+        change.set_subscriber_count(subscriber, count + 1);
+        change.set_last_used(last_used);
         Ok(())
     }
 
     /// Decrement this subscriber's refcount for a materialized view argument.
     pub fn unsubscribe_view(&mut self, call: ViewCallInfo, subscriber: Identity) -> Result<()> {
-        let Some(mut state) = self.get_view_instance_cloned(&call) else {
+        let Some((args, count)) = self
+            .get_view_instance(&call)
+            .map(|state| (state.args(), state.subscriber_count(&subscriber)))
+        else {
             return Ok(());
         };
-
-        if let Some(count) = state.active_subscribers.get_mut(&subscriber) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                state.active_subscribers.remove(&subscriber);
-            }
-            state.last_used = Timestamp::now();
-            self.view_instances.set(call, state);
+        if count == 0 {
+            return Ok(());
         }
 
+        let last_used = Timestamp::now();
+        let change =
+            self.view_instances
+                .get_or_create_change_mut(&self.committed_state_write_lock, call, args, last_used);
+        change.set_subscriber_count(subscriber, count.saturating_sub(1));
+        change.set_last_used(last_used);
         Ok(())
     }
 
@@ -3096,14 +3238,15 @@ impl MutTxId {
     ) -> Result<ViewCleanupResult> {
         let start = std::time::Instant::now();
         let expiration_threshold = Timestamp::now() - expiration_duration;
-        let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
+        let is_expired =
+            |state: &EffectiveViewInstance<'_>| !state.has_subscribers() && state.last_used() < expiration_threshold;
         let mut cleaned = 0;
         let batch_size = batch_size.max(1);
 
         loop {
             let mut unexpired_visited_building_batch = 0;
-            let filter_and_count_view_instance = |(call, state): (&ViewCallInfo, &ViewInstanceState)| {
-                if is_expired(state) {
+            let filter_and_count_view_instance = |(call, state): (&ViewCallInfo, EffectiveViewInstance<'_>)| {
+                if is_expired(&state) {
                     Some(call.clone())
                 } else {
                     unexpired_visited_building_batch += 1;
