@@ -63,6 +63,8 @@ namespace SpacetimeDB.Types
         {
             AddTable(Deep = new(conn));
             AddTable(Nested = new(conn));
+            AddTable(QueryDeep = new(conn));
+            AddTable(QueryPublic = new(conn));
             AddTable(User = new(conn));
             @Branch = new(conn, AddTable);
             @Leaf = new(conn, AddTable);
@@ -567,6 +569,8 @@ namespace SpacetimeDB.Types
         {
             new QueryBuilder().From.Deep().ToSql(),
             new QueryBuilder().From.Nested().ToSql(),
+            new QueryBuilder().From.QueryDeep().ToSql(),
+            new QueryBuilder().From.QueryPublic().ToSql(),
             new QueryBuilder().From.User().ToSql(),
             new QueryBuilder().From.@Branch.@Leaf.RefUser().ToSql(),
             new QueryBuilder().From.@Branch.@Leaf.User().ToSql(),
@@ -580,18 +584,32 @@ namespace SpacetimeDB.Types
             new QueryBuilder().From.@Promoted.User().ToSql(),
             new QueryBuilder().From.@SecondLeaf.RefUser().ToSql(),
             new QueryBuilder().From.@SecondLeaf.User().ToSql(),
+            new QueryBuilder().From.@Branch.QueryChild().ToSql(),
             new QueryBuilder().From.@Branch.@Leaf.Current().ToSql(),
+            new QueryBuilder().From.@Branch.@Leaf.QueryCurrent().ToSql(),
             new QueryBuilder().From.@Branch.@Leaf.Anonymous().ToSql(),
+            new QueryBuilder().From.@Branch.@Leaf.QueryAnonymous().ToSql(),
             new QueryBuilder().From.@Leaf.Current().ToSql(),
+            new QueryBuilder().From.@Leaf.QueryCurrent().ToSql(),
             new QueryBuilder().From.@Leaf.Anonymous().ToSql(),
+            new QueryBuilder().From.@Leaf.QueryAnonymous().ToSql(),
             new QueryBuilder().From.@Promoted.Current().ToSql(),
+            new QueryBuilder().From.@Promoted.QueryCurrent().ToSql(),
             new QueryBuilder().From.@Promoted.Anonymous().ToSql(),
+            new QueryBuilder().From.@Promoted.QueryAnonymous().ToSql(),
             new QueryBuilder().From.@SecondLeaf.Current().ToSql(),
+            new QueryBuilder().From.@SecondLeaf.QueryCurrent().ToSql(),
             new QueryBuilder().From.@SecondLeaf.Anonymous().ToSql(),
+            new QueryBuilder().From.@SecondLeaf.QueryAnonymous().ToSql(),
             new QueryBuilder().From.@class.Current().ToSql(),
+            new QueryBuilder().From.@class.QueryCurrent().ToSql(),
             new QueryBuilder().From.@class.Anonymous().ToSql(),
+            new QueryBuilder().From.@class.QueryAnonymous().ToSql(),
+            new QueryBuilder().From.@class.@Branch.QueryChild().ToSql(),
             new QueryBuilder().From.@class.@Branch.@Leaf.Current().ToSql(),
+            new QueryBuilder().From.@class.@Branch.@Leaf.QueryCurrent().ToSql(),
             new QueryBuilder().From.@class.@Branch.@Leaf.Anonymous().ToSql(),
+            new QueryBuilder().From.@class.@Branch.@Leaf.QueryAnonymous().ToSql(),
         }
         ;
     }
@@ -605,6 +623,8 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Types.@class.From @class { get; } = new();
         public global::SpacetimeDB.Table<NestedResult, DeepCols, DeepIxCols> Deep() => new("deep", new DeepCols("deep"), new DeepIxCols("deep"));
         public global::SpacetimeDB.Table<NestedResult, NestedCols, NestedIxCols> Nested() => new("nested", new NestedCols("nested"), new NestedIxCols("nested"));
+        public global::SpacetimeDB.Table<RefUser, QueryDeepCols, QueryDeepIxCols> QueryDeep() => new("query_deep", new QueryDeepCols("query_deep"), new QueryDeepIxCols("query_deep"));
+        public global::SpacetimeDB.Table<RefUser, QueryPublicCols, QueryPublicIxCols> QueryPublic() => new("query_public", new QueryPublicCols("query_public"), new QueryPublicIxCols("query_public"));
         public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new("user", new UserCols("user"), new UserIxCols("user"));
     }
 

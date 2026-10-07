@@ -83,6 +83,9 @@ public static class Module
     public static SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
         Namespaces.ResolveSqlName(assemblyIdentity, localName);
 
+    public static SqlTableName ResolveSqlName(int instanceId, string localName) =>
+        Namespaces.ResolveSqlName(instanceId, localName);
+
     private static Func<
         Identity,
         ConnectionId?,
@@ -457,6 +460,8 @@ public static class Module
     public static int GetInstanceId(Local db) => db.InstanceId;
 
     public static int GetInstanceId(LocalReadOnly db) => db.InstanceId;
+
+    public static int GetInstanceId(QueryBuilder from) => from.InstanceId;
 
     public static int GetInstanceId(IReducerContext context) =>
         ((ReducerContext)context).ModuleInstanceId;
