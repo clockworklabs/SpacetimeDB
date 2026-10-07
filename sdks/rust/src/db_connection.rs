@@ -145,14 +145,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // confirm that the received identity and connection ID are what we expect,
             // store them, then invoke the on_connect callback.
             ParsedMessage::IdentityToken(identity, token, conn_id) => {
-                let on_connect = {
+                let (on_connect, token) = {
                     let mut inner = self.inner.lock().unwrap();
                     match inner.connection_lifecycle {
                         ConnectionLifecycle::Connecting => {
                             inner.connection_lifecycle = ConnectionLifecycle::Connected;
-                            inner.on_connect.take()
+                            // Browser transports authenticate with a temporary copy. Never
+                            // return that copy as the credential to persist for reconnects.
+                            let token = inner.auth_token.take().map(String::into_boxed_str).unwrap_or(token);
+                            (inner.on_connect.take(), token)
                         }
-                        ConnectionLifecycle::Connected => None,
+                        ConnectionLifecycle::Connected => (None, token),
                         ConnectionLifecycle::Ended => return Ok(()),
                     }
                 };
@@ -834,6 +837,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     pub(crate) subscriptions: SubscriptionManager<M>,
 
     connection_lifecycle: ConnectionLifecycle,
+    auth_token: Option<String>,
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
@@ -998,7 +1002,13 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(TokioMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(runtime, self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(
+            runtime,
+            self.token,
+            self.on_connect,
+            self.on_connect_error,
+            self.on_disconnect,
+        );
         Ok(build_db_ctx(
             handle,
             inner_ctx,
@@ -1042,7 +1052,7 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(StdMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(self.token, self.on_connect, self.on_connect_error, self.on_disconnect);
         Ok(build_db_ctx(
             inner_ctx,
             raw_msg_send,
@@ -1197,6 +1207,7 @@ Instead of registering multiple `on_disconnect` callbacks, register a single cal
 fn build_db_ctx_inner<M: SpacetimeModule>(
     #[cfg(not(feature = "browser"))] runtime: Option<Runtime>,
 
+    auth_token: Option<String>,
     on_connect_cb: Option<OnConnectCallback<M>>,
     on_connect_error_cb: Option<OnConnectErrorCallback<M>>,
     on_disconnect_cb: Option<OnDisconnectCallback<M>>,
@@ -1210,6 +1221,7 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
         subscriptions: SubscriptionManager::default(),
 
         connection_lifecycle: ConnectionLifecycle::Connecting,
+        auth_token,
         on_connect: on_connect_cb,
         on_connect_error: on_connect_error_cb,
         on_disconnect: on_disconnect_cb,

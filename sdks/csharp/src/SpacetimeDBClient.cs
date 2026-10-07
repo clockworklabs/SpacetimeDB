@@ -85,6 +85,11 @@ namespace SpacetimeDB
 
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
+        /// <summary>
+        /// Register a callback for a successful connection. The token is the original
+        /// credential supplied to WithToken, or the new server-issued credential for
+        /// an anonymous connection. Save it to authenticate future connections.
+        /// </summary>
         public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
         {
             conn.AddOnConnect((identity, token) => cb(conn, identity, token));
@@ -168,6 +173,8 @@ namespace SpacetimeDB
         public Identity? Identity { get; private set; }
         private ConnectionId? initialConnectionId;
         private bool onConnectInvoked;
+        // Preserve the original credential: WebGL handshakes use a short-lived copy.
+        private string? authToken;
 
         internal WebSocket webSocket;
         private bool connectionClosed;
@@ -626,6 +633,7 @@ namespace SpacetimeDB
         /// </param>
         void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads)
         {
+            authToken = string.IsNullOrEmpty(token) ? null : token;
             isClosing = false;
             connectionClosed = false;
             Identity = null;
@@ -829,7 +837,8 @@ namespace SpacetimeDB
                         if (!onConnectInvoked)
                         {
                             onConnectInvoked = true;
-                            onConnect?.Invoke(initialConnection.Identity, initialConnection.Token);
+                            authToken ??= initialConnection.Token;
+                            onConnect?.Invoke(initialConnection.Identity, authToken);
                             onConnect = null;
                         }
                     }
