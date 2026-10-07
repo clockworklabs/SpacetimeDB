@@ -1562,11 +1562,10 @@ void ExpectPkU32Update(HarnessConnection test, uint key, int initialData, int up
 
 HarnessConnection ConnectAndSubscribe(Func<DbConnection, TypedSubscriptionBuilder> buildSubscription, Compression? compression = null)
 {
-    DbConnection db = null!;
     var connected = false;
     var applied = false;
 
-    db = BuildConnection(compression: compression)
+    var builder = BuildConnection(compression: compression)
         .OnConnect((conn, identity, _) =>
         {
             Require(identity == conn.Identity, "Connection identity callback did not match connection state");
@@ -1575,10 +1574,9 @@ HarnessConnection ConnectAndSubscribe(Func<DbConnection, TypedSubscriptionBuilde
                 .OnError((_, err) => throw err)
                 .Subscribe();
             connected = true;
-        })
-        .Build();
+        });
 
-    var harness = new HarnessConnection(db);
+    var harness = new HarnessConnection(builder);
     harness.FrameTickUntil(() => connected && applied);
     return harness;
 }
@@ -1587,8 +1585,7 @@ HarnessConnection ConnectAndSubscribeSql(params string[] queries)
 {
     var connected = false;
     var applied = false;
-    DbConnection db = null!;
-    db = BuildConnection()
+    var builder = BuildConnection()
         .OnConnect((conn, _, _) =>
         {
             conn.SubscriptionBuilder()
@@ -1596,9 +1593,8 @@ HarnessConnection ConnectAndSubscribeSql(params string[] queries)
                 .OnError((_, err) => throw err)
                 .Subscribe(queries);
             connected = true;
-        })
-        .Build();
-    var harness = new HarnessConnection(db);
+        });
+    var harness = new HarnessConnection(builder);
     harness.FrameTickUntil(() => connected && applied);
     return harness;
 }
@@ -1607,8 +1603,7 @@ HarnessConnection ConnectAndSubscribeAll()
 {
     var connected = false;
     var applied = false;
-    DbConnection db = null!;
-    db = BuildConnection()
+    var builder = BuildConnection()
         .OnConnect((conn, _, _) =>
         {
             conn.SubscriptionBuilder()
@@ -1616,9 +1611,8 @@ HarnessConnection ConnectAndSubscribeAll()
                 .OnError((_, err) => throw err)
                 .SubscribeToAllTables();
             connected = true;
-        })
-        .Build();
-    var harness = new HarnessConnection(db);
+        });
+    var harness = new HarnessConnection(builder);
     harness.FrameTickUntil(() => connected && applied);
     return harness;
 }
@@ -1640,34 +1634,26 @@ HarnessConnection Connect(
     Compression? compression = null)
 {
     var connected = false;
-    var builder = BuildConnection(token, allowCleanDisconnect, compression)
+    var builder = BuildConnection(token, compression)
         .OnConnect((conn, identity, receivedToken) =>
         {
             Require(identity == conn.Identity, "Connection identity callback did not match connection state");
             connected = true;
             onConnect?.Invoke(conn, identity, receivedToken);
         });
-    var harness = new HarnessConnection(builder.Build(), allowCleanDisconnect);
+    var harness = new HarnessConnection(builder, allowCleanDisconnect);
     harness.FrameTickUntil(() => connected);
     return harness;
 }
 
-DbConnectionBuilder<DbConnection> BuildConnection(string? token = null, bool allowCleanDisconnect = false, Compression? compression = null)
+DbConnectionBuilder<DbConnection> BuildConnection(string? token = null, Compression? compression = null)
 {
     var builder = DbConnection
         .Builder()
         .WithUri(serverUrl)
         .WithDatabaseName(dbName)
         .WithToken(token)
-        .OnConnectError(err => throw err)
-        .OnDisconnect((_, err) =>
-        {
-            if (allowCleanDisconnect && err == null)
-            {
-                return;
-            }
-            throw err ?? new Exception("Connection disconnected unexpectedly");
-        });
+        .OnConnectError(err => throw err);
     if (compression != null)
     {
         builder.WithCompression(compression.Value);
@@ -2036,16 +2022,22 @@ sealed class CallbackAssertions
 
 sealed class HarnessConnection : IDisposable
 {
-    private readonly bool allowCleanDisconnect;
+    private bool disposing;
 
     public DbConnection Db { get; }
 
     public Identity Identity => Db.Identity ?? throw new InvalidOperationException("Connection has no identity yet");
 
-    public HarnessConnection(DbConnection db, bool allowCleanDisconnect = false)
+    public HarnessConnection(DbConnectionBuilder<DbConnection> builder, bool allowCleanDisconnect = false)
     {
-        Db = db;
-        this.allowCleanDisconnect = allowCleanDisconnect;
+        Db = builder.OnDisconnect((_, err) =>
+        {
+            if ((disposing || allowCleanDisconnect) && err == null)
+            {
+                return;
+            }
+            throw err ?? new Exception("Connection disconnected unexpectedly");
+        }).Build();
     }
 
     public void FrameTickUntil(Func<bool> isComplete, int timeoutSeconds = 20, Func<string>? timeoutMessage = null)
@@ -2064,12 +2056,7 @@ sealed class HarnessConnection : IDisposable
 
     public void Dispose()
     {
-        try
-        {
-            Db.Disconnect();
-        }
-        catch when (allowCleanDisconnect)
-        {
-        }
+        disposing = true;
+        Db.Disconnect();
     }
 }

@@ -9,7 +9,7 @@ mergeInto(LibraryManager.library, {
 
     WebSocket_Init__deps: ['$WebSocketDynCall'],
     WebSocket_Init: function(openCallback, messageCallback, closeCallback, errorCallback) {
-        this._webSocketManager = {
+        this._webSocketManager = this._webSocketManager || {
             instances: {},
             nextId: 1,
             callbacks: {
@@ -27,7 +27,7 @@ mergeInto(LibraryManager.library, {
         manager.callbacks.error = errorCallback;
     },
 
-    WebSocket_Connect: async function(baseUriPtr, uriPtr, protocolPtr, authTokenPtr, callbackPtr) {
+    WebSocket_Connect: async function(baseUriPtr, uriPtr, protocolPtr, authTokenPtr, requestId, callbackPtr) {
         try {
             var manager = this._webSocketManager;
             var host = UTF8ToString(baseUriPtr);
@@ -51,7 +51,9 @@ mergeInto(LibraryManager.library, {
                         uri += `&token=${token}`;
                     }
                 } else {
-                    throw new Error(`Failed to verify token: ${response.statusText}`);
+                    var error = new Error(`Failed to verify token: ${response.statusText}`);
+                    error.status = response.status;
+                    throw error;
                 }
             }
 
@@ -93,10 +95,10 @@ mergeInto(LibraryManager.library, {
                 }
             };
 
-            WebSocketDynCall('vi', callbackPtr, [socketId]);
+            WebSocketDynCall('vii', callbackPtr, [requestId, socketId]);
         } catch (e) {
             console.error("WebSocket connection error:", e);
-            WebSocketDynCall('vi', callbackPtr, [-1]);
+            WebSocketDynCall('vii', callbackPtr, [requestId, e.status ? -e.status : -1]);
         }
     },
 
