@@ -66,12 +66,17 @@ const grokProvider: CodingProvider = {
   executable: 'sh', apiKeyEnvironment: 'XAI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.grok/sessions`,
   tokenEnvironment: 'GROK_BROKER_TOKEN',
-  // Telemetry and session uploads would reach the broker as refused requests.
+  // Telemetry and session uploads would reach the broker as refused requests. The
+  // turn summary is a display call over the whole turn that the CLI exits without
+  // awaiting, so a long session leaves it unpriced.
   environment: baseUrl => [`GROK_CLI_CHAT_PROXY_BASE_URL=${baseUrl}/v1`, `GROK_AUTH_PROVIDER_COMMAND=${GROK_SIGN_IN}`,
-    'GROK_DISABLE_AUTOUPDATER=1', 'GROK_TELEMETRY_ENABLED=0', 'GROK_TELEMETRY_TRACE_UPLOAD=0', 'DISABLE_TELEMETRY=1'],
+    'GROK_DISABLE_AUTOUPDATER=1', 'GROK_TELEMETRY_ENABLED=0', 'GROK_TELEMETRY_TRACE_UPLOAD=0', 'DISABLE_TELEMETRY=1',
+    'GROK_TURN_SUMMARY=0'],
   projects: appDir => join(grokTranscriptDirectory(appDir), 'sessions'),
   rates: () => null,
-  args: options => ['-c', 'grok login < /dev/null > /dev/null && exec grok "$@"', 'grok', ...grokArguments(options)],
+  // Sign-in prints the account's email address; none of its output may reach evidence.
+  args: options => ['-c', 'grok login < /dev/null > /dev/null 2>&1 || { echo "Grok sign-in failed" >&2; exit 1; }; exec grok "$@"',
+    'grok', ...grokArguments(options)],
   run: runCodexProcess,
   validateContinuation: validateGrokNativeSession,
   // The controller keeps the stream as the session's audited transcript, beside the
