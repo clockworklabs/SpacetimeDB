@@ -245,6 +245,7 @@
     "react-dom": "^18.3.1",
     "size-limit": "^11.2.0",
     "svelte": "^5.0.0",
+    "terser": "^5.43.1",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
     "typescript": "^5.9.3",
