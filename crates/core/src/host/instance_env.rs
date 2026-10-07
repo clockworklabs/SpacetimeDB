@@ -7,6 +7,7 @@ use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
+use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -57,6 +58,8 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    /// Whether this invocation must confirm transactions before returning to module code.
+    pub procedure_confirmed_reads: bool,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -243,6 +246,7 @@ impl InstanceEnv {
             environment_call_active: false,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            procedure_confirmed_reads: true,
         }
     }
 
@@ -253,6 +257,7 @@ impl InstanceEnv {
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
     pub fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
+        self.procedure_confirmed_reads = true;
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
@@ -946,6 +951,38 @@ impl InstanceEnv {
     /// After a procedure has finished, take its known last tx offset, if any.
     pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
         self.procedure_last_tx_offset.take()
+    }
+
+    /// Owns no transaction locks or reference to the environment. Keep the offset
+    /// available for the eventual response, even after this wait completes.
+    pub(super) fn procedure_confirmation(&mut self) -> impl Future<Output = anyhow::Result<()>> + use<> {
+        let confirmation: anyhow::Result<_> = (|| {
+            if !self.procedure_confirmed_reads {
+                return Ok(None);
+            }
+            let Some(durable) = self.relational_db().durable_tx_offset() else {
+                return Ok(None); // In-memory database.
+            };
+            let mut tx_offset = self
+                .procedure_last_tx_offset
+                .take()
+                .context("missing committed transaction offset")?;
+            // The commit resolves this receiver when its read guard is released,
+            // before returning. Never suspend while that guard is held.
+            let offset = tx_offset
+                .try_recv()
+                .context("committed transaction offset was not resolved")?;
+            self.procedure_last_tx_offset = Some(from_tx_offset(offset));
+            Ok(Some((offset, durable)))
+        })();
+        async move {
+            if let Some((offset, mut durable)) = confirmation? {
+                durable.wait_for(offset).await.context(
+                    "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+                )?;
+            }
+            Ok(())
+        }
     }
 
     /// Perform an HTTP request.

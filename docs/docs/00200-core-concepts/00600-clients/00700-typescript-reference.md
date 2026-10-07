@@ -166,6 +166,8 @@ Configure the connection to request confirmed reads.
 
 When enabled, the server will send query results only after they are confirmed to be durable, i.e. persisted to disk on one or more replicas depending on the replication settings of the database. When set to `false`, the server will send results as soon as transactions are committed in memory.
 
+Procedures called over this connection inherit the same setting. With confirmed reads enabled, each successful transaction block waits for durability before procedure code continues.
+
 If this method is not called, the server chooses the default.
 
 #### Callback `onConnect`
