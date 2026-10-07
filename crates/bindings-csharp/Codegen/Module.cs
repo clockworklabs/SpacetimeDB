@@ -18,15 +18,19 @@ using static Utils;
 /// <param name="Value">Optional value for attributes like Default that carry additional data</param>
 readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string? Value = null)
 {
-    // Maps attribute type names to their corresponding attribute types
-    private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
+    // Maps attribute type names to their corresponding attribute types and masks.
+    // (The attributes' own `Mask` is internal to the assembly that defines them.)
+    private static readonly ImmutableDictionary<
+        string,
+        (System.Type Type, ColumnAttrs Mask)
+    > AttrTypes = ImmutableArray
         .Create(
-            typeof(AutoIncAttribute),
-            typeof(PrimaryKeyAttribute),
-            typeof(UniqueAttribute),
-            typeof(DefaultAttribute)
+            (typeof(AutoIncAttribute), ColumnAttrs.AutoInc),
+            (typeof(PrimaryKeyAttribute), ColumnAttrs.PrimaryKey),
+            (typeof(UniqueAttribute), ColumnAttrs.Unique),
+            (typeof(DefaultAttribute), ColumnAttrs.Default)
         )
-        .ToImmutableDictionary(t => t.FullName!);
+        .ToImmutableDictionary(t => t.Item1.FullName!, t => (t.Item1, t.Item2));
 
     /// <summary>
     /// Parses a Roslyn AttributeData into a ColumnAttr instance.
@@ -46,13 +50,13 @@ readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null, string
         // Special handling for DefaultAttribute as it contains an additional value
         if (attrClass.ToString() == typeof(DefaultAttribute).FullName)
         {
-            var defaultAttr = attrData.ParseAs<DefaultAttribute>(attrType);
-            return new(defaultAttr.Mask, defaultAttr.Table, defaultAttr.Value);
+            var defaultAttr = attrData.ParseAs<DefaultAttribute>(attrType.Type);
+            return new(attrType.Mask, defaultAttr.Table, defaultAttr.Value);
         }
 
         // Handle standard column attributes (PrimaryKey, Unique, AutoInc)
-        var attr = attrData.ParseAs<ColumnAttribute>(attrType);
-        return new(attr.Mask, attr.Table);
+        var attr = attrData.ParseAs<ColumnAttribute>(attrType.Type);
+        return new(attrType.Mask, attr.Table);
     }
 }
 

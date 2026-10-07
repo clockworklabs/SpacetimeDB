@@ -9,11 +9,13 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "Entity", Name = "entity", Public = true)]
     [DataContract]
     public sealed partial class Entity
     {
         [DataMember(Name = "entity_id")]
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
         public int EntityId;
         [DataMember(Name = "position")]
         public DbVector2 Position;

@@ -4,75 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void ReadMySchema(string serverUrl, ProcedureCallback<string> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalReadMySchema(serverUrl, (ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<string>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<string>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalReadMySchema(string serverUrl, ProcedureCallback<Procedure.ReadMySchema> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.ReadMySchemaArgs(serverUrl), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReadMySchema
-        {
-            [DataMember(Name = "Value")]
-            public string Value;
-
-            public ReadMySchema(string Value)
-            {
-                this.Value = Value;
-            }
-
-            public ReadMySchema()
-            {
-                this.Value = "";
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ReadMySchemaArgs : Procedure, IProcedureArgs
-        {
-            [DataMember(Name = "server_url")]
-            public string ServerUrl;
-
-            public ReadMySchemaArgs(string ServerUrl)
-            {
-                this.ServerUrl = ServerUrl;
-            }
-
-            public ReadMySchemaArgs()
-            {
-                this.ServerUrl = "";
-            }
-
-            string IProcedureArgs.ProcedureName => "read_my_schema";
-        }
-
+        [SpacetimeDB.Procedure(Name = "read_my_schema")]
+        public static partial string ReadMySchema(SpacetimeDB.ProcedureContext ctx, string serverUrl);
     }
 }

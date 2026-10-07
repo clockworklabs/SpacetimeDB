@@ -9,17 +9,21 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "User", Name = "user", Public = true)]
     [DataContract]
     public sealed partial class User
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public SpacetimeDB.Uuid Id;
         [DataMember(Name = "name")]
+        [SpacetimeDB.Index.BTree(Name = "user_name_idx_btree")]
         public string Name;
         [DataMember(Name = "is_admin")]
+        [SpacetimeDB.Index.BTree(Name = "user_is_admin_idx_btree")]
         public bool IsAdmin;
         [DataMember(Name = "age")]
+        [SpacetimeDB.Index.BTree(Name = "user_age_idx_btree")]
         public byte Age;
 
         public User(

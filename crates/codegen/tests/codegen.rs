@@ -1,5 +1,8 @@
 use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+use spacetimedb_lib::db::raw_def::v9::btree;
+use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::sync::OnceLock;
@@ -122,4 +125,45 @@ fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
         filenames.iter().any(|f| f.starts_with("myLib/")) && !filenames.iter().any(|f| f.starts_with("my_lib/")),
         "generated files must live under the accessor namespace directory; got {filenames:?}"
     );
+}
+
+/// C# row type attributes for two schemas that `module-test` doesn't have.
+#[test]
+fn test_csharp_shared_row_defaults_and_index_without_accessor() {
+    let mut builder = RawModuleDefV10Builder::new();
+    // Tables that share a row type but have different defaults. `[Default]` can't be repeated on a field.
+    let shared = builder.add_algebraic_type(
+        [],
+        "Shared",
+        ProductType::from([("id", AlgebraicType::U32), ("n", AlgebraicType::U32)]).into(),
+        false,
+    );
+    for (table, default) in [("first", 5), ("second", 6)] {
+        builder
+            .build_table(table, shared)
+            .with_default_column_value(1, AlgebraicValue::U32(default))
+            .finish();
+    }
+    // An index without an accessor, whose column typed queries can still use.
+    builder
+        .build_table_with_new_type(
+            "indexed",
+            ProductType::from([("id", AlgebraicType::U32), ("group", AlgebraicType::U32)]),
+            true,
+        )
+        .with_index_no_accessor_name(btree(1), "indexed_group")
+        .finish();
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+
+    let files = generate(
+        &module,
+        &Csharp {
+            namespace: "SpacetimeDB",
+        },
+        &CodegenOptions::default(),
+    );
+    let code = |filename: &str| &files.iter().find(|f| f.filename == filename).unwrap().code;
+    assert!(!code("Types/Shared.g.cs").contains("SpacetimeDB.Default("));
+    assert!(code("Types/Indexed.g.cs")
+        .contains(r#"[SpacetimeDB.Index.BTree(Accessor = "", Name = "indexed_group_idx_btree")]"#));
 }

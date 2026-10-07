@@ -4,61 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void InsertWithTxPanic(ProcedureCallback<SpacetimeDB.Unit> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalInsertWithTxPanic((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalInsertWithTxPanic(ProcedureCallback<Procedure.InsertWithTxPanic> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.InsertWithTxPanicArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxPanic
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Unit Value;
-
-            public InsertWithTxPanic(SpacetimeDB.Unit Value)
-            {
-                this.Value = Value;
-            }
-
-            public InsertWithTxPanic()
-            {
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxPanicArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "insert_with_tx_panic";
-        }
-
+        [SpacetimeDB.Procedure(Name = "insert_with_tx_panic")]
+        public static partial SpacetimeDB.Unit InsertWithTxPanic(SpacetimeDB.ProcedureContext ctx);
     }
 }

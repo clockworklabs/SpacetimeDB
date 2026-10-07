@@ -4,50 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void ScheduleProcHandler(ReducerEventContext ctx);
-        public event ScheduleProcHandler? OnScheduleProc;
-
-        public void ScheduleProc()
-        {
-            conn.InternalCallReducer(new Reducer.ScheduleProc());
-        }
-
-        public bool InvokeScheduleProc(ReducerEventContext ctx, Reducer.ScheduleProc args)
-        {
-            if (OnScheduleProc == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnScheduleProc(
-                ctx
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class ScheduleProc : Reducer, IReducerArgs
-        {
-            string IReducerArgs.ReducerName => "schedule_proc";
-        }
+        [SpacetimeDB.Reducer(Name = "schedule_proc")]
+        public static partial void ScheduleProc(SpacetimeDB.ReducerContext ctx);
     }
 }

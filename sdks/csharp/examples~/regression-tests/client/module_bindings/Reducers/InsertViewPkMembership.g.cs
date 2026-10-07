@@ -4,70 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void InsertViewPkMembershipHandler(ReducerEventContext ctx, ulong id, ulong playerId);
-        public event InsertViewPkMembershipHandler? OnInsertViewPkMembership;
-
-        public void InsertViewPkMembership(ulong id, ulong playerId)
-        {
-            conn.InternalCallReducer(new Reducer.InsertViewPkMembership(id, playerId));
-        }
-
-        public bool InvokeInsertViewPkMembership(ReducerEventContext ctx, Reducer.InsertViewPkMembership args)
-        {
-            if (OnInsertViewPkMembership == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnInsertViewPkMembership(
-                ctx,
-                args.Id,
-                args.PlayerId
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertViewPkMembership : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "id")]
-            public ulong Id;
-            [DataMember(Name = "player_id")]
-            public ulong PlayerId;
-
-            public InsertViewPkMembership(
-                ulong Id,
-                ulong PlayerId
-            )
-            {
-                this.Id = Id;
-                this.PlayerId = PlayerId;
-            }
-
-            public InsertViewPkMembership()
-            {
-            }
-
-            string IReducerArgs.ReducerName => "insert_view_pk_membership";
-        }
+        [SpacetimeDB.Reducer(Name = "insert_view_pk_membership")]
+        public static partial void InsertViewPkMembership(SpacetimeDB.ReducerContext ctx, ulong id, ulong playerId);
     }
 }

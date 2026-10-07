@@ -300,6 +300,19 @@ public static class Utils
             namespaces = new(namespaces_.ToImmutable());
         }
 
+        /// <summary>
+        /// A scope for types that have no syntax node, such as types that a generator emits.
+        /// </summary>
+        /// <param name="namespace">The namespace, or an empty string for the global namespace.</param>
+        /// <param name="types">The type scopes, from the outermost to the innermost.</param>
+        public Scope(string @namespace, params TypeScope[] types)
+        {
+            typeScopes = new(Enumerable.Reverse(types).ToImmutableArray());
+            namespaces = new(
+                @namespace == "" ? ImmutableArray<string>.Empty : ImmutableArray.Create(@namespace)
+            );
+        }
+
         /// <returns>Whether this Scope is a struct declaration.</returns>
         public bool IsStruct
         {

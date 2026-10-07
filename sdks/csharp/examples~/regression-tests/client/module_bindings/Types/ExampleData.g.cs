@@ -9,13 +9,15 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "ExampleData", Name = "example_data", Public = true)]
     [DataContract]
     public sealed partial class ExampleData
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public uint Id;
         [DataMember(Name = "indexed")]
+        [SpacetimeDB.Index.BTree(Name = "example_data_indexed_idx_btree")]
         public uint Indexed;
 
         public ExampleData(

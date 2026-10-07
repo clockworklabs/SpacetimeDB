@@ -9,13 +9,15 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "WhereTest", Name = "where_test", Public = true)]
     [DataContract]
     public sealed partial class WhereTest
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public uint Id;
         [DataMember(Name = "value")]
+        [SpacetimeDB.Index.BTree(Name = "where_test_value_idx_btree")]
         public uint Value;
         [DataMember(Name = "name")]
         public string Name;

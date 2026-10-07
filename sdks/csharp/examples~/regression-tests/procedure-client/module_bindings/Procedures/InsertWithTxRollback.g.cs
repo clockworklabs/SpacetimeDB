@@ -4,61 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void InsertWithTxRollback(ProcedureCallback<SpacetimeDB.Unit> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalInsertWithTxRollback((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalInsertWithTxRollback(ProcedureCallback<Procedure.InsertWithTxRollback> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.InsertWithTxRollbackArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxRollback
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Unit Value;
-
-            public InsertWithTxRollback(SpacetimeDB.Unit Value)
-            {
-                this.Value = Value;
-            }
-
-            public InsertWithTxRollback()
-            {
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class InsertWithTxRollbackArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "insert_with_tx_rollback";
-        }
-
+        [SpacetimeDB.Procedure(Name = "insert_with_tx_rollback")]
+        public static partial SpacetimeDB.Unit InsertWithTxRollback(SpacetimeDB.ProcedureContext ctx);
     }
 }

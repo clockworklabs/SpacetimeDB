@@ -4,62 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void AuthenticationCapabilities(ProcedureCallback<SpacetimeDB.Types.ReturnStruct> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalAuthenticationCapabilities((ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalAuthenticationCapabilities(ProcedureCallback<Procedure.AuthenticationCapabilities> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.AuthenticationCapabilitiesArgs(), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class AuthenticationCapabilities
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Types.ReturnStruct Value;
-
-            public AuthenticationCapabilities(SpacetimeDB.Types.ReturnStruct Value)
-            {
-                this.Value = Value;
-            }
-
-            public AuthenticationCapabilities()
-            {
-                this.Value = new();
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class AuthenticationCapabilitiesArgs : Procedure, IProcedureArgs
-        {
-            string IProcedureArgs.ProcedureName => "authentication_capabilities";
-        }
-
+        [SpacetimeDB.Procedure(Name = "authentication_capabilities")]
+        public static partial SpacetimeDB.Types.ReturnStruct AuthenticationCapabilities(SpacetimeDB.ProcedureContext ctx);
     }
 }

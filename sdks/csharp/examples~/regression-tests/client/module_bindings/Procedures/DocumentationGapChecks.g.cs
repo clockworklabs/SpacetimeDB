@@ -4,81 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteProcedures : RemoteBase
+    public static partial class Module
     {
-        public void DocumentationGapChecks(uint inputValue, string inputText, ProcedureCallback<SpacetimeDB.Types.ReturnStruct> callback)
-        {
-            // Convert the clean callback to the wrapper callback
-            InternalDocumentationGapChecks(inputValue, inputText, (ctx, result) =>
-            {
-                if (result.IsSuccess && result.Value != null)
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Success(result.Value.Value));
-                }
-                else
-                {
-                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Types.ReturnStruct>.Failure(result.Error!));
-                }
-            });
-        }
-
-        private void InternalDocumentationGapChecks(uint inputValue, string inputText, ProcedureCallback<Procedure.DocumentationGapChecks> callback)
-        {
-            conn.InternalCallProcedure(new Procedure.DocumentationGapChecksArgs(inputValue, inputText), callback);
-        }
-
-    }
-
-    public abstract partial class Procedure
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class DocumentationGapChecks
-        {
-            [DataMember(Name = "Value")]
-            public SpacetimeDB.Types.ReturnStruct Value;
-
-            public DocumentationGapChecks(SpacetimeDB.Types.ReturnStruct Value)
-            {
-                this.Value = Value;
-            }
-
-            public DocumentationGapChecks()
-            {
-                this.Value = new();
-            }
-        }
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class DocumentationGapChecksArgs : Procedure, IProcedureArgs
-        {
-            [DataMember(Name = "input_value")]
-            public uint InputValue;
-            [DataMember(Name = "input_text")]
-            public string InputText;
-
-            public DocumentationGapChecksArgs(
-                uint InputValue,
-                string InputText
-            )
-            {
-                this.InputValue = InputValue;
-                this.InputText = InputText;
-            }
-
-            public DocumentationGapChecksArgs()
-            {
-                this.InputText = "";
-            }
-
-            string IProcedureArgs.ProcedureName => "documentation_gap_checks";
-        }
-
+        [SpacetimeDB.Procedure(Name = "documentation_gap_checks")]
+        public static partial SpacetimeDB.Types.ReturnStruct DocumentationGapChecks(SpacetimeDB.ProcedureContext ctx, uint inputValue, string inputText);
     }
 }

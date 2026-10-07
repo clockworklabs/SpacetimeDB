@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Client bindings compile like the client SDK: .NET Standard 2.1 and C# 9. -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../BSATN.Runtime/BSATN.Runtime.csproj" />
+    <!-- The client generator only expands declarations when the client SDK is present. -->
+    <Compile Include="../../../../../sdks/csharp/src/**/*.cs" />
+  </ItemGroup>
+
+</Project>

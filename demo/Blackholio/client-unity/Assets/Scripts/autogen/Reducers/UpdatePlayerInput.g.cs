@@ -4,64 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void UpdatePlayerInputHandler(ReducerEventContext ctx, SpacetimeDB.Types.DbVector2 direction);
-        public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
-
-        public void UpdatePlayerInput(SpacetimeDB.Types.DbVector2 direction)
-        {
-            conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction));
-        }
-
-        public bool InvokeUpdatePlayerInput(ReducerEventContext ctx, Reducer.UpdatePlayerInput args)
-        {
-            if (OnUpdatePlayerInput == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnUpdatePlayerInput(
-                ctx,
-                args.Direction
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class UpdatePlayerInput : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "direction")]
-            public DbVector2 Direction;
-
-            public UpdatePlayerInput(DbVector2 Direction)
-            {
-                this.Direction = Direction;
-            }
-
-            public UpdatePlayerInput()
-            {
-                this.Direction = new();
-            }
-
-            string IReducerArgs.ReducerName => "update_player_input";
-        }
+        [SpacetimeDB.Reducer(Name = "update_player_input")]
+        public static partial void UpdatePlayerInput(SpacetimeDB.ReducerContext ctx, SpacetimeDB.Types.DbVector2 direction);
     }
 }

@@ -80,6 +80,15 @@ public partial struct PublicTable
     public string? NullableReferenceField;
 }
 
+// Without the client SDK, the client generator only gives a [Table] row its BSATN implementation.
+[SpacetimeDB.Table(Accessor = "TableRow", Public = true)]
+public partial class TableRow
+{
+    [SpacetimeDB.PrimaryKey]
+    public int Id;
+    public string Name = "";
+}
+
 internal static class PublicTableViewRegressions
 {
     [global::System.Runtime.CompilerServices.ModuleInitializer]

@@ -21,9 +21,14 @@ will generate inherited records `Option.Some(T Some_)` and `Option.None(Unit Non
 you to use tagged enums in C# in a similar way to Rust enums by leveraging C# pattern-matching
 on any instance of `Option<T>`.
 
+## Client bindings
+
+This project also expands client bindings, which `spacetime generate` writes as module declarations: row types with `[SpacetimeDB.Table]`, and reducers, procedures, and views as bodiless `partial` methods marked `[SpacetimeDB.Reducer]`, `[SpacetimeDB.Procedure]`, and `[SpacetimeDB.View]`. The `Client` generator turns them into the client API (`RemoteTables`, `RemoteReducers`, `DbConnection`, and so on). It expands them only in compilations that reference the client SDK; modules get their expansion from [Codegen](../Codegen/). In any other build, such as a library that only references `SpacetimeDB.BSATN.Runtime`, `[SpacetimeDB.Table]` rows still get their BSATN implementation.
+
 ## What is generated
 
 See [`../Codegen.Tests/fixtures/client/snapshots`](../Codegen.Tests/fixtures/client/snapshots/) for examples of the generated code.
+[`../Codegen.Tests/fixtures/clientgen/snapshots`](../Codegen.Tests/fixtures/clientgen/snapshots/) has examples of the client API that the `Client` generator expands.
 [`../Codegen.Tests/fixtures/server/snapshots`](../Codegen.Tests/fixtures/server/snapshots/) also has examples, those filenames starting with `Type#`.
 In addition, in any project using this library, you can set `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` in the `<PropertyGroup>` of your `.csproj` to see exactly what code is geing generated for your project.
 

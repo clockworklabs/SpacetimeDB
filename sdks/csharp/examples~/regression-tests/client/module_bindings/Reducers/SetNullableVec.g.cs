@@ -4,80 +4,12 @@
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
-using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    public sealed partial class RemoteReducers : RemoteBase
+    public static partial class Module
     {
-        public delegate void SetNullableVecHandler(ReducerEventContext ctx, uint id, bool hasPos, int x, int y);
-        public event SetNullableVecHandler? OnSetNullableVec;
-
-        public void SetNullableVec(uint id, bool hasPos, int x, int y)
-        {
-            conn.InternalCallReducer(new Reducer.SetNullableVec(id, hasPos, x, y));
-        }
-
-        public bool InvokeSetNullableVec(ReducerEventContext ctx, Reducer.SetNullableVec args)
-        {
-            if (OnSetNullableVec == null)
-            {
-                if (InternalOnUnhandledReducerError != null)
-                {
-                    switch (ctx.Event.Status)
-                    {
-                        case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;
-                        case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception("out of energy")); break;
-                    }
-                }
-                return false;
-            }
-            OnSetNullableVec(
-                ctx,
-                args.Id,
-                args.HasPos,
-                args.X,
-                args.Y
-            );
-            return true;
-        }
-    }
-
-    public abstract partial class Reducer
-    {
-        [SpacetimeDB.Type]
-        [DataContract]
-        public sealed partial class SetNullableVec : Reducer, IReducerArgs
-        {
-            [DataMember(Name = "id")]
-            public uint Id;
-            [DataMember(Name = "has_pos")]
-            public bool HasPos;
-            [DataMember(Name = "x")]
-            public int X;
-            [DataMember(Name = "y")]
-            public int Y;
-
-            public SetNullableVec(
-                uint Id,
-                bool HasPos,
-                int X,
-                int Y
-            )
-            {
-                this.Id = Id;
-                this.HasPos = HasPos;
-                this.X = X;
-                this.Y = Y;
-            }
-
-            public SetNullableVec()
-            {
-            }
-
-            string IReducerArgs.ReducerName => "set_nullable_vec";
-        }
+        [SpacetimeDB.Reducer(Name = "set_nullable_vec")]
+        public static partial void SetNullableVec(SpacetimeDB.ReducerContext ctx, uint id, bool hasPos, int x, int y);
     }
 }

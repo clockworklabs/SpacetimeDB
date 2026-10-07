@@ -192,6 +192,68 @@ internal static class ErrorDescriptor
             typeParams => $"Type parameters {typeParams} are not supported in SpacetimeDB types.",
             typeParams => typeParams
         );
+
+    // The client expansion of module declarations (Client.cs) reports these.
+    private static readonly ErrorDescriptorGroup clientGroup = new("STDBCL", "SpacetimeDB.Client");
+
+    public static readonly ErrorDescriptor<(IMethodSymbol method, string kind)> ClientOverload =
+        new(
+            clientGroup,
+            "Client bindings can't overload functions",
+            ctx =>
+                $"{ctx.method.ContainingType}.{ctx.method.Name} is declared as a {ctx.kind} more than once. The client API has one {ctx.kind} per name, so this declaration is skipped.",
+            ctx => ctx.method
+        );
+
+    public static readonly ErrorDescriptor<IParameterSymbol> ClientParamModifier =
+        new(
+            clientGroup,
+            "Parameters can't be ref, out, in, or params",
+            param =>
+                $"Parameter {param.Name} of {param.ContainingSymbol.Name} is ref, out, in, or params, which the client API doesn't support.",
+            param => param
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string context
+    )> ClientContextParam =
+        new(
+            clientGroup,
+            "Functions must take a context as their first parameter",
+            ctx => $"{ctx.method.Identifier} does not have a {ctx.context} as its first parameter.",
+            ctx => ctx.method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ClientViewReturn =
+        new(
+            clientGroup,
+            "Views must return rows",
+            method =>
+                $"View {method.Identifier} returns {method.ReturnType}, which is not T?, List<T>, IEnumerable<T>, or IQuery<T> of a [SpacetimeDB.Type] or [SpacetimeDB.Table] class T.",
+            method => method.ReturnType
+        );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string column,
+        string type
+    )> ClientUnknownColumn =
+        new(
+            clientGroup,
+            "Unknown column",
+            ctx => $"Could not find the specified column {ctx.column} in {ctx.type}.",
+            ctx => ctx.attr
+        );
+
+    public static readonly ErrorDescriptor<TypeDeclarationSyntax> ClientStructRow =
+        new(
+            clientGroup,
+            "Client row types must be classes",
+            table =>
+                $"{table.Identifier} is a struct, but row types in client bindings must be classes.",
+            table => table.Identifier
+        );
 }
 
 // This class is used to collect diagnostics during parsing and return them as a combined result.

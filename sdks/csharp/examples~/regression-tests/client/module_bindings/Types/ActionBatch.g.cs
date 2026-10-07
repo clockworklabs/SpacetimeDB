@@ -9,11 +9,12 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-    [SpacetimeDB.Type]
+    [SpacetimeDB.Table(Accessor = "ActionBatch", Name = "action_batch", Public = true)]
     [DataContract]
     public sealed partial class ActionBatch
     {
         [DataMember(Name = "id")]
+        [SpacetimeDB.PrimaryKey]
         public uint Id;
         [DataMember(Name = "actions")]
         public System.Collections.Generic.List<GameAction?> Actions;
