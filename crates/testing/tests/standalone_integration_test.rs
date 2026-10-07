@@ -158,7 +158,7 @@ fn namespace_csharp_nested_registration() {
                         .unwrap(),
                     AlgebraicValue::I32(id + 10)
                 );
-                for (view, expected) in [("current", id), ("anonymous", id + 10)] {
+                for (view, expected) in [("current", id), ("anonymous", id + 10), ("query_current", id), ("query_anonymous", id + 10)] {
                     let result = spacetimedb::sql::execute::run(
                         host.relational_db().clone(),
                         format!("SELECT * FROM {path}.{view}"),
@@ -169,7 +169,7 @@ fn namespace_csharp_nested_registration() {
                     )
                     .await
                     .unwrap();
-                    assert_eq!(result.rows, [product![if view == "current" { 1i32 } else { 2i32 }, expected]]);
+                    assert_eq!(result.rows, [product![if expected == id { 1i32 } else { 2i32 }, expected]]);
                 }
             }
             module.call_reducer_binary("check_tables", &product![]).await.unwrap();
@@ -194,6 +194,17 @@ fn namespace_csharp_nested_registration() {
                     &mut vec![],
                 ).await.unwrap();
                 assert_eq!(result.rows, [product![expected]]);
+            }
+            for (view, expected) in [("branch_data.query_child", 2i32), ("outer_data.branch_data.query_child", 8), ("query_deep", 8), ("query_public", 6)] {
+                let result = spacetimedb::sql::execute::run(
+                    host.relational_db().clone(),
+                    format!("SELECT * FROM {view}"),
+                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                    Some(host.info.subscriptions.clone()),
+                    Some(host.clone()),
+                    &mut vec![],
+                ).await.unwrap();
+                assert_eq!(result.rows, [product![1i32, expected]]);
             }
             let messages = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await
                 .into_iter().filter(|message| !warnings.contains(message)).collect::<Vec<_>>();

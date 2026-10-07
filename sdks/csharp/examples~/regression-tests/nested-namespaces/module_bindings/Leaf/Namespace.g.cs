@@ -25,6 +25,8 @@ namespace SpacetimeDB.Types.@Leaf
         {
             register(Anonymous = new(conn));
             register(Current = new(conn));
+            register(QueryAnonymous = new(conn));
+            register(QueryCurrent = new(conn));
             register(RefUser = new(conn));
             register(User = new(conn));
         }
@@ -33,6 +35,8 @@ namespace SpacetimeDB.Types.@Leaf
     {
         public global::SpacetimeDB.Table<User, AnonymousCols, AnonymousIxCols> Anonymous() => new(RemoteTables.AnonymousHandle.SqlName, new AnonymousCols(RemoteTables.AnonymousHandle.SqlName), new AnonymousIxCols(RemoteTables.AnonymousHandle.SqlName));
         public global::SpacetimeDB.Table<User, CurrentCols, CurrentIxCols> Current() => new(RemoteTables.CurrentHandle.SqlName, new CurrentCols(RemoteTables.CurrentHandle.SqlName), new CurrentIxCols(RemoteTables.CurrentHandle.SqlName));
+        public global::SpacetimeDB.Table<User, QueryAnonymousCols, QueryAnonymousIxCols> QueryAnonymous() => new(RemoteTables.QueryAnonymousHandle.SqlName, new QueryAnonymousCols(RemoteTables.QueryAnonymousHandle.SqlName), new QueryAnonymousIxCols(RemoteTables.QueryAnonymousHandle.SqlName));
+        public global::SpacetimeDB.Table<User, QueryCurrentCols, QueryCurrentIxCols> QueryCurrent() => new(RemoteTables.QueryCurrentHandle.SqlName, new QueryCurrentCols(RemoteTables.QueryCurrentHandle.SqlName), new QueryCurrentIxCols(RemoteTables.QueryCurrentHandle.SqlName));
         public global::SpacetimeDB.Table<RefUser, RefUserCols, RefUserIxCols> RefUser() => new(RemoteTables.RefUserHandle.SqlName, new RefUserCols(RemoteTables.RefUserHandle.SqlName), new RefUserIxCols(RemoteTables.RefUserHandle.SqlName));
         public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new(RemoteTables.UserHandle.SqlName, new UserCols(RemoteTables.UserHandle.SqlName), new UserIxCols(RemoteTables.UserHandle.SqlName));
     }

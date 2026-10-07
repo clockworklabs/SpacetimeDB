@@ -3,6 +3,8 @@ using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Internal;
 
+#pragma warning disable STDB_UNSTABLE
+
 namespace NestedLeaf;
 
 [Table(Accessor = "User", Public = true)]
@@ -25,6 +27,166 @@ public partial class RefUser
 public static partial class Functions
 {
     public static ulong Count(ReducerContext ctx) => ctx.Db.User.Count;
+
+    public static Uuid CheckReducerSelection(
+        ReducerContext ctx,
+        ReducerContext caller,
+        int expected
+    )
+    {
+        if (
+            Module.GetInstanceId(ctx) != expected
+            || ctx.Sender != caller.Sender
+            || ctx.ConnectionId != caller.ConnectionId
+            || ctx.Timestamp != caller.Timestamp
+            || !ReferenceEquals(ctx.SenderAuth, caller.SenderAuth)
+            || !ReferenceEquals(ctx.Rng, caller.Rng)
+        )
+        {
+            throw new Exception("Selected reducer context lost caller state.");
+        }
+        ctx.Db.User.Insert(new User { Id = 99, Value = expected });
+        if (!ctx.Db.User.Id.Delete(99))
+        {
+            throw new Exception("Selected reducer wrote to the wrong table.");
+        }
+        return ctx.NewUuidV7();
+    }
+
+    public static void Write(ProcedureTxContext ctx, int value) =>
+        ctx.Db.User.Id.Update(new User { Id = 99, Value = value });
+
+    public static void BeginSelectedTx(ProcedureTxContext ctx) =>
+        ctx.Db.User.Insert(new User { Id = 99, Value = 8 });
+
+    public static void FinishSelectedTx(ProcedureTxContext ctx, ProcedureTxContext caller)
+    {
+        if (
+            ctx.Db.User.Id.Find(99)?.Value != 8
+            || ctx.Timestamp != caller.Timestamp
+            || ctx.Sender != caller.Sender
+            || ctx.ConnectionId != caller.ConnectionId
+            || !ReferenceEquals(ctx.SenderAuth, caller.SenderAuth)
+            || !ReferenceEquals(ctx.Rng, caller.Rng)
+        )
+        {
+            throw new Exception("Selected transaction failed to share refresh/rollback state.");
+        }
+        ctx.Db.User.Id.Delete(99);
+    }
+
+    public static void CheckSelectedHandlerTx(HandlerTxContext ctx, HandlerTxContext caller)
+    {
+        if (
+            ctx.Timestamp != caller.Timestamp
+            || !ReferenceEquals(ctx.Rng, caller.Rng)
+            || !ReferenceEquals(ctx.SenderAuth, caller.SenderAuth)
+        )
+        {
+            throw new Exception("Selected handler transaction copied caller state.");
+        }
+        ctx.Db.User.Insert(new User { Id = 99, Value = 5 });
+        ctx.Db.User.Id.Delete(99);
+    }
+
+    public static void CheckProcedureSelection(
+        ProcedureContext ctx,
+        ProcedureContext caller,
+        int expected
+    )
+    {
+        if (
+            Module.GetInstanceId(ctx) != expected
+            || ctx.Sender != caller.Sender
+            || ctx.ConnectionId != caller.ConnectionId
+            || !ReferenceEquals(ctx.SenderAuth, caller.SenderAuth)
+            || !ReferenceEquals(ctx.Rng, caller.Rng)
+            || !ReferenceEquals(ctx.Http, caller.Http)
+        )
+        {
+            throw new Exception("Selected procedure context lost caller state.");
+        }
+        var first = caller.NewUuidV7();
+        var second = ctx.NewUuidV7();
+        var third = caller.NewUuidV7();
+        if (
+            second.GetCounter() != first.GetCounter() + 1
+            || third.GetCounter() != second.GetCounter() + 1
+        )
+        {
+            throw new Exception("Selected procedure copied its UUID counter.");
+        }
+        // Exercise the base API as well as the typed transaction callback.
+        ((ProcedureContextBase)ctx).WithTx(tx =>
+        {
+            ((ProcedureTxContext)tx).Db.User.Insert(new User { Id = 99, Value = expected });
+            return true;
+        });
+        var failed = ctx.TryWithTx<int, InvalidOperationException>(tx =>
+        {
+            Write(tx, -1);
+            return Result<int, InvalidOperationException>.Err(new("rollback"));
+        });
+        ctx.WithTx(tx =>
+        {
+            if (
+                failed.IsSuccess
+                || tx.Db.User.Id.Find(99)?.Value != expected
+                || tx.Timestamp != caller.Timestamp
+                || ctx.Timestamp != caller.Timestamp
+            )
+            {
+                throw new Exception(
+                    "Selected procedure transaction did not share refresh/rollback state."
+                );
+            }
+            tx.Db.User.Id.Delete(99);
+            return true;
+        });
+    }
+
+    public static void CheckHandlerSelection(HandlerContext ctx, HandlerContext caller)
+    {
+        if (!ReferenceEquals(ctx.Rng, caller.Rng) || !ReferenceEquals(ctx.Http, caller.Http))
+        {
+            throw new Exception("Selected handler copied caller state.");
+        }
+        var first = caller.NewUuidV7();
+        var second = ctx.NewUuidV7();
+        var third = caller.NewUuidV7();
+        if (
+            second.GetCounter() != first.GetCounter() + 1
+            || third.GetCounter() != second.GetCounter() + 1
+        )
+        {
+            throw new Exception("Selected handler copied its UUID counter.");
+        }
+        ((HandlerContextBase)ctx).WithTx(tx =>
+        {
+            ((HandlerTxContext)tx).Db.User.Insert(new User { Id = 99, Value = 99 });
+            return true;
+        });
+        var failed = ctx.TryWithTx<int, InvalidOperationException>(tx =>
+        {
+            tx.Db.User.Id.Update(new User { Id = 99, Value = -1 });
+            return Result<int, InvalidOperationException>.Err(new("rollback"));
+        });
+        ctx.WithTx(tx =>
+        {
+            if (
+                failed.IsSuccess
+                || tx.Db.User.Id.Find(99)?.Value != 99
+                || ctx.Timestamp != caller.Timestamp
+            )
+            {
+                throw new Exception("Selected handler transaction lost its state.");
+            }
+            tx.Db.User.Id.Delete(99);
+            return true;
+        });
+    }
+
+    public static int Read(AnonymousViewContext ctx) => ctx.Db.User.Id.Find(1)!.Value.Value;
 
     [Reducer]
     public static void Ping(ReducerContext ctx)
@@ -128,6 +290,14 @@ public static partial class Functions
     [View(Accessor = "Anonymous", Public = true)]
     public static User? Anonymous(AnonymousViewContext ctx) =>
         ctx.Db.User.ByValue.Filter(Module.GetInstanceId(ctx) + 10).Single();
+
+    [View(Accessor = "QueryCurrent", Public = true)]
+    public static IQuery<User> QueryCurrent(ViewContext ctx) =>
+        ctx.From.User().Where(row => row.Value.Eq(Module.GetInstanceId(ctx)));
+
+    [View(Accessor = "QueryAnonymous", Public = true)]
+    public static IQuery<User> QueryAnonymous(AnonymousViewContext ctx) =>
+        ctx.From.User().Where(row => row.Value.Eq(Module.GetInstanceId(ctx) + 10));
 
     [HttpHandler]
     public static HttpResponse Ignored(HandlerContext ctx, HttpRequest request) =>

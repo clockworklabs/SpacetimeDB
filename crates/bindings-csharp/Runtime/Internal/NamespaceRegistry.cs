@@ -248,12 +248,13 @@ public sealed class NamespaceRegistry
     public SqlTableName ResolveSqlName(string assemblyIdentity, string localName)
     {
         var name = ResolveNamespace(assemblyIdentity);
-        if (name?.Contains('.') == true)
-        {
-            throw new InvalidOperationException(
-                "Nested SQL-name generation is not implemented yet."
-            );
-        }
-        return name is null ? new SqlTableName(localName) : new SqlTableName(name, localName);
+        return name is null
+            ? new SqlTableName(localName)
+            : new SqlTableName(name.Split('.'), localName);
     }
+
+    public SqlTableName ResolveSqlName(int instanceId, string localName) =>
+        instancePaths[instanceId].Length == 0
+            ? new SqlTableName(localName)
+            : new SqlTableName(instancePaths[instanceId].Split('.'), localName);
 }

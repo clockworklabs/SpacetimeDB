@@ -6,9 +6,19 @@ using SpacetimeDB.Internal;
 
 namespace NestedBranch;
 
-// Deliberately no reducers or views: global dispatch must skip empty categories.
+// Deliberately no reducers or anonymous views: global dispatch must skip empty categories.
 public static partial class Functions
 {
+    public static void CheckSelection(
+        ProcedureContext ctx,
+        ProcedureContext caller,
+        int expected
+    ) => NestedLeaf.Functions.CheckProcedureSelection(ctx.As.Leaf, caller, expected);
+
+    [View(Accessor = "QueryChild", Public = true)]
+    public static IQuery<NestedLeaf.User> QueryChild(ViewContext ctx) =>
+        ctx.From.Leaf.User().Where(row => row.Value.Eq(Module.GetInstanceId(ctx) + 1));
+
     [Procedure]
     public static int Instance(ProcedureContext ctx) =>
         ctx.WithTx(tx =>
