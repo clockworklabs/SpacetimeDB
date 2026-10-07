@@ -33,12 +33,14 @@ namespace SpacetimeDB.Types.@Branch
         public global::SpacetimeDB.Types.@Branch.@Leaf.RemoteTables @Leaf { get; }
         internal RemoteTables(global::SpacetimeDB.Types.DbConnection conn, Action<IRemoteTableHandle> register)
         {
+            register(QueryChild = new(conn));
             @Leaf = new(conn, register);
         }
     }
     public sealed class From
     {
         public global::SpacetimeDB.Types.@Branch.@Leaf.From @Leaf { get; } = new();
+        public global::SpacetimeDB.Table<User, QueryChildCols, QueryChildIxCols> QueryChild() => new(RemoteTables.QueryChildHandle.SqlName, new QueryChildCols(RemoteTables.QueryChildHandle.SqlName), new QueryChildIxCols(RemoteTables.QueryChildHandle.SqlName));
     }
 
     public abstract partial class Reducer

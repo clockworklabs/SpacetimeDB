@@ -31,7 +31,7 @@ Reference another C# module with a normal `ProjectReference` (or a package
 containing its compiled module assembly). No root/library build-role property is
 required: the same dependency can also be published independently.
 Descriptor-bearing dependencies, including transitive dependencies, register
-automatically once in `public` unless the root assigns a namespace:
+automatically in root `public` unless targeted by a namespace declaration:
 
 ```csharp
 [assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
@@ -52,9 +52,40 @@ context and transaction; a namespace is not a security boundary between helpers.
 For this example, raw SQL uses `auth_data.auth_users`, while generated clients
 use `conn.Db.MyAuth.User` and `q.From.MyAuth.User()`. Generated client queries and
 network calls use the canonical database names automatically.
-When `Name` is omitted, the host applies the root module's case-conversion policy
+When `Name` is omitted, the host applies the containing module's case-conversion policy
 to the accessor: with the default `SnakeCase` policy, `MyAuth` becomes `my_auth`.
 An explicit `Name` is used as supplied, without case conversion.
+
+#### Nested submodules
+
+A dependency may declare its own namespace attributes. For example, if root
+mounts Auth and Auth mounts Audit, root can access `ctx.Db.Auth.Audit.User`.
+Mounting the same Audit assembly elsewhere creates separate tables, not an alias
+for Auth's tables. Dispatch supplies each reducer, procedure, and view with its
+own instance's table handles. Public contributions add no path segment.
+
+Module query builders follow the same paths: root can use
+`ctx.From.Auth.Audit.User()`, while Audit uses `ctx.From.User()`. The query
+receiver carries the current instance, and resolved SQL names are cached per
+table and instance, so repeated copies query their own tables.
+
+Generated clients expose the same full accessor paths on `Db`, `Reducers`,
+`Procedures`, and `q.From`.
+
+See [nested-namespace-test-cs](../../modules/nested-namespace-test-cs/) and its
+[client regression](../../sdks/csharp/examples~/regression-tests/nested-namespaces/).
+
+The nested module implementation is not yet complete:
+
+- Immediate scheduling still resolves a function by assembly identity, so it
+  cannot select between repeated instances of the same assembly.
+- Explicit context selection (`ctx.As...`) is not implemented. Table access
+  inside an ordinary C# method requires the passed context to identify an
+  unambiguous instance. Access through `ctx.Db.Auth.Audit` selects tables, not a
+  new context.
+- Coexisting versions with the same simple assembly name are not covered by the
+  retained integration fixture. Repeated instances of one DLL do not establish
+  support for loading different versions together under NativeAOT.
 
 #### Restrictions and limitations
 
@@ -66,8 +97,8 @@ An explicit `Name` is used as supplied, without case conversion.
   that scope. Referenced modules not targeted by any mount register automatically
   in the root's public scope.
 - Dependencies in `public` inherit the containing scope's case-conversion policy
-  (`SnakeCase` by default). An explicitly different policy is a compilation error. Mount the
-  dependency in a named namespace to keep its independent naming policy.
+  (`SnakeCase` by default). An explicitly different policy is a compilation error.
+  Mount the dependency in a named namespace to keep its independent naming policy.
 - `Accessor` must be a valid C# and database identifier; optional `Name` must be
   a valid database identifier. Both are limited to 63 UTF-8 bytes.
   Accessors are checked for case-insensitive duplicates; the host validates
