@@ -5,10 +5,13 @@ import { inconclusive } from '../src/actions/actor-action-runtime.js';
 
 const MAX_RECEIVED_BYTES = 8 * 1024 * 1024;
 
+export function urlDiagnostic(value: string) {
+  const url = new URL(value);
+  return { origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex') };
+}
+
 export function requestDiagnostic(request: Request) {
-  const url = new URL(request.url());
-  return { origin: url.origin, pathSha256: createHash('sha256').update(url.pathname).digest('hex'),
-    method: request.method(), resourceType: request.resourceType() };
+  return { ...urlDiagnostic(request.url()), method: request.method(), resourceType: request.resourceType() };
 }
 
 function responseDiagnostic(response: Response, page: Page) {
@@ -146,7 +149,11 @@ export async function captureResponses(page: Page, received: ReceivedTransport, 
     finally { received.pending--; received.pendingResponses.delete(response); }
   });
   const session = await page.context().newCDPSession(page);
-  if (http) session.on('close', () => { if (!page.isClosed()) received.markIncomplete('bodyReadFailures'); });
+  if (http) session.on('close', () => {
+    if (page.isClosed()) return;
+    received.markIncomplete('bodyReadFailures');
+    try { process.stderr.write('transport capture session closed {"pageClosed":false}\n'); } catch { /* Diagnostics only. */ }
+  });
   session.on('Network.eventSourceMessageReceived', event => {
     received.record(event.data);
     http?.completed.record(event.data);

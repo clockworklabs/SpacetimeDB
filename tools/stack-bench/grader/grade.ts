@@ -54,7 +54,7 @@ import { leaseFromEnv } from '../src/runtime/backend-lease.js';
 import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
-import { captureResponses, ReceivedTransport, requestDiagnostic } from './transport-frames.js';
+import { captureResponses, ReceivedTransport, requestDiagnostic, urlDiagnostic } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture, type PassiveSocketFrame } from '../src/actions/auth-request-patch.js';
 import type { PlatformAuthPatch } from '../src/actions/auth-request-patch.js';
@@ -464,15 +464,27 @@ export class Actor {
       this.pendingHttp = snapshot.pending;
       for (const record of snapshot.records) this.transport.record(record.body, true);
       const records = new Map(snapshot.records.map(record => [record.id, record]));
-      if (snapshot.incomplete || records.size !== snapshot.records.length
-        || [...this.httpReceipts].some(([id, expected]) => {
-          const actual = records.get(id);
-          return !actual || actual.url !== expected.url || actual.method !== expected.method
-            || actual.status !== expected.status || actual.contentType !== expected.contentType;
-        })) this.transport.markIncomplete('bodyReadFailures');
+      const unmatched = [...this.httpReceipts].find(([id, expected]) => {
+        const actual = records.get(id);
+        return !actual || actual.url !== expected.url || actual.method !== expected.method
+          || actual.status !== expected.status || actual.contentType !== expected.contentType;
+      });
+      const reason = snapshot.incomplete ? 'snapshot-incomplete'
+        : records.size !== snapshot.records.length ? 'duplicate-records'
+          : unmatched ? records.has(unmatched[0]) ? 'receipt-mismatch' : 'receipt-missing' : null;
+      if (reason) this.captureIncomplete(reason, unmatched?.[1]);
     } catch {
-      this.transport.markIncomplete('bodyReadFailures');
+      this.captureIncomplete('snapshot-failed');
     }
+  }
+  // Every incomplete capture says why; absence verdicts depend on it.
+  private captureIncompleteReports = 0;
+  private captureIncomplete(reason: string, receipt?: { url: string; method: string; status: number }): void {
+    this.transport.markIncomplete('bodyReadFailures');
+    if (this.captureIncompleteReports++ >= 8) return;
+    try { process.stderr.write(`transport proxy capture incomplete ${JSON.stringify({ reason,
+      ...(receipt ? { ...urlDiagnostic(receipt.url), method: receipt.method, status: receipt.status } : {}),
+    })}\n`); } catch { /* Diagnostics must not change the verdict. */ }
   }
   private reportPendingRequests(phase: 'navigation' | 'absence'): void {
     for (const { request, startedAt } of [...this.pendingRequests.values()].slice(0, 8)) {
