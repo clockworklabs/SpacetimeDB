@@ -1514,3 +1514,35 @@ test('a SuperGrok broker signs chat proxy calls itself and forwards account read
     assert.equal(seen[0]!.headers['x-api-key'], undefined);
   }, { provider: 'xai', model: 'grok-4.6', maxOutputTokens: 128_000 });
 });
+
+test('a call still open when the broker stops is settled at its reserved ceiling, not left unpriced', async () => {
+  // The upstream sends headers, then never finishes the response.
+  const upstreamServer = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => { response.writeHead(200, { 'content-type': 'text/event-stream' }); response.write(': open\n\n'); });
+  });
+  const upstreamPort = await listen(upstreamServer);
+  const sessionToken = 'session-token-value-1234567890';
+  const { server, stats, abandonInFlight } = createCredentialBroker({ provider: 'xai', mode: 'api-key',
+    credential: 'provider-secret-value-1234567890', sessionToken, model: 'grok-4.6', maxOutputTokens: 1000, maxBudgetUsd: 10,
+    pricingRates: { input: 2, output: 6, cacheRead: 0.5, cacheWrite5m: 2, cacheWrite1h: 2 } }, {
+    requestUpstream: httpRequest, upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort } });
+  const brokerPort = await listen(server);
+  try {
+    const client = httpRequest({ hostname: '127.0.0.1', port: brokerPort, method: 'POST', path: '/v1/responses',
+      headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' } });
+    client.on('error', () => {});
+    client.end(JSON.stringify({ model: 'grok-4.6', input: [] }));
+    await waitFor(() => stats().billableRequests === 1 && stats().reservedUsd > 0);
+    const reserved = stats().reservedUsd;
+    abandonInFlight();
+    const { acceptedRequests, billableRequests, completedBillableRequests, estimatedBillableRequests, spentUsd, reservedUsd } = stats();
+    assert.deepEqual({ acceptedRequests, billableRequests, completedBillableRequests, estimatedBillableRequests, spentUsd, reservedUsd },
+      { acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1, estimatedBillableRequests: 1, spentUsd: reserved,
+        reservedUsd: 0 });
+    client.destroy();
+  } finally {
+    server.closeAllConnections(); upstreamServer.closeAllConnections();
+    await close(server); await close(upstreamServer);
+  }
+});

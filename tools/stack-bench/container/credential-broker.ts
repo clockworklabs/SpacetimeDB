@@ -47,6 +47,7 @@ export interface BrokerStats {
 export interface CreatedCredentialBroker {
   server: ReturnType<typeof createServer>;
   stats: () => BrokerStats;
+  abandonInFlight: () => void;
 }
 
 type UpstreamRequest = (options: RequestOptions,
@@ -97,6 +98,8 @@ export function createCredentialBroker(configInput: unknown, {
   const protocol = brokerProtocol(config);
   const destination = upstream ?? { protocol: 'https:', hostname: protocol.hostname, port: 443 };
   let acceptedRequests = 0;
+  // Settles each paid call still open when the broker stops.
+  const inFlight = new Set<() => void>();
   let lastResponseRequest = 0;
   let providerFailure: ProviderFailure | null = null;
   const recordFailure = (request: number, failure: ProviderFailure | null): void => {
@@ -244,6 +247,7 @@ export function createCredentialBroker(configInput: unknown, {
       reservedUsd = roundUsd(reservedUsd + costCeiling);
       recordLedger();
       let billableSettled = !billable;
+      let abandoned = false;
       // Without response usage, a declared feature cannot be shown unused.
       const unprovenPricing = firstUnpricedReason(pricing.unpriced, pricing.requiresUsage);
       const settleBillable = ({ usage = null, estimated = null, reportedCost = null, unpriced = null }:
@@ -334,13 +338,22 @@ export function createCredentialBroker(configInput: unknown, {
           }
         });
         const settleAbortedResponse = () => {
-          recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
+          if (!abandoned) recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
           settleBillable({ estimated: 'response-aborted', unpriced: unprovenPricing });
           if (responseOpen()) response.destroy();
         };
         upstreamResponse.once('aborted', settleAbortedResponse);
         upstreamResponse.once('error', settleAbortedResponse);
       });
+      // The broker stops only after the coding session has ended. A call still open
+      // then can no longer reach the agent; its spend is the reservation ceiling.
+      const abandon = () => {
+        abandoned = true;
+        settleBillable({ estimated: 'response-aborted', unpriced: unprovenPricing });
+        upstreamRequest.destroy();
+      };
+      inFlight.add(abandon);
+      upstreamRequest.once('close', () => inFlight.delete(abandon));
       // A request whose connection never opened did not reach the provider.
       let connected = false;
       upstreamRequest.on('socket', socket => {
@@ -348,6 +361,7 @@ export function createCredentialBroker(configInput: unknown, {
         else socket.once(destination.protocol === 'https:' ? 'secureConnect' : 'connect', () => { connected = true; });
       });
       upstreamRequest.on('error', () => {
+        if (abandoned) return;
         if (connected) {
           recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
           settleBillable({ estimated: 'upstream-error', unpriced: unprovenPricing });
@@ -366,7 +380,7 @@ export function createCredentialBroker(configInput: unknown, {
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
     else socket.destroy();
   });
-  return { server, stats: () => ({ acceptedRequests,
+  return { server, abandonInFlight: () => { for (const abandon of inFlight) abandon(); }, stats: () => ({ acceptedRequests,
     billableRequests, completedBillableRequests, estimatedBillableRequests,
     estimatedByReason: { ...estimatedByReason },
     spentUsd: Number(spentUsd.toFixed(6)), reservedUsd: Number(reservedUsd.toFixed(6)) }) };
@@ -385,7 +399,7 @@ async function main() {
   try { config = validateBrokerConfig(JSON.parse(readFileSync(configPath, 'utf8'))); }
   finally { rmSync(configPath, { force: true }); }
   if (!config.readyPath) fail('readyPath is invalid');
-  const { server } = createCredentialBroker(config);
+  const { server, abandonInFlight } = createCredentialBroker(config);
   const sockets = new Set<Socket>();
   server.on('connection', (socket: Socket) => {
     sockets.add(socket);
@@ -406,6 +420,7 @@ async function main() {
   const stop = () => {
     if (stopping) return;
     stopping = true;
+    abandonInFlight();
     const force = setTimeout(() => {
       for (const socket of sockets) socket.destroy();
       server.closeAllConnections?.();
