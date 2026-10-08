@@ -38,7 +38,7 @@ use self::unique_direct_index::{ToFromUsize, UniqueDirectIndex, UniqueDirectInde
 use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::tiered::PageError;
+use crate::table::TableError;
 use crate::{read_column::ReadColumn, static_assert_size};
 use core::cmp::Ordering;
 use core::ops::{Bound, Deref, RangeBounds};
@@ -2590,8 +2590,8 @@ impl TableIndex {
     /// being the same as passed in on `self`'s construction.
     pub unsafe fn build_from_rows<'table>(
         &mut self,
-        rows: impl IntoIterator<Item = Result<RowRef<'table>, PageError>>,
-    ) -> Result<Result<(), RowPointer>, PageError> {
+        rows: impl IntoIterator<Item = Result<RowRef<'table>, TableError>>,
+    ) -> Result<Result<(), RowPointer>, TableError> {
         for row_ref in rows {
             let row_ref = row_ref?;
             // SAFETY: Forward caller proof obligation.
@@ -2772,8 +2772,9 @@ impl TableIndex {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::table::test::table;
     use crate::table::Table;
-    use crate::{blob_store::HashMapBlobStore, table::test::table};
+    use crate::tiered::BlobSet;
     use core::cmp::Ordering;
     use core::ops::Bound::*;
     use core::slice;
@@ -2821,8 +2822,8 @@ mod test {
         }
     }
 
-    fn setup(ty: ProductType) -> (Table, HashMapBlobStore) {
-        (table(ty), HashMapBlobStore::default())
+    fn setup(ty: ProductType) -> (Table, BlobSet) {
+        (table(ty), BlobSet::new_for_test())
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {
@@ -2952,8 +2953,8 @@ mod test {
         #[test]
         fn remove_nonexistent_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let (mut table, mut blob_store) = setup(ty);
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let (mut table, blob_store) = setup(ty);
+            let row_ref = table.insert(&blob_store, &pv).unwrap().1;
             prop_assert_eq!(unsafe { index.delete(&row_ref) }, false);
             prop_assert!(index.idx.is_empty());
             prop_assert_eq!(index.num_keys(), 0);
@@ -2964,8 +2965,8 @@ mod test {
         #[test]
         fn insert_delete_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let (mut table, mut blob_store) = setup(ty);
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let (mut table, blob_store) = setup(ty);
+            let row_ref = table.insert(&blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             prop_assert_eq!(index.num_keys(), 0);
@@ -2995,7 +2996,7 @@ mod test {
             let ty = ProductType::from(ty.into_boxed_slice());
 
             let mut index = new_index(&ty, &cols, false, kind);
-            let (mut table, mut blob_store) = setup(ty);
+            let (mut table, blob_store) = setup(ty);
 
             let num_vals = vals.len();
             for val in vals {
@@ -3003,7 +3004,7 @@ mod test {
                 key.push(val.into());
                 let key = ProductValue::from(key);
 
-                let row_ref = table.insert(&mut blob_store, &key).unwrap().1;
+                let row_ref = table.insert(&blob_store, &key).unwrap().1;
 
                 // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
                 prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Ok(()));
@@ -3016,8 +3017,8 @@ mod test {
         #[test]
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind) {
             let mut index = new_index(&ty, &cols, true, kind);
-            let (mut table, mut blob_store) = setup(ty);
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let (mut table, blob_store) = setup(ty);
+            let row_ref = table.insert(&blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
@@ -3053,7 +3054,7 @@ mod test {
             let cols = 0.into();
             let ty = ProductType::from_iter([AlgebraicType::U64]);
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let (mut table, mut blob_store) = setup(ty);
+            let (mut table, blob_store) = setup(ty);
 
             let prev = needle - 1;
             let next = needle + 1;
@@ -3064,7 +3065,7 @@ mod test {
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {
                 let row = product![x];
-                let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
+                let row_ref = table.insert(&blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, row_ref.pointer());
                 // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
                 prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Ok(()));
@@ -3157,9 +3158,9 @@ mod test {
             let mut index = new_index(&row_ty, &[0].into(), is_unique, kind);
 
             // Construct the table and add `val` as a row.
-            let (mut table, mut blob_store) = setup(row_ty);
+            let (mut table, blob_store) = setup(row_ty);
             let pv = product![val.clone()];
-            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            let row_ref = table.insert(&blob_store, &pv).unwrap().1;
 
             // Add the row to the index.
             assert_eq!(index.num_keys(), 0);
@@ -3199,9 +3200,9 @@ mod test {
             let row = product![prefix_val.clone(), middle.clone(), suffix_val.clone()];
 
             // Make a table, add the index, and insert the row.
-            let (mut table, mut blob_store) = setup(ty);
+            let (mut table, blob_store) = setup(ty);
             unsafe { table.add_index(IndexId::SENTINEL, index) };
-            let (_, row_ref) = table.insert(&mut blob_store, &row).unwrap();
+            let (_, row_ref) = table.insert(&blob_store, &row).unwrap();
             let row_ptr = row_ref.pointer();
             let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
 
@@ -3259,9 +3260,9 @@ mod test {
             let other_row = product![prefix_val, excluded, suffix_val];
 
             // Make a table, add the index, and insert the row.
-            let (mut table, mut blob_store) = setup(ty);
+            let (mut table, blob_store) = setup(ty);
             unsafe { table.add_index(IndexId::SENTINEL, index) };
-            let (_, row_ref) = table.insert(&mut blob_store, &row).unwrap();
+            let (_, row_ref) = table.insert(&blob_store, &row).unwrap();
             let row_ptr = row_ref.pointer();
             let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
 

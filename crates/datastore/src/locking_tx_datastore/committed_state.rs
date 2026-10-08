@@ -53,11 +53,9 @@ use spacetimedb_schema::{
     table_name::TableName,
 };
 use spacetimedb_table::{
-    blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    page_pool::PagePool,
     table::{RowRef, Table, TableAndIndex},
-    tiered::{ByteBudget, ByteBudgetConfig, PageEvictionPolicy, PageManager, PreparedCommit},
+    tiered::{BlobHandle, BlobSet, PageEvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
@@ -76,10 +74,9 @@ use std::{collections::BTreeMap, iter};
 pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: IntMap<TableId, Table>,
-    pub(crate) blob_store: HashMapBlobStore,
+    pub(crate) storage: TieredDatabaseStorage,
     /// Provides fast lookup for index id -> an index.
     pub(super) index_id_map: IndexIdMap,
-    pub(super) page_manager: Arc<PageManager>,
     /// Total bytes occupied by physical pages in committed tables.
     datastore_page_bytes: u64,
     /// We track the read sets for each view in the committed state.
@@ -135,9 +132,8 @@ impl MemoryUsage for CommittedState {
         let Self {
             next_tx_offset,
             tables,
-            blob_store,
+            storage,
             index_id_map,
-            page_manager: _,
             datastore_page_bytes,
             read_sets,
             view_instances,
@@ -149,7 +145,7 @@ impl MemoryUsage for CommittedState {
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
             + tables.heap_usage()
-            + blob_store.heap_usage()
+            + storage.heap_usage()
             + index_id_map.heap_usage()
             + datastore_page_bytes.heap_usage()
             + read_sets.heap_usage()
@@ -215,20 +211,14 @@ impl StateView for CommittedState {
 }
 
 impl CommittedState {
-    pub(super) fn new(page_pool: PagePool) -> Self {
-        let page_manager = Arc::new(PageManager::new(
-            page_pool.clone(),
-            Arc::new(()),
-            ByteBudget::new(ByteBudgetConfig::unlimited()).unwrap(),
-        ));
+    pub(super) fn new(storage: TieredDatabaseStorage) -> Self {
         Self {
             next_tx_offset: <_>::default(),
             tables: <_>::default(),
-            blob_store: <_>::default(),
+            storage,
             index_id_map: <_>::default(),
             read_sets: <_>::default(),
             view_instances: <_>::default(),
-            page_manager,
             datastore_page_bytes: 0,
             ephemeral_tables: <_>::default(),
             sequence_advance_simulate_reallocation_rng: {
@@ -252,12 +242,12 @@ impl CommittedState {
     /// Returns committed datastore bytes.
     ///
     /// This currently includes the pages allocated by the datastore
-    /// and the objects stored in the [`BlobStore`].
+    /// and the objects stored in the [`BlobSet`].
     ///
     /// TODO: Eventually this should also include index bytes
     /// once indexes are managed by the page cache.
     pub fn datastore_memory_bytes(&self) -> u64 {
-        self.datastore_page_bytes + self.blob_store.physical_bytes_used_by_blobs()
+        self.datastore_page_bytes + self.storage.physical_bytes_used_by_blobs()
     }
 
     /// Recomputes `datastore_page_bytes` from committed tables.
@@ -464,14 +454,14 @@ impl CommittedState {
 
     /// Returns an iterator doing a full table scan on `table_id`.
     pub(super) fn table_scan<'a>(&'a self, table_id: TableId) -> Option<TableScanIter<'a>> {
-        Some(self.get_table(table_id)?.scan_rows(&self.blob_store).err_into())
+        Some(self.get_table(table_id)?.scan_rows(self.storage.blobs()).err_into())
     }
 
     /// Returns an index for `table_id` on `cols`, if any.
     pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
         self.tables
             .get(&table_id)?
-            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .get_index_by_cols_with_table(self.storage.blobs(), cols)
     }
 
     /// Returns the table associated with the given `index_id`, if any.
@@ -483,7 +473,7 @@ impl CommittedState {
     pub(super) fn get_index_by_id_with_table(&self, table_id: TableId, index_id: IndexId) -> Option<TableAndIndex<'_>> {
         self.tables
             .get(&table_id)?
-            .get_index_by_id_with_table(&self.blob_store, index_id)
+            .get_index_by_id_with_table(self.storage.blobs(), index_id)
     }
 
     // TODO(perf, deep-integration): Make this method `unsafe`. Add the following to the docs:
@@ -509,7 +499,7 @@ impl CommittedState {
             .expect("Attempt to get COMMITTED_STATE row from table not present in tables.");
         // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
         Ok(table
-            .get_row_ref(&self.blob_store, row_ptr)?
+            .get_row_ref(self.storage.blobs(), row_ptr)?
             .expect("row pointer to be present"))
     }
 
@@ -577,7 +567,10 @@ impl CommittedState {
     }
 
     fn prepare_merge_inner(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
-        let mut prepared = PreparedMerge::default();
+        // Prepare transaction-local blobs before planning page mutations. This
+        // installs and pins their frames without publishing logical references.
+        let blobs: Box<[BlobHandle]> = self.storage.merge_blobs_from(&tx_state.blob_store)?;
+        let mut prepared = PreparedMerge::with_pinned_blobs(blobs);
 
         // If a table was dropped, collect its rows.
         // Subscription updates contain all the deleted rows, instead of a drop
@@ -588,7 +581,7 @@ impl CommittedState {
             if let PendingSchemaChange::TableRemoved(table_id, table) = change {
                 assert!(!prepared.mutated_tables.contains_key(table_id));
                 let rows = table
-                    .scan_rows(&self.blob_store)
+                    .scan_rows(self.storage.blobs())
                     .map(|row| Ok(row?.to_product_value()))
                     .collect::<Result<_>>()?;
                 prepared.removed_tables.push(PreparedRemovedTable {
@@ -622,12 +615,12 @@ impl CommittedState {
                 Some(tx_insert_table) => Either::Left(
                     tx_insert_table
                         .scan_rows(&tx_state.blob_store)
-                        .map(|row| Ok(commit_table.prepare_insert(row?))),
+                        .map(|row| row.map(|row| commit_table.prepare_insert(row))),
                 ),
                 None => Either::Right(iter::empty()),
             };
 
-            let commit = commit_table.prepare_commit(deletes, inserts)?;
+            let commit = commit_table.prepare_commit(self.storage.blobs(), deletes, inserts)?;
             prepared.insert(table_id, commit);
         }
 
@@ -644,7 +637,13 @@ impl CommittedState {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
-        for (table_id, commit) in prepared.mutated_tables {
+        let PreparedMerge {
+            mutated_tables,
+            removed_tables,
+            pinned_blobs,
+        } = prepared;
+
+        for (table_id, commit) in mutated_tables {
             let (table, blob_store, _) = self
                 .get_table_and_blob_store_mut(table_id)
                 .expect("table must have been created during prepare phase");
@@ -679,7 +678,11 @@ impl CommittedState {
             }
         }
 
-        for PreparedRemovedTable { id, name, rows } in prepared.removed_tables {
+        // All page mutations have finished, so pinned blob frames no longer
+        // need to be pinned by the commit guard.
+        drop(pinned_blobs);
+
+        for PreparedRemovedTable { id, name, rows } in removed_tables {
             truncates.insert(id);
             tx_data.set_deletes_for_table(id, &name, rows);
         }
@@ -894,13 +897,13 @@ impl CommittedState {
         let table = self
             .get_table(table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-        Ok((table, &self.blob_store as &dyn BlobStore, &self.index_id_map))
+        Ok((table, self.storage.blobs(), &self.index_id_map))
     }
 
     pub(super) fn get_table_and_blob_store_mut(
         &mut self,
         table_id: TableId,
-    ) -> Result<(&mut Table, &mut dyn BlobStore, &mut IndexIdMap)> {
+    ) -> Result<(&mut Table, &BlobSet, &mut IndexIdMap)> {
         // NOTE(centril): `TableError` is a fairly large type.
         // Not making this lazy made `TableError::drop` show up in perf.
         // TODO(centril): Box all the errors.
@@ -909,18 +912,14 @@ impl CommittedState {
             .tables
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-        Ok((
-            table,
-            &mut self.blob_store as &mut dyn BlobStore,
-            &mut self.index_id_map,
-        ))
+        Ok((table, self.storage.blobs(), &mut self.index_id_map))
     }
 
     fn make_table(&self, schema: Arc<TableSchema>) -> Table {
         Table::new(
             schema,
             SquashedOffset::COMMITTED_STATE,
-            self.page_manager.clone(),
+            self.storage.pages().clone(),
             PageEvictionPolicy::NeverEvict,
         )
     }
@@ -933,8 +932,8 @@ impl CommittedState {
         &'this mut self,
         table_id: TableId,
         schema: &Arc<TableSchema>,
-    ) -> (&'this mut Table, &'this mut dyn BlobStore) {
-        let page_manager = self.page_manager.clone();
+    ) -> (&'this mut Table, &'this BlobSet) {
+        let page_manager = self.storage.pages().clone();
         let table = self.tables.entry(table_id).or_insert_with(|| {
             Table::new(
                 schema.clone(),
@@ -943,19 +942,18 @@ impl CommittedState {
                 PageEvictionPolicy::NeverEvict,
             )
         });
-        let blob_store = &mut self.blob_store;
-        (table, blob_store)
+        (table, self.storage.blobs())
     }
 
     /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
     #[cfg(feature = "durability")]
-    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
+    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &BlobSet) {
         (
             self.tables
                 .iter_mut()
                 .filter(|(table_id, _)| !self.ephemeral_tables.contains(*table_id))
                 .map(|(_, table)| table),
-            &self.blob_store,
+            self.storage.blobs(),
         )
     }
 
@@ -986,20 +984,20 @@ impl CommittedState {
         DATA_SIZE_METRICS
             .data_size_blob_store_num_blobs
             .with_label_values(&database_identity)
-            .set(self.blob_store.num_blobs() as _);
+            .set(self.storage.blobs().num_blobs() as _);
         DATA_SIZE_METRICS
             .data_size_blob_store_bytes_used_by_blobs
             .with_label_values(&database_identity)
-            .set(self.blob_store.bytes_used_by_blobs() as _);
+            .set(self.storage.blobs().bytes_used_by_blobs() as _);
     }
 }
 
-pub(super) type CommitTableForInsertion<'a> = (&'a Table, &'a dyn BlobStore, &'a IndexIdMap);
+pub(super) type CommitTableForInsertion<'a> = (&'a Table, &'a BlobSet, &'a IndexIdMap);
 
-#[derive(Default)]
 pub(super) struct PreparedMerge {
     mutated_tables: BTreeMap<TableId, PreparedCommit>,
     removed_tables: Vec<PreparedRemovedTable>,
+    pinned_blobs: Box<[BlobHandle]>,
 }
 
 struct PreparedRemovedTable {
@@ -1009,6 +1007,14 @@ struct PreparedRemovedTable {
 }
 
 impl PreparedMerge {
+    fn with_pinned_blobs(pinned_blobs: Box<[BlobHandle]>) -> Self {
+        Self {
+            mutated_tables: <_>::default(),
+            removed_tables: <_>::default(),
+            pinned_blobs,
+        }
+    }
+
     fn insert(&mut self, table: TableId, commit: PreparedCommit) -> bool {
         self.mutated_tables.insert(table, commit).is_none()
     }

@@ -297,7 +297,7 @@ pub enum Tuple<'a> {
     Join(Vec<Row<'a>>),
 }
 
-static_assert_size!(Tuple, 48);
+static_assert_size!(Tuple, 40);
 
 impl ProjectField for Tuple<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {

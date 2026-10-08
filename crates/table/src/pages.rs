@@ -1,6 +1,7 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use super::blob_store::BlobStore;
+use crate::tiered::{BlobError, BlobSet};
+
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
 use super::page_pool::PagePool;
@@ -217,7 +218,7 @@ impl Pages {
         fixed_row_size: Size,
         fixed_len: &Bytes,
         var_len: &[&[u8]],
-        blob_store: &mut dyn BlobStore,
+        blob_store: &mut BlobSet,
     ) -> Result<(PageIndex, PageOffset), Error> {
         debug_assert!(fixed_len.len() == fixed_row_size.len());
 
@@ -261,8 +262,8 @@ impl Pages {
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         row_ptr: RowPointer,
-        blob_store: &mut dyn BlobStore,
-    ) -> BlobNumBytes {
+        blob_store: &mut BlobSet,
+    ) -> Result<BlobNumBytes, BlobError> {
         let page_index = row_ptr.page_index();
 
         self.with_updating_non_full_pages(page_index, fixed_row_size, |this| {

@@ -15,13 +15,12 @@ use spacetimedb_schema::def::BTreeAlgorithm;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset};
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
 use spacetimedb_table::table::Table;
-use spacetimedb_table::tiered::{PageEvictionPolicy, PageManager};
+use spacetimedb_table::tiered::{BlobSet, PageEvictionPolicy, PageManager};
 use spacetimedb_table::var_len::{NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -192,7 +191,7 @@ fn fill_page_with_fixed_len_collect_row_pointers<R: FixedLenRow>(
                 row_size_for_type::<R>(),
                 val.as_bytes(),
                 &[],
-                &mut NullBlobStore,
+                &mut BlobSet::new_for_test(),
             )
         }
         .unwrap();
@@ -307,9 +306,9 @@ fn table_insert_one_row(c: &mut Criterion) {
         let val = black_box(val.to_product());
 
         // Insert before benching to alloc and fault in a page.
-        let mut ctx = (table, NullBlobStore);
-        let ptr = ctx.0.insert(&mut ctx.1, &val).unwrap().1.pointer();
-        let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
+        let mut ctx = (table, BlobSet::new_for_test());
+        let ptr = ctx.0.insert(&ctx.1, &val).unwrap().1.pointer();
+        let pre = |_, (table, bs): &mut (Table, BlobSet)| {
             table.delete(bs, ptr, |_| ()).unwrap();
         };
         group.bench_function(name, |b| {
@@ -357,10 +356,9 @@ fn table_delete_one_row(c: &mut Criterion) {
         let val = val.to_product();
 
         // Insert before benching to alloc and fault in a page.
-        let mut ctx = (table, NullBlobStore, PagePool::new_for_test());
-        let insert = |_: u64, (table, bs, _pool): &mut (Table, NullBlobStore, PagePool)| {
-            table.insert(bs, &val).unwrap().1.pointer()
-        };
+        let mut ctx = (table, BlobSet::new_for_test(), PagePool::new_for_test());
+        let insert =
+            |_: u64, (table, bs, _pool): &mut (Table, BlobSet, PagePool)| table.insert(bs, &val).unwrap().1.pointer();
 
         group.bench_function(name, |b| {
             iter_time_with(b, &mut ctx, insert, |row, _, (table, bs, _)| {
@@ -406,8 +404,8 @@ fn table_extract_one_row(c: &mut Criterion) {
         let mut table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
-        let mut blob_store = NullBlobStore;
-        let row = black_box(table.insert(&mut blob_store, &val).unwrap().1);
+        let blob_store = BlobSet::new_for_test();
+        let row = black_box(table.insert(&blob_store, &val).unwrap().1);
         group.bench_function(name, |b| {
             b.iter_with_large_drop(|| black_box(row.to_product_value()));
         });
@@ -535,7 +533,7 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let algo = BTreeAlgorithm { columns: cols }.into();
     let idx = tbl.new_index(&algo, unique).unwrap();
     // SAFETY: index was derived from the table.
-    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) }
+    unsafe { tbl.insert_index(&BlobSet::new_for_test(), index_id, idx) }
         .unwrap()
         .unwrap();
 
@@ -563,7 +561,9 @@ fn insert_num_same<R: IndexedRow>(
             if let Some(slot) = row.elements.get_mut(1) {
                 *slot = n.into();
             }
-            tbl.insert(&mut NullBlobStore, &row).map(|(_, row)| row.pointer()).ok()
+            tbl.insert(&BlobSet::new_for_test(), &row)
+                .map(|(_, row)| row.pointer())
+                .ok()
         })
         .last()
         .flatten()
@@ -575,7 +575,7 @@ fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u
     let key = index.key_from_algebraic_value(&key);
     let ptrs = index.seek_point(&key).collect::<Vec<_>>();
     for ptr in ptrs {
-        tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
+        tbl.delete(&BlobSet::new_for_test(), ptr, |_| ()).unwrap();
     }
 }
 
@@ -622,13 +622,13 @@ fn index_insert(c: &mut Criterion) {
         let pool = PagePool::new_for_test();
         let (tbl, index_id, num_same, _) =
             make_table_with_same_ratio::<R>(&pool, make_row_move, num_rows, same_ratio, false);
-        let mut ctx = (tbl, NullBlobStore, pool);
+        let mut ctx = (tbl, BlobSet::new_for_test(), pool);
 
         group.bench_with_input(
             bench_id_for_index(name, num_rows, same_ratio, num_same, false),
             &num_rows,
             |b, &num_rows| {
-                let pre = |_, (tbl, _, pool): &mut (Table, NullBlobStore, PagePool)| {
+                let pre = |_, (tbl, _, pool): &mut (Table, BlobSet, PagePool)| {
                     clear_all_same::<R>(tbl, index_id, num_rows);
                     insert_num_same(pool, tbl, || make_row(num_rows), num_same - 1);
                     make_row(num_rows).to_product()
@@ -683,9 +683,8 @@ fn index_seek(c: &mut Criterion) {
             &num_diff,
             |b, &num_diff| {
                 let col_to_seek = black_box(R::column_value_from_u64(num_diff / 2));
-                let index = black_box(&tbl)
-                    .get_index_by_id_with_table(&NullBlobStore, index_id)
-                    .unwrap();
+                let blobs = BlobSet::new_for_test();
+                let index = black_box(&tbl).get_index_by_id_with_table(&blobs, index_id).unwrap();
                 b.iter_custom(|num_iters| {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
@@ -758,7 +757,7 @@ fn index_delete(c: &mut Criterion) {
                     insert_num_same(&pool, tbl, || make_row(num_rows), num_same).unwrap()
                 };
                 iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| {
-                    tbl.delete(&mut NullBlobStore, ptr, |_| ())
+                    tbl.delete(&BlobSet::new_for_test(), ptr, |_| ())
                 });
             },
         );

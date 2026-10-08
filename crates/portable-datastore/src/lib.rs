@@ -22,6 +22,7 @@ use spacetimedb_schema::schema::{Schema, TableOrViewSchema, TableSchema};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
+use spacetimedb_table::tiered::TieredStorageConfig;
 use thiserror::Error;
 
 /// Commit-time behavior for a pending transaction.
@@ -61,7 +62,10 @@ impl PortableDatastore {
     /// Create an in-memory datastore initialized with the tables in `raw`.
     pub fn from_module_def(raw: RawModuleDef, module_identity: Identity) -> Result<Self, PortableDatastoreError> {
         let module_def = ModuleDef::try_from(raw.clone())?;
-        let datastore = Locking::bootstrap(module_identity, PagePool::new(None))?;
+        let datastore = Locking::bootstrap(
+            module_identity,
+            TieredStorageConfig::new_for_memory_database(PagePool::new(None)),
+        )?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let mut event_table_ids = Vec::new();
         let mut table_ids = HashMap::new();

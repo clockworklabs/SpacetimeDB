@@ -64,7 +64,7 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_table::table_index::IndexKey;
-use spacetimedb_table::tiered::PageError;
+use spacetimedb_table::tiered::TieredStorageConfig;
 use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
@@ -286,7 +286,7 @@ impl RelationalDB {
         history: impl durability::History<TxData = Txdata>,
         mut persistence: Option<Persistence>,
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
-        page_pool: PagePool,
+        storage_config: TieredStorageConfig,
     ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{database_identity}] DATABASE: OPEN");
 
@@ -310,7 +310,7 @@ impl RelationalDB {
             snapshot_repo.as_deref(),
             durable_tx_offset,
             min_commitlog_offset,
-            page_pool,
+            storage_config,
         )?;
         if let Some(persistence) = &mut persistence {
             // Sanity check because the snapshot worker could've been used before.
@@ -565,7 +565,7 @@ impl RelationalDB {
         snapshot_repo: Option<&DynSnapshotRepo>,
         durable_tx_offset: Option<TxOffset>,
         min_commitlog_offset: TxOffset,
-        page_pool: PagePool,
+        config: TieredStorageConfig,
     ) -> Result<Locking, RestoreSnapshotError> {
         // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
@@ -622,11 +622,11 @@ impl RelationalDB {
         fn restore_from_snapshot(
             database_identity: &Identity,
             snapshot: ReconstructedSnapshot,
-            page_pool: PagePool,
+            config: TieredStorageConfig,
         ) -> Result<Locking, Box<DBError>> {
             let start = std::time::Instant::now();
             let snapshot_offset = snapshot.tx_offset;
-            Locking::restore_from_snapshot(snapshot, page_pool)
+            Locking::restore_from_snapshot(snapshot, config)
                 .inspect(|_| {
                     let elapsed_time = start.elapsed();
 
@@ -664,15 +664,9 @@ impl RelationalDB {
                 | SnapshotError::BadMagic { .. }
                 | SnapshotError::BadVersion { .. } => false,
 
-                SnapshotError::Page(inner) => match inner {
-                    PageError::MemoryLimitExceeded(_) | PageError::Io(_) => true,
-
-                    PageError::TooManyPages
-                    | PageError::Page(_)
-                    | PageError::MissingPage(_)
-                    | PageError::MissingObject(_)
-                    | PageError::Deserialize(_) => false,
-                },
+                SnapshotError::Page(inner) => inner.is_transient(),
+                SnapshotError::Blob(inner) => inner.is_transient(),
+                SnapshotError::ObjectStore(inner) => inner.is_transient(),
             }
         }
 
@@ -698,7 +692,7 @@ impl RelationalDB {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
                 }
-                match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &page_pool) {
+                match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &config.page_pool) {
                     Ok(snapshot) if snapshot.database_identity != database_identity => {
                         return Err(RestoreSnapshotError::IdentityMismatch {
                             expected: database_identity,
@@ -706,7 +700,7 @@ impl RelationalDB {
                         });
                     }
                     Ok(snapshot) => {
-                        return restore_from_snapshot(&database_identity, snapshot, page_pool)
+                        return restore_from_snapshot(&database_identity, snapshot, config)
                             .map_err(RestoreSnapshotError::Datastore);
                     }
                     Err(e) => {
@@ -743,7 +737,7 @@ impl RelationalDB {
             return Err(RestoreSnapshotError::NoConnectedSnapshot { min_commitlog_offset });
         }
 
-        Locking::bootstrap(database_identity, page_pool)
+        Locking::bootstrap(database_identity, config)
             .map_err(DBError::from)
             .map_err(Box::new)
             .map_err(RestoreSnapshotError::Bootstrap)
@@ -2203,7 +2197,7 @@ pub mod tests_utils {
                 local.as_history(),
                 Some(persistence),
                 None,
-                PagePool::new_for_test(),
+                TieredStorageConfig::new_for_test(),
             )?;
             let db = db.with_row_count(Self::row_count_fn());
             Ok((db, local))
@@ -2338,7 +2332,7 @@ pub mod tests_utils {
                 history,
                 persistence,
                 metrics_recorder_queue,
-                PagePool::new_for_test(),
+                TieredStorageConfig::new_for_test(),
             )?;
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
@@ -4179,7 +4173,7 @@ mod tests {
             Some(repo.as_ref()),
             Some(last_compress),
             0,
-            PagePool::new_for_test(),
+            TieredStorageConfig::new_for_test(),
         )?;
 
         Ok(())
@@ -4209,7 +4203,7 @@ mod tests {
             Some(repo.as_ref()),
             last,
             0,
-            PagePool::new_for_test(),
+            TieredStorageConfig::new_for_test(),
         )?;
 
         let out = TempDir::with_prefix("snapshot_test")?;
@@ -4259,7 +4253,7 @@ mod tests {
                 Some(&repo),
                 Some(durable_tx_offset),
                 min_commitlog_offset,
-                PagePool::new_for_test(),
+                TieredStorageConfig::new_for_test(),
             )
         };
 

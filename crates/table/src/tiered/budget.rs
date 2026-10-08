@@ -20,6 +20,59 @@ pub struct ByteBudget {
     config: ByteBudgetConfig,
 }
 
+impl ByteBudget {
+    pub fn new(config: ByteBudgetConfig) -> Result<Self, ConfigError> {
+        config.validate_then(|config| Self {
+            state: Arc::new(Mutex::new(ByteBudgetState { accounted_bytes: 0 })),
+            config,
+        })
+    }
+
+    pub fn unlimited() -> Self {
+        Self::try_from(ByteBudgetConfig::unlimited()).unwrap()
+    }
+
+    pub fn usage(&self) -> ByteBudgetUsage {
+        ByteBudgetUsage {
+            accounted_bytes: self.state.lock().unwrap().accounted_bytes,
+        }
+    }
+
+    pub fn acquire(&self, bytes: u64) -> Result<BudgetPermit, BudgetExceeded> {
+        let mut state = self.state.lock().unwrap();
+        if state.accounted_bytes + bytes <= self.config.hard_limit_bytes {
+            state.accounted_bytes += bytes;
+            Ok(BudgetPermit {
+                state: self.state.clone(),
+                bytes,
+            })
+        } else {
+            Err(BudgetExceeded {
+                requested_bytes: bytes,
+                accounted_bytes: state.accounted_bytes,
+                hard_limit_bytes: self.config.hard_limit_bytes,
+            })
+        }
+    }
+
+    pub(super) fn force_acquire(&self, bytes: u64) -> BudgetPermit {
+        let mut state = self.state.lock().unwrap();
+        state.accounted_bytes += bytes;
+        BudgetPermit {
+            state: self.state.clone(),
+            bytes,
+        }
+    }
+}
+
+impl TryFrom<ByteBudgetConfig> for ByteBudget {
+    type Error = ConfigError;
+
+    fn try_from(config: ByteBudgetConfig) -> Result<Self, Self::Error> {
+        ByteBudget::new(config)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ByteBudgetConfig {
     pub low_water_bytes: u64,
@@ -74,47 +127,6 @@ impl Drop for BudgetPermit {
 
 pub struct ByteBudgetUsage {
     pub accounted_bytes: u64,
-}
-
-impl ByteBudget {
-    pub fn new(config: ByteBudgetConfig) -> Result<Self, ConfigError> {
-        config.validate_then(|config| Self {
-            state: Arc::new(Mutex::new(ByteBudgetState { accounted_bytes: 0 })),
-            config,
-        })
-    }
-
-    pub fn usage(&self) -> ByteBudgetUsage {
-        ByteBudgetUsage {
-            accounted_bytes: self.state.lock().unwrap().accounted_bytes,
-        }
-    }
-
-    pub fn acquire(&self, bytes: u64) -> Result<BudgetPermit, BudgetExceeded> {
-        let mut state = self.state.lock().unwrap();
-        if state.accounted_bytes + bytes <= self.config.hard_limit_bytes {
-            state.accounted_bytes += bytes;
-            Ok(BudgetPermit {
-                state: self.state.clone(),
-                bytes,
-            })
-        } else {
-            Err(BudgetExceeded {
-                requested_bytes: bytes,
-                accounted_bytes: state.accounted_bytes,
-                hard_limit_bytes: self.config.hard_limit_bytes,
-            })
-        }
-    }
-
-    pub(super) fn force_acquire(&self, bytes: u64) -> BudgetPermit {
-        let mut state = self.state.lock().unwrap();
-        state.accounted_bytes += bytes;
-        BudgetPermit {
-            state: self.state.clone(),
-            bytes,
-        }
-    }
 }
 
 #[cfg(test)]

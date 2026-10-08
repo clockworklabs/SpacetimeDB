@@ -144,7 +144,7 @@ fn serialize_benchmarks<
         PageManager::new_for_test().into(),
         PageEvictionPolicy::NeverEvict,
     );
-    let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
+    let blob_store = spacetimedb_table::tiered::BlobSet::new_for_test();
 
     let ptrs = data_pv
         .elements
