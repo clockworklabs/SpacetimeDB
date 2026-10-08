@@ -102,8 +102,8 @@ pub struct CallParams {
 
 #[derive(Deserialize)]
 pub struct CallFromDatabaseQuery {
-    /// The sender outbox table that owns this stream.
-    outbox_table_id: u32,
+    /// Stable sender-owned stream id.
+    stream_id: u64,
     /// Dense, one-based sequence number within (sender, receiver, outbox table).
     seq: u64,
     /// Highest contiguous sequence whose result the sender has already acknowledged.
@@ -281,7 +281,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
                 Some(connection_id),
                 &reducer,
                 FunctionArgs::Bsatn(body),
-                query.outbox_table_id.into(),
+                query.stream_id,
                 query.seq,
                 query.ack_prefix,
             )
@@ -289,13 +289,8 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
             .map_err(|e| map_idc_call_error(e, &reducer))?;
 
         debug!(
-            "IDC delivery accepted: sender={}, receiver={}, outbox_table_id={}, seq={}, ack_prefix={}, signature_hash={:?}",
-            caller_identity,
-            owner_identity,
-            query.outbox_table_id,
-            query.seq,
-            query.ack_prefix,
-            query.signature_hash,
+            "IDC delivery accepted: sender={}, receiver={}, stream_id={}, seq={}, ack_prefix={}, signature_hash={:?}",
+            caller_identity, owner_identity, query.stream_id, query.seq, query.ack_prefix, query.signature_hash,
         );
 
         match result {

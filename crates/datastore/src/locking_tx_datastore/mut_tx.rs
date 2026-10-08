@@ -3514,11 +3514,12 @@ impl MutTxId {
             .is_some())
     }
 
+    /// Find a sender-side stream by its durable stream id.
     fn st_outbound_stream_by_id(&self, stream_id: u64) -> Result<Option<StOutboundStreamRow>> {
         self.iter_by_col_eq(
             ST_OUTBOUND_STREAM_ID,
-            col_list![StOutboundStreamFields::StreamId],
-            &AlgebraicValue::U64(stream_id),
+            StOutboundStreamFields::StreamId,
+            &stream_id.into(),
         )?
         .map(StOutboundStreamRow::try_from)
         .next()
@@ -3624,18 +3625,27 @@ impl MutTxId {
             self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
         }
 
-        let Some(stream) = self.st_outbound_stream_by_id(row.stream_id)? else {
+        let stream = self.st_outbound_stream_by_id(row.stream_id)?;
+        let Some(stream) = stream else {
             return Ok(());
         };
-        self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &stream.clone().into())?;
+        let (outbox_table_id, target_identity, next_seq, ack_prefix) = {
+            self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &stream.clone().into())?;
+            (
+                stream.outbox_table_id,
+                stream.target_identity,
+                stream.next_seq,
+                stream.ack_prefix.max(row.seq),
+            )
+        };
         self.insert_via_serialize_bsatn(
             ST_OUTBOUND_STREAM_ID,
             &StOutboundStreamRow {
                 stream_id: row.stream_id,
-                outbox_table_id: stream.outbox_table_id,
-                target_identity: stream.target_identity,
-                next_seq: stream.next_seq,
-                ack_prefix: stream.ack_prefix.max(row.seq),
+                outbox_table_id,
+                target_identity,
+                next_seq,
+                ack_prefix,
             },
         )?;
         Ok(())

@@ -48,7 +48,6 @@ pub struct StandaloneOptions {
     pub durability: DurabilityConfig,
     pub websocket: WebSocketOptions,
     pub module_http: ModuleHttpConfig,
-    pub idc_http_port: Option<u16>,
     pub wasm: WasmConfig,
     pub v8: V8Config,
 }
@@ -85,12 +84,10 @@ impl StandaloneEnv {
 
         let persistence_provider =
             Arc::new(LocalPersistenceProvider::new(data_dir.clone()).with_durability_config(config.durability));
-        let mut runtime_config = HostRuntimeConfig::new(config.wasm, config.v8, config.module_http);
-        runtime_config.idc_http_port = config.idc_http_port;
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
-            runtime_config,
+            HostRuntimeConfig::new(config.wasm, config.v8, config.module_http),
             program_store.clone(),
             energy_monitor,
             Arc::new(()),
@@ -131,6 +128,12 @@ impl StandaloneEnv {
 
     pub fn bsatn_rlb_pool(&self) -> &BsatnRowListBuilderPool {
         &self.host_controller.bsatn_rlb_pool
+    }
+
+    pub fn set_idc_http_port(&self, port: u16) -> anyhow::Result<()> {
+        self.host_controller
+            .set_idc_http_port(port)
+            .map_err(|_| anyhow::anyhow!("port already set"))
     }
 }
 

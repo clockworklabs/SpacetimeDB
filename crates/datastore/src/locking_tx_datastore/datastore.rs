@@ -1143,7 +1143,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, Identity, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, ViewId};
+    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, TableId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;

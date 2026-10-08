@@ -32,6 +32,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use scopeguard::{defer, guard};
 use spacetimedb_client_api_messages::name::EnvironmentVersionConflict;
@@ -220,13 +221,14 @@ pub struct HostController {
     db_cores: JobCores,
     /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
+    /// Local HTTP port used by `IdcActor` to call receiver reducers.
+    idc_http_port: OnceCell<u16>,
 }
 
 pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
     module_http: ModuleHttpConfig,
-    idc_http_port: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -234,17 +236,11 @@ pub struct HostRuntimeConfig {
     pub wasm: WasmConfig,
     pub v8: V8Config,
     pub module_http: ModuleHttpConfig,
-    pub idc_http_port: Option<u16>,
 }
 
 impl HostRuntimeConfig {
     pub fn new(wasm: WasmConfig, v8: V8Config, module_http: ModuleHttpConfig) -> Self {
-        Self {
-            wasm,
-            v8,
-            module_http,
-            idc_http_port: None,
-        }
+        Self { wasm, v8, module_http }
     }
 }
 
@@ -253,12 +249,10 @@ impl HostRuntimes {
         let wasmtime = WasmtimeRuntime::new(data_dir, config.wasm);
         let v8 = V8Runtime::new(config.v8);
         let module_http = config.module_http;
-        let idc_http_port = config.idc_http_port;
         Arc::new(Self {
             wasmtime,
             v8,
             module_http,
-            idc_http_port,
         })
     }
 }
@@ -394,6 +388,7 @@ impl HostController {
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
+            idc_http_port: OnceCell::new(),
         }
     }
 
@@ -406,6 +401,10 @@ impl HostController {
     /// Replace the [`ProgramStorage`] used by this controller.
     pub fn set_program_storage(&mut self, ps: ProgramStorage) {
         self.program_storage = ps;
+    }
+
+    pub fn set_idc_http_port(&self, port: u16) -> Result<(), u16> {
+        self.idc_http_port.set(port)
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -1229,7 +1228,8 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
-    _idc_actor: Option<IdcActor>,
+    idc_http_port: u16,
+    _idc_actor: IdcActor,
 }
 
 impl Host {
@@ -1483,16 +1483,18 @@ impl Host {
         module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
-        let idc_actor = host_controller.runtimes.idc_http_port.map(|http_port| {
-            idc_starter.start(
-                replica_ctx.relational_db().clone(),
-                IdcActorConfig {
-                    sender_identity: replica_ctx.database_identity,
-                    http_port,
-                },
-                module_host.downgrade(),
-            )
-        });
+        let idc_http_port = *host_controller
+            .idc_http_port
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("Port for IDC actor is not initialized"))?;
+        let idc_actor = idc_starter.start(
+            replica_ctx.relational_db().clone(),
+            IdcActorConfig {
+                sender_identity: replica_ctx.database_identity,
+                http_port: idc_http_port,
+            },
+            module_host.downgrade(),
+        );
         let disk_metrics_recorder_task: spacetimedb_runtime::AbortHandle =
             tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
@@ -1508,6 +1510,7 @@ impl Host {
                 disk_metrics_recorder_task,
                 tx_metrics_recorder_task,
                 view_cleanup_task,
+                idc_http_port,
                 _idc_actor: idc_actor,
             },
             bootstrap_completion,
@@ -1620,19 +1623,17 @@ impl Host {
             UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
-                self._idc_actor = runtimes.idc_http_port.map(|http_port| {
-                    idc_starter
-                        .take()
-                        .expect("IDC actor should start once per module update")
-                        .start(
-                            replica_ctx.relational_db().clone(),
-                            IdcActorConfig {
-                                sender_identity: replica_ctx.database_identity,
-                                http_port,
-                            },
-                            module.downgrade(),
-                        )
-                });
+                self._idc_actor = idc_starter
+                    .take()
+                    .expect("IDC actor should start once per module update")
+                    .start(
+                        replica_ctx.relational_db().clone(),
+                        IdcActorConfig {
+                            sender_identity: replica_ctx.database_identity,
+                            http_port: self.idc_http_port,
+                        },
+                        module.downgrade(),
+                    );
                 let old_module = self.module.send_replace(module);
                 old_module.exit().await;
             }
@@ -1657,19 +1658,17 @@ impl Host {
 
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
-                self._idc_actor = runtimes.idc_http_port.map(|http_port| {
-                    idc_starter
-                        .take()
-                        .expect("IDC actor should start once per module update")
-                        .start(
-                            replica_ctx.relational_db().clone(),
-                            IdcActorConfig {
-                                sender_identity: replica_ctx.database_identity,
-                                http_port,
-                            },
-                            module.downgrade(),
-                        )
-                });
+                self._idc_actor = idc_starter
+                    .take()
+                    .expect("IDC actor should start once per module update")
+                    .start(
+                        replica_ctx.relational_db().clone(),
+                        IdcActorConfig {
+                            sender_identity: replica_ctx.database_identity,
+                            http_port: self.idc_http_port,
+                        },
+                        module.downgrade(),
+                    );
                 // exit the old module, drop the `old_watcher` afterwards,
                 // which will signal websocket clients that the module is gone.
                 let old_module = old_watcher.borrow().clone();

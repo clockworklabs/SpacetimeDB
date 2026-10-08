@@ -2480,7 +2480,7 @@ impl ModuleHost {
     async fn call_idc_reducer_with_params(
         &self,
         sender_identity: Identity,
-        sender_outbox_table_id: u64,
+        stream_id: u64,
         seq: u64,
         ack_prefix: u64,
         reducer_name: &ReducerName,
@@ -2490,10 +2490,10 @@ impl ModuleHost {
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let (tx, decision) = stdb
             .with_auto_rollback(tx, |tx| {
-                tx.trim_inbound_idc_outcomes(sender_identity, sender_outbox_table_id, ack_prefix)?;
-                let applied_prefix = tx.inbound_idc_applied_prefix(sender_identity, sender_outbox_table_id)?;
+                tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)?;
+                let applied_prefix = tx.inbound_idc_applied_prefix(sender_identity, stream_id)?;
                 let decision = if seq <= applied_prefix {
-                    match tx.inbound_idc_outcome(sender_identity, sender_outbox_table_id, seq)? {
+                    match tx.inbound_idc_outcome(sender_identity, stream_id, seq)? {
                         Some(row) => IdcDeliveryDecision::Replayed(row),
                         None => IdcDeliveryDecision::AlreadyAcked,
                     }
@@ -2516,7 +2516,7 @@ impl ModuleHost {
                 let on_success: ReducerSuccessAction = Box::new(move |tx, reducer_return_value| {
                     tx.record_inbound_idc_outcome(
                         sender_identity,
-                        sender_outbox_table_id,
+                        stream_id,
                         seq,
                         StInboundMsgResultStatus::Ok,
                         reducer_return_value.clone().unwrap_or_default(),
@@ -2558,7 +2558,7 @@ impl ModuleHost {
                     };
                     tx.record_inbound_idc_outcome(
                         sender_identity,
-                        sender_outbox_table_id,
+                        stream_id,
                         seq,
                         StInboundMsgResultStatus::Err,
                         payload,
@@ -2738,7 +2738,7 @@ impl ModuleHost {
         caller_connection_id: Option<ConnectionId>,
         reducer_name: &str,
         args: FunctionArgs,
-        sender_outbox_table_id: u64,
+        stream_id: u64,
         seq: u64,
         ack_prefix: u64,
     ) -> Result<IdcReducerCallOutcome, IdcReducerCallError> {
@@ -2754,15 +2754,8 @@ impl ModuleHost {
             )
             .map_err(IdcReducerCallError::Reducer)?;
 
-        self.call_idc_reducer_with_params(
-            caller_identity,
-            sender_outbox_table_id,
-            seq,
-            ack_prefix,
-            &reducer_def.name,
-            params,
-        )
-        .await
+        self.call_idc_reducer_with_params(caller_identity, stream_id, seq, ack_prefix, &reducer_def.name, params)
+            .await
     }
 
     pub async fn enqueue_reducer(

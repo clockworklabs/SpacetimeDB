@@ -42,7 +42,7 @@ pub struct IdcActorStarter {
 
 impl IdcActorStarter {
     pub fn start(self, db: Arc<RelationalDB>, config: IdcActorConfig, module_host: WeakModuleHost) -> IdcActor {
-        let abort = tokio::spawn(run_idc_loop(db, config, module_host, self.rx)).abort_handle();
+        let abort = tokio::spawn(run_idc_loop(db, config, Some(module_host), self.rx)).abort_handle();
         IdcActor { _abort: abort }
     }
 }
@@ -68,6 +68,10 @@ struct PendingMessage {
 }
 
 impl PendingMessage {
+    fn stream_id(&self) -> u64 {
+        self.st_row.stream_id
+    }
+
     fn outbox_table_id(&self) -> TableId {
         self.outbox_table_id
     }
@@ -151,7 +155,7 @@ enum DeliveryOutcome {
 async fn run_idc_loop(
     db: Arc<RelationalDB>,
     config: IdcActorConfig,
-    module_host: WeakModuleHost,
+    module_host: Option<WeakModuleHost>,
     mut notify_rx: mpsc::UnboundedReceiver<()>,
 ) {
     let client = reqwest::Client::builder()
@@ -216,7 +220,7 @@ async fn run_idc_loop(
                     queue.queue.pop_front();
                     queue.record_success();
                     any_progress = true;
-                    finalize_message(&db, &module_host, msg, outcome).await;
+                    finalize_message(&db, module_host.as_ref(), msg, outcome).await;
                 }
             }
         }
@@ -261,7 +265,7 @@ fn outcome_to_result(outcome: &DeliveryOutcome) -> (StInboundMsgResultStatus, By
 
 async fn finalize_message(
     db: &RelationalDB,
-    module_host: &WeakModuleHost,
+    module_host: Option<&WeakModuleHost>,
     msg: PendingMessage,
     outcome: DeliveryOutcome,
 ) {
@@ -270,7 +274,7 @@ async fn finalize_message(
         return;
     };
 
-    let Some(host) = module_host.upgrade() else {
+    let Some(host) = module_host.and_then(WeakModuleHost::upgrade) else {
         log::warn!(
             "idc_actor: module host gone, cannot call on_result reducer '{}' for outbox_table_id={:?}, seq={}",
             on_result_reducer,
@@ -378,14 +382,13 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Delivery
     for st_row in st_rows {
         let Some(stream) = stream_rows.get(&st_row.stream_id) else {
             log::error!(
-                "idc_actor: cannot find stream {:?} for outbound msg_id={}, seq={}",
+                "idc_actor: cannot find outbound stream for stream_id={}, msg_id={}",
                 st_row.stream_id,
                 st_row.msg_id,
-                st_row.seq,
             );
+            ack_message(db, st_row);
             continue;
         };
-
         let schema = match db.schema_for_table(&tx, stream.outbox_table_id) {
             Ok(schema) => schema,
             Err(e) => {
@@ -442,7 +445,7 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Delivery
     }
     drop(tx);
 
-    pending.sort_by_key(|msg| (msg.outbox_table_id(), msg.target_identity(), msg.seq()));
+    pending.sort_by_key(|msg| (msg.stream_id(), msg.seq()));
     for msg in pending {
         let stream_key = DeliveryStreamKey {
             outbox_table_id: msg.outbox_table_id(),
@@ -453,7 +456,7 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Delivery
         let already_queued = queue
             .queue
             .iter()
-            .any(|queued| queued.outbox_table_id() == msg.outbox_table_id() && queued.seq() == msg.seq());
+            .any(|queued| queued.stream_id() == msg.stream_id() && queued.seq() == msg.seq());
         if !already_queued {
             queue.queue.push_back(msg);
         }
@@ -475,10 +478,10 @@ fn encode_reducer_args(row: &ProductValue, msg_col: ColId, target_col: ColId) ->
 async fn attempt_delivery(client: &reqwest::Client, config: &IdcActorConfig, msg: &PendingMessage) -> DeliveryOutcome {
     let target_db_hex = msg.target_identity().to_hex();
     let mut url = format!(
-        "http://localhost:{}/v1/database/{target_db_hex}/call-from-database/{}?outbox_table_id={}&seq={}&ack_prefix={}",
+        "http://localhost:{}/v1/database/{target_db_hex}/call-from-database/{}?stream_id={}&seq={}&ack_prefix={}",
         config.http_port,
         msg.target_reducer,
-        msg.st_row.stream_id,
+        msg.stream_id(),
         msg.seq(),
         msg.ack_prefix,
     );
@@ -556,5 +559,191 @@ fn ack_message(db: &RelationalDB, st_row: StOutboundMsgRow) {
         let _ = db.rollback_mut_tx(tx);
     } else if let Err(e) = db.commit_tx(tx) {
         log::error!("idc_actor: failed to commit outbound IDC ack: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::{Path, Query, State};
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+    use axum::routing::post;
+    use axum::Router;
+    use spacetimedb_datastore::system_tables::{
+        IdentityViaU256, StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID,
+    };
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
+    use spacetimedb_primitives::ColId;
+    use spacetimedb_sats::bsatn::to_vec;
+    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::schema::{ColumnSchema, OutboxSchema, TableSchema};
+    use spacetimedb_schema::table_name::TableName;
+    use spacetimedb_table::page_pool::PagePool;
+    use std::collections::HashMap;
+    use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
+
+    #[derive(Debug)]
+    struct CapturedRequest {
+        target_db: String,
+        reducer: String,
+        query: HashMap<String, String>,
+        body: Bytes,
+    }
+
+    async fn capture_idc_call(
+        State(tx): State<mpsc::UnboundedSender<CapturedRequest>>,
+        Path((target_db, reducer)): Path<(String, String)>,
+        Query(query): Query<HashMap<String, String>>,
+        body: Bytes,
+    ) -> impl IntoResponse {
+        tx.send(CapturedRequest {
+            target_db,
+            reducer,
+            query,
+            body,
+        })
+        .expect("test receiver should still be listening");
+        (StatusCode::OK, Bytes::from_static(b"remote-ok"))
+    }
+
+    fn open_test_db() -> Arc<RelationalDB> {
+        let (db, _) = RelationalDB::open(
+            Identity::ZERO,
+            Identity::ZERO,
+            spacetimedb_durability::EmptyHistory::new(),
+            None,
+            None,
+            PagePool::new_for_test(),
+        )
+        .expect("failed to open test database");
+        Arc::new(db)
+    }
+
+    fn outbox_schema() -> TableSchema {
+        TableSchema::new(
+            TableId::SENTINEL,
+            TableName::for_test("outbox"),
+            None,
+            vec![
+                ColumnSchema::for_test(0, "target", AlgebraicType::U256),
+                ColumnSchema::for_test(1, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(2, "value", AlgebraicType::U32),
+            ],
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            Some(ColId(1)),
+            false,
+            None,
+            Some(OutboxSchema {
+                remote_reducer: Identifier::new_unsafe_assume_valid("receive_value".into()),
+                target_column: ColId(0),
+                on_result_reducer: None,
+                signature_hash: Some("receiver-signature".into()),
+            }),
+        )
+    }
+
+    fn insert_outbox_message(db: &RelationalDB, target: Identity, value: u32) -> anyhow::Result<TableId> {
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let table_id = db.create_table(&mut tx, outbox_schema())?;
+        let row = to_vec(&product![IdentityViaU256(target), 7u64, value])?;
+        let (row_ptr, insert_flags) = {
+            let (_, row_ref, insert_flags) = db.insert(&mut tx, table_id, &row)?;
+            (row_ref.pointer(), insert_flags)
+        };
+        assert!(insert_flags.is_outbox_table);
+        tx.record_outbox_insert(table_id, row_ptr)?;
+        db.commit_tx(tx)?;
+        Ok(table_id)
+    }
+
+    #[tokio::test]
+    async fn idc_actor_delivers_outbox_message_and_acks_stream() -> anyhow::Result<()> {
+        let (captured_tx, mut captured_rx) = mpsc::unbounded_channel();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let app = Router::new()
+            .route(
+                "/v1/database/:target_db/call-from-database/:reducer",
+                post(capture_idc_call),
+            )
+            .with_state(captured_tx);
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let http_port = listener.local_addr()?.port();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+        });
+
+        let db = open_test_db();
+        let target = Identity::ONE;
+        insert_outbox_message(&db, target, 42)?;
+        let (_notify_tx, notify_rx) = mpsc::unbounded_channel();
+        let actor = tokio::spawn(run_idc_loop(
+            db.clone(),
+            IdcActorConfig {
+                sender_identity: Identity::ZERO,
+                http_port,
+            },
+            None,
+            notify_rx,
+        ));
+
+        let captured = tokio::time::timeout(Duration::from_secs(5), captured_rx.recv())
+            .await?
+            .expect("IDC actor should call the receiver");
+        assert_eq!(captured.target_db, target.to_hex().to_string());
+        assert_eq!(captured.reducer, "receive_value");
+        assert_eq!(captured.query.get("stream_id").map(String::as_str), Some("1"));
+        assert_eq!(captured.query.get("seq").map(String::as_str), Some("1"));
+        assert_eq!(captured.query.get("ack_prefix").map(String::as_str), Some("0"));
+        assert_eq!(
+            captured.query.get("signature_hash").map(String::as_str),
+            Some("receiver-signature")
+        );
+        let request_row = product![IdentityViaU256(target), 7u64, 42u32];
+        assert_eq!(
+            captured.body,
+            Bytes::from(encode_reducer_args(&request_row, ColId(1), ColId(0)))
+        );
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let tx = db.begin_tx(Workload::Internal);
+                let outbound_msgs = db
+                    .iter(&tx, ST_OUTBOUND_MSG_ID)
+                    .expect("can read st_outbound_msg")
+                    .map(StOutboundMsgRow::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+                    .expect("st_outbound_msg rows decode");
+                let streams = db
+                    .iter(&tx, ST_OUTBOUND_STREAM_ID)
+                    .expect("can read st_outbound_stream")
+                    .map(StOutboundStreamRow::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+                    .expect("st_outbound_stream rows decode");
+                let _ = db.release_tx(tx);
+
+                if outbound_msgs.is_empty() && streams.len() == 1 && streams[0].ack_prefix == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await?;
+
+        actor.abort();
+        let _ = shutdown_tx.send(());
+        server.await??;
+        Ok(())
     }
 }
