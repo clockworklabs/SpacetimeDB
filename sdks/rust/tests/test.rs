@@ -211,7 +211,7 @@ macro_rules! declare_tests_with_suffix {
 
             #[test]
             fn update_uuid() {
-                make_test("delete-uuid").run();
+                make_test("update-uuid").run();
             }
 
             #[test]
@@ -237,6 +237,16 @@ macro_rules! declare_tests_with_suffix {
             #[test]
             fn insert_option_none() {
                 make_test("insert-option-none").run();
+            }
+
+            #[test]
+            fn delete_option_some() {
+                make_test("delete-option-some").run();
+            }
+
+            #[test]
+            fn delete_option_none() {
+                make_test("delete-option-none").run();
             }
 
             #[test]
