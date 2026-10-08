@@ -3,6 +3,7 @@ use lean_string::LeanString;
 use spacetimedb_data_structures::map::{Equivalent, HashSet};
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
+use std::borrow::Borrow;
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -132,15 +133,27 @@ impl Deref for Identifier {
     }
 }
 
-impl Equivalent<Identifier> for str {
+impl Borrow<str> for Identifier {
+    fn borrow(&self) -> &str {
+        self
+    }
+}
+
+impl Equivalent<Identifier> for String {
     fn equivalent(&self, other: &Identifier) -> bool {
-        self == &other.id[..]
+        self.as_str().equivalent(other)
     }
 }
 
 impl PartialEq<str> for Identifier {
     fn eq(&self, other: &str) -> bool {
         &self.id[..] == other
+    }
+}
+
+impl PartialEq<Identifier> for str {
+    fn eq(&self, other: &Identifier) -> bool {
+        other == self
     }
 }
 

@@ -1,9 +1,8 @@
 ---
 source: crates/bindings/tests/deps.rs
-assertion_line: 16
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 72
+total crates: 73
 spacetimedb
 ├── anyhow
 ├── bytemuck
@@ -70,6 +69,7 @@ spacetimedb
 │   │   └── rustc_version
 │   │       └── semver
 │   ├── hex
+│   ├── paste
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_primitives (*)
 │   └── spacetimedb_sats

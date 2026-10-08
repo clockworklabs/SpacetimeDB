@@ -1226,6 +1226,7 @@ dependencies = [
  "blake3",
  "derive_more",
  "hex",
+ "paste",
  "spacetimedb-bindings-macro",
  "spacetimedb-primitives",
  "spacetimedb-sats",
