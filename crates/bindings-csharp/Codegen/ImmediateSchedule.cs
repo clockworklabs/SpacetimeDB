@@ -16,29 +16,30 @@ internal static class ImmediateSchedule
     )
     {
         var cache = $"__Schedule{name}Names";
+        var resolve = $"__ResolveSchedule{name}Name";
         var contextType = UniqueName("__Context", args);
         var context = UniqueName("__context", args);
         var resolvedName = UniqueName("__name", args);
         return $$"""
 
-            private static class {{cache}}
+            private static string?[] {{cache}} => field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
+
+            private static string {{resolve}}(int contextInstance)
             {
-                private static readonly string?[] Names = new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
-                internal static string Get(int contextInstance) => Names[contextInstance] ??= Create(contextInstance);
-                private static string Create(int contextInstance)
+                var names = {{cache}};
+                if (names[contextInstance] is { } name)
                 {
-                    var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
+                    return name;
+                }
+                var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
                 assembly,
                 true
             )}});
-                    return Names[instance] ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(instance, nameof({{identifier}}), {{(
+                return names[contextInstance] = names[instance] ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(instance, nameof({{identifier}}), {{(
                 string.IsNullOrEmpty(canonicalName)
                     ? "null"
                     : SymbolDisplay.FormatLiteral(canonicalName!, true)
             )}});
-                }
-                // Resolve only after the root installs namespace placements.
-                static {{cache}}() { }
             }
 
             [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
@@ -47,7 +48,7 @@ internal static class ImmediateSchedule
             )}})
                 where {{contextType}} : global::SpacetimeDB.Internal.IModuleContext
             {
-                var {{resolvedName}} = {{cache}}.Get({{context}}.InstanceId);
+                var {{resolvedName}} = {{resolve}}({{context}}.InstanceId);
                 using var stream = new MemoryStream();
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
