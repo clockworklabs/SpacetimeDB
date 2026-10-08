@@ -182,7 +182,13 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StEventTableRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID => false,
+        ST_TABLE_ACCESSOR_ID
+        | ST_INDEX_ACCESSOR_ID
+        | ST_COLUMN_ACCESSOR_ID
+        | ST_OUTBOUND_STREAM_ID
+        | ST_OUTBOUND_MSG_ID
+        | ST_INBOUND_STREAM_ID
+        | ST_INBOUND_MSG_ID => false,
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -207,7 +213,7 @@ pub enum SystemTable {
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 21] {
+pub fn system_tables() -> [TableSchema; 25] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -231,6 +237,10 @@ pub fn system_tables() -> [TableSchema; 21] {
         st_index_accessor_schema(),
         st_column_accessor_schema(),
         st_env_schema(),
+        st_outbound_stream_schema(),
+        st_outbound_msg_schema(),
+        st_inbound_stream_schema(),
+        st_inbound_msg_schema(),
     ]
 }
 
@@ -280,6 +290,10 @@ pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
 pub(crate) const ST_ENV_IDX: usize = 20;
+pub(crate) const ST_OUTBOUND_STREAM_IDX: usize = 21;
+pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 22;
+pub(crate) const ST_INBOUND_STREAM_IDX: usize = 23;
+pub(crate) const ST_INBOUND_MSG_IDX: usize = 24;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -316,7 +330,9 @@ macro_rules! st_fields_enum {
 }
 
 mod environment;
+mod idc;
 pub use environment::*;
+pub use idc::*;
 
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StTableFields {
@@ -676,6 +692,7 @@ fn system_module_def() -> ModuleDef {
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
     environment::register_table(&mut builder);
+    idc::register_tables(&mut builder);
 
     let result = builder
         .finish()
@@ -703,6 +720,10 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
     validate_system_table::<StEnvFields>(&result, ST_ENV_NAME);
+    validate_system_table::<StOutboundStreamFields>(&result, ST_OUTBOUND_STREAM_NAME);
+    validate_system_table::<StOutboundMsgFields>(&result, ST_OUTBOUND_MSG_NAME);
+    validate_system_table::<StInboundStreamFields>(&result, ST_INBOUND_STREAM_NAME);
+    validate_system_table::<StInboundMsgFields>(&result, ST_INBOUND_MSG_NAME);
 
     result
 }
@@ -752,6 +773,11 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
         m.insert("st_env_key_key", ConstraintId(26));
+        m.insert("st_outbound_stream_stream_id_key", ConstraintId(27));
+        m.insert("st_outbound_stream_outbox_table_id_target_identity_key", ConstraintId(28));
+        m.insert("st_outbound_msg_stream_id_seq_key", ConstraintId(29));
+        m.insert("st_inbound_stream_sender_identity_stream_id_key", ConstraintId(30));
+        m.insert("st_inbound_msg_sender_identity_stream_id_seq_key", ConstraintId(31));
         m
     };
 }
@@ -791,6 +817,11 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
         m.insert("st_env_key_idx_btree", IndexId(30));
+        m.insert("st_outbound_stream_stream_id_idx_btree", IndexId(31));
+        m.insert("st_outbound_stream_outbox_table_id_target_identity_idx_btree", IndexId(32));
+        m.insert("st_outbound_msg_stream_id_seq_idx_btree", IndexId(33));
+        m.insert("st_inbound_stream_sender_identity_stream_id_idx_btree", IndexId(34));
+        m.insert("st_inbound_msg_sender_identity_stream_id_seq_idx_btree", IndexId(35));
         m
     };
 }
@@ -807,6 +838,7 @@ lazy_static::lazy_static! {
         m.insert("st_sequence_sequence_id_seq", SequenceId(5));
         m.insert("st_view_view_id_seq", SequenceId(6));
         m.insert("st_view_arg_id_seq", SequenceId(7));
+        m.insert("st_outbound_stream_stream_id_seq", SequenceId(8));
         m
     };
 }
@@ -981,6 +1013,10 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
         ST_ENV_ID => Some(st_env_schema()),
+        ST_OUTBOUND_STREAM_ID => Some(st_outbound_stream_schema()),
+        ST_OUTBOUND_MSG_ID => Some(st_outbound_msg_schema()),
+        ST_INBOUND_STREAM_ID => Some(st_inbound_stream_schema()),
+        ST_INBOUND_MSG_ID => Some(st_inbound_msg_schema()),
         _ => None,
     }
 }

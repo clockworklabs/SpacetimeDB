@@ -1067,7 +1067,10 @@ pub(crate) mod tests {
         ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
         ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
-    use crate::system_tables::{ST_ENV_ID, ST_ENV_NAME};
+    use crate::system_tables::{
+        ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
+        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME,
+    };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use core::{fmt, mem};
@@ -1529,6 +1532,10 @@ pub(crate) mod tests {
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_OUTBOUND_STREAM_ID.into(), name: ST_OUTBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_OUTBOUND_MSG_ID.into(), name: ST_OUTBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
 
         ]));
         #[rustfmt::skip]
@@ -1628,6 +1635,30 @@ pub(crate) mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
             ColRow { table: ST_ENV_ID.into(), pos: 0, name: "key", ty: AlgebraicType::String },
             ColRow { table: ST_ENV_ID.into(), pos: 1, name: "value", ty: AlgebraicType::String },
+
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 0, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 1, name: "outbox_table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 2, name: "target_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 3, name: "next_seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 4, name: "ack_prefix", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 0, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 1, name: "msg_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 3, name: "retry_count", ty: AlgebraicType::U32 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 4, name: "last_transport_error", ty: AlgebraicType::option(AlgebraicType::String) },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 5, name: "result_status", ty: AlgebraicType::option(AlgebraicType::U8) },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 6, name: "result_payload", ty: AlgebraicType::option(AlgebraicType::bytes()) },
+
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 1, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 2, name: "applied_prefix", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_status", ty: AlgebraicType::U8 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 4, name: "result_payload", ty: AlgebraicType::bytes() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1661,6 +1692,11 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
+            IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
+            IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
+            IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1673,6 +1709,7 @@ pub(crate) mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
                 SequenceRow { id: 6, table: ST_VIEW_ID.into(), col_pos: 0, name: "st_view_view_id_seq", start },
                 SequenceRow { id: 7, table: ST_VIEW_ARG_ID.into(), col_pos: 0, name: "st_view_arg_id_seq", start },
+                SequenceRow { id: 8, table: ST_OUTBOUND_STREAM_ID.into(), col_pos: 0, name: "st_outbound_stream_stream_id_seq", start },
             ],
             |row| StSequenceRow {
                 allocated: start - 1,
@@ -1707,6 +1744,11 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
             ConstraintRow { constraint_id: 26, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
+            ConstraintRow { constraint_id: 27, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_stream_stream_id_key", },
+            ConstraintRow { constraint_id: 28, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col_list![1, 2], constraint_name: "st_outbound_stream_outbox_table_id_target_identity_key", },
+            ConstraintRow { constraint_id: 29, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_outbound_msg_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 30, table_id: ST_INBOUND_STREAM_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_inbound_stream_sender_identity_stream_id_key", },
+            ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2172,6 +2214,11 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
+            IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
+            IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
+            IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
