@@ -7,9 +7,19 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, sats::product, AlgebraicValue, Identity};
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule, ModuleHandle, DEFAULT_CONFIG};
 use std::collections::BTreeMap;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 type Values = BTreeMap<String, String>;
+
+fn emcc_is_available() -> bool {
+    Command::new("emcc")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
 
 async fn sql(module: &ModuleHost, statement: &str) -> Vec<spacetimedb_lib::ProductValue> {
     spacetimedb::sql::execute::run(
@@ -334,11 +344,19 @@ fn typescript_environment_publish_and_checked_reads() {
 #[test]
 #[serial]
 fn cpp_environment_publish_and_checked_reads() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     exercise_fixture("module-test-cpp");
 }
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn csharp_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-cs");
 }

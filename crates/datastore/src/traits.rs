@@ -9,7 +9,7 @@ use crate::execution_context::Workload;
 use crate::system_tables::ST_TABLE_ID;
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_data_structures::small_map::SmallHashMap;
-use spacetimedb_durability::TxOffset;
+pub type TxOffset = u64;
 use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
