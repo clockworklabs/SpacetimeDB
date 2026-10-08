@@ -2776,4 +2776,98 @@ mod test {
 
         Ok(())
     }
+
+    /// Accept one TLS connection on loopback, read the client's ClientHello,
+    /// and return the protocols it offers via ALPN (empty if it offers none).
+    ///
+    /// The server never answers, so the client's handshake fails. That is enough:
+    /// an HTTP/2-only server such as APNs can only select `h2` if the client offers it.
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn spawn_client_hello_server() -> (u16, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::Read;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind test server");
+        let port = listener
+            .local_addr()
+            .expect("failed to read test server address")
+            .port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test server failed to accept");
+
+            // TLS record header: content type, legacy version, length (RFC 8446 §5.1).
+            let mut header = [0u8; 5];
+            stream
+                .read_exact(&mut header)
+                .expect("test server failed to read record");
+            assert_eq!(header[0], 22, "client should open with a handshake record");
+            let mut record = vec![0u8; u16::from_be_bytes([header[3], header[4]]) as usize];
+            stream
+                .read_exact(&mut record)
+                .expect("test server failed to read record");
+            assert_eq!(record[0], 1, "first handshake message should be a ClientHello");
+
+            // ClientHello (RFC 8446 §4.1.2), after the 4-byte handshake header:
+            // legacy_version(2), random(32), then variable-length fields.
+            let u16_at = |i: usize| u16::from_be_bytes([record[i], record[i + 1]]) as usize;
+            let mut i = 4 + 2 + 32;
+            i += 1 + record[i] as usize; // legacy_session_id
+            i += 2 + u16_at(i); // cipher_suites
+            i += 1 + record[i] as usize; // legacy_compression_methods
+            let extensions_end = i + 2 + u16_at(i);
+            i += 2;
+            while i < extensions_end {
+                let (ty, len) = (u16_at(i), u16_at(i + 2));
+                i += 4;
+                // application_layer_protocol_negotiation (RFC 7301 §3.1).
+                if ty == 16 {
+                    let (mut j, end) = (i + 2, i + 2 + u16_at(i));
+                    let mut protocols = Vec::new();
+                    while j < end {
+                        let len = record[j] as usize;
+                        protocols.push(String::from_utf8_lossy(&record[j + 1..j + 1 + len]).into_owned());
+                        j += 1 + len;
+                    }
+                    return protocols;
+                }
+                i += len;
+            }
+            Vec::new()
+        });
+        (port, handle)
+    }
+
+    /// A procedure's HTTPS request offers HTTP/2, so HTTP/2-only APIs such as APNs are reachable.
+    ///
+    /// Only the ClientHello is checked, because the client trusts the OS root store
+    /// and a loopback server cannot present a certificate it accepts.
+    #[test]
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn http_request_offers_h2_over_tls() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, runtime) = instance_env(db)?;
+
+        let (port, server) = spawn_client_hello_server();
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: Vec::<(Option<Box<str>>, Box<[u8]>)>::new().into_iter().collect(),
+            timeout: None,
+            uri: format!("https://127.0.0.1:{port}/"),
+            version: st_http::Version::Http11,
+        };
+        let result = runtime.block_on(async {
+            env.http_request(request, bytes::Bytes::new())
+                .expect("failed to start HTTP request")
+                .await
+        });
+        assert!(result.is_err(), "the test server never completes the handshake");
+        let offered = server.join().expect("test server thread panicked");
+
+        assert!(
+            offered.iter().any(|protocol| protocol == "h2"),
+            "procedure HTTPS requests should offer `h2` via ALPN; offered {offered:?}"
+        );
+
+        Ok(())
+    }
 }

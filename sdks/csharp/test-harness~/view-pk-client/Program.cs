@@ -121,20 +121,13 @@ void RequirePlayer(ViewPkPlayer row, ulong id, string name)
 TestConnection Connect()
 {
     var connected = false;
-    var disconnected = false;
-    var conn = DbConnection.Builder()
+    var builder = DbConnection.Builder()
         .WithUri(serverUrl)
         .WithDatabaseName(dbName)
         .OnConnect((_, _, _) => connected = true)
-        .OnConnectError(err => throw err)
-        .OnDisconnect((_, err) =>
-        {
-            disconnected = true;
-            throw new Exception("Unexpected disconnect", err);
-        })
-        .Build();
+        .OnConnectError(err => throw err);
 
-    var test = new TestConnection(conn, () => disconnected);
+    var test = new TestConnection(builder);
     test.FrameTickUntil(() => connected);
     return test;
 }
@@ -147,9 +140,24 @@ void Require(bool condition, string message)
     }
 }
 
-sealed class TestConnection(DbConnection db, Func<bool> disconnected) : IDisposable
+sealed class TestConnection : IDisposable
 {
-    public DbConnection Db { get; } = db;
+    private bool disconnected;
+    private bool disposing;
+    public DbConnection Db { get; }
+
+    public TestConnection(DbConnectionBuilder<DbConnection> builder)
+    {
+        Db = builder.OnDisconnect((_, err) =>
+        {
+            disconnected = true;
+            if (disposing && err == null)
+            {
+                return;
+            }
+            throw new Exception("Unexpected disconnect", err);
+        }).Build();
+    }
 
     public void FrameTickUntil(Func<bool> predicate)
     {
@@ -160,7 +168,7 @@ sealed class TestConnection(DbConnection db, Func<bool> disconnected) : IDisposa
             {
                 throw new Exception("Timed out waiting for test condition");
             }
-            if (disconnected())
+            if (disconnected)
             {
                 throw new Exception("Connection disconnected before test completed");
             }
@@ -169,5 +177,9 @@ sealed class TestConnection(DbConnection db, Func<bool> disconnected) : IDisposa
         }
     }
 
-    public void Dispose() => Db.Disconnect();
+    public void Dispose()
+    {
+        disposing = true;
+        Db.Disconnect();
+    }
 }

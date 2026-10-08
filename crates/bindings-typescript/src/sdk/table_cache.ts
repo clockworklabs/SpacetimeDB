@@ -262,11 +262,30 @@ export class TableCacheImpl<
     return this.iter();
   }
 
+  /** Delete every cached reference, including overlaps between subscriptions. */
+  snapshotDeleteOperations = (): Operation<
+    RowType<TableDefForTableName<RemoteModule, TableName>>
+  >[] => {
+    const operations: Operation<
+      RowType<TableDefForTableName<RemoteModule, TableName>>
+    >[] = [];
+    for (const [rowId, [row, refCount]] of this.rows) {
+      for (let i = 0; i < refCount; i++) {
+        operations.push({ type: 'delete', rowId, row });
+      }
+    }
+    return operations;
+  };
+
   applyOperations = (
     operations: Operation<
       RowType<TableDefForTableName<RemoteModule, TableName>>
     >[],
-    ctx: EventContextInterface<RemoteModule>
+    ctx: EventContextInterface<RemoteModule>,
+    options?: {
+      /** Suppress unchanged rows during reconnect reconciliation. */
+      skipIdenticalUpdates?: boolean;
+    }
   ): PendingCallback[] => {
     const pendingCallbacks: PendingCallback[] = [];
 
@@ -286,7 +305,7 @@ export class TableCacheImpl<
       return pendingCallbacks;
     }
 
-    if (this.hasPrimaryKey) {
+    if (this.hasPrimaryKey || options?.skipIdenticalUpdates) {
       const insertMap = new Map<
         ComparablePrimitive,
         [
@@ -322,7 +341,8 @@ export class TableCacheImpl<
             ctx,
             primaryKey,
             insertOp.row,
-            refCountDelta
+            refCountDelta,
+            options?.skipIdenticalUpdates
           );
           if (maybeCb) {
             pendingCallbacks.push(maybeCb);
@@ -363,7 +383,8 @@ export class TableCacheImpl<
     ctx: EventContextInterface<RemoteModule>,
     rowId: ComparablePrimitive,
     newRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
-    refCountDelta: number = 0
+    refCountDelta: number = 0,
+    skipIfIdentical: boolean = false
   ): PendingCallback | undefined => {
     const existingEntry = this.rows.get(rowId);
     if (!existingEntry) {
@@ -384,6 +405,11 @@ export class TableCacheImpl<
       return undefined;
     }
     this.rows.set(rowId, [newRow, refCount]);
+    if (skipIfIdentical && deepEqual(oldRow, newRow)) {
+      // The row is unchanged; the reference count was adjusted above but no
+      // callback fires.
+      return undefined;
+    }
     // This indicates something is wrong, so we could arguably crash here.
     if (previousCount === 0) {
       stdbLogger(

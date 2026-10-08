@@ -132,6 +132,21 @@ fn test_scheduled_table_subscription_repeated_reducer() {
     );
 }
 
+#[test]
+fn test_capped_self_update_repeated_reducer_does_not_run_away() {
+    let test = Smoketest::builder().precompiled_module("schedule-subscribe").build();
+
+    test.call("schedule_capped_self_update", &[]).unwrap();
+    thread::sleep(Duration::from_secs(2));
+
+    let logs = test.logs(200).unwrap();
+    let invoked_count = logs.iter().filter(|line| line.contains("CappedSelfUpdate")).count();
+    assert!(
+        (10..80).contains(&invoked_count),
+        "Expected capped self-updating reducer to run linearly, got {invoked_count}. Logs: {logs:?}"
+    );
+}
+
 /// Scheduled *procedure* subscription: expect insert + delete for both table and view.
 #[test]
 fn test_scheduled_procedure_table_and_view_subscription() {

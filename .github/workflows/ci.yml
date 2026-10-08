@@ -415,6 +415,12 @@ jobs:
 
       - uses: ./.github/actions/setup-pnpm
 
+      - name: Set up Bun for Windows compiler discovery smoketest
+        if: runner.os == 'Windows'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.3
+
       - name: Install TypeScript SDK dependencies
         run: pnpm --filter spacetimedb install
 
@@ -800,6 +806,39 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-codeowners-check
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
+
+  new_script_check:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: New script check
+    runs-on: spacetimedb-linux-small
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Check for new Bash or Python scripts
+        run: |
+          cargo ci other-workflows new-script-check \
+            --base-ref "origin/${{ github.event.pull_request.base.ref }}"
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-new-script-check
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 

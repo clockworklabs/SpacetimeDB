@@ -1,7 +1,10 @@
+import type { UntypedClientTable } from '../../sdk/client_table';
+import { getByAccessorPath } from '../../lib/accessor_path';
 import {
   assertInInjectionContext,
   inject,
   signal,
+  computed,
   effect,
   type Signal,
 } from '@angular/core';
@@ -98,29 +101,25 @@ export function injectTable<TableDef extends UntypedTableDef>(
   const whereExpr = getQueryWhereClause(query);
   const querySql = toSql(query);
 
-  const tableSignal = signal<TableRows<TableDef>>({
-    isLoading: true,
-    rows: [],
-  });
+  const rows = signal<readonly RowTypeDef<TableDef>[]>([]);
 
   let latestTransactionEvent: any = null;
-  let subscribeApplied = false;
+  const appliedConnectionId = signal<string | null>(null);
+  const connection = computed(() => connState().getConnection());
 
   // Note: this code is mostly derived from the React useTable implementation
   // in order to keep behavior consistent across frameworks.
 
   const computeSnapshot = (): readonly RowTypeDef<TableDef>[] => {
-    const state = connState();
-    if (!state.isActive) {
+    const currentConnection = connection();
+    if (!currentConnection) {
       return [];
     }
 
-    const connection = state.getConnection();
-    if (!connection) {
-      return [];
-    }
-
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      currentConnection.db,
+      accessorName
+    );
 
     if (whereExpr) {
       return Array.from(table.iter()).filter(row =>
@@ -132,24 +131,21 @@ export function injectTable<TableDef extends UntypedTableDef>(
   };
 
   const updateSnapshot = () => {
-    tableSignal.set({
-      rows: computeSnapshot(),
-      isLoading: !subscribeApplied,
-    });
+    rows.set(computeSnapshot());
   };
 
   effect((onCleanup: (fn: () => void) => void) => {
-    const state = connState();
-    if (!state.isActive) {
+    appliedConnectionId.set(null);
+    const currentConnection = connection();
+    if (!currentConnection) {
+      updateSnapshot();
       return;
     }
 
-    const connection = state.getConnection();
-    if (!connection) {
-      return;
-    }
-
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      currentConnection.db,
+      accessorName
+    );
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,
@@ -214,13 +210,16 @@ export function injectTable<TableDef extends UntypedTableDef>(
     table.onDelete(onDelete);
     table.onUpdate?.(onUpdate);
 
-    const subscription = connection
+    const subscription = currentConnection
       .subscriptionBuilder()
       .onApplied(() => {
-        subscribeApplied = true;
+        appliedConnectionId.set(currentConnection.connectionId.toHexString());
         updateSnapshot();
       })
+      .onError(() => appliedConnectionId.set(null))
       .subscribe(querySql);
+
+    updateSnapshot();
 
     onCleanup(() => {
       table.removeOnInsert(onInsert);
@@ -230,5 +229,10 @@ export function injectTable<TableDef extends UntypedTableDef>(
     });
   });
 
-  return tableSignal.asReadonly();
+  return computed(() => ({
+    rows: rows(),
+    isLoading:
+      !connState().isActive ||
+      appliedConnectionId() !== connState().connectionId.toHexString(),
+  }));
 }
