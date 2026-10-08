@@ -1,6 +1,11 @@
 # @spacetimedb/agents
 
-An agent submodule and lower-level tools for SpacetimeDB TypeScript modules.
+Build AI assistants in your SpacetimeDB application. Store conversations, send
+messages to a model, and give the assistant tools that read or update your
+application's data.
+
+Choose which models and tools each assistant can use. Your application controls
+who can access each conversation and how much they can spend on model calls.
 
 ## Install
 
@@ -11,15 +16,13 @@ npm install @spacetimedb/agents spacetimedb
 `spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
 to build the host module.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
-
 ## Quick start
 
-The `./submodule` namespace owns private provider keys, operator overrides,
-threads, messages, embeddings, and thread locks. The host module defines its
-agents, decides who owns each thread, and exports the operations its clients
-call.
+This example creates a chat agent with a tool that returns the server's current
+time. Users can start conversations, send messages, and read their conversations.
+
+Configure a provider API key before sending a message. Add your application's
+quota check in `beforeRun` before allowing users to make paid model calls.
 
 ```ts
 import {
@@ -85,10 +88,13 @@ export const myThreads = spacetimedb.view(
 );
 ```
 
-`install` makes the installing identity the first Agents administrator and
-schedules stale-lock cleanup. Administrators configure the module through the
-namespaced reducers, for example `spacetime call <db> agents.set_api_key
+`install` makes the installing identity the first Agents administrator.
+An administrator sets the provider key after publishing, for example
+`spacetime call <db> agents.set_api_key
 '"openrouter"' '"<key>"'`.
+
+See the [complete example](./example/) for sign-in, attachments, and a token
+quota.
 
 ## Client
 
@@ -213,10 +219,7 @@ pnpm test
 pnpm run lint
 ```
 
-The unit suites use mocked HTTP with deterministic provider fixtures. The
-repository also builds the direct-publish module under `spacetimedb/`. See the
-[complete example](./example/) for a host module with authentication,
-attachments, and a token quota.
+Unit tests use mocked provider responses.
 
 ## License
 

@@ -1,241 +1,90 @@
-# Agents example
+# Agents chat example
 
-This example is a multi-provider chat application built with
-[`@spacetimedb/agents`](../). Agent execution, thread state, tools, usage
-accounting, and model requests live in SpacetimeDB. The browser connects directly
-to SpacetimeDB; the Node server serves static files and proxies the module's auth
-and file HTTP handlers.
+Chat with an AI model, keep separate conversations, and try a tool that
+returns the server's current time.
 
-## What this demonstrates
+## Run it locally
 
-- Registering the `@spacetimedb/agents` submodule with the example's own typed
-  agents and tools.
-- Running an agent loop from a SpacetimeDB procedure with OpenRouter, OpenAI, or
-  Anthropic.
-- Isolating threads, messages, locks, and files by authenticated user.
-- Publishing user-scoped views over private tables.
-- Tool calls, cancellation, response regeneration, history summarization, and RAG.
-- Per-message token accounting and optional per-user token limits.
-- Bootstrapping auth and storing provider configuration in private module state.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server registered as `local`.
-- A logged-in CLI identity. A fresh publish seeds the publisher as the initial auth
-  and agents administrator.
-- At least one supported model-provider API key for successful model responses.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-Confirm the server and login before continuing:
+From `spacetime-agents-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+You also need an OpenRouter API key for the default agents. Set
+`OPENROUTER_API_KEY` in `.env`. Model requests can use paid credits.
+Setting only an OpenAI or Anthropic key does not change the default provider.
 
-## Quick start
+Then publish the example and start its web server:
 
-From `spacetime-agents-ts/example`:
-
-```powershell
+```bash
 pnpm install
-pnpm --dir spacetimedb install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-# Add OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY to .env.
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://localhost:8789>, create an account, create a thread, and send a
-message.
+Open <http://localhost:8789>.
 
-`build:module:fresh` deletes and recreates only the local `spacetime-agents-example`
-database. Use `pnpm run build:module` to republish while preserving existing rows.
+## Try it
 
-## Use in your project
+1. Create an account and click **New chat**.
+2. Send a message and wait for a reply.
+3. Ask the agent to use its tool to get the current server time.
+4. Reload the page. Your conversation should still be there.
+5. Sign in with a different account in a private browser window. That account
+   has its own conversations.
 
-This workspace tests the submodule source in this repository. Consumer applications install published releases:
+The default agents send requests through OpenRouter, including models named
+OpenAI or Anthropic.
 
-```bash
-npm install @spacetimedb/agents spacetimedb
-```
+## Change the provider or agent
 
-Start with the package's [quick start](../README.md#quick-start). The example's
-auth, files, token quota, and UI are application-specific integrations around
-the submodule client.
+Edit the definitions in [spacetimedb/src/agents/](./spacetimedb/src/agents/).
+To use OpenAI or Anthropic directly, set the agent's `defaultProvider` and
+choose models that provider accepts. Set the matching `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY` in `.env`. Check the summarizer's definition too.
+
+Tools live in [spacetimedb/src/tools/](./spacetimedb/src/tools/).
+The chat agent's `tools` setting controls which tools it can call.
 
 ## Configuration
 
-The server loads non-empty values from the repository, package, and example
-`.env` files. The example-local file has highest priority; environment variables
-set by the launching process are never overwritten.
+See [.env.example](./.env.example) for provider keys and optional sign-in settings.
 
-| Variable                                    | Default                    | Purpose                                                            |
-| ------------------------------------------- | -------------------------- | ------------------------------------------------------------------ |
-| `OPENROUTER_API_KEY`                        | empty                      | Enables OpenRouter-backed agents.                                  |
-| `OPENAI_API_KEY`                            | empty                      | Enables OpenAI-backed agents.                                      |
-| `ANTHROPIC_API_KEY`                         | empty                      | Enables Anthropic-backed agents.                                   |
-| `STALE_LOCK_THRESHOLD_SECS`                 | `900`                      | Age at which the lock sweeper may remove an abandoned thread lock. |
-| `RATE_LIMIT_TOKENS_PER_WINDOW`              | empty                      | Optional per-user prompt-plus-completion token cap.                |
-| `RATE_LIMIT_WINDOW_SECS`                    | empty                      | Fixed-window duration used with the token cap.                     |
-| `AUTH_ISSUER_URL`                           | `http://localhost:8789`    | JWT issuer and OAuth redirect origin.                              |
-| `AUTH_BASE_URL`                             | `AUTH_ISSUER_URL`          | Public base URL used by auth routes and redirects.                 |
-| `AUTH_COOKIE_NAME`                          | `stdb_auth`                | Name of the session cookie.                                        |
-| `AUTH_SESSION_TTL_SECONDS`                  | `604800`                   | Session lifetime in seconds.                                       |
-| `AUTH_ES256_PRIVATE_KEY_PEM`                | generated by auth setup    | Optional fixed ES256 signing key. Use literal `\n` in `.env`.      |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty                      | Enables Google OAuth when both values are present.                 |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | empty                      | Enables GitHub OAuth when both values are present.                 |
-| `STDB_URI`                                  | `ws://127.0.0.1:3000`      | Browser WebSocket endpoint.                                        |
-| `STDB_HTTP`                                 | `http://127.0.0.1:3000`    | HTTP endpoint used by the auth/file proxy.                         |
-| `STDB_SERVER`                               | `STDB_HTTP`                | CLI target used for startup configuration.                         |
-| `SPACETIMEDB_DB_NAME`                       | `spacetime-agents-example` | Published database name.                                           |
-| `HOST`                                      | `127.0.0.1`                | Development web-server bind address.                               |
-| `PORT`                                      | `8789`                     | Static-server port.                                                |
+- Set both `RATE_LIMIT_TOKENS_PER_WINDOW` and `RATE_LIMIT_WINDOW_SECS` to
+  limit each user's token usage.
+- Keep `AUTH_ISSUER_URL` and `AUTH_BASE_URL` set to the address you open
+  in the browser. Use `localhost` consistently for the default setup.
 
-On startup, the logged-in CLI identity calls `auth.set_auth_config`,
-`agents.set_agent_config`, `set_token_limit`, and `agents.set_api_key` for each
-configured provider. Provider keys are stored in private module tables and are
-not returned by `/api/config`.
+## Before deploying
 
-The auth signing key also keys every session id and one-time token, so it comes
-from outside the module. When `AUTH_ES256_PRIVATE_KEY_PEM` is blank the server
-keeps the key the database already stores; after a fresh publish it generates
-one with `node:crypto`.
-
-## Architecture
-
-```text
-Browser
-  -> /auth/* and /files HTTP requests through the local same-origin proxy
-  -> SpacetimeDB WebSocket for reducers, procedures, and subscriptions
-
-SpacetimeDB module
-  -> authenticated user/session mapping
-  -> caller-scoped thread, message, lock, and file views
-  -> agent procedure -> provider HTTPS API
-```
-
-The browser subscribes to `my_threads`, `my_thread_locks`, `my_files`, and
-`auth.my_auth_user`. It subscribes to `my_messages` only for the active thread. These
-views resolve the authenticated user from the linked connection and filter rows
-server-side. Browser subscriptions use these views exclusively.
-
-`send_message` is a procedure because model calls require `ProcedureCtx.http`.
-Each completed turn commits messages through its own transaction, and
-SpacetimeDB subscriptions deliver progress to the browser.
-
-## Agent behavior
-
-Configuration is resolved in this order:
-
-1. Operator-managed overrides set with `agents.set_agent_override`.
-2. The thread's selected model, when it is listed in the agent's `models`.
-3. Defaults in `spacetimedb/src/agents/`.
-
-The model picker offers only the agent's `models`. Users cannot change system
-prompts.
-
-The registered `chat` agent exposes the example tools; the `summarizer` agent
-compacts long conversation history. Defensive limits cap user content and
-tool output. A lock keyed by thread prevents two agent loops from interleaving on
-the same thread, and a scheduled sweeper removes locks abandoned beyond the
-configured threshold.
-
-Successful assistant messages record prompt and completion token counts. The UI
-shows those values per message. The client's `onUsage` hook records every model
-response against the optional per-user token window, and `beforeRun` rejects new
-work with `agent.rate_limited:<used>/<cap>` once the cap is reached. Each user
-may own at most 100 threads.
-
-## Adding an agent or tool
-
-Agents are registered by key in `spacetimedb/src/agents/index.ts` and passed to
-`agents.client` in `spacetimedb/src/index.ts`. The registry key is the runtime
-name stored on each thread.
-
-```ts
-import { defineAgent } from '@spacetimedb/agents';
-import myTool from '../tools/myTool';
-
-export default defineAgent({
-  defaultModel: 'openai/gpt-4o-mini',
-  defaultSystemPrompt: 'Give concise, factual answers.',
-  tools: { my_tool: myTool },
-});
-```
-
-Tools live in `spacetimedb/src/tools/` and use `agentTool` with a SpacetimeDB type
-for their input. Import a tool only into agents that should be allowed to call it.
-After changing an agent or tool, republish the module and regenerate the client.
-
-## Administration and security
-
-- A fresh publish seeds the publishing owner as the auth and Agents
-  administrator.
-- Public reducers never grant the first caller administrator access.
-- The startup configuration calls run as the logged-in CLI identity.
-- Browser users are not administrators by default. Grant a development identity
-  only with `agents.add_agent_admin_identity` called by an existing
-  administrator.
-- Model-provider keys, auth signing material, `.env`, and generated local tokens
-  must not be committed.
-- The included server is a development server. Put TLS, host validation, secret
-  management, and process supervision at the deployment boundary in production.
-
-## Build and verification
-
-```powershell
-pnpm --dir spacetimedb run build
-pnpm --dir spacetimedb test
-pnpm run build
-pnpm exec tsc -p tsconfig.json
-```
-
-For an end-to-end check, fresh-publish the database, start the server, sign up in
-the browser, create a thread, and confirm all of the following:
-
-1. The thread appears after creation and remains after a reload.
-2. A message receives a normal assistant response with a valid provider key.
-3. Token usage appears on the assistant message.
-4. Stop and regenerate update the current thread while preserving account
-   isolation.
-5. A second account cannot subscribe to or mutate the first account's threads.
-
-Use a valid provider key for the release smoke test. Invalid keys cover only the
-error path.
+Set usage limits and control who can create accounts before exposing a paid
+model to the public.
 
 ## Troubleshooting
 
-- **Startup configuration is rejected:** confirm that the CLI is logged in as the
-  database owner or a registered administrator, and that `STDB_SERVER` targets
-  the same host used by the publish command.
-- **The browser cannot connect:** make sure `STDB_URI`, `STDB_HTTP`, and
-  `STDB_SERVER` address the same SpacetimeDB instance.
-- **Provider calls fail:** verify that the chosen agent has a key for its provider
-  and inspect the module logs for the upstream status.
-- **OAuth redirects to the wrong origin:** set `AUTH_ISSUER_URL` to the exact
-  browser-visible origin, including scheme and port.
-- **A stale browser identity follows a fresh publish:** clear the example's site
-  data and sign in again.
+- **No API key or provider error:** the key must match the agent's provider.
+  Choosing a different model alone does not change that provider.
+- **Startup configuration fails:** use the CLI account that published the database.
+- **Sign-in fails after a database reset:** clear this site's browser data and
+  create an account again.
 
-## Important files
+## Change the example
 
-- `spacetimedb/src/index.ts` - schema, auth integration, the Agents client, and
-  agent procedures.
-- `spacetimedb/src/views.ts` - caller-scoped views.
-- `spacetimedb/src/agents/` - registered agent definitions.
-- `spacetimedb/src/tools/` - typed tools available to agents.
-- `spacetimedb/scripts/test-attachments.ts` - attachment validation tests.
-- `server.ts` - startup configuration and same-origin HTTP proxy.
-- `src/app.ts` - browser connection, subscriptions, and UI bridge.
-- `public/index.html` - application structure.
-- `public/ui.js` - DOM state, rendering, and interaction handling.
-- `public/styles.css` - application presentation.
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts): chat requests and account checks.
+- [spacetimedb/src/agents/](./spacetimedb/src/agents/): agent settings.
+- [public/ui.js](./public/ui.js): chat controls.
+
+After changing server code, run `pnpm run build:module`. Restart
+`pnpm run dev` after changing browser code or `.env`.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in
+the local `spacetime-agents-example` database.**
+
+To use the submodule in your own app, see the
+[Agents quick start](../README.md#quick-start).

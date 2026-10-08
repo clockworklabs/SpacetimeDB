@@ -1,8 +1,13 @@
 # @spacetimedb/auth
 
-Authentication primitives for SpacetimeDB TypeScript modules. The package
-provides password and OAuth handlers, ES256 sessions, connection binding,
-profile management, and in-module rate limiting.
+Add user accounts and sign-in to your SpacetimeDB application. Users can sign
+in with a password, Google, or GitHub, manage their profile, and sign out of
+individual sessions. The package also supports email verification and password
+resets.
+
+Use the signed-in user in your reducers, procedures, and HTTP routes to control
+access to application data. Your application supplies its HTTP routes, signing
+key, and email delivery service.
 
 ## Install
 
@@ -12,18 +17,10 @@ npm install @spacetimedb/auth spacetimedb
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
+## Integrate into an application
 
-The host module owns HTTP route registration and any mail-delivery adapter.
-
-## Usage
-
-### Integrate into an application
-
-Import the submodule namespace, register the handlers your application needs,
-then install Auth from the host `init` hook. Auth mounts and initializes its
-Rate Limit dependency.
+Add Auth to your module and initialize it. This also sets up its built-in
+rate limits:
 
 ```ts
 import { schema } from 'spacetimedb/server';
@@ -37,9 +34,10 @@ export const init = spacetimedb.init(ctx => {
 });
 ```
 
-Configure the HTTP handlers once with `auth.client`, then register the ones
-your application uses on the host router with `ctx.as.auth`. The host owns its
-router, trusted-proxy policy, and mail delivery.
+Choose the sign-in routes your application needs. The example below adds
+password signup. Replace `deliver` with your email service. Set
+`trustedProxyHeader` only when your server receives requests through a trusted
+proxy that sets that header:
 
 ```ts
 import { Router } from 'spacetimedb/server';
@@ -94,9 +92,9 @@ await conn.reducers['auth.linkConnection']({ sessionToken: token });
 await conn.reducers['auth.updateProfile']({ name: 'Ada', image: undefined });
 ```
 
-The complete wiring covers routes, connection binding, caller-scoped views,
-and mail callbacks in the
-[Auth example host module](./example/spacetimedb/).
+See the [Auth example](./example/) for sign-in, a log-based mailer,
+and private notes. Before using the routes,
+configure the signing key below and any OAuth credentials you need.
 
 ### Configuration and the signing key
 
@@ -153,8 +151,7 @@ Registered operations:
 - Passwords use scrypt with parameters encoded in the stored hash. Password
   checks run outside transactions, and unknown accounts are checked against a
   dummy hash so response time does not reveal which emails are registered.
-- Tokens, ids, and salts are HMAC-SHA256 outputs keyed by the operator's
-  signing key; the module never generates keys itself.
+- Tokens, IDs, and salts are HMAC-SHA256 outputs keyed by the signing key.
 - Signing keys, OAuth secrets, and session state live in private tables.
 - The publishing owner is the initial administrator. Only administrators change
   configuration, revoke other users' sessions, or change the administrator
@@ -163,9 +160,8 @@ Registered operations:
   expiring, or logging out a session removes its bindings; refreshing a
   session moves them to the new session. Password reset revokes every session.
 - OAuth state is bound to the starting browser with an HttpOnly cookie.
-- Default authentication limits are production-oriented. Email-based limits
-  work directly. IP-based limits and stored session IPs are
-  enabled only when the host explicitly selects a trusted proxy header.
+- IP-based rate limits and stored session IPs require a trusted proxy header.
+  Email-based rate limits are enabled by default.
 - Google honors the provider's `email_verified` claim. GitHub selects a
   verified address from the `/user/emails` response.
 - When a new OAuth identity has the same email as an existing user, the callback
@@ -176,19 +172,12 @@ Registered operations:
   characters. Unsafe absolute, protocol-relative, backslash, fragment, control
   character, and encoded forms are rejected before state is stored.
 
-Applications remain responsible for route exposure, cookie policy, and mail
-delivery.
-
 ## Testing
 
 ```bash
 pnpm test
 pnpm run typecheck
 ```
-
-The unit suite covers key parsing, JWT validation, password hashing, PKCE,
-secret derivation, and UUID generation. Build the example module to validate submodule
-schema integration.
 
 ## License
 

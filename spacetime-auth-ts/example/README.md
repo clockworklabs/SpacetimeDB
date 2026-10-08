@@ -1,201 +1,93 @@
 # Auth notes example
 
-This example is an end-to-end authentication application built with
-[`@spacetimedb/auth`](../). A small realtime notes feature shows how an
-authenticated application user is linked to a SpacetimeDB connection and used
-for server-side authorization.
+Create an account and keep private notes. Try password sign-in, session
+management, and optional Google or GitHub sign-in.
 
-## What this demonstrates
+## Run it locally
 
-- Password signup, login, logout, and session refresh.
-- Optional Google and GitHub OAuth.
-- ES256-signed application sessions stored in an HTTP-only cookie.
-- Password reset and email-verification flows with a development mailer.
-- Listing and revoking the current user's sessions.
-- Linking an application session to a SpacetimeDB connection.
-- Caller-scoped notes and profile views with realtime updates.
-- Reconnecting the browser after a WebSocket interruption.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server registered as `local`.
-- A logged-in CLI identity. A fresh publish seeds the publisher as the initial auth
-  administrator.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+From `spacetime-auth-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
-## Quick start
+Then publish the example and start its web server:
 
-From `spacetime-auth-ts/example`:
-
-```powershell
+```bash
 pnpm install
-pnpm --dir spacetimedb install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://localhost:8791>, create an account, and add a note.
+Open <http://localhost:8791>.
 
-`build:module:fresh` deletes and recreates only the local `spacetime-auth-example`
-database. Use `pnpm run build:module` when the existing local data must be
-preserved.
+## Try it
 
-## Use in your project
+1. Create an account and add a note.
+2. Edit the note, then reload the page. You should still be signed in and see
+   the updated text.
+3. Open a private browser window and create a second account. Its notes start empty.
+4. Open **Active sessions** to see where you are signed in and revoke a session.
 
-This workspace tests the submodule source in this repository. Consumer applications install published releases:
+For password reset and email verification, this demo writes links to the
+SpacetimeDB module logs instead of sending email. To read them, run:
 
 ```bash
-npm install @spacetimedb/auth spacetimedb
+spacetime logs --server local spacetime-auth-example
 ```
 
-Follow the package's
-[integration guide](../README.md#integrate-into-an-application). Copy the HTTP
-routes, connection binding, and caller-view patterns you use; replace the
-console mailer and development server before production.
+Treat these links as secrets. Anyone with a valid link can use it.
 
-## Configuration
+## Optional Google or GitHub sign-in
 
-| Variable                       | Default                  | Purpose                                                           |
-| ------------------------------ | ------------------------ | ----------------------------------------------------------------- |
-| `HOST`                         | `127.0.0.1`              | Development web-server bind address.                              |
-| `PORT`                         | `8791`                   | Development web-server port.                                      |
-| `STDB_URI`                     | `ws://127.0.0.1:3000`    | Browser WebSocket endpoint.                                       |
-| `STDB_HTTP`                    | `http://127.0.0.1:3000`  | HTTP endpoint used by the auth proxy.                             |
-| `STDB_SERVER`                  | `STDB_HTTP`              | CLI target used during startup configuration.                     |
-| `SPACETIMEDB_DB_NAME`          | `spacetime-auth-example` | Published database name.                                          |
-| `AUTH_ISSUER_URL`              | `http://localhost:8791`  | JWT issuer and OAuth redirect origin.                             |
-| `AUTH_BASE_URL`                | `http://localhost:8791`  | Browser-visible auth base URL.                                    |
-| `AUTH_COOKIE_NAME`             | `stdb_auth`              | Session-cookie name.                                              |
-| `AUTH_SESSION_TTL_SECONDS`     | `604800`                 | Session lifetime in seconds.                                      |
-| `AUTH_ES256_PRIVATE_KEY_PEM`   | stored or generated      | ES256 PKCS#8 private key. See below.                              |
-| Google/GitHub client variables | empty                    | Enables the matching OAuth provider when both values are present. |
-
-The server loads `.env` and calls `auth.set_auth_config` on every startup using
-the logged-in CLI identity. Restart the server after changing auth or OAuth
-values.
-
-The signing key also keys every session id and one-time token, so it must come
-from outside the module. When `AUTH_ES256_PRIVATE_KEY_PEM` is blank the server
-keeps the key the database already stores; after a fresh publish it generates
-one with `node:crypto`.
-
-Keep `STDB_URI`, `STDB_HTTP`, and `STDB_SERVER` on the same SpacetimeDB instance.
-Set `AUTH_ISSUER_URL` and `AUTH_BASE_URL` to the exact origin users load, including
-scheme and port.
-
-## OAuth setup
-
-Register an application with each provider and add its client ID and secret to
-`.env`. For the default local origin, register these callbacks:
+Register an app with the provider and put its client ID and secret in `.env`.
+For the default address, use these callback URLs:
 
 - Google: `http://localhost:8791/auth/google/callback`
 - GitHub: `http://localhost:8791/auth/github/callback`
 
-The browser hides a provider button unless both corresponding values are present.
-Do not put provider secrets in frontend code or `/api/config`.
+Restart the example server after changing these settings.
 
-## Architecture
+## Configuration
 
-```text
-Browser
-  -> same-origin /auth/* requests -> Node proxy -> module HTTP router
-  -> SpacetimeDB WebSocket -> auth.link_connection -> my_notes / auth.my_auth_user
+See [.env.example](./.env.example) for all settings. Keep `AUTH_ISSUER_URL`
+and `AUTH_BASE_URL` set to the address you open in the browser.
+Use `localhost` consistently; `127.0.0.1` has separate browser cookies.
 
-SpacetimeDB module
-  -> private auth/session/account tables
-  -> application connection bindings
-  -> caller-scoped notes and profile views
-```
+Leave `AUTH_ES256_PRIVATE_KEY_PEM` blank for local use. The example server
+creates a signing key for a new database and keeps the existing key on restart.
 
-The Node proxy exists so development cookies remain same-origin. After signup,
-login, or refresh, the browser links the returned application token to its
-SpacetimeDB connection before subscribing. The module's `my_notes` and
-`auth.my_auth_user` views derive the user from that binding and ignore user IDs
-sent by the browser. Revoking, refreshing, or logging out a session updates or
-removes the connections bound to it.
+## Before deploying
 
-## Development mailer
-
-The example uses a console mailer. Password-reset and
-email-verification messages, including their one-time links, appear in the
-SpacetimeDB module logs. Production deployments require a delivery provider.
-
-Production applications should send mail through a real provider, avoid logging
-tokens, and apply appropriate retention and redaction to application logs.
-
-## Security and deployment boundaries
-
-- A fresh publish seeds the publishing owner in the private
-  `auth_admin_identity` table.
-- Auth configuration can be changed only by an existing administrator.
-  Administrators add and remove others with `auth.add_auth_admin` and
-  `auth.remove_auth_admin`; the last administrator cannot be removed.
-- Password hashes, OAuth secrets, signing keys, session cookies, reset tokens, and
-  `.env` must not be committed or logged.
-- `AUTH_ES256_PRIVATE_KEY_PEM` should come from durable secret storage in
-  production. Anyone holding it can mint sessions and predict one-time tokens.
-- The included Express process is a development server. Production deployment
-  needs TLS, explicit network binding, origin/host policy, trusted-proxy settings,
-  durable secrets, and process supervision.
-
-## Build and verification
-
-```powershell
-pnpm --dir spacetimedb run build
-pnpm run build
-pnpm exec tsc -p tsconfig.json
-```
-
-For a release smoke test, use two accounts and verify:
-
-1. Signup, login, reload-based refresh, and logout.
-2. Create, edit, and delete notes with realtime subscription updates.
-3. One account cannot subscribe to or mutate the other account's notes.
-4. Session listing and revocation invalidate the selected session.
-5. Password reset and email verification complete using the one-time links in the
-   module log.
-6. Each configured OAuth provider completes its callback and establishes a linked
-   SpacetimeDB session.
-
-Useful owner-only diagnostics:
-
-```powershell
-spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT user_id, email FROM auth.auth_user"
-spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT * FROM auth.auth_connection_binding"
-```
+Replace the log-based mailer with real email delivery. Stop logging one-time
+links, and store the signing key in durable secret storage.
 
 ## Troubleshooting
 
-- **Startup configuration fails:** verify the database is published and the CLI is
-  logged in as its owner or a registered auth administrator.
-- **Cookies fail to restore:** use one consistent hostname. `localhost` and
-  `127.0.0.1` are different cookie hosts.
-- **Scoped subscriptions are empty:** confirm `auth.link_connection` succeeded before
-  the subscriptions were created.
-- **OAuth reports a redirect mismatch:** compare the registered callback byte for
-  byte with the URL derived from `AUTH_ISSUER_URL`.
-- **Sessions fail after a fresh publish:** clear site data and sign in again;
-  the database was replaced.
+- **Startup configuration fails:** use the CLI account that published the database.
+- **Sign-in is lost on reload:** check that the page address matches the auth
+  settings, including hostname and port.
+- **OAuth redirect mismatch:** check the registered callback URL against the
+  URLs above, including the port.
+- **Sessions fail after a database reset:** clear this site's browser data and
+  create an account again.
 
-## Important files
+## Change the example
 
-- `spacetimedb/src/index.ts` - Auth registration, scoped views, notes, and HTTP handlers.
-- `server.ts` - startup configuration, static serving, and auth proxy.
-- `src/app.ts` - auth calls, connection linking, subscriptions, and reconnects.
-- `public/index.html` - notes and account-management interface.
-- `public/ui.js` - DOM state, rendering, and interaction handling.
-- `public/styles.css` - application presentation.
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts): sign-in routes, notes, and the log-based mailer.
+- [src/app.ts](./src/app.ts): sign-in and live note updates.
+- [public/ui.js](./public/ui.js): notes and account controls.
+
+After changing server code, run `pnpm run build:module`. Restart
+`pnpm run dev` after changing browser code or `.env`.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in
+the local `spacetime-auth-example` database.**
+
+To use the submodule in your own app, see the
+[package integration guide](../README.md#integrate-into-an-application).
