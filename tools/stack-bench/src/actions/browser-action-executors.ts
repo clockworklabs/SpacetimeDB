@@ -485,14 +485,19 @@ async function expectElapsed({ input, capabilities }: BrowserArguments<{ since: 
 // Sections inside the scoped entry open too, so content that arrives later is shown.
 async function openDisclosures(actor: BrowserActor, browser: BrowserCapability, testid: string,
   scope?: { readonly testid: string }): Promise<void> {
-  await actor.page.locator(browser.testId(testid)).evaluateAll(controls => controls.forEach(control => {
-    for (let section = control.closest('details'); section; section = section.parentElement?.closest('details') ?? null) {
-      section.open = true;
-    }
-  }));
-  if (scope) await actor.page.locator(browser.testId(scope.testid)).evaluateAll(entries => entries.forEach(entry => {
-    for (const section of Array.from(entry.querySelectorAll('details'))) section.open = true;
-  }));
+  try {
+    await actor.page.locator(browser.testId(testid)).evaluateAll(controls => controls.forEach(control => {
+      for (let section = control.closest('details'); section; section = section.parentElement?.closest('details') ?? null) {
+        section.open = true;
+      }
+    }));
+    if (scope) await actor.page.locator(browser.testId(scope.testid)).evaluateAll(entries => entries.forEach(entry => {
+      for (const section of Array.from(entry.querySelectorAll('details'))) section.open = true;
+    }));
+  } catch (error) {
+    // The page navigated mid-read. The observation that follows waits on the new page.
+    if (!/Execution context was destroyed/.test(String(errorField(error, 'message')))) throw error;
+  }
 }
 
 async function expect({ input, capabilities, signal }: BrowserArguments<ExpectInput>) {

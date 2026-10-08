@@ -431,6 +431,16 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
   assert.equal(populated.status, 'passed');
 });
 
+test('a page that navigates while its sections are opened is observed, not a harness failure', async () => {
+  for (const message of ['locator.evaluateAll: Execution context was destroyed, most likely because of a navigation',
+    'browser disconnected']) {
+    const actor = { loc: () => ({ waitFor: async () => {} }),
+      page: { locator: () => ({ evaluateAll: async () => { throw new Error(message); } }) } };
+    const result = await run({ do: 'expect', actor: 'a', testid: 'current-user' }, services(actor));
+    assert.equal(result.status, message.includes('navigation') ? 'passed' : 'harness_failure', result.summary ?? undefined);
+  }
+});
+
 test('absence checks do not pass before a late element appears', async () => {
   let checks = 0;
   const actor = { loc: () => ({ isVisible: async () => ++checks > 1 }) };
