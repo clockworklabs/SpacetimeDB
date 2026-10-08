@@ -205,7 +205,24 @@ struct EffectiveViewInstance<'a> {
     delta: Option<&'a ViewInstanceDelta>,
 }
 
-impl EffectiveViewInstance<'_> {
+impl<'a> EffectiveViewInstance<'a> {
+    /// Combines committed state with this transaction's pending change for one call.
+    /// `committed` must be `Some` when `change` is `Updated`.
+    fn resolve(committed: Option<&'a ViewInstanceState>, change: Option<&'a ViewInstanceChange>) -> Option<Self> {
+        match change {
+            Some(ViewInstanceChange::Created(state)) => Some(Self {
+                base: state,
+                delta: None,
+            }),
+            Some(ViewInstanceChange::Updated(delta)) => Some(Self {
+                base: committed.expect("updated view instance must have committed state"),
+                delta: Some(delta),
+            }),
+            Some(ViewInstanceChange::Deleted) => None,
+            None => committed.map(|base| Self { base, delta: None }),
+        }
+    }
+
     fn has_subscribers(&self) -> bool {
         let mut active_identities = self.base.active_subscribers.len();
         if let Some(delta) = self.delta {
@@ -258,26 +275,7 @@ impl ViewInstanceTxState {
         committed_state: &'a CommittedState,
         call: &ViewCallInfo,
     ) -> Option<EffectiveViewInstance<'a>> {
-        match self.changes.get(call) {
-            Some(ViewInstanceChange::Created(state)) => Some(EffectiveViewInstance {
-                base: state,
-                delta: None,
-            }),
-            Some(ViewInstanceChange::Updated(delta)) => {
-                let base = committed_state
-                    .view_instance(call)
-                    .expect("updated view instance must have committed state");
-
-                Some(EffectiveViewInstance {
-                    base,
-                    delta: Some(delta),
-                })
-            }
-            Some(ViewInstanceChange::Deleted) => None,
-            None => committed_state
-                .view_instance(call)
-                .map(|base| EffectiveViewInstance { base, delta: None }),
-        }
+        EffectiveViewInstance::resolve(committed_state.view_instance(call), self.changes.get(call))
     }
 
     /// Retrieves or creates a writable pending change for `call`, recreating deleted instances.
@@ -3058,19 +3056,8 @@ impl MutTxId {
             .committed_state_write_lock
             .view_instances()
             .filter_map(|(call, base)| {
-                let state = match self.view_instances.changes.get(call) {
-                    Some(ViewInstanceChange::Created(state)) => EffectiveViewInstance {
-                        base: state,
-                        delta: None,
-                    },
-                    Some(ViewInstanceChange::Updated(delta)) => EffectiveViewInstance {
-                        base,
-                        delta: Some(delta),
-                    },
-                    Some(ViewInstanceChange::Deleted) => return None,
-                    None => EffectiveViewInstance { base, delta: None },
-                };
-                Some((call, state))
+                EffectiveViewInstance::resolve(Some(base), self.view_instances.changes.get(call))
+                    .map(|state| (call, state))
             });
 
         // The committed iterator above already applies tx-local overrides and
@@ -3080,19 +3067,7 @@ impl MutTxId {
             if self.committed_state_write_lock.view_instance(call).is_some() {
                 return None;
             }
-            match change {
-                ViewInstanceChange::Created(state) => Some((
-                    call,
-                    EffectiveViewInstance {
-                        base: state,
-                        delta: None,
-                    },
-                )),
-                ViewInstanceChange::Updated(_) => {
-                    unreachable!("updated view instance must have committed state")
-                }
-                ViewInstanceChange::Deleted => None,
-            }
+            EffectiveViewInstance::resolve(None, Some(change)).map(|state| (call, state))
         });
 
         committed.chain(tx_only)
@@ -4152,5 +4127,343 @@ fn too_many_rows_for_scan_do(
             })
             .collect::<Vec<_>>();
         logic(table_name, &col_names);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::locking_tx_datastore::datastore::{
+        tests::{begin_mut_tx, commit},
+        Locking,
+    };
+    use crate::traits::MutTx as _;
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_table::page_pool::PagePool;
+
+    const ALICE: Identity = Identity::from_byte_array([1; 32]);
+    const BOB: Identity = Identity::from_byte_array([2; 32]);
+    const CAROL: Identity = Identity::from_byte_array([3; 32]);
+
+    // These tests exercise lifecycle bookkeeping, which does not require a view schema.
+    fn committed_subscribers(subscribers: &[(Identity, u64)]) -> ResultTest<(Locking, ViewCallInfo)> {
+        let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
+        let call = ViewCallInfo::anonymous(ViewId::from(10_000u32));
+        let mut tx = begin_mut_tx(&datastore);
+        for &(identity, count) in subscribers {
+            for _ in 0..count {
+                tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, identity)?;
+            }
+        }
+        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, Timestamp::UNIX_EPOCH)?;
+        commit(&datastore, tx)?;
+        Ok((datastore, call))
+    }
+
+    fn assert_subscribers(tx: &MutTxId, call: &ViewCallInfo, expected: &[(Identity, u64)]) {
+        // Compare sorted vectors so duplicate identities cannot be hidden by collection into a map.
+        let mut actual = tx.active_subscribers_for_view(call.view_id);
+        let mut expected = expected.to_vec();
+        actual.sort_by_key(|(identity, _)| identity.to_u256());
+        expected.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_view_subscriber_counts_follow_pending_changes() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        for expected in [3, 4] {
+            tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+            assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&ALICE), expected);
+        }
+        for expected in [3, 2, 1, 0] {
+            tx.unsubscribe_view(call.clone(), ALICE)?;
+            assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&ALICE), expected);
+        }
+        assert_subscribers(&tx, &call, &[(BOB, 1)]);
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        assert_subscribers(&tx, &call, &[(ALICE, 1), (BOB, 1)]);
+
+        let committed = tx.committed_state_write_lock.view_instance(&call).unwrap();
+        assert_eq!(committed.active_subscribers.get(&ALICE), Some(&2));
+        assert_eq!(committed.active_subscribers.get(&BOB), Some(&1));
+        assert_eq!(committed.last_used, Timestamp::UNIX_EPOCH);
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_has_subscribers_after_membership_change() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        tx.unsubscribe_view(call.clone(), ALICE)?;
+        tx.unsubscribe_view(call.clone(), ALICE)?;
+        assert!(tx.get_view_instance(&call).unwrap().has_subscribers());
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        assert!(!tx.get_view_instance(&call).unwrap().has_subscribers());
+        assert_subscribers(&tx, &call, &[]);
+
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, CAROL)?;
+        assert!(tx.get_view_instance(&call).unwrap().has_subscribers());
+        assert_subscribers(&tx, &call, &[(CAROL, 1)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_subscriber_enumeration() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, CAROL)?;
+        assert_subscribers(&tx, &call, &[(ALICE, 3), (BOB, 1), (CAROL, 1)]);
+
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        tx.unsubscribe_view(call.clone(), CAROL)?;
+        assert_subscribers(&tx, &call, &[(ALICE, 3)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_timestamp_update_preserves_subscribers() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+        let refreshed = Timestamp::UNIX_EPOCH + Duration::from_secs(60);
+
+        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, refreshed)?;
+        let state = tx.get_view_instance(&call).unwrap();
+        assert_eq!(state.last_used(), refreshed);
+        assert_eq!(state.args(), ViewInstanceArgs::Anonymous);
+        assert_subscribers(&tx, &call, &[(ALICE, 2), (BOB, 1)]);
+        for subscriber in [ALICE, BOB] {
+            let calls = tx
+                .view_instances
+                .active_view_calls_for_subscriber(&tx.committed_state_write_lock, subscriber);
+            assert_eq!(calls, [call.clone()].into_iter().collect());
+        }
+        let ViewInstanceChange::Updated(delta) = tx.view_instances.changes.get(&call).unwrap() else {
+            panic!("a committed instance must be updated through a delta");
+        };
+        assert!(delta.subscriber_counts.is_empty());
+        assert_eq!(delta.last_used, Some(refreshed));
+        assert_eq!(
+            tx.committed_state_write_lock.view_instance(&call).unwrap().last_used,
+            Timestamp::UNIX_EPOCH
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_unsubscribe_absent_is_noop() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+        let absent = ViewCallInfo::anonymous(ViewId::from(10_001u32));
+
+        tx.unsubscribe_view(call.clone(), CAROL)?;
+        tx.unsubscribe_view(absent.clone(), ALICE)?;
+        assert!(tx.view_instances.changes.is_empty());
+        assert!(tx.get_view_instance(&absent).is_none());
+        assert_eq!(tx.get_view_instance(&call).unwrap().last_used(), Timestamp::UNIX_EPOCH);
+        assert_subscribers(&tx, &call, &[(ALICE, 2), (BOB, 1)]);
+
+        // A zero override must also be a no-op, despite a positive committed count.
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        let fixed = Timestamp::UNIX_EPOCH + Duration::from_secs(60);
+        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, fixed)?;
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        assert_eq!(tx.get_view_instance(&call).unwrap().last_used(), fixed);
+        assert_subscribers(&tx, &call, &[(ALICE, 2)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_unsubscribe_all_uses_effective_membership() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+        let new_call = ViewCallInfo::anonymous(ViewId::from(10_001u32));
+
+        // Changing Bob must not hide Alice's committed membership.
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        for _ in 0..2 {
+            tx.subscribe_view(new_call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        }
+        let calls = tx
+            .view_instances
+            .active_view_calls_for_subscriber(&tx.committed_state_write_lock, ALICE);
+        assert_eq!(calls, [call.clone(), new_call.clone()].into_iter().collect());
+        assert!(tx
+            .view_instances
+            .active_view_calls_for_subscriber(&tx.committed_state_write_lock, BOB)
+            .is_empty());
+
+        tx.unsubscribe_views(ALICE)?;
+        assert_subscribers(&tx, &call, &[(ALICE, 1)]);
+        assert_subscribers(&tx, &new_call, &[(ALICE, 1)]);
+        tx.unsubscribe_views(ALICE)?;
+        assert_subscribers(&tx, &call, &[]);
+        assert_subscribers(&tx, &new_call, &[]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_updates_store_only_touched_identity() -> ResultTest<()> {
+        let subscribers: Vec<_> = (1u32..=1024)
+            .map(|i| {
+                let mut bytes = [0; 32];
+                bytes[..4].copy_from_slice(&i.to_le_bytes());
+                (Identity::from_byte_array(bytes), 1)
+            })
+            .collect();
+        let (datastore, call) = committed_subscribers(&subscribers)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let touched = subscribers[512].0;
+
+        for expected in 2..=5 {
+            tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, touched)?;
+            let ViewInstanceChange::Updated(delta) = tx.view_instances.changes.get(&call).unwrap() else {
+                panic!("a committed instance must be updated through a delta");
+            };
+            assert_eq!(delta.subscriber_counts.len(), 1);
+            assert_eq!(delta.subscriber_counts.get(&touched), Some(&expected));
+        }
+        assert_eq!(tx.view_instances.changes.len(), 1);
+        let committed = tx.committed_state_write_lock.view_instance(&call).unwrap();
+        assert_eq!(committed.active_subscribers.len(), subscribers.len());
+        assert_eq!(committed.active_subscribers.get(&touched), Some(&1));
+        assert_eq!(
+            tx.get_view_instance(&call).unwrap().subscriber_count(&subscribers[0].0),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_commit_applies_delta() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1), (CAROL, 1)])?;
+        let added = Identity::from_byte_array([4; 32]);
+        let refreshed = Timestamp::UNIX_EPOCH + Duration::from_secs(60);
+        let mut tx = begin_mut_tx(&datastore);
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, added)?;
+        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, refreshed)?;
+        assert_subscribers(&tx, &call, &[(ALICE, 3), (CAROL, 1), (added, 1)]);
+
+        commit(&datastore, tx)?;
+        let tx = begin_mut_tx(&datastore);
+        let state = tx.committed_state_write_lock.view_instance(&call).unwrap();
+        assert_eq!(state.active_subscribers.len(), 3);
+        assert_eq!(state.active_subscribers.get(&ALICE), Some(&3));
+        assert!(!state.active_subscribers.contains_key(&BOB));
+        assert_eq!(state.active_subscribers.get(&CAROL), Some(&1));
+        assert_eq!(state.active_subscribers.get(&added), Some(&1));
+        assert_eq!(state.last_used, refreshed);
+        assert_eq!(state.args, ViewInstanceArgs::Anonymous);
+        assert_subscribers(&tx, &call, &[(ALICE, 3), (CAROL, 1), (added, 1)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_rollback_discards_changes() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let deleted = ViewCallInfo::sender(call.view_id, BOB);
+        let created = ViewCallInfo::sender(call.view_id, CAROL);
+        let mut tx = begin_mut_tx(&datastore);
+        tx.subscribe_view(deleted.clone(), ViewInstanceArgs::Sender(BOB), BOB)?;
+        tx.update_view_timestamp_at(deleted.clone(), ViewInstanceArgs::Sender(BOB), Timestamp::UNIX_EPOCH)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.unsubscribe_view(call.clone(), BOB)?;
+        tx.update_view_timestamp_at(
+            call.clone(),
+            ViewInstanceArgs::Anonymous,
+            Timestamp::UNIX_EPOCH + Duration::from_secs(60),
+        )?;
+        tx.view_instances.remove(deleted.clone());
+        tx.subscribe_view(created.clone(), ViewInstanceArgs::Sender(CAROL), CAROL)?;
+        assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&ALICE), 3);
+        assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&BOB), 0);
+        assert!(tx.get_view_instance(&deleted).is_none());
+        assert!(tx.get_view_instance(&created).is_some());
+
+        let _ = datastore.rollback_mut_tx(tx);
+        let tx = begin_mut_tx(&datastore);
+        let committed = &tx.committed_state_write_lock;
+        let state = committed.view_instance(&call).unwrap();
+        assert_eq!(state.active_subscribers.len(), 2);
+        assert_eq!(state.active_subscribers.get(&ALICE), Some(&2));
+        assert_eq!(state.active_subscribers.get(&BOB), Some(&1));
+        assert_eq!(state.last_used, Timestamp::UNIX_EPOCH);
+        assert_eq!(state.args, ViewInstanceArgs::Anonymous);
+        let state = committed.view_instance(&deleted).unwrap();
+        assert_eq!(state.active_subscribers.len(), 1);
+        assert_eq!(state.active_subscribers.get(&BOB), Some(&1));
+        assert_eq!(state.last_used, Timestamp::UNIX_EPOCH);
+        assert_eq!(state.args, ViewInstanceArgs::Sender(BOB));
+        assert!(committed.view_instance(&created).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_delete_then_recreate_replaces_subscribers() -> ResultTest<()> {
+        let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
+        let mut tx = begin_mut_tx(&datastore);
+        tx.view_instances.remove(call.clone());
+        assert!(tx.get_view_instance(&call).is_none());
+        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, CAROL)?;
+        assert_subscribers(&tx, &call, &[(CAROL, 1)]);
+        assert_eq!(tx.effective_view_instances().count(), 1);
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert_subscribers(&tx, &call, &[(CAROL, 1)]);
+        assert_eq!(tx.effective_view_instances().count(), 1);
+        let state = tx.committed_state_write_lock.view_instance(&call).unwrap();
+        assert_eq!(state.active_subscribers.len(), 1);
+        assert_eq!(state.active_subscribers.get(&CAROL), Some(&1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_mixed_changes_enumerate_once() -> ResultTest<()> {
+        let (datastore, updated) = committed_subscribers(&[(ALICE, 2)])?;
+        let unchanged = ViewCallInfo::sender(updated.view_id, ALICE);
+        let deleted = ViewCallInfo::sender(updated.view_id, BOB);
+        let created = ViewCallInfo::sender(updated.view_id, CAROL);
+        let transient = ViewCallInfo::anonymous(ViewId::from(10_001u32));
+        let mut tx = begin_mut_tx(&datastore);
+        tx.subscribe_view(unchanged.clone(), ViewInstanceArgs::Sender(ALICE), ALICE)?;
+        tx.subscribe_view(deleted.clone(), ViewInstanceArgs::Sender(BOB), BOB)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.subscribe_view(updated.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.view_instances.remove(deleted.clone());
+        tx.subscribe_view(created.clone(), ViewInstanceArgs::Sender(CAROL), CAROL)?;
+        tx.subscribe_view(transient.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.view_instances.remove(transient.clone());
+
+        let check_effective = |tx: &MutTxId| {
+            let calls: Vec<_> = tx.effective_view_instances().map(|(call, _)| call.clone()).collect();
+            assert_eq!(calls.len(), 3);
+            for call in [&updated, &unchanged, &created] {
+                assert_eq!(calls.iter().filter(|actual| *actual == call).count(), 1);
+            }
+            assert!(tx.get_view_instance(&deleted).is_none());
+            assert!(tx.get_view_instance(&transient).is_none());
+            assert_eq!(tx.get_view_instance(&updated).unwrap().subscriber_count(&ALICE), 3);
+            assert_eq!(tx.get_view_instance(&unchanged).unwrap().subscriber_count(&ALICE), 1);
+            assert_eq!(tx.get_view_instance(&created).unwrap().subscriber_count(&CAROL), 1);
+            assert_eq!(tx.materialized_view_instances_for_view(updated.view_id).len(), 3);
+        };
+        check_effective(&tx);
+        commit(&datastore, tx)?;
+        let tx = begin_mut_tx(&datastore);
+        check_effective(&tx);
+        Ok(())
     }
 }
