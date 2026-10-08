@@ -6,7 +6,15 @@ using System.Diagnostics.CodeAnalysis;
 #pragma warning disable STDB_UNSTABLE
 #pragma warning disable CA1822 // Preserve the existing instance-based context API.
 
-public sealed class Local : LocalBase { }
+public sealed class Local : LocalBase
+{
+    private static readonly Local Root = new();
+
+    private static Local?[] Instances => field ??= new Local?[Internal.Module.InstanceCount];
+    
+    internal static Local ForInstance(int instanceId) =>
+        instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
+}
 
 public sealed record ReducerContext
     : DbContext<Local>,
@@ -23,16 +31,12 @@ public sealed record ReducerContext
         {
             return this;
         }
-        var selected = this with { Db = new Local { InstanceId = instanceId } };
+        var selected = this with { Db = Local.ForInstance(instanceId) };
         selected.selectionSource = selectionSource ?? this;
         return selected;
     }
 
-    internal int ModuleInstanceId
-    {
-        get => Db.InstanceId;
-        set => Db.InstanceId = value;
-    }
+    internal int ModuleInstanceId => Db.InstanceId;
     public DatabaseEnvironment Env => default;
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
@@ -55,8 +59,10 @@ public sealed record ReducerContext
         ConnectionId? connectionId,
         Random random,
         Timestamp time,
-        AuthCtx? senderAuth = null
+        AuthCtx? senderAuth = null,
+        int instanceId = 0
     )
+        : base(Local.ForInstance(instanceId))
     {
         Sender = identity;
         ConnectionId = connectionId;
@@ -134,7 +140,7 @@ public sealed partial class ProcedureContext
             return this;
         }
         var selected = (ProcedureContext)MemberwiseClone();
-        selected.Db = new Local { InstanceId = instanceId };
+        selected.Db = Local.ForInstance(instanceId);
         selected.SelectionSource = SelectionSource ?? this;
         return selected;
     }
@@ -144,19 +150,16 @@ public sealed partial class ProcedureContext
             ModuleInstanceId
         );
 
-    internal int ModuleInstanceId
-    {
-        get => Db.InstanceId;
-        set => Db.InstanceId = value;
-    }
+    internal int ModuleInstanceId => Db.InstanceId;
 
     internal ProcedureContext(
         Identity identity,
         ConnectionId? connectionId,
         Random random,
-        Timestamp time
+        Timestamp time,
+        int instanceId = 0
     )
-        : base(identity, connectionId, random, time) { }
+        : base(identity, connectionId, random, time) => Db = Local.ForInstance(instanceId);
 
     protected internal override global::SpacetimeDB.LocalBase CreateLocal() => Db;
 
@@ -166,7 +169,7 @@ public sealed partial class ProcedureContext
 
     private ProcedureTxContext? _cached;
 
-    public Local Db { get; private set; } = new();
+    public Local Db { get; private set; }
 
     public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
         base.WithTx(tx => body((ProcedureTxContext)tx));
@@ -228,7 +231,7 @@ public sealed partial class HandlerContext
     : global::SpacetimeDB.HandlerContextBase,
         Internal.IModuleContext<HandlerContext>
 {
-    private Local _db = new();
+    private Local _db = Local.ForInstance(0);
 
     int Internal.IModuleContext.InstanceId => _db.InstanceId;
 
@@ -239,7 +242,7 @@ public sealed partial class HandlerContext
             return this;
         }
         var selected = (HandlerContext)MemberwiseClone();
-        selected._db = new Local { InstanceId = instanceId };
+        selected._db = Local.ForInstance(instanceId);
         selected.SelectionSource = SelectionSource ?? this;
         return selected;
     }
@@ -299,7 +302,7 @@ public sealed class ProcedureTxContext
         }
         var selected = (ProcedureTxContext)MemberwiseClone();
         selected.SelectionSource = SelectionSource ?? this;
-        selected.LocalDb = new Local { InstanceId = instanceId };
+        selected.LocalDb = Local.ForInstance(instanceId);
         return selected;
     }
 
@@ -324,7 +327,7 @@ public sealed class HandlerTxContext
         }
         var selected = (HandlerTxContext)MemberwiseClone();
         selected.SelectionSource = SelectionSource ?? this;
-        selected.LocalDb = new Local { InstanceId = instanceId };
+        selected.LocalDb = Local.ForInstance(instanceId);
         return selected;
     }
 
@@ -346,14 +349,10 @@ public sealed record ViewContext
             ? this
             : this with
             {
-                Db = new Internal.LocalReadOnly { InstanceId = instanceId },
+                Db = Internal.LocalReadOnly.ForInstance(instanceId),
             };
 
-    internal int ModuleInstanceId
-    {
-        get => Db.InstanceId;
-        set => Db.InstanceId = value;
-    }
+    internal int ModuleInstanceId => Db.InstanceId;
     public DatabaseEnvironment Env => default;
     public Identity Sender { get; }
 
@@ -380,14 +379,10 @@ public sealed record AnonymousViewContext
             ? this
             : this with
             {
-                Db = new Internal.LocalReadOnly { InstanceId = instanceId },
+                Db = Internal.LocalReadOnly.ForInstance(instanceId),
             };
 
-    internal int ModuleInstanceId
-    {
-        get => Db.InstanceId;
-        set => Db.InstanceId = value;
-    }
+    internal int ModuleInstanceId => Db.InstanceId;
     public DatabaseEnvironment Env => default;
     public QueryBuilder From => new(ModuleInstanceId);
 

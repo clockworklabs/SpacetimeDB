@@ -94,17 +94,19 @@ public interface ITableView<View, T>
 
     private static readonly string tableName = typeof(View).Name;
 
-    // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
-    private static readonly Lazy<FFI.TableId> tableId_ =
-        new(() =>
-        {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(View.LookupName);
-            FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
-            return out_;
-        });
+    // Instance-aware handles supply their own IDs and never need this legacy cache.
+    private static Lazy<FFI.TableId>? legacyTableId;
 
 #pragma warning disable IDE1006 // Used by static interface member call sites.
-    internal static FFI.TableId tableId => tableId_.Value;
+    internal static FFI.TableId tableId =>
+        (
+            legacyTableId ??= new(() =>
+            {
+                var name_bytes = System.Text.Encoding.UTF8.GetBytes(View.LookupName);
+                FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
+                return out_;
+            })
+        ).Value;
 #pragma warning restore IDE1006
 
     ulong Count { get; }

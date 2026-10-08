@@ -92,40 +92,17 @@ public static class Module
     public static SqlTableName ResolveSqlName(int instanceId, string localName) =>
         Namespaces.ResolveSqlName(instanceId, localName);
 
+#if !NET10_0_OR_GREATER
     private static Func<
         Identity,
         ConnectionId?,
         Random,
         Timestamp,
         IReducerContext
-    >? newReducerContext =
-#if NET10_0_OR_GREATER
-    (identity, connectionId, random, time) =>
-        new SpacetimeDB.ReducerContext(identity, connectionId, random, time);
-#else
-        null;
-#endif
-    private static Func<Identity, IViewContext>? newViewContext =
-#if NET10_0_OR_GREATER
-    identity => new ViewContext(identity, new LocalReadOnly());
-#else
-        null;
-#endif
-    private static Func<IAnonymousViewContext>? newAnonymousViewContext =
-#if NET10_0_OR_GREATER
-    () => new AnonymousViewContext(new LocalReadOnly());
-#else
-        null;
-#endif
-    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
-#if NET10_0_OR_GREATER
-    (
-        random,
-        time
-    ) => new HandlerContext(random, time);
-#else
-        null;
-#endif
+    >? newReducerContext;
+    private static Func<Identity, IViewContext>? newViewContext;
+    private static Func<IAnonymousViewContext>? newAnonymousViewContext;
+    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext;
 
     private static Func<
         Identity,
@@ -133,13 +110,7 @@ public static class Module
         Random,
         Timestamp,
         IProcedureContext
-    >? newProcedureContext =
-#if NET10_0_OR_GREATER
-    (identity, connectionId, random, time) =>
-        new ProcedureContext(identity, connectionId, random, time);
-#else
-        null;
-#endif
+    >? newProcedureContext;
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
@@ -158,6 +129,7 @@ public static class Module
 
     public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
         newAnonymousViewContext = ctor;
+#endif
 
     public readonly struct TypeRegistrar : ITypeRegistrar
     {
@@ -370,11 +342,17 @@ public static class Module
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
 
-        var context = newReducerContext!(senderIdentity, connectionId, random, time);
 #if NET10_0_OR_GREATER
-        ((ReducerContext)context).ModuleInstanceId = instanceId;
+        return new ReducerContext(
+            senderIdentity,
+            connectionId,
+            random,
+            time,
+            instanceId: instanceId
+        );
+#else
+        return newReducerContext!(senderIdentity, connectionId, random, time);
 #endif
-        return context;
     }
 
     public static IProcedureContext CreateProcedureContext(
@@ -413,18 +391,22 @@ public static class Module
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
 
-        var context = newProcedureContext!(sender, connectionId, random, time);
 #if NET10_0_OR_GREATER
-        ((ProcedureContext)context).ModuleInstanceId = instanceId;
+        return new ProcedureContext(sender, connectionId, random, time, instanceId);
+#else
+        return newProcedureContext!(sender, connectionId, random, time);
 #endif
-        return context;
     }
 
     public static SpacetimeDB.HandlerContextBase CreateHandlerContext(Timestamp timestamp)
     {
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
+#if NET10_0_OR_GREATER
+        return new HandlerContext(random, time);
+#else
         return newHandlerContext!(random, time);
+#endif
     }
 
     public static IViewContext CreateViewContext(
@@ -443,11 +425,11 @@ public static class Module
     )
     {
         var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
-        var context = newViewContext!(sender);
 #if NET10_0_OR_GREATER
-        ((ViewContext)context).ModuleInstanceId = instanceId;
+        return new ViewContext(sender, LocalReadOnly.ForInstance(instanceId));
+#else
+        return newViewContext!(sender);
 #endif
-        return context;
     }
 
     public static IAnonymousViewContext CreateAnonymousViewContext() =>
@@ -455,11 +437,11 @@ public static class Module
 
     public static IAnonymousViewContext CreateAnonymousViewContext(int instanceId)
     {
-        var context = newAnonymousViewContext!();
 #if NET10_0_OR_GREATER
-        ((AnonymousViewContext)context).ModuleInstanceId = instanceId;
+        return new AnonymousViewContext(LocalReadOnly.ForInstance(instanceId));
+#else
+        return newAnonymousViewContext!();
 #endif
-        return context;
     }
 
 #if NET10_0_OR_GREATER
@@ -557,7 +539,7 @@ public static class Module
 public partial class Local
 {
 #if NET10_0_OR_GREATER
-    internal int InstanceId { get; set; }
+    internal int InstanceId { get; init; }
 #endif
 }
 
@@ -569,6 +551,13 @@ public partial class Local
 public sealed partial class LocalReadOnly
 {
 #if NET10_0_OR_GREATER
-    internal int InstanceId { get; set; }
+    internal int InstanceId { get; init; }
+
+    private static readonly LocalReadOnly Root = new();
+
+    private static LocalReadOnly?[] Instances => field ??= new LocalReadOnly?[Module.InstanceCount];
+
+    internal static LocalReadOnly ForInstance(int instanceId) =>
+        instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
 #endif
 }
