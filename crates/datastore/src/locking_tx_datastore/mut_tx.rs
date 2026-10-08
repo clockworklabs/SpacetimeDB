@@ -65,7 +65,7 @@ use spacetimedb_schema::{
     identifier::{Identifier, NamespacePath, NamespacedIdentifier},
     reducer_name::ReducerName,
     schema::{
-        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+        ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
         VIEW_ARG_HASH_COL,
     },
     table_name::TableName,
@@ -1405,6 +1405,19 @@ impl MutTxId {
 
         // Update system tables.
         self.update_st_table_row(table_id, |st| st.table_primary_key = new_pk_col_list)?;
+
+        Ok(())
+    }
+
+    /// Change the IDC outbox metadata of the table identified by `table_id`.
+    pub(crate) fn alter_table_outbox(&mut self, table_id: TableId, outbox: Option<OutboxSchema>) -> Result<()> {
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        let old_outbox = tx_table.get_schema().outbox.clone();
+
+        tx_table.set_outbox(outbox.clone());
+        commit_table.set_outbox(outbox);
+
+        self.push_schema_change(PendingSchemaChange::TableAlterOutbox(table_id, old_outbox));
 
         Ok(())
     }
@@ -3350,10 +3363,8 @@ impl MutTxId {
         Ok((msg_id, target_identity))
     }
 
-    /// Find the sender-side stream for this outbox table and receiver.
-    ///
-    /// This lookup is backed by the `(outbox_table_id, target_identity)` system-table index.
-    fn st_outbound_stream(
+    /// Find the stream row for this outbox table and receiver.
+    fn st_outbound_stream_row(
         &self,
         outbox_table_id: TableId,
         target_identity: IdentityViaU256,
@@ -3374,15 +3385,14 @@ impl MutTxId {
 
     /// Reserve the next sequence number for this outbox table and receiver.
     ///
-    /// A sender stream is created lazily on the first message for a receiver. Existing
-    /// streams are replaced because system table rows are updated by delete + insert here.
+    /// Creates the new stream for the first message.
     fn advance_st_outbound_stream(
         &mut self,
         outbox_table_id: TableId,
         target_identity: IdentityViaU256,
     ) -> Result<(u64, u64)> {
         let (stream_id, seq, ack_prefix) =
-            if let Some(row) = self.st_outbound_stream(outbox_table_id, target_identity)? {
+            if let Some(row) = self.st_outbound_stream_row(outbox_table_id, target_identity)? {
                 self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &row.clone().into())?;
                 (row.stream_id, row.next_seq, row.ack_prefix)
             } else {

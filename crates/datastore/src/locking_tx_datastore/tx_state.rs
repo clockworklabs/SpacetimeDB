@@ -5,7 +5,7 @@ use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, 
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
-use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
+use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -143,6 +143,9 @@ pub enum PendingSchemaChange {
     /// The primary key of the table with [`TableId`] was changed.
     /// The old primary key was stored.
     TableAlterPrimaryKey(TableId, Option<ColList>),
+    /// The outbox metadata of the table with [`TableId`] was changed.
+    /// The old outbox metadata was stored.
+    TableAlterOutbox(TableId, Option<OutboxSchema>),
     /// The constraint with [`ConstraintSchema`] was removed from the table with [`TableId`].
     /// If indices were made non-unique, their [`IndexId`]s are stored.
     ConstraintRemoved(TableId, ConstraintSchema, Vec<IndexId>),
@@ -172,6 +175,23 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
+            Self::TableAlterOutbox(table_id, outbox) => {
+                table_id.heap_usage()
+                    + outbox
+                        .as_ref()
+                        .map(|outbox| {
+                            outbox.remote_reducer.as_raw().heap_usage()
+                                + outbox.target_column.heap_usage()
+                                + outbox.arg_columns.heap_usage()
+                                + outbox
+                                    .on_result_reducer
+                                    .as_ref()
+                                    .map(|name| name.as_raw().heap_usage())
+                                    .unwrap_or(0)
+                                + outbox.signature_hash.heap_usage()
+                        })
+                        .unwrap_or(0)
+            }
             Self::ConstraintRemoved(table_id, constraint_schema, index_ids) => {
                 table_id.heap_usage() + constraint_schema.heap_usage() + index_ids.heap_usage()
             }

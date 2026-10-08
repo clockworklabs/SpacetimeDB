@@ -39,7 +39,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
@@ -369,6 +369,15 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn alter_table_outbox_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        outbox: Option<OutboxSchema>,
+    ) -> Result<()> {
+        tx.alter_table_outbox(table_id, outbox)
     }
 
     pub fn alter_event_table_row_type_mut_tx(
@@ -3133,6 +3142,47 @@ pub(crate) mod tests {
 
         tx.drop_row_level_security(rls.sql)?;
         assert_eq!(tx.row_level_security_for_table_id(table_id)?, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_outbox_updates_insert_flags() -> ResultTest<()> {
+        let schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::U256),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let outbox = OutboxSchema {
+            remote_reducer: Identifier::new_unsafe_assume_valid("receive".into()),
+            target_column: ColId(1),
+            arg_columns: vec![],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        };
+        let row = to_vec(&product![1u64, IdentityViaU256(Identity::ONE)]).unwrap();
+
+        let mut tx = begin_mut_tx(&datastore);
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(!insert_flags.is_outbox_table);
+
+        tx.alter_table_outbox(table_id, Some(outbox.clone()))?;
+        assert_eq!(tx.get_schema(table_id).unwrap().outbox, Some(outbox));
+        let row = to_vec(&product![2u64, IdentityViaU256(Identity::ONE)]).unwrap();
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(insert_flags.is_outbox_table);
 
         Ok(())
     }

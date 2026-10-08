@@ -1166,6 +1166,15 @@ impl RelationalDB {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
+    pub(crate) fn alter_table_outbox(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        outbox: Option<spacetimedb_schema::schema::OutboxSchema>,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_outbox_mut_tx(tx, table_id, outbox)?)
+    }
+
     pub(crate) fn alter_event_table_row_type(
         &self,
         tx: &mut MutTx,

@@ -48,7 +48,7 @@ use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawNamespacedI
 use spacetimedb_schema::{
     def::IndexAlgorithm,
     identifier::Identifier,
-    schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
+    schema::{columns_to_row_type, ColumnSchema, IndexSchema, OutboxSchema, TableSchema},
     table_name::TableName,
 };
 use std::{
@@ -573,6 +573,12 @@ impl Table {
     /// Returns whether this is an outbox table.
     pub fn is_outbox(&self) -> bool {
         self.is_outbox
+    }
+
+    /// Sets the table's outbox schema and keeps the cached outbox flag in sync.
+    pub fn set_outbox(&mut self, outbox: Option<OutboxSchema>) {
+        self.is_outbox = outbox.is_some();
+        self.with_mut_schema(|s| s.outbox = outbox);
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,

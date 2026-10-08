@@ -35,6 +35,7 @@ fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a Names
         | AutoMigrateStep::ChangeIndexSourceName((ns, _))
         | AutoMigrateStep::ChangeTableAccessorName((ns, _))
         | AutoMigrateStep::ChangeColumnAccessorName((ns, _), _)
+        | AutoMigrateStep::ChangeOutbox((ns, _))
         | AutoMigrateStep::AddIndex((ns, _))
         | AutoMigrateStep::AddConstraint((ns, _))
         | AutoMigrateStep::AddSequence((ns, _)) => Some(ns),
