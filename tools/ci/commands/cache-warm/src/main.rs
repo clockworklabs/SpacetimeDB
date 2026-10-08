@@ -6,29 +6,33 @@ use duct::{cmd, Expression};
 use std::env;
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 use tempfile::tempdir;
 
 #[derive(Parser)]
 #[command(about = "Warms the Rust caches used by CI runner images")]
-struct Args {}
+struct Args {
+    /// Clear CARGO_TARGET_DIR between population families and before seeding it.
+    #[arg(long)]
+    clear_target_dir: bool,
+}
 
 struct WarmRunner {
-    pass: &'static str,
+    pass: String,
     failures: Vec<String>,
 }
 
 impl WarmRunner {
     fn new() -> Self {
         Self {
-            pass: "setup",
+            pass: "setup".to_owned(),
             failures: Vec::new(),
         }
     }
 
-    fn set_pass(&mut self, pass: &'static str) {
-        self.pass = pass;
+    fn set_pass(&mut self, pass: impl Into<String>) {
+        self.pass = pass.into();
     }
 
     fn required<F>(&mut self, description: &str, action: F)
@@ -72,6 +76,45 @@ where
     } else {
         command
     }
+}
+
+fn checked_target_dir() -> Result<PathBuf> {
+    let target =
+        PathBuf::from(env::var_os("CARGO_TARGET_DIR").context("--clear-target-dir requires CARGO_TARGET_DIR")?);
+    ensure!(
+        target.is_absolute()
+            && target.file_name().is_some()
+            && !target
+                .components()
+                .any(|component| matches!(component, Component::ParentDir)),
+        "CARGO_TARGET_DIR must be an absolute, non-root path without '..'"
+    );
+    let resolved = if target.exists() {
+        target.canonicalize()?
+    } else {
+        target
+            .parent()
+            .context("target has no parent")?
+            .canonicalize()?
+            .join(target.file_name().unwrap())
+    };
+    ensure!(
+        !env::current_dir()?.canonicalize()?.starts_with(&resolved),
+        "refusing to clear a target directory containing the repository"
+    );
+    ensure!(
+        !env::current_exe()?.canonicalize()?.starts_with(&resolved),
+        "run cache-warm from a separate Cargo --target-dir when clearing CARGO_TARGET_DIR"
+    );
+    Ok(resolved)
+}
+
+fn reset_cargo_target(target: &Path) -> Result<()> {
+    if target.exists() {
+        fs::remove_dir_all(target).with_context(|| format!("failed to remove {}", target.display()))?;
+    }
+    // Cargo must create the directory itself so it writes CACHEDIR.TAG.
+    Ok(())
 }
 
 fn warm_runtime_builds(runner: &mut WarmRunner) {
@@ -445,13 +488,30 @@ fn families() -> &'static [(&'static str, WarmFamily)] {
     }
 }
 
-fn warm_families(runner: &mut WarmRunner) {
+fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
+    // Force compiler invocations for each CI family instead of Cargo Fresh reuse.
     for &(name, family) in families() {
         let started = Instant::now();
-        runner.set_pass(name);
+        reset_cargo_target(target)?;
+        runner.set_pass(format!("sccache population: {name}"));
         family(runner);
         eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
     }
+    Ok(())
+}
+
+fn seed_target(runner: &mut WarmRunner, target: Option<&Path>) -> Result<()> {
+    if let Some(target) = target {
+        reset_cargo_target(target)?;
+    }
+    // Retain one combined target, including native outputs sccache cannot cache.
+    for &(name, family) in families() {
+        let started = Instant::now();
+        runner.set_pass(format!("target seed: {name}"));
+        family(runner);
+        eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
+    }
+    Ok(())
 }
 
 fn warm_smoketest_archive() -> Result<()> {
@@ -480,11 +540,12 @@ fn warm_windows_smoketests(runner: &mut WarmRunner) {
 }
 
 fn main() -> Result<()> {
-    Args::parse();
+    let args = Args::parse();
     ensure!(
         Path::new("Cargo.toml").is_file(),
         "run this command from the repository root"
     );
+    let target = args.clear_target_dir.then(checked_target_dir).transpose()?;
     ensure!(
         cfg!(any(target_os = "linux", target_os = "windows")),
         "cache warming is supported only on Linux and Windows"
@@ -502,11 +563,13 @@ fn main() -> Result<()> {
         )
     });
 
-    // Target resets, pruning and snapshots belong to the VM image scripts.
-    warm_families(&mut runner);
+    if let Some(target) = target.as_deref() {
+        populate_sccache(&mut runner, target)?;
+    }
+    seed_target(&mut runner, target.as_deref())?;
 
     if cfg!(target_os = "linux") {
-        runner.set_pass("smoketests");
+        runner.set_pass("target seed: smoketests");
         runner.required("Build standalone smoketest archive", warm_smoketest_archive);
     }
     runner.finish()
@@ -514,7 +577,18 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::patched_blackholio_manifest;
+    use super::{patched_blackholio_manifest, reset_cargo_target};
+
+    #[test]
+    fn reset_leaves_target_creation_to_cargo() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("old-artifact"), "stale").unwrap();
+        reset_cargo_target(&target).unwrap();
+        assert!(!target.exists());
+        reset_cargo_target(&target).unwrap();
+    }
 
     #[test]
     fn patches_blackholio_dependency() {
