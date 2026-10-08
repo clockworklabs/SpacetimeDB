@@ -66,7 +66,12 @@ where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,
 {
-    cmd("cargo", args)
+    let command = cmd("cargo", args);
+    if cfg!(target_os = "windows") {
+        command.env("OPENSSL_RUST_USE_NASM", "1").env("RUST_BACKTRACE", "full")
+    } else {
+        command
+    }
 }
 
 fn warm_runtime_builds(runner: &mut WarmRunner) {
@@ -453,7 +458,7 @@ fn ensure_cargo_nextest() -> Result<()> {
     if cargo(["nextest", "--version"]).unchecked().run()?.status.success() {
         return Ok(());
     }
-    run(cargo(["install", "--locked", "cargo-nextest"]))
+    run(cargo(["install", "--locked", "cargo-nextest"]).env_remove("CARGO_TARGET_DIR"))
 }
 
 fn warm_smoketest_archive() -> Result<()> {
