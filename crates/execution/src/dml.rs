@@ -1,4 +1,3 @@
-use anyhow::Result;
 use spacetimedb_lib::{metrics::ExecutionMetrics, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::dml::{DeletePlan, InsertPlan, MutationPlan, UpdatePlan};
 use spacetimedb_physical_plan::plan::ParamResolver;
@@ -7,10 +6,32 @@ use spacetimedb_sats::size_of::SizeOf;
 
 use crate::{pipelined::PipelinedProject, Datastore, DeltaStore};
 
+#[derive(Debug)]
+pub enum MutationError {
+    Client(anyhow::Error),
+    Internal(anyhow::Error),
+}
+
+impl MutationError {
+    pub fn into_inner(self) -> anyhow::Error {
+        match self {
+            Self::Client(error) | Self::Internal(error) => error,
+        }
+    }
+}
+
+impl From<anyhow::Error> for MutationError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Internal(error)
+    }
+}
+
+pub type MutationResult<T> = std::result::Result<T, MutationError>;
+
 /// A mutable datastore can read as well as insert and delete rows
 pub trait MutDatastore: Datastore + DeltaStore {
-    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> Result<bool>;
-    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> Result<bool>;
+    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> MutationResult<bool>;
+    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> MutationResult<bool>;
 }
 
 /// Executes a physical mutation plan
@@ -36,7 +57,7 @@ impl MutExecutor {
         tx: &mut Tx,
         params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
-    ) -> Result<()> {
+    ) -> MutationResult<()> {
         match self {
             Self::Insert(exec) => exec.execute(tx, metrics),
             Self::Delete(exec) => exec.execute(tx, params, metrics),
@@ -61,7 +82,7 @@ impl From<InsertPlan> for InsertExecutor {
 }
 
 impl InsertExecutor {
-    fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> MutationResult<()> {
         for row in &self.rows {
             if tx.insert_product_value(self.table_id, row)? {
                 metrics.rows_inserted += 1;
@@ -95,7 +116,7 @@ impl DeleteExecutor {
         tx: &mut Tx,
         params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
-    ) -> Result<()> {
+    ) -> MutationResult<()> {
         // TODO: Delete by row id instead of product value
         let mut deletes = vec![];
         self.filter.execute(tx, params, metrics, &mut |row| {
@@ -138,7 +159,7 @@ impl UpdateExecutor {
         tx: &mut Tx,
         params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
-    ) -> Result<()> {
+    ) -> MutationResult<()> {
         let mut deletes = vec![];
         self.filter.execute(tx, params, metrics, &mut |row| {
             deletes.push(row.to_product_value());

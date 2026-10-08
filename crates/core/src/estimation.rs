@@ -7,6 +7,26 @@ use spacetimedb_lib::{identity::AuthCtx, query::Delta};
 use spacetimedb_physical_plan::plan::{HashJoin, IndexProbe, IxJoin, IxScan, PhysicalPlan, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
 
+/// Why [`check_row_limit`] rejected a request.
+#[derive(Debug, thiserror::Error)]
+pub enum RowLimitError {
+    /// The caller's query is too large. The caller can fix this.
+    #[error("Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)")]
+    Exceeded { estimate: u64, limit: u64 },
+    /// The row limit could not be read.
+    #[error(transparent)]
+    Db(#[from] DBError),
+}
+
+impl From<RowLimitError> for DBError {
+    fn from(error: RowLimitError) -> Self {
+        match error {
+            error @ RowLimitError::Exceeded { .. } => DBError::Other(error.into()),
+            RowLimitError::Db(error) => error,
+        }
+    }
+}
+
 /// If the caller is not allowed to exceed the row limit,
 /// reject the request if the estimated cardinality exceeds the limit.
 pub fn check_row_limit<Query>(
@@ -15,7 +35,7 @@ pub fn check_row_limit<Query>(
     tx: &Tx,
     row_est: impl Fn(&Query, &Tx) -> u64,
     auth: &AuthCtx,
-) -> Result<(), DBError> {
+) -> Result<(), RowLimitError> {
     if !auth.exceed_row_limit()
         && let Some(limit) = db.row_limit(tx)?
     {
@@ -24,9 +44,7 @@ pub fn check_row_limit<Query>(
             estimate = estimate.saturating_add(row_est(query, tx));
         }
         if estimate > limit {
-            return Err(DBError::Other(anyhow::anyhow!(
-                "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
-            )));
+            return Err(RowLimitError::Exceeded { estimate, limit });
         }
     }
     Ok(())

@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use crate::{
-    error::{IndexError, SequenceError, TableError},
+    error::{DatastoreError, IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
@@ -40,7 +40,10 @@ use rand_xoshiro::Xoshiro128PlusPlus;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
-use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
+use spacetimedb_execution::{
+    dml::{MutDatastore, MutationError, MutationResult},
+    Datastore, DeltaStore, Row,
+};
 use spacetimedb_lib::{
     db::auth::StAccess, db::raw_def::v9::RawSql, empty_view_arg_hash_value, metrics::ExecutionMetrics,
     sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
@@ -721,16 +724,31 @@ impl DeltaStore for MutTxId {
     }
 }
 
+fn classify_mutation_error(error: DatastoreError) -> MutationError {
+    match error {
+        error @ DatastoreError::Index(IndexError::UniqueConstraintViolation(_)) => MutationError::Client(error.into()),
+        error => MutationError::Internal(error.into()),
+    }
+}
+
 impl MutDatastore for MutTxId {
-    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
-        Ok(match self.insert_via_serialize_bsatn(table_id, row)?.1 {
-            RowRefInsertion::Inserted(_) => true,
-            RowRefInsertion::Existed(_) => false,
-        })
+    fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> MutationResult<bool> {
+        Ok(
+            match self
+                .insert_via_serialize_bsatn(table_id, row)
+                .map_err(classify_mutation_error)?
+                .1
+            {
+                RowRefInsertion::Inserted(_) => true,
+                RowRefInsertion::Existed(_) => false,
+            },
+        )
     }
 
-    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
-        Ok(self.delete_by_row_value(table_id, row)?)
+    fn delete_product_value(&mut self, table_id: TableId, row: &ProductValue) -> MutationResult<bool> {
+        Ok(self
+            .delete_by_row_value(table_id, row)
+            .map_err(classify_mutation_error)?)
     }
 }
 

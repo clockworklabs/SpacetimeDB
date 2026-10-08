@@ -166,10 +166,17 @@ impl Host {
             &mut header,
         )
         .await
-        .map_err(|e| {
+        .map_err(|error| match error {
             // Parser diagnostics can quote values. Return them only to the caller.
-            log::debug!("SQL request rejected");
-            (StatusCode::BAD_REQUEST, e.to_string())
+            sql::execute::SqlExecutionError::Client(error) => {
+                log::debug!("SQL request rejected");
+                (StatusCode::BAD_REQUEST, error.to_string())
+            }
+            // Internal errors can also carry SQL values, so log only that one happened.
+            sql::execute::SqlExecutionError::Internal(_) => {
+                log::error!("SQL request failed with an internal database error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal database error".to_string())
+            }
         })?;
 
         let total_duration = sql_start.elapsed();

@@ -1076,7 +1076,7 @@ pub(crate) mod tests {
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
-    use spacetimedb_execution::dml::MutDatastore as _;
+    use spacetimedb_execution::dml::{MutDatastore as _, MutationError};
     use spacetimedb_execution::Datastore;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -3603,6 +3603,19 @@ pub(crate) mod tests {
         let tx = begin_mut_tx(&datastore);
         let (_, metrics, _) = tx.rollback();
         assert!(!metrics.committed);
+        Ok(())
+    }
+
+    #[test]
+    fn missing_table_during_mutation_is_internal() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        let error = tx
+            .insert_product_value(u32::MAX.into(), &product![1u64])
+            .expect_err("inserting into a missing table should fail");
+        assert_matches!(error, MutationError::Internal(_));
+
         Ok(())
     }
 

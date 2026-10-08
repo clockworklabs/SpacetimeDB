@@ -645,6 +645,7 @@ impl ModuleSubscriptions {
             },
             auth,
         )
+        .map_err(DBError::from)
     }
 
     fn remove_failed_subscription(
@@ -3176,7 +3177,8 @@ mod tests {
     ) -> anyhow::Result<ExecutionMetrics> {
         let mut tx = begin_mut_tx(db);
         for (table_id, row) in deletes {
-            tx.delete_product_value(table_id, &row)?;
+            tx.delete_product_value(table_id, &row)
+                .map_err(|error| error.into_inner())?;
         }
         for (table_id, row) in inserts {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;

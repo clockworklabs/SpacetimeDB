@@ -132,12 +132,18 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 )))
                 .into());
             }
+            let is_server_error = res.status().is_server_error();
             let bytes = to_bytes(res.into_body(), usize::MAX)
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
-            // TODO: Review log level after client SQL errors can be distinguished from internal database failures.
-            log::warn!("PG: Error for database {database}: {err}");
+            // `Host::exec_sql` returns 400 for client SQL errors and 500 for internal failures.
+            // A 400 body can quote SQL values, so only the client receives it.
+            if is_server_error {
+                log::error!("PG: Error for database {database}: {err}");
+            } else {
+                log::debug!("PG: Request rejected for database {database}");
+            }
             Err(PgError::Sql(format!("{err}")))
         }
     }
