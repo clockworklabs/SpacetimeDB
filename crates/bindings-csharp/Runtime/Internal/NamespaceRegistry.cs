@@ -113,6 +113,11 @@ public sealed class NamespaceRegistry
             var resolved = new int[scopes.Length];
             for (var context = 0; context < scopes.Length; context++)
             {
+                if (owners.Length == 1)
+                {
+                    resolved[context] = owners[0];
+                    continue;
+                }
                 if (owners.Contains(context))
                 {
                     resolved[context] = context;
@@ -132,7 +137,7 @@ public sealed class NamespaceRegistry
                     }
                     selected = owner;
                 }
-                resolved[context] = owners.Length == 1 ? owners[0] : selected;
+                resolved[context] = selected;
             }
             instances.Add(assembly, resolved);
         }
