@@ -17,32 +17,32 @@ pub const INITIAL_OUTBOUND_STREAM_NEXT_SEQ: u64 = 1;
 pub const INITIAL_OUTBOUND_STREAM_ACK_PREFIX: u64 = 0;
 
 st_fields_enum!(enum StOutboundStreamFields {
-    "outbox_table_id", OutboxTableId = 0,
-    "target_identity", TargetIdentity = 1,
-    "next_seq", NextSeq = 2,
-    "ack_prefix", AckPrefix = 3,
+    "stream_id", StreamId = 0,
+    "outbox_table_id", OutboxTableId = 1,
+    "target_identity", TargetIdentity = 2,
+    "next_seq", NextSeq = 3,
+    "ack_prefix", AckPrefix = 4,
 });
 
 st_fields_enum!(enum StOutboundMsgFields {
-    "outbox_table_id", OutboxTableId = 0,
+    "stream_id", StreamId = 0,
     "msg_id", MsgId = 1,
-    "target_identity", TargetIdentity = 2,
-    "seq", Seq = 3,
-    "retry_count", RetryCount = 4,
-    "last_transport_error", LastTransportError = 5,
-    "result_status", ResultStatus = 6,
-    "result_payload", ResultPayload = 7,
+    "seq", Seq = 2,
+    "retry_count", RetryCount = 3,
+    "last_transport_error", LastTransportError = 4,
+    "result_status", ResultStatus = 5,
+    "result_payload", ResultPayload = 6,
 });
 
 st_fields_enum!(enum StInboundStreamFields {
     "sender_identity", SenderIdentity = 0,
-    "sender_outbox_table_id", SenderOutboxTableId = 1,
+    "stream_id", StreamId = 1,
     "applied_prefix", AppliedPrefix = 2,
 });
 
 st_fields_enum!(enum StInboundMsgFields {
     "sender_identity", SenderIdentity = 0,
-    "sender_outbox_table_id", SenderOutboxTableId = 1,
+    "stream_id", StreamId = 1,
     "seq", Seq = 2,
     "result_status", ResultStatus = 3,
     "result_payload", ResultPayload = 4,
@@ -54,6 +54,8 @@ st_fields_enum!(enum StInboundMsgFields {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StOutboundStreamRow {
+    /// Stable sender-owned stream id used in outbound rows and on the receiver.
+    pub stream_id: u64,
     /// Outbox table that owns this sender-side stream.
     pub outbox_table_id: TableId,
     /// Receiver database identity for this stream.
@@ -85,12 +87,10 @@ impl From<StOutboundStreamRow> for ProductValue {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StOutboundMsgRow {
-    /// Outbox table that contains the user-visible message row.
-    pub outbox_table_id: TableId,
+    /// Sender-owned stream id from `st_outbound_stream`.
+    pub stream_id: u64,
     /// Primary key of the user-visible outbox row.
     pub msg_id: u64,
-    /// Receiver database identity copied from the outbox row.
-    pub target_identity: IdentityViaU256,
     /// Dense stream sequence number assigned from `st_outbound_stream.next_seq`.
     pub seq: u64,
     /// Number of failed delivery attempts for retry/backoff.
@@ -150,14 +150,14 @@ impl<'de> Deserialize<'de> for StInboundMsgResultStatus {
 impl_serialize!([] StInboundMsgResultStatus, (self, ser) => u8::from(*self).serialize(ser));
 
 /// System Table [ST_INBOUND_STREAM_NAME]
-/// One receiver-side stream per (`sender_identity`, `sender_outbox_table_id`) pair.
+/// One receiver-side stream per (`sender_identity`, `stream_id`) pair.
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StInboundStreamRow {
     /// Sender database identity for this receiver-side stream.
     pub sender_identity: IdentityViaU256,
-    /// Sender outbox table that owns this stream.
-    pub sender_outbox_table_id: TableId,
+    /// Stable sender-owned stream id from `st_outbound_stream`.
+    pub stream_id: u64,
     /// Highest contiguous sequence applied by this receiver.
     /// In ordered mode, the next new message must be this value plus one.
     /// In unordered mode, gaps may be accepted, but this prefix only moves when contiguous.
@@ -184,8 +184,8 @@ impl From<StInboundStreamRow> for ProductValue {
 pub struct StInboundMsgRow {
     /// Sender database identity for this retained result.
     pub sender_identity: IdentityViaU256,
-    /// Sender outbox table that owns this stream.
-    pub sender_outbox_table_id: TableId,
+    /// Stable sender-owned stream id from `st_outbound_stream`.
+    pub stream_id: u64,
     /// Dense stream sequence number this result belongs to.
     pub seq: u64,
     /// Stored reducer outcome kind to replay if the sender retries this sequence.
@@ -220,13 +220,14 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
         )
         .with_type(TableType::System)
         .with_access(v9::TableAccess::Private)
+        .with_auto_inc_primary_key(StOutboundStreamFields::StreamId)
         .with_unique_constraint(outbound_stream_cols)
+        .with_index_no_accessor_name(btree(StOutboundStreamFields::StreamId))
         .with_index_no_accessor_name(btree(outbound_stream_cols));
 
     let outbound_msg_type = builder.add_type::<StOutboundMsgRow>();
     let outbound_msg_cols = [
-        StOutboundMsgFields::OutboxTableId.col_id(),
-        StOutboundMsgFields::TargetIdentity.col_id(),
+        StOutboundMsgFields::StreamId.col_id(),
         StOutboundMsgFields::Seq.col_id(),
     ];
     builder
@@ -242,7 +243,7 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
     let inbound_stream_type = builder.add_type::<StInboundStreamRow>();
     let inbound_stream_cols = [
         StInboundStreamFields::SenderIdentity.col_id(),
-        StInboundStreamFields::SenderOutboxTableId.col_id(),
+        StInboundStreamFields::StreamId.col_id(),
     ];
     builder
         .build_table(
@@ -257,7 +258,7 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
     let inbound_msg_type = builder.add_type::<StInboundMsgRow>();
     let inbound_msg_cols = [
         StInboundMsgFields::SenderIdentity.col_id(),
-        StInboundMsgFields::SenderOutboxTableId.col_id(),
+        StInboundMsgFields::StreamId.col_id(),
         StInboundMsgFields::Seq.col_id(),
     ];
     builder
