@@ -454,13 +454,6 @@ fn warm_families(runner: &mut WarmRunner) {
     }
 }
 
-fn ensure_cargo_nextest() -> Result<()> {
-    if cargo(["nextest", "--version"]).unchecked().run()?.status.success() {
-        return Ok(());
-    }
-    run(cargo(["install", "--locked", "cargo-nextest"]).env_remove("CARGO_TARGET_DIR"))
-}
-
 fn warm_smoketest_archive() -> Result<()> {
     let temp = tempdir().context("failed to create smoketest archive directory")?;
     let archive = temp.path().join("smoketest-nextest.tar.zst");
@@ -483,7 +476,6 @@ fn warm_smoketest_archive() -> Result<()> {
 }
 
 fn warm_windows_smoketests(runner: &mut WarmRunner) {
-    runner.required("Install cargo-nextest", ensure_cargo_nextest);
     runner.required("Build smoketest archive", warm_smoketest_archive);
 }
 
@@ -515,7 +507,6 @@ fn main() -> Result<()> {
 
     if cfg!(target_os = "linux") {
         runner.set_pass("smoketests");
-        runner.required("Install cargo-nextest", ensure_cargo_nextest);
         runner.required("Build standalone smoketest archive", warm_smoketest_archive);
     }
     runner.finish()
