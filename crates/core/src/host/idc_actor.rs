@@ -429,7 +429,7 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Delivery
         };
 
         let request_row = outbox_row.to_product_value();
-        let args_bsatn = encode_reducer_args(&request_row, msg_col, outbox.target_column);
+        let args_bsatn = encode_reducer_args(&request_row, &outbox.arg_columns);
 
         pending.push(PendingMessage {
             st_row,
@@ -463,13 +463,13 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Delivery
     }
 }
 
-fn encode_reducer_args(row: &ProductValue, msg_col: ColId, target_col: ColId) -> Vec<u8> {
+fn encode_reducer_args(row: &ProductValue, arg_columns: &[ColId]) -> Vec<u8> {
     let mut out = Vec::new();
-    for (idx, elem) in row.elements.iter().enumerate() {
-        let col = ColId(idx as u16);
-        if col == msg_col || col == target_col {
-            continue;
-        }
+    for col in arg_columns {
+        let elem = row
+            .elements
+            .get(col.idx())
+            .expect("validated outbox arg column should exist in row");
         spacetimedb_sats::bsatn::to_writer(&mut out, elem).expect("writing outbox row args to BSATN should never fail");
     }
     out
@@ -644,8 +644,9 @@ mod tests {
             Some(OutboxSchema {
                 remote_reducer: Identifier::new_unsafe_assume_valid("receive_value".into()),
                 target_column: ColId(0),
+                arg_columns: vec![ColId(2)],
                 on_result_reducer: None,
-                signature_hash: Some("receiver-signature".into()),
+                signature_hash: "receiver-signature".into(),
             }),
         )
     }
@@ -662,6 +663,22 @@ mod tests {
         tx.record_outbox_insert(table_id, row_ptr)?;
         db.commit_tx(tx)?;
         Ok(table_id)
+    }
+
+    #[test]
+    fn idc_actor_encodes_outbox_args_in_declared_order() {
+        let row = ProductValue::from(vec![
+            AlgebraicValue::U64(10),
+            AlgebraicValue::U32(20),
+            AlgebraicValue::String("ignored".into()),
+            AlgebraicValue::U32(30),
+        ]);
+        let bytes = encode_reducer_args(&row, &[ColId(3), ColId(1)]);
+        let mut expected = Vec::new();
+        spacetimedb_sats::bsatn::to_writer(&mut expected, &AlgebraicValue::U32(30)).unwrap();
+        spacetimedb_sats::bsatn::to_writer(&mut expected, &AlgebraicValue::U32(20)).unwrap();
+
+        assert_eq!(bytes, expected);
     }
 
     #[tokio::test]
@@ -713,7 +730,7 @@ mod tests {
         let request_row = product![IdentityViaU256(target), 7u64, 42u32];
         assert_eq!(
             captured.body,
-            Bytes::from(encode_reducer_args(&request_row, ColId(1), ColId(0)))
+            Bytes::from(encode_reducer_args(&request_row, &[ColId(2)]))
         );
 
         tokio::time::timeout(Duration::from_secs(5), async {
