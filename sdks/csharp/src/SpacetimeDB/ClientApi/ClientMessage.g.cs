@@ -13,6 +13,7 @@ namespace SpacetimeDB.ClientApi
         Unsubscribe Unsubscribe,
         OneOffQuery OneOffQuery,
         CallReducer CallReducer,
-        CallProcedure CallProcedure
+        CallProcedure CallProcedure,
+        SubscribeBatch SubscribeBatch
     )>;
 }

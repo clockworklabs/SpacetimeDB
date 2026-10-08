@@ -1399,7 +1399,6 @@ impl From<TableDef> for RawTableDefV9 {
             schedule,
             table_type,
             table_access,
-            is_event: _, // V9 does not support event tables; ignore when converting back
             ..
         } = val;
 

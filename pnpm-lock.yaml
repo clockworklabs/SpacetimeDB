@@ -123,6 +123,9 @@ importers:
       '@types/react':
         specifier: ^19.1.13
         version: 19.1.13
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.1.13)
       '@types/statuses':
         specifier: ^2.0.6
         version: 2.0.6
@@ -147,12 +150,21 @@ importers:
       globals:
         specifier: ^15.14.0
         version: 15.15.0
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
       size-limit:
         specifier: ^11.2.0
         version: 11.2.0
       svelte:
         specifier: ^5.0.0
         version: 5.46.4
+      terser:
+        specifier: ^5.43.1
+        version: 5.43.1
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@22.18.0)(typescript@5.9.3)

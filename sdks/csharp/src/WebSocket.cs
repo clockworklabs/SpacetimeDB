@@ -3,6 +3,7 @@ using SpacetimeDB.ClientApi;
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -22,6 +23,38 @@ namespace SpacetimeDB
 
         public delegate void ConnectErrorEventHandler(Exception e);
         public delegate void SendErrorEventHandler(Exception e);
+
+        internal class ConnectException : SpacetimeDBException
+        {
+            internal int StatusCode { get; }
+            internal ConnectException(int statusCode, Exception? inner = null)
+                : base($"WebSocket handshake failed with HTTP status {statusCode}.", inner) => StatusCode = statusCode;
+        }
+
+        private static Exception ClassifyConnectError(WebSocketException error)
+        {
+            // .NET Standard does not expose the handshake response status directly.
+            var match = System.Text.RegularExpressions.Regex.Match(error.Message, @"status code '(\d{3})'");
+            if (match.Success)
+            {
+                return new ConnectException(int.Parse(match.Groups[1].Value), error);
+            }
+            return error.WebSocketErrorCode is WebSocketError.UnsupportedProtocol or WebSocketError.NotAWebSocket or WebSocketError.HeaderError
+                ? new ConnectionProtocolException("Invalid WebSocket handshake.", error) : error;
+        }
+
+        internal class CloseException : SpacetimeDBException
+        {
+            internal int Code { get; }
+            internal CloseException(int code, string? reason) : base($"WebSocket closed ({code}): {reason}") => Code = code;
+        }
+
+        internal static Exception? CloseError(int code, string? reason) => code switch
+        {
+            1000 => null,
+            1002 or 1003 or 1007 or 1008 => new ConnectionProtocolException($"WebSocket closed ({code}): {reason}"),
+            _ => new CloseException(code, reason)
+        };
 
         public struct ConnectOptions
         {
@@ -62,10 +95,10 @@ namespace SpacetimeDB
         private bool _isConnected = false;
         private bool _isConnecting = false;
         private bool _cancelConnectRequested = false;
-        public bool IsConnected => _isConnected;
+        public virtual bool IsConnected => _isConnected;
         public bool IsConnecting => _isConnecting;
 #else 
-        public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
+        public virtual bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
         public bool IsConnecting { get { return Ws != null && Ws.State == WebSocketState.Connecting; } }
         public bool IsNoneState { get { return Ws != null && Ws.State == WebSocketState.None; } }
 #endif
@@ -80,7 +113,7 @@ namespace SpacetimeDB
     );
 
     [DllImport("__Internal")]
-    private static extern int WebSocket_Connect(string host, string uri, string protocol, string authToken, IntPtr callbackPtr);
+    private static extern int WebSocket_Connect(string host, string uri, string protocol, string? authToken, int requestId, IntPtr callbackPtr);
 
     [DllImport("__Internal")]
     private static extern int WebSocket_Send(int socketId, byte[] data, int length);
@@ -91,7 +124,10 @@ namespace SpacetimeDB
     [AOT.MonoPInvokeCallback(typeof(Action<int>))]
     private static void WebGLOnOpen(int socketId)
     {
-        Instance?.HandleWebGLOpen(socketId);
+        if (webglSockets.TryGetValue(socketId, out var socket))
+        {
+            socket.HandleWebGLOpen(socketId);
+        }
     }
 
     [AOT.MonoPInvokeCallback(typeof(Action<int, IntPtr, int>))]
@@ -100,7 +136,10 @@ namespace SpacetimeDB
         try {
             byte[] data = new byte[length];
             Marshal.Copy(dataPtr, data, 0, length);
-            Instance?.HandleWebGLMessage(socketId, data);
+            if (webglSockets.TryGetValue(socketId, out var socket))
+            {
+                socket.HandleWebGLMessage(socketId, data);
+            }
         } catch (Exception e) {
             UnityEngine.Debug.LogError($"Error handling message: {e}");
         }
@@ -111,7 +150,11 @@ namespace SpacetimeDB
     {
         try {
             string reason = Marshal.PtrToStringUTF8(reasonPtr);
-            Instance?.HandleWebGLClose(socketId, code, reason);
+            if (webglSockets.TryGetValue(socketId, out var socket))
+            {
+                socket.HandleWebGLClose(socketId, code, reason);
+            }
+            webglSockets.Remove(socketId);
         } catch (Exception e) {
             UnityEngine.Debug.LogError($"Error handling close: {e}");
         }
@@ -120,22 +163,36 @@ namespace SpacetimeDB
     [AOT.MonoPInvokeCallback(typeof(Action<int>))]
     private static void WebGLOnError(int socketId)
     {
-        Instance?.HandleWebGLError(socketId);
+        if (webglSockets.TryGetValue(socketId, out var socket))
+        {
+            socket.HandleWebGLError(socketId);
+        }
     }
 
-    [AOT.MonoPInvokeCallback(typeof(Action<int>))]
-    private static void OnSocketIdReceived(int socketId)
+    [AOT.MonoPInvokeCallback(typeof(Action<int, int>))]
+    private static void OnSocketIdReceived(int requestId, int socketId)
     {
-        Instance?._socketId.TrySetResult(socketId);
+        if (!webglRequests.TryGetValue(requestId, out var socket))
+        {
+            return;
+        }
+        webglRequests.Remove(requestId);
+        if (socketId >= 0)
+        {
+            socket._webglSocketId = socketId;
+            webglSockets[socketId] = socket;
+        }
+        socket._socketId.TrySetResult(socketId);
     }
 
-    private static WebSocket Instance;
+    private static readonly Dictionary<int, WebSocket> webglSockets = new();
+    private static readonly Dictionary<int, WebSocket> webglRequests = new();
+    private static int nextWebglRequest;
     private int _webglSocketId = -1;
-    private TaskCompletionSource<int> _socketId;
+    private TaskCompletionSource<int> _socketId = null!;
 
     private void InitializeWebGL()
     {
-        Instance = this;
         // Convert callbacks to function pointers
         var openPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)WebGLOnOpen);
         var messagePtr = Marshal.GetFunctionPointerForDelegate((Action<int, IntPtr, int>)WebGLOnMessage);
@@ -146,17 +203,27 @@ namespace SpacetimeDB
     }
 #endif
 
-        public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light, bool? confirmedReads)
+        public virtual async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light, bool? confirmedReads, ConnectionId? sessionId = null)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (_isConnecting || _isConnected) return;
+            if (_isConnecting || _isConnected)
+            {
+                return;
+            }
 
             _isConnecting = true;
             _cancelConnectRequested = false;
             try
             {
                 var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
-                if (light) uri += "&light=true";
+                if (sessionId.HasValue)
+                {
+                    uri += $"&session_id={sessionId.Value}";
+                }
+                if (light)
+                {
+                    uri += "&light=true";
+                }
                 if (confirmedReads.HasValue)
                 {
                     // Ensure to transmit the bool as lowercase.
@@ -165,13 +232,17 @@ namespace SpacetimeDB
                 }
 
                 _socketId = new TaskCompletionSource<int>();
-                var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)OnSocketIdReceived);
-                WebSocket_Connect(host, uri, _options.Protocol, auth, callbackPtr);
+                var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int, int>)OnSocketIdReceived);
+                var requestId = ++nextWebglRequest;
+                webglRequests[requestId] = this;
+                WebSocket_Connect(host, uri, _options.Protocol, auth, requestId, callbackPtr);
                 _webglSocketId = await _socketId.Task;
-                if (_webglSocketId == -1)
+                if (_webglSocketId < 0)
                 {
-                    dispatchQueue.Enqueue(() => OnConnectError?.Invoke(
-                        new Exception("Failed to connect WebSocket")));
+                    var statusCode = -_webglSocketId;
+                    dispatchQueue.Enqueue(() => OnConnectError?.Invoke(statusCode == 1
+                        ? new Exception("Failed to connect WebSocket") : new ConnectException(statusCode)));
+                    _webglSocketId = -1;
                 }
                 else if (_cancelConnectRequested)
                 {
@@ -190,6 +261,10 @@ namespace SpacetimeDB
         // Events will be handled via UnitySendMessage callbacks
 #else
             var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
+            if (sessionId.HasValue)
+            {
+                uri += $"&session_id={sessionId.Value}";
+            }
             if (light)
             {
                 uri += "&light=true";
@@ -233,49 +308,9 @@ namespace SpacetimeDB
                     return;
                 }
             }
-            catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.Success)
-            {
-                // How can we get here:
-                // - When you go to connect and the server isn't running (port closed) - target machine actively refused
-                // - 404 - No module with at that module address instead of 101 upgrade
-                // - 401? - When the identity received by SpacetimeDB wasn't signed by its signing key
-                // - 400 - When the auth is malformed
-                if (OnConnectError != null)
-                {
-                    // .net 6,7,8 has support for Ws.HttpStatusCode as long as you set
-                    // ClientWebSocketOptions.CollectHttpResponseDetails = true
-                    var message = "A WebSocketException occurred, even though the WebSocketErrorCode is \"Success\".\n"
-                    + "This indicates that there was no native error information for the exception.\n"
-                    + "Due to limitations in the .NET core version we do not have access to the HTTP status code returned by the request which would provide more info on the nature of the error.\n\n"
-                    + "This error could arise for a number of reasons:\n"
-                    + "1. The target machine actively refused the connection.\n"
-                    + "2. The module you are trying to connect to does not exist (404 NOT FOUND).\n"
-                    + "3. The auth token you sent to SpacetimeDB was not signed by the correct signing key (400 BAD REQUEST).\n"
-                    + "4. The auth token is malformed (400 BAD REQUEST).\n"
-                    + "5. You are not authorized (401 UNAUTHORIZED).\n\n"
-                    + "Did you forget to start the server or publish your module?\n\n"
-                    + "Here are some values that might help you debug:\n"
-                    + $"Message: {ex.Message}\n"
-                    + $"WebSocketErrorCode: {ex.WebSocketErrorCode}\n"
-                    + $"ErrorCode: {ex.ErrorCode}\n"
-                    + $"NativeErrorCode: {ex.NativeErrorCode}\n"
-                    + $"InnerException Message: {ex.InnerException?.Message}\n"
-                    + $"WebSocket CloseStatus: {Ws.CloseStatus}\n"
-                    + $"WebSocket State: {Ws.State}\n"
-                    + $"InnerException: {ex.InnerException}\n"
-                    + $"Exception: {ex}"
-                    ;
-                    dispatchQueue.Enqueue(() => OnConnectError(new Exception(message)));
-                }
-            }
             catch (WebSocketException ex)
             {
-                if (OnConnectError != null)
-                {
-                    var message = $"WebSocket connection failed: {ex.WebSocketErrorCode}\n"
-                    + $"Exception message: {ex.Message}\n";
-                    dispatchQueue.Enqueue(() => OnConnectError(new Exception(message)));
-                }
+                dispatchQueue.Enqueue(() => OnConnectError?.Invoke(ClassifyConnectError(ex)));
             }
             catch (SocketException ex)
             {
@@ -308,42 +343,8 @@ namespace SpacetimeDB
                         }
                         if (OnClose != null)
                         {
-                            switch (receiveResult.CloseStatus)
-                            {
-                                case WebSocketCloseStatus.NormalClosure:
-                                    dispatchQueue.Enqueue(() => OnClose(null));
-                                    break;
-                                case WebSocketCloseStatus.EndpointUnavailable:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1000) The connection has closed after the request was fulfilled.")));
-                                    break;
-                                case WebSocketCloseStatus.ProtocolError:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1002) The client or server is terminating the connection because of a protocol error.")));
-                                    break;
-                                case WebSocketCloseStatus.InvalidMessageType:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1003) The client or server is terminating the connection because it cannot accept the data type it received.")));
-                                    break;
-                                case WebSocketCloseStatus.Empty:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1005) No error specified.")));
-                                    break;
-                                case WebSocketCloseStatus.InvalidPayloadData:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1007) The client or server is terminating the connection because it has received data inconsistent with the message type.")));
-                                    break;
-                                case WebSocketCloseStatus.PolicyViolation:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1008) The connection will be closed because an endpoint has received a message that violates its policy.")));
-                                    break;
-                                case WebSocketCloseStatus.MessageTooBig:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1009) Message too big")));
-                                    break;
-                                case WebSocketCloseStatus.MandatoryExtension:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1010) The client is terminating the connection because it expected the server to negotiate an extension.")));
-                                    break;
-                                case WebSocketCloseStatus.InternalServerError:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("(1011) The connection will be closed by the server because of an error on the server.")));
-                                    break;
-                                default:
-                                    dispatchQueue.Enqueue(() => OnClose(new Exception("Unknown error")));
-                                    break;
-                            }
+                            var error = CloseError((int?)receiveResult.CloseStatus ?? 1006, receiveResult.CloseStatusDescription);
+                            dispatchQueue.Enqueue(() => OnClose(error));
                         }
                         return;
                     }
@@ -360,7 +361,7 @@ namespace SpacetimeDB
                                 CancellationToken.None);
                             if (OnClose != null)
                             {
-                                dispatchQueue.Enqueue(() => OnClose(new Exception("(1009) Message too big")));
+                                dispatchQueue.Enqueue(() => OnClose(new ConnectionProtocolException("(1009) Message too big")));
                             }
                             return;
                         }
@@ -380,9 +381,12 @@ namespace SpacetimeDB
                         OnMessage(message, startReceive);
                     }
                 }
-                catch (WebSocketException ex)
+                catch (Exception ex)
                 {
-                    if (OnClose != null) dispatchQueue.Enqueue(() => OnClose(ex));
+                    if (OnClose != null)
+                    {
+                        dispatchQueue.Enqueue(() => OnClose(ex));
+                    }
                     return;
                 }
             }
@@ -403,7 +407,7 @@ namespace SpacetimeDB
 #endif
         }
 
-        public Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure)
+        public virtual Task Close(WebSocketCloseStatus code = WebSocketCloseStatus.NormalClosure)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_webglSocketId >= 0)
@@ -448,7 +452,7 @@ namespace SpacetimeDB
         /// Forcefully abort the WebSocket connection. This terminates any in-flight connect/receive/send
         /// and ensures the server-side socket is torn down promptly. Prefer Close() for graceful shutdowns.
         /// </summary>
-        public void Abort()
+        public virtual void Abort()
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_webglSocketId >= 0)
@@ -464,7 +468,10 @@ namespace SpacetimeDB
 #else
             try
             {
-                Ws?.Abort();
+                CancelConnect();
+                Ws.Abort();
+                Ws.Dispose();
+                messageSendQueue.Clear();
             }
             catch
             {
@@ -482,14 +489,17 @@ namespace SpacetimeDB
         /// before we start another one. This function is also thread safe, just in case.
         /// </summary>
         /// <param name="message">The message to send</param>
-        public void Send(ClientMessage message)
+        public virtual void Send(ClientMessage message)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             try
             {
                 var messageBSATN = new ClientMessage.BSATN();
                 var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
-                WebSocket_Send(_webglSocketId, encodedMessage, encodedMessage.Length);
+                if (WebSocket_Send(_webglSocketId, encodedMessage, encodedMessage.Length) != 0)
+                {
+                    throw new InvalidOperationException("WebSocket send failed.");
+                }
             }
             catch (Exception e)
             {
@@ -531,7 +541,10 @@ namespace SpacetimeDB
             catch (Exception e)
             {
                 senderTask = null;
-                if (OnSendError != null) dispatchQueue.Enqueue(() => OnSendError(e));
+                if (OnSendError != null)
+                {
+                    dispatchQueue.Enqueue(() => OnSendError(e));
+                }
             }
         }
 
@@ -556,7 +569,9 @@ namespace SpacetimeDB
                 }
                 _isConnected = true;
                 if (OnConnect != null)
+                {
                     dispatchQueue.Enqueue(() => OnConnect());
+                }
             }
         }
 
@@ -577,11 +592,7 @@ namespace SpacetimeDB
                 _isConnecting = false;
                 _webglSocketId = -1;
                 _cancelConnectRequested = false;
-                if (ReferenceEquals(Instance, this))
-                {
-                    Instance = null;
-                }
-                var ex = code != (int)WebSocketCloseStatus.NormalClosure ? new Exception($"WebSocket closed with code {code}: {reason}") : null;
+                var ex = CloseError(code, reason);
                 dispatchQueue.Enqueue(() => OnClose?.Invoke(ex));
             }
         }
@@ -592,7 +603,6 @@ namespace SpacetimeDB
             if (socketId == _webglSocketId && OnConnectError != null)
             {
                 _isConnecting = false;
-                _webglSocketId = -1;
                 dispatchQueue.Enqueue(() => OnConnectError(new Exception($"Socket {socketId} error.")));
             }
         }

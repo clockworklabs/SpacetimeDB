@@ -150,7 +150,7 @@ debug = true
 version = "2.11.0"
 edition = "2024"
 # update rust-toolchain.toml too!
-rust-version = "1.96.0"
+rust-version = "1.97"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "=2.11.0" }
@@ -228,7 +228,7 @@ either = "1.9"
 enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
-ethnum = { version = "1.5.0", features = ["serde"] }
+ethnum = { version = "1.5.3", features = ["serde"] }
 flate2 = "1.0.24"
 foldhash = "0.2.0"
 fs-err = "2.9.0"
@@ -292,7 +292,7 @@ rand_xoshiro = "0.7"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
-reqwest = { version = "0.12", features = ["stream", "json", "gzip", "brotli"] }
+reqwest = { version = "0.12", features = ["stream", "json", "gzip", "brotli", "native-tls-alpn"] }
 rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_common = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
