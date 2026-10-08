@@ -55,6 +55,7 @@ test('structured provider rejection distinguishes quota from rate limits and aut
   assert.equal(classifyProviderFailure(429, Buffer.from('unknown')).category, 'rate-limit');
   assert.equal(classifyProviderFailure(401, body('authentication_error')).category, 'authentication');
   assert.equal(classifyProviderFailure(400, body('invalid_request_error')).category, 'request');
+  for (const status of [500, 503, 525]) assert.equal(classifyProviderFailure(status, Buffer.from('')).category, 'unreachable');
   assert.equal(classifyProviderFailure(402, Buffer.from('')).category, 'quota');
   assert.equal(classifyProviderFailure(429, body('secret value should not be copied')).code, null);
 });

@@ -22,6 +22,8 @@ export function classifyProviderFailure(status: number, body: Buffer): ProviderF
   const category = ['insufficient_quota', 'billing_hard_limit_reached', 'credit_balance_too_low'].includes(code ?? '')
     || status === 402 ? 'quota'
     : status === 401 ? 'authentication'
-      : status === 429 || status === 529 ? 'rate-limit' : 'request';
+      : status === 429 || status === 529 ? 'rate-limit'
+        // A server or gateway error is the provider failing, not the request: wait it out and resume.
+        : status >= 500 ? 'unreachable' : 'request';
   return { category, status, code };
 }
