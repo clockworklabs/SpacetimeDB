@@ -1257,29 +1257,29 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 ? $$"""
                     public static partial class AssemblyDescriptor
                     {
-                        private static class {{accessorIdentifier}}SqlNameCache
+                        private static global::SpacetimeDB.SqlTableName?[] {{accessorIdentifier}}SqlNames => field ??= new global::SpacetimeDB.SqlTableName?[global::SpacetimeDB.Internal.Module.InstanceCount];
+
+                        private static global::SpacetimeDB.SqlTableName {{accessorIdentifier}}SqlName(int contextInstance)
                         {
-                            private static readonly global::SpacetimeDB.SqlTableName?[] Names = new global::SpacetimeDB.SqlTableName?[global::SpacetimeDB.Internal.Module.InstanceCount];
-
-                            internal static global::SpacetimeDB.SqlTableName Get(int contextInstance) => Names[contextInstance] ??= Create(contextInstance);
-
-                            private static global::SpacetimeDB.SqlTableName Create(int contextInstance)
+                            var names = {{accessorIdentifier}}SqlNames;
+                            if (names[contextInstance] is { } name)
                             {
-                                var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
+                                return name;
+                            }
+                            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
                         assemblyIdentity,
                         true
                     )}});
-                                return Names[instanceId] ??= global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, {{SymbolDisplay.FormatLiteral(tableName, true)}});
-                            }
-                            // Prevent eager initialization before the root installs namespace placements.
-                            static {{accessorIdentifier}}SqlNameCache() { }
+                            var resolvedName = names[instanceId] ??= global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, {{SymbolDisplay.FormatLiteral(tableName, true)}});
+                            names[contextInstance] = resolvedName;
+                            return resolvedName;
                         }
 
                         public readonly partial struct Queries
                         {
                             {{vis}} {{queryType}} {{accessorIdentifier}}()
                             {
-                                var tableName = {{accessorIdentifier}}SqlNameCache.Get(__instanceId);
+                                var tableName = {{accessorIdentifier}}SqlName(__instanceId);
                                 return new(tableName, new {{colsTypeName}}(tableName), new {{ixColsTypeName}}(tableName));
                             }
                         }
@@ -1915,19 +1915,14 @@ record ReducerDeclaration
             var cacheName = $"__Schedule{Name}Name";
             extensions.Contents.Append(
                 $$"""
-                private static class {{cacheName}}
-                {
-                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveFunctionName({{SymbolDisplay.FormatLiteral(
+                private static string {{cacheName}} => field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName({{SymbolDisplay.FormatLiteral(
                     declaringAssembly,
                     true
                 )}}, nameof({{Identifier}}), {{(string.IsNullOrEmpty(CanonicalName) ? "null" : SymbolDisplay.FormatLiteral(CanonicalName!, true))}});
-                    // Prevent eager initialization before the root installs namespace placements.
-                    static {{cacheName}}() { }
-                }
                 
                 """
             );
-            functionName = cacheName + ".Name";
+            functionName = cacheName;
         }
 
         // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
@@ -2176,19 +2171,14 @@ record ProcedureDeclaration
             var cacheName = $"__Schedule{Name}Name";
             extensions.Contents.Append(
                 $$"""
-                private static class {{cacheName}}
-                {
-                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveFunctionName({{SymbolDisplay.FormatLiteral(
+                private static string {{cacheName}} => field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName({{SymbolDisplay.FormatLiteral(
                     declaringAssembly,
                     true
                 )}}, nameof({{Identifier}}), {{(string.IsNullOrEmpty(CanonicalName) ? "null" : SymbolDisplay.FormatLiteral(CanonicalName!, true))}});
-                    // Prevent eager initialization before the root installs namespace placements.
-                    static {{cacheName}}() { }
-                }
                 
                 """
             );
-            functionName = cacheName + ".Name";
+            functionName = cacheName;
         }
 
         // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
