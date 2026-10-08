@@ -194,7 +194,8 @@ cause a disconnect. A disconnect alone does not mean the user signed out or thei
 application login expired. Keep connection cleanup separate from session revocation.
 
 `ctx.sender` is a SpacetimeDB identity, not necessarily an application account. Separate
-identities can authenticate to the same application account.
+identities can authenticate to the same application account. An application sign-out leaves
+the identity unchanged, so data scoped to `ctx.sender` stays available to that client.
 
 `ctx.connectionId` is typed `ConnectionId | null`. It is present inside connection lifecycle hooks and reducers invoked over a connection, and `null` in `init` and scheduled reducers. Guard it before passing it to a helper or using it as a table key.
 
@@ -363,6 +364,9 @@ The method name identifies which side is returned: `A.leftSemijoin(B, ...)` retu
 Procedural views read through `ctx.db` and return materialized values such as arrays. Query-builder values from `ctx.from` are returned directly; they are not iterators and cannot be spread, looped over, or mixed with array methods. Use a procedural view when the result is a custom row assembled from multiple tables.
 
 ## Client Visibility Filters
+
+Client visibility filters are experimental and may change or be removed. Use views for access
+control. `:sender` is the requesting client's identity.
 
 ```typescript
 export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(

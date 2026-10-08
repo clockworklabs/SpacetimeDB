@@ -365,6 +365,9 @@ Procedural views read through `ctx.db` and return materialized values such as ar
 
 ## Client Visibility Filters
 
+Client visibility filters are experimental and may change or be removed. Use views for access
+control. `:sender` is the requesting client's identity.
+
 ```typescript
 export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
   'SELECT * FROM owned_row WHERE owner = :sender'
