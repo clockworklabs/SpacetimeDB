@@ -1,7 +1,9 @@
 use crate::login::DEFAULT_AUTH_HOST;
 use crate::Config;
 use clap::{Arg, ArgMatches, Command, ValueEnum};
+use is_terminal::IsTerminal;
 use reqwest::Client;
+use std::io::Read;
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum IdentityProvider {
@@ -115,6 +117,20 @@ fn secret_hint(database: &str, name: &str) -> String {
     )
 }
 
+fn read_client_secret() -> anyhow::Result<String> {
+    let secret = if std::io::stdin().is_terminal() {
+        dialoguer::Password::new()
+            .with_prompt("OAuth client secret")
+            .interact()?
+    } else {
+        let mut input = String::new();
+        std::io::stdin().read_to_string(&mut input)?;
+        input.trim_end_matches(['\r', '\n']).to_owned()
+    };
+    anyhow::ensure!(!secret.is_empty(), "the client secret cannot be empty");
+    Ok(secret)
+}
+
 fn database_arg() -> Arg {
     Arg::new("database")
         .required(true)
@@ -177,7 +193,9 @@ fn get_subcommands() -> Vec<Command> {
                     .arg(database_arg())
                     .arg(idp_arg())
                     .arg(Arg::new("client_id").required(true).help("The OAuth client ID"))
-                    .arg(Arg::new("client_secret").required(true).help("The OAuth client secret")),
+                    .arg(Arg::new("client_secret").help(
+                        "The OAuth client secret. If omitted, it is prompted for, or read from stdin when piped",
+                    )),
             )
             .subcommand(
                 Command::new("enable")
@@ -266,13 +284,19 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             "action": "config.reset",
             "database": database,
         }),
-        ("idp", "set") => serde_json::json!({
-            "action": "idp.set",
-            "database": database,
-            "idp": args.get_one::<IdentityProvider>("idp").unwrap().to_string(),
-            "client_id": args.get_one::<String>("client_id").unwrap(),
-            "client_secret": args.get_one::<String>("client_secret").unwrap(),
-        }),
+        ("idp", "set") => {
+            let client_secret = match args.get_one::<String>("client_secret") {
+                Some(secret) => secret.clone(),
+                None => read_client_secret()?,
+            };
+            serde_json::json!({
+                "action": "idp.set",
+                "database": database,
+                "idp": args.get_one::<IdentityProvider>("idp").unwrap().to_string(),
+                "client_id": args.get_one::<String>("client_id").unwrap(),
+                "client_secret": client_secret,
+            })
+        }
         ("idp", toggle @ ("enable" | "disable")) => serde_json::json!({
             "action": "idp.toggle",
             "database": database,

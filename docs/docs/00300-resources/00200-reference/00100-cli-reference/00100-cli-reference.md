@@ -885,7 +885,7 @@ Manage identity providers for a database
 
 Configure and enable an identity provider for a database
 
-**Usage:** `spacetime auth idp set <database> <idp> <client_id> <client_secret>`
+**Usage:** `spacetime auth idp set <database> <idp> <client_id> [client_secret]`
 
 ###### **Arguments:**
 
@@ -895,7 +895,7 @@ Configure and enable an identity provider for a database
   Possible values: `google`, `twitch`, `discord`, `kick`, `github`, `trackmania`
 
 * `<CLIENT_ID>` — The OAuth client ID
-* `<CLIENT_SECRET>` — The OAuth client secret
+* `<CLIENT_SECRET>` — The OAuth client secret. If omitted, it is prompted for, or read from stdin when piped
 
 
 
