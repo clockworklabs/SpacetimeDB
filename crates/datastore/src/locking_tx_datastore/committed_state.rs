@@ -53,7 +53,7 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
     table::{RowRef, Table, TableAndIndex},
-    tiered::{ByteBudget, ByteBudgetConfig, PageEvictionPolicy, PageManager, PreparedCommit},
+    tiered::{ByteBudget, PageEvictionPolicy, PageManager, PreparedCommit, TieredStorage},
 };
 use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
@@ -214,8 +214,8 @@ impl CommittedState {
     pub(super) fn new(page_pool: PagePool) -> Self {
         let page_manager = Arc::new(PageManager::new(
             page_pool.clone(),
-            Arc::new(()),
-            ByteBudget::new(ByteBudgetConfig::unlimited()).unwrap(),
+            Arc::new(TieredStorage::new_for_test()),
+            ByteBudget::unlimited(),
         ));
         Self {
             next_tx_offset: <_>::default(),

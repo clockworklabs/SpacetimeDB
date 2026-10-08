@@ -1915,26 +1915,17 @@ impl Page {
     }
 
     pub fn metadata(&self, fixed_row_size: Size) -> PageMetadata {
-        PageMetadata {
-            num_rows: self.num_rows() as _,
-            bytes_used_by_rows: self.bytes_used_by_rows(fixed_row_size) as _,
-            has_free_fixed_slot: self.header.fixed.next_free.has(),
-            gap_bytes: gap_remaining_size(self.header.var.first, self.header.fixed.last).0 as _,
-            available_granules: self.available_var_len_granules() as _,
-        }
-    }
-
-    pub fn capacity(&self, fixed_row_size: Size) -> PageCapacity {
         let allocated_fixed_slots = self.header.fixed.last / fixed_row_size;
         let free_fixed_slots = allocated_fixed_slots
             .checked_sub(self.header.fixed.num_rows as usize)
             .expect("live row count exceeds allocated fixed slots");
 
-        PageCapacity {
-            num_rows: self.num_rows(),
-            gap_size: gap_remaining_size(self.header.var.first, self.header.fixed.last),
-            free_fixed_slots,
-            available_granules: self.available_var_len_granules(),
+        PageMetadata {
+            num_rows: self.num_rows() as _,
+            bytes_used_by_rows: self.bytes_used_by_rows(fixed_row_size) as _,
+            free_fixed_slots: free_fixed_slots as _,
+            gap_bytes: gap_remaining_size(self.header.var.first, self.header.fixed.last).0 as _,
+            available_granules: self.available_var_len_granules() as _,
         }
     }
 }
@@ -1999,7 +1990,7 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 pub struct PageMetadata {
     pub num_rows: u16,
     pub bytes_used_by_rows: u32,
-    has_free_fixed_slot: bool,
+    free_fixed_slots: u16,
     gap_bytes: u16,
     available_granules: u16,
 }
@@ -2007,7 +1998,7 @@ pub struct PageMetadata {
 impl PageMetadata {
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_var_len_granules: usize) -> bool {
         has_space_for_row(
-            self.has_free_fixed_slot,
+            self.free_fixed_slots != 0,
             Size(self.gap_bytes),
             self.available_granules as _,
             fixed_row_size,
@@ -2126,6 +2117,25 @@ impl PageCapacity {
     }
 }
 
+impl From<PageMetadata> for PageCapacity {
+    fn from(
+        PageMetadata {
+            num_rows,
+            free_fixed_slots,
+            gap_bytes,
+            available_granules,
+            ..
+        }: PageMetadata,
+    ) -> Self {
+        Self {
+            num_rows: num_rows as _,
+            gap_size: Size(gap_bytes),
+            free_fixed_slots: free_fixed_slots as _,
+            available_granules: available_granules as _,
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2156,7 +2166,7 @@ pub(crate) mod tests {
     }
 
     fn assert_page_summaries_match(page: &Page, capacity: &PageCapacity, fixed_row_size: Size) {
-        let canonical_capacity = page.capacity(fixed_row_size);
+        let canonical_capacity = PageCapacity::from(page.metadata(fixed_row_size));
         assert_eq!(capacity.num_rows, canonical_capacity.num_rows);
         assert_eq!(capacity.gap_size, canonical_capacity.gap_size);
         assert_eq!(capacity.free_fixed_slots, canonical_capacity.free_fixed_slots);
@@ -2168,7 +2178,7 @@ pub(crate) mod tests {
             metadata.bytes_used_by_rows as usize,
             page.bytes_used_by_rows(fixed_row_size)
         );
-        assert_eq!(metadata.has_free_fixed_slot, page.header.fixed.next_free.has());
+        assert_eq!(metadata.free_fixed_slots != 0, page.header.fixed.next_free.has());
         assert_eq!(
             Size(metadata.gap_bytes),
             gap_remaining_size(page.header.var.first, page.header.fixed.last)
@@ -2186,7 +2196,7 @@ pub(crate) mod tests {
     fn page_summaries_match_page_after_reservations() {
         let fixed_row_size = u64_row_size();
         let mut page = Page::new(fixed_row_size);
-        let mut capacity = page.capacity(fixed_row_size);
+        let mut capacity = PageCapacity::from(page.metadata(fixed_row_size));
 
         assert_page_summaries_match(&page, &capacity, fixed_row_size);
         for val in 0..64 {
@@ -2367,7 +2377,7 @@ pub(crate) mod tests {
     #[test]
     fn page_summaries_match_page_with_var_len_freelist() {
         let mut page = Page::new(STR_ROW_SIZE);
-        let mut capacity = page.capacity(STR_ROW_SIZE);
+        let mut capacity = PageCapacity::from(page.metadata(STR_ROW_SIZE));
         let one_granule = [0xa5; 1];
         let one_granule_count = Page::total_granules_required_for_objects(&[one_granule]);
         let mut offsets = Vec::new();
