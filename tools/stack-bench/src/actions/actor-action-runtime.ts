@@ -31,6 +31,9 @@ export interface BrowserResponse {
 }
 
 export interface BrowserPage {
+  goto?: Page['goto'];
+  on?: Page['on'];
+  off?: Page['off'];
   route?: Page['route'];
   unroute?: Page['unroute'];
   url(): string;
@@ -108,6 +111,7 @@ export interface Actor {
   readonly pendingReceived: number;
   readonly writes: readonly CapturedWrite[];
   actionCall?: ActionCall;
+  prepareNavigation?(within: number, signal: AbortSignal): Promise<void>;
   forge?: ForgeResult;
   replay?: ReplayResult;
   loc(testid: string, options?: UnknownRecord): Locator;
@@ -120,6 +124,7 @@ export interface BrowserCapability {
   // The stack's own password endpoints, when its platform serves accounts.
   readonly authRequestPatch?: PlatformAuthPatch | null;
   readonly authReadEndpoints?: readonly string[];
+  readonly applicationUrl?: string;
   readonly defaultWithin: number;
   roomName(value: string): string;
   scopedUser(value: string): string;

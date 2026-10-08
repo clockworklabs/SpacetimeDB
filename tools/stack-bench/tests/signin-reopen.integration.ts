@@ -57,3 +57,44 @@ test('sign-in reopens a toggle that closed a panel left on sign-up', async () =>
     }
   } finally { await browser.close(); }
 });
+
+// Sign-in belongs on the page the application's address opens while signed out; a
+// signed-out page elsewhere in the app may offer none. Sign-in opens that page.
+test('sign-in opens the application address when the current page has no sign-in', async () => {
+  const { createServer } = await import('node:http');
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'text/html');
+    response.end(`<main></main><script>
+      const render = () => { document.querySelector('main').innerHTML = location.hash === '#/orders'
+        ? '<p>Sign in to see your orders.</p>'
+        : '<form id="signin"><input id="signin-username"><input id="signin-password"><button id="signin-submit">Go</button></form>';
+        const form = document.querySelector('#signin');
+        if (form) form.onsubmit = event => { event.preventDefault();
+          document.querySelector('main').innerHTML = '<strong id="current-user">' + form.querySelector('#signin-username').value + '</strong>'; };
+      };
+      addEventListener('hashchange', render); render();
+    </script>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const applicationUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const withAddress of [true, false]) {
+      const page = await browser.newPage();
+      await page.goto(`${applicationUrl}#/orders`);
+      const actor = { page, loc: (id: string) => page.locator(`#${id}`) };
+      const capabilities = { actors: { get: () => actor }, 'browser-interaction': {
+        defaultWithin: 2000, scopedUser: (user: string) => user, testId: (id: string) => `#${id}`,
+        sleep: (ms: number) => page.waitForTimeout(ms), ...(withAddress ? { applicationUrl } : {}),
+      } };
+      const result = await executeAction(ACTION_REGISTRY, 'signIn',
+        { do: 'signIn', actor: 'probe', name: 'customer', exact: true, password: 'secret' }, { capabilities });
+      assert.equal(result.status, withAddress ? 'passed' : 'failed', JSON.stringify(result.summary));
+      if (withAddress) assert.equal(await page.locator('#current-user').innerText(), 'customer');
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

@@ -6,8 +6,9 @@ import {
   inconclusive,
   pad,
 } from './actor-action-runtime.js';
-import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
+import type { Actor, ActorActionArguments, BrowserActorCapabilities, BrowserCapability, Locator } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
+import { runApplicationNavigation } from './browser-navigation.js';
 import { captureAuthSubmit, hasAuthWriteTarget, stopAuthWriteInventory, withAuthRequestPatch, withAuthSubmitCapture,
   type AuthRequestPatch } from './auth-request-patch.js';
 import { beginSpacetimeAuthObservation, confirmSpacetimeSignup } from '../stacks/backends/spacetime-browser-session.js';
@@ -45,6 +46,22 @@ interface ManyMessagesInput {
   readonly count: number;
   readonly delayMs?: number;
   readonly prefix: string;
+}
+
+// The account interface shows sign-in and sign-up on the page the application's address
+// opens for a signed-out visitor. Other pages need not offer them, so open that page when
+// the current one shows no entry.
+async function reachAccountEntry(actor: Actor, browser: BrowserCapability, entry: Locator, signal: AbortSignal) {
+  const visible = entry.filter({ visible: true }).first();
+  try {
+    await visible.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    return;
+  } catch (error) {
+    if (!(error instanceof Error) || error.name !== 'TimeoutError' || !browser.applicationUrl || !actor.page.goto) throw error;
+  }
+  await actor.prepareNavigation?.(browser.defaultWithin, signal);
+  await runApplicationNavigation(() => actor.page.goto!(browser.applicationUrl!, { waitUntil: 'domcontentloaded', timeout: 20000 }), actor.page);
+  await visible.waitFor({ state: 'visible', timeout: browser.defaultWithin });
 }
 
 async function finishRegistration(args: ChatArguments<AccountInput>, beforeFallback?: () => void): Promise<void> {
@@ -97,8 +114,7 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     const toggle = actor.loc('signup-toggle');
     const signInToggle = actor.loc('signin-toggle');
     // A shared authentication dialog may expose signup only after it opens.
-    await username.or(toggle).or(signInToggle).filter({ visible: true }).first()
-      .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    await reachAccountEntry(actor, browser, username.or(toggle).or(signInToggle), signal);
     if (!(await username.isVisible()) && !(await toggle.isVisible())) {
       await signInToggle.click({ timeout: browser.defaultWithin });
       await username.or(toggle).filter({ visible: true }).first()
@@ -182,8 +198,7 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   try {
     // An app may drop the toggle's ID while its dialog is open on sign-up.
     const entry = username.or(toggle).or(signupUsername);
-    await (acceptRestoredSession ? entry.or(currentUser) : entry)
-      .filter({ visible: true }).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    await reachAccountEntry(actor, browser, acceptRestoredSession ? entry.or(currentUser) : entry, signal);
     if (await restoredSession()) return { user, signedIn: false };
     if (!(await username.isVisible())) {
       let signupOpen = await signupUsername.isVisible();

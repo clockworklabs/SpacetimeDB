@@ -3,6 +3,7 @@
 Use these exact `id` attributes on the corresponding visible controls. They do not prescribe UI
 structure, data modeling, libraries, or implementation strategy.
 
+The signed-out page is the page the application's address opens for a signed-out visitor.
 From the signed-out page, show the sign-up inputs, `signup-toggle`, or
 `signin-toggle`. If sign-up is inside the sign-in dialog, opening `signin-toggle`
 must reveal the sign-up inputs or `signup-toggle`. That control must reveal the
