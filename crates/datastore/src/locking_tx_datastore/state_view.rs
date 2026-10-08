@@ -294,6 +294,7 @@ pub trait StateView {
             table_primary_key,
             is_event,
             table_alias,
+            None,
         ))
     }
 
