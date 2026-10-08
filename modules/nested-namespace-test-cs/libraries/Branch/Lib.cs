@@ -9,6 +9,11 @@ namespace NestedBranch;
 // Deliberately no reducers or anonymous views: global dispatch must skip empty categories.
 public static partial class Functions
 {
+#pragma warning disable STDB_UNSTABLE
+    public static void ScheduleNext(HandlerContext ctx) =>
+        NestedLeaf.Functions.VolatileNonatomicScheduleImmediateNext(ctx);
+#pragma warning restore STDB_UNSTABLE
+
     public static void CheckSelection(
         ProcedureContext ctx,
         ProcedureContext caller,

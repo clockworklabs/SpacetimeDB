@@ -22,6 +22,24 @@ and three levels deep (`ctx.Db.Branch.Leaf.User` and
 `ctx.Db.@class.Branch.Leaf.User`). Writing through one path must not change the
 other copy. Calling Leaf directly with an ambiguous root context must fail.
 
-Nested query builders and explicit context selection remain for later steps.
-The separate nested-namespace-proof-cs fixture still covers the proposed source
-API and version-loading experiment.
+The [generated client](../../sdks/csharp/examples~/regression-tests/nested-namespaces/)
+also runs against this module on .NET 8 and .NET 10. It covers nested client query
+builders, cache updates, reducer events/errors, procedure results/errors, views,
+joins, one-off queries, and unsubscribe cleanup.
+
+Module query views also exercise library-local `ctx.From.User()` in every Leaf
+instance, child queries in both Branch instances, and three-level root queries
+with filters and both semijoin directions. Public contributions and promoted
+mounts use the same instance-aware query paths.
+
+Context-selection checks pass `ctx.As` paths to ordinary C# methods in Leaf and
+Branch. They cover every Leaf placement, selection again inside Branch, both
+view contexts, procedure and handler transactions, shared auth/RNG/UUID state,
+and commit/rollback without changing the caller. A retained selected transaction
+also observes refreshed timestamps on later attempts. The root `/contexts`
+HTTP route exercises handler selection without enabling submodule routes.
+
+The root `/schedule/*` routes exercise immediate reducer and procedure scheduling
+against both nested Leaf copies. Calls use `ctx.As` paths directly and resolve
+Leaf relative to a selected Branch context. The host test repeats the sequence
+to exercise cached names, waits for execution, and rejects ambiguous root calls.

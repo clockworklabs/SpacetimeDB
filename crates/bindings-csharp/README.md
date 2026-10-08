@@ -69,23 +69,50 @@ Module query builders follow the same paths: root can use
 receiver carries the current instance, and resolved SQL names are cached per
 table and instance, so repeated copies query their own tables.
 
+Use `As` when passing a context to a C# method that must address a particular
+copy of a library:
+
+```csharp
+Audit.Functions.Write(ctx.As.Auth.Audit);
+Audit.Functions.Write(ctx.As.DirectAudit);
+```
+
+Here `Auth`, `Audit`, and `DirectAudit` are mount accessors. The called method
+keeps its ordinary context parameter and library-local `ctx.Db`/`ctx.From`
+expressions. Selection preserves the context type, including read-only view
+contexts, and does not modify the caller. It shares sender/auth, RNG, UUID
+counter, and transaction state; it does not start a transaction or invoke a host
+function. Procedure and handler contexts keep their existing `WithTx` behavior.
+
+To keep a selected context in a local variable, specify its context type, for
+example `ReducerContext audit = ctx.As.Auth.Audit;`. With `var`, the value is the
+generated path selector, not the context. Traversing the path uses value types;
+conversion to a different instance creates a context wrapper and database
+receiver. Reuse a typed local when making repeated calls to the same instance.
+
 Generated clients expose the same full accessor paths on `Db`, `Reducers`,
 `Procedures`, and `q.From`.
 
 See [nested-namespace-test-cs](../../modules/nested-namespace-test-cs/) and its
 [client regression](../../sdks/csharp/examples~/regression-tests/nested-namespaces/).
 
-The nested module implementation is not yet complete:
+Immediate scheduling accepts a context or a selected path on .NET 10:
 
-- Immediate scheduling still resolves a function by assembly identity, so it
-  cannot select between repeated instances of the same assembly.
-- Explicit context selection (`ctx.As...`) is not implemented. Table access
-  inside an ordinary C# method requires the passed context to identify an
-  unambiguous instance. Access through `ctx.Db.Auth.Audit` selects tables, not a
-  new context.
-- Coexisting versions with the same simple assembly name are not covered by the
-  retained integration fixture. Repeated instances of one DLL do not establish
-  support for loading different versions together under NativeAOT.
+```csharp
+Audit.Functions.VolatileNonatomicScheduleImmediateTick(ctx.As.Auth.Audit, value);
+```
+
+Inside Audit, pass `ctx` to schedule against the current instance. This works for
+both reducers and procedures. The canonical function name is resolved once and
+cached for that instance. Passing a path selector does not create a context
+wrapper. The existing overload without a context still works when the assembly
+has a single placement; it cannot choose between repeated placements.
+These APIs remain experimental, best-effort, non-durable, and non-atomic with
+the caller's transaction. They do not replace scheduled tables.
+
+Coexisting versions with the same simple assembly name are not covered by the
+retained integration fixture. Repeated instances of one DLL do not establish
+support for loading different versions together under NativeAOT.
 
 #### Restrictions and limitations
 

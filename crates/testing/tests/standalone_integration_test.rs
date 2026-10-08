@@ -130,7 +130,48 @@ fn namespace_csharp_nested_registration() {
                 assert!(log.contains(warning));
             }
 
+            // Reuse the existing functions to exercise real immediate reducer/procedure calls.
+            // Run twice so each target also exercises the cached-name path.
+            for iteration in 0..2 {
+                for stage in ["ping", "pong", "next"] {
+                    assert_eq!(module.call_http_route_get(&format!("/schedule/{stage}")).await.unwrap().as_ref(), b"scheduled");
+                    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                        loop {
+                            let mut complete = true;
+                            for (path, id) in [("branch_data.nested_data", 2i32), ("outer_data.branch_data.nested_data", 8)] {
+                                let result = spacetimedb::sql::execute::run(
+                                    host.relational_db().clone(),
+                                    format!("SELECT * FROM {path}.user WHERE id = 1"),
+                                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                                    Some(host.info.subscriptions.clone()),
+                                    Some(host.clone()),
+                                    &mut vec![],
+                                ).await.unwrap();
+                                let expected = match stage {
+                                    "ping" => vec![product![1i32, id + 100]],
+                                    "pong" => vec![],
+                                    _ => vec![product![1i32, id]],
+                                };
+                                complete &= result.rows == expected;
+                            }
+                            if stage == "next" {
+                                // The first procedure transaction makes rows visible before the
+                                // rollback check finishes. Wait for both procedure bodies to finish.
+                                let logs = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await;
+                                complete &= ["next:2", "next:8"].iter().all(|message| logs.iter().filter(|line| line.as_str() == *message).count() == iteration + 1);
+                            }
+                            if complete {
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        }
+                    }).await.expect("immediate scheduling did not reach the selected instances");
+                }
+            }
+            assert_eq!(module.call_http_route_get("/schedule/reset").await.unwrap().as_ref(), b"reset");
+
             module.call_reducer_binary("ping", &product![]).await.unwrap();
+            assert_eq!(module.call_http_route_get("/contexts").await.unwrap().as_ref(), b"selected");
             assert_eq!(
                 module.call_procedure_with_args("instance", "[]").await.unwrap(),
                 AlgebraicValue::I32(0)
@@ -208,8 +249,12 @@ fn namespace_csharp_nested_registration() {
             }
             let messages = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await
                 .into_iter().filter(|message| !warnings.contains(message)).collect::<Vec<_>>();
+            let (scheduled, messages) = messages.split_at(12);
+            let mut scheduled = scheduled.to_vec();
+            scheduled.sort();
+            assert_eq!(scheduled, ["leaf:2", "leaf:2", "leaf:8", "leaf:8", "next:2", "next:2", "next:8", "next:8", "pong:2", "pong:2", "pong:8", "pong:8"]);
             assert_eq!(messages,
-                ["root:0", "leaf:2", "pong:2", "leaf:3", "pong:3", "leaf:4", "pong:4", "leaf:5", "pong:5", "leaf:6", "pong:6", "leaf:8", "pong:8"]);
+                ["root:0", "leaf:2", "pong:2", "next:2", "leaf:3", "pong:3", "next:3", "leaf:4", "pong:4", "next:4", "leaf:5", "pong:5", "next:5", "leaf:6", "pong:6", "next:6", "leaf:8", "pong:8", "next:8"]);
         },
     );
 }

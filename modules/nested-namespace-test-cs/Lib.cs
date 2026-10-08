@@ -171,5 +171,56 @@ public static partial class Functions
     }
 
     [HttpRouter]
-    public static Router Routes() => Router.New().Get("/contexts", Handlers.CheckContextSelection);
+    public static Router Routes() =>
+        Router
+            .New()
+            .Get("/contexts", Handlers.CheckContextSelection)
+            .Get("/schedule/ping", Handlers.Schedule)
+            .Get("/schedule/reset", Handlers.Schedule)
+            .Get("/schedule/pong", Handlers.Schedule)
+            .Get("/schedule/next", Handlers.Schedule);
+
+    [HttpHandler]
+    public static HttpResponse Schedule(HandlerContext ctx, HttpRequest request)
+    {
+        if (
+            request.Uri.EndsWith("/ping", StringComparison.Ordinal)
+            || request.Uri.EndsWith("/reset", StringComparison.Ordinal)
+        )
+        {
+            // An ambiguous call must not poison subsequent explicitly selected calls.
+            try
+            {
+                NestedLeaf.Functions.VolatileNonatomicScheduleImmediatePing(ctx);
+                throw new Exception("Ambiguous scheduling unexpectedly succeeded.");
+            }
+            catch (InvalidOperationException error)
+                when (error.Message.Contains("multiple instances")) { }
+            ctx.WithTx(tx =>
+            {
+                tx.Db.Branch.Leaf.User.Clear();
+                tx.Db.Branch.Leaf.RefUser.Clear();
+                tx.Db.@class.Branch.Leaf.User.Clear();
+                tx.Db.@class.Branch.Leaf.RefUser.Clear();
+                return true;
+            });
+            if (request.Uri.EndsWith("/reset", StringComparison.Ordinal))
+            {
+                return new(200, HttpVersion.Http11, [], HttpBody.FromString("reset"));
+            }
+            NestedLeaf.Functions.VolatileNonatomicScheduleImmediatePing(ctx.As.Branch.Leaf);
+            NestedLeaf.Functions.VolatileNonatomicScheduleImmediatePing(ctx.As.@class.Branch.Leaf);
+        }
+        else if (request.Uri.EndsWith("/pong", StringComparison.Ordinal))
+        {
+            NestedLeaf.Functions.VolatileNonatomicScheduleImmediatePong(ctx.As.Branch.Leaf);
+            NestedLeaf.Functions.VolatileNonatomicScheduleImmediatePong(ctx.As.@class.Branch.Leaf);
+        }
+        else
+        {
+            NestedBranch.Functions.ScheduleNext(ctx.As.Branch);
+            NestedBranch.Functions.ScheduleNext(ctx.As.@class.Branch);
+        }
+        return new(200, HttpVersion.Http11, [], HttpBody.FromString("scheduled"));
+    }
 }

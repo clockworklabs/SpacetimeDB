@@ -15,7 +15,7 @@ public sealed record ReducerContext
 {
     private ReducerContext? selectionSource;
 
-    int Internal.IModuleContext<ReducerContext>.InstanceId => ModuleInstanceId;
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
 
     ReducerContext Internal.IModuleContext<ReducerContext>.SelectInstance(int instanceId)
     {
@@ -125,7 +125,7 @@ public sealed partial class ProcedureContext
     : global::SpacetimeDB.ProcedureContextBase,
         Internal.IModuleContext<ProcedureContext>
 {
-    int Internal.IModuleContext<ProcedureContext>.InstanceId => ModuleInstanceId;
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
 
     ProcedureContext Internal.IModuleContext<ProcedureContext>.SelectInstance(int instanceId)
     {
@@ -230,7 +230,7 @@ public sealed partial class HandlerContext
 {
     private Local _db = new();
 
-    int Internal.IModuleContext<HandlerContext>.InstanceId => _db.InstanceId;
+    int Internal.IModuleContext.InstanceId => _db.InstanceId;
 
     HandlerContext Internal.IModuleContext<HandlerContext>.SelectInstance(int instanceId)
     {
@@ -289,7 +289,7 @@ public sealed class ProcedureTxContext
     : global::SpacetimeDB.ProcedureTxContextBase,
         Internal.IModuleContext<ProcedureTxContext>
 {
-    int Internal.IModuleContext<ProcedureTxContext>.InstanceId => Db.InstanceId;
+    int Internal.IModuleContext.InstanceId => Db.InstanceId;
 
     ProcedureTxContext Internal.IModuleContext<ProcedureTxContext>.SelectInstance(int instanceId)
     {
@@ -314,7 +314,7 @@ public sealed class HandlerTxContext
     : global::SpacetimeDB.HandlerTxContextBase,
         Internal.IModuleContext<HandlerTxContext>
 {
-    int Internal.IModuleContext<HandlerTxContext>.InstanceId => Db.InstanceId;
+    int Internal.IModuleContext.InstanceId => Db.InstanceId;
 
     HandlerTxContext Internal.IModuleContext<HandlerTxContext>.SelectInstance(int instanceId)
     {
@@ -339,7 +339,7 @@ public sealed record ViewContext
         Internal.IViewContext,
         Internal.IModuleContext<ViewContext>
 {
-    int Internal.IModuleContext<ViewContext>.InstanceId => ModuleInstanceId;
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
 
     ViewContext Internal.IModuleContext<ViewContext>.SelectInstance(int instanceId) =>
         instanceId == ModuleInstanceId
@@ -371,7 +371,7 @@ public sealed record AnonymousViewContext
         Internal.IAnonymousViewContext,
         Internal.IModuleContext<AnonymousViewContext>
 {
-    int Internal.IModuleContext<AnonymousViewContext>.InstanceId => ModuleInstanceId;
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
 
     AnonymousViewContext Internal.IModuleContext<AnonymousViewContext>.SelectInstance(
         int instanceId

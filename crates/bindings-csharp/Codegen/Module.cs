@@ -1952,6 +1952,20 @@ record ReducerDeclaration
             """
         );
 
+        if (declaringAssembly is not null)
+        {
+            extensions.Contents.Append(
+                ImmediateSchedule.GenerateContextOverload(
+                    Name,
+                    Identifier,
+                    declaringAssembly,
+                    CanonicalName,
+                    Args,
+                    "SpacetimeDB.Internal.IReducer"
+                )
+            );
+        }
+
         return extensions;
     }
 }
@@ -2198,6 +2212,20 @@ record ProcedureDeclaration
             }
             """
         );
+
+        if (declaringAssembly is not null)
+        {
+            extensions.Contents.Append(
+                ImmediateSchedule.GenerateContextOverload(
+                    Name,
+                    Identifier,
+                    declaringAssembly,
+                    CanonicalName,
+                    Args,
+                    "SpacetimeDB.Internal.ProcedureExtensions"
+                )
+            );
+        }
 
         return extensions;
     }
@@ -2571,11 +2599,12 @@ public class Module : IIncrementalGenerator
             );
             scopes.Add(
                 $$"""
-                public readonly struct Scope{{node.Id}}<TContext>
+                public readonly struct Scope{{node.Id}}<TContext> : global::SpacetimeDB.Internal.IModuleContext
                     where TContext : global::SpacetimeDB.Internal.IModuleContext<TContext>
                 {
                     private readonly TContext __context;
                     private readonly int __instanceId;
+                    int global::SpacetimeDB.Internal.IModuleContext.InstanceId => __instanceId;
                     public Scope{{node.Id}}(TContext context, int instanceId) { __context = context; __instanceId = instanceId; }
                     public static implicit operator TContext(Scope{{node.Id}}<TContext> selection) => selection.__context.SelectInstance(selection.__instanceId);
                     {{IndentGeneratedCode(string.Join("\n", members), 4)}}
