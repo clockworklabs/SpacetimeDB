@@ -10,7 +10,6 @@ internal record CompositionNode(
     string AccessorPath,
     NamespaceDeclaration? Mount,
     EquatableArray<string> Contributors,
-    EquatableArray<NamespaceDeclaration> PublicMounts,
     EquatableArray<CompositionNode> Children
 );
 
@@ -78,7 +77,6 @@ internal record ModuleComposition(CompositionNode Root, bool IsValid)
                         "",
                         null,
                         new(ImmutableArray.Create(rootIdentity)),
-                        new(ImmutableArray<NamespaceDeclaration>.Empty),
                         new(ImmutableArray<CompositionNode>.Empty)
                     ),
                     false
@@ -135,7 +133,6 @@ internal record ModuleComposition(CompositionNode Root, bool IsValid)
             var contributors = new HashSet<string>(StringComparer.Ordinal);
             var pending = new Queue<string>(initialContributors);
             var first = pending.Peek();
-            var publicMounts = new List<NamespaceDeclaration>();
             var childMounts = new List<NamespaceDeclaration>();
             while (pending.Count != 0)
             {
@@ -148,7 +145,6 @@ internal record ModuleComposition(CompositionNode Root, bool IsValid)
                 {
                     if (declaration.Accessor.Equals("public", StringComparison.OrdinalIgnoreCase))
                     {
-                        publicMounts.Add(declaration);
                         pending.Enqueue(declaration.AssemblyIdentity);
                     }
                     else
@@ -199,11 +195,6 @@ internal record ModuleComposition(CompositionNode Root, bool IsValid)
                                 .Where(identity => identity != first)
                                 .OrderBy(identity => identity, StringComparer.Ordinal)
                         )
-                        .ToImmutableArray()
-                ),
-                new(
-                    publicMounts
-                        .OrderBy(m => m.DeclaringAssemblyIdentity, StringComparer.Ordinal)
                         .ToImmutableArray()
                 ),
                 new(children.ToImmutable())

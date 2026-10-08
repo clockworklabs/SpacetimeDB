@@ -11,7 +11,7 @@ public sealed class Local : LocalBase
     private static readonly Local Root = new();
 
     private static Local?[] Instances => field ??= new Local?[Internal.Module.InstanceCount];
-    
+
     internal static Local ForInstance(int instanceId) =>
         instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
 }

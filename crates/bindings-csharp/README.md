@@ -87,8 +87,9 @@ function. Procedure and handler contexts keep their existing `WithTx` behavior.
 To keep a selected context in a local variable, specify its context type, for
 example `ReducerContext audit = ctx.As.Auth.Audit;`. With `var`, the value is the
 generated path selector, not the context. Traversing the path uses value types;
-conversion to a different instance creates a context wrapper and database
-receiver. Reuse a typed local when making repeated calls to the same instance.
+conversion to a different instance creates a context wrapper. Database receivers
+are cached per instance. Reuse a typed local when making repeated calls to the
+same instance.
 
 Generated clients expose the same full accessor paths on `Db`, `Reducers`,
 `Procedures`, and `q.From`.
