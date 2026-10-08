@@ -90,9 +90,6 @@ pub enum RawModuleDefV10Section {
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
 
-    /// Outbox table definitions.
-    Outboxes(Vec<RawOutboxDefV10>),
-
     /// HTTP handler function definitions.
     HttpHandlers(Vec<RawHttpHandlerDefV10>),
 
@@ -107,6 +104,9 @@ pub enum RawModuleDefV10Section {
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
     Environment(Vec<RawEnvironmentDeclarationV10>),
+
+    /// Outbox table definitions.
+    Outboxes(Vec<RawOutboxDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]

@@ -26,6 +26,7 @@ use crate::def::{
     RawModuleDefVersion, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
+use crate::reducer_name::ReducerName;
 
 /// The local part of a stored, possibly namespaced name.
 ///
@@ -1437,13 +1438,13 @@ impl Schema for ScheduleSchema {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboxSchema {
     /// The reducer to invoke on the target database.
-    pub remote_reducer: Identifier,
+    pub remote_reducer: ReducerName,
     /// Column containing the receiver database identity.
     pub target_column: ColId,
     /// Columns to encode as reducer arguments, in receiver parameter order.
     pub arg_columns: Vec<ColId>,
     /// Local reducer to invoke with the remote result before acknowledging this stream.
-    pub on_result_reducer: Option<Identifier>,
+    pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by the sender bindings.
     pub signature_hash: String,
 }

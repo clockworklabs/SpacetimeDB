@@ -15,10 +15,11 @@ use crate::def::validate::v9::{
 };
 use crate::def::*;
 use crate::error::ValidationError;
-use crate::identifier::NamespacePath;
+use crate::identifier::{NamespacePath, NamespacedIdentifier};
+use crate::reducer_name::ReducerName;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -1225,10 +1226,20 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
         }
 
         table.outbox = Some(OutboxDef {
-            remote_reducer: identifier(outbox.remote_reducer)?,
+            remote_reducer: ReducerName::new(
+                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(outbox.remote_reducer.into_inner()))
+                    .map_err(|error| ValidationError::IdentifierError { error })?,
+            ),
             target_column: outbox.target_column,
             arg_columns: outbox.arg_columns,
-            on_result_reducer: outbox.on_result_reducer.map(identifier).transpose()?,
+            on_result_reducer: outbox
+                .on_result_reducer
+                .map(|name| {
+                    NamespacedIdentifier::new(&RawNamespacedIdentifier::new(name.into_inner()))
+                        .map(ReducerName::new)
+                        .map_err(|error| ErrorStream::from(ValidationError::IdentifierError { error }))
+                })
+                .transpose()?,
             signature_hash: outbox.signature_hash,
         });
     }

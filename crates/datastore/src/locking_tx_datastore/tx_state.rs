@@ -180,13 +180,13 @@ impl MemoryUsage for PendingSchemaChange {
                     + outbox
                         .as_ref()
                         .map(|outbox| {
-                            outbox.remote_reducer.as_raw().heap_usage()
+                            outbox.remote_reducer.as_ref().heap_usage()
                                 + outbox.target_column.heap_usage()
                                 + outbox.arg_columns.heap_usage()
                                 + outbox
                                     .on_result_reducer
                                     .as_ref()
-                                    .map(|name| name.as_raw().heap_usage())
+                                    .map(|name| name.as_ref().heap_usage())
                                     .unwrap_or(0)
                                 + outbox.signature_hash.heap_usage()
                         })

@@ -1149,6 +1149,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
         ScheduleSchema, SequenceSchema,
@@ -3075,7 +3076,7 @@ pub(crate) mod tests {
             Some(ColId(0)),
         );
         schema.outbox = Some(OutboxSchema {
-            remote_reducer: Identifier::new_unsafe_assume_valid("receive".into()),
+            remote_reducer: ReducerName::for_test("receive"),
             target_column: ColId(1),
             arg_columns: vec![ColId(2)],
             on_result_reducer: None,
@@ -3166,7 +3167,7 @@ pub(crate) mod tests {
         commit(&datastore, tx)?;
 
         let outbox = OutboxSchema {
-            remote_reducer: Identifier::new_unsafe_assume_valid("receive".into()),
+            remote_reducer: ReducerName::for_test("receive"),
             target_column: ColId(1),
             arg_columns: vec![],
             on_result_reducer: None,

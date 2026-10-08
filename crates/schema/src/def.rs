@@ -1398,13 +1398,13 @@ pub struct TableDef {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OutboxDef {
     /// The reducer to invoke on the target database.
-    pub remote_reducer: Identifier,
+    pub remote_reducer: ReducerName,
     /// Column containing the receiver database identity.
     pub target_column: ColId,
     /// Columns to encode as reducer arguments, in receiver parameter order.
     pub arg_columns: Vec<ColId>,
     /// Local reducer to invoke with the remote result before acknowledging this stream.
-    pub on_result_reducer: Option<Identifier>,
+    pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by sender bindings.
     pub signature_hash: String,
 }
