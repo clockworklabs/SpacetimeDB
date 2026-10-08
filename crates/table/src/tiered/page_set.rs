@@ -13,11 +13,12 @@ use crate::{
     indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
     table::{BlobNumBytes, PreparedInsert, Table},
-    tiered::page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlotHandle, ReservedPage},
+    tiered::{
+        page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlotHandle, ReservedPage},
+        PageError,
+    },
     var_len::VarLenMembers,
 };
-
-pub use crate::tiered::page_manager::PageError;
 
 /// The set of pages of a [Table].
 #[derive(Debug)]
@@ -378,7 +379,7 @@ impl PageSet {
                         .row_total_granules(row_ptr.page_offset(), fixed_row_size, visitor)
                 };
                 allocator.prepare_delete::<Infallible>(page_index, granules, |page_index| {
-                    Ok(pinned[&page_index].read().capacity(fixed_row_size))
+                    Ok(pinned[&page_index].read().metadata(fixed_row_size).into())
                 });
 
                 Ok(row_ptr)
@@ -394,9 +395,9 @@ impl PageSet {
                         btree_map::Entry::Vacant(entry) => {
                             let page = self.get_page(page_index)?.expect("delete from absent page");
                             let page = entry.insert(page);
-                            Ok(page.read().capacity(fixed_row_size))
+                            Ok(page.read().metadata(fixed_row_size).into())
                         }
-                        btree_map::Entry::Occupied(entry) => Ok(entry.get().read().capacity(fixed_row_size)),
+                        btree_map::Entry::Occupied(entry) => Ok(entry.get().read().metadata(fixed_row_size).into()),
                     }
                 })?;
                 Ok(PlannedInsert { page_index, row })
