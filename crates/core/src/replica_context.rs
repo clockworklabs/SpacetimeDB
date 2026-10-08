@@ -7,6 +7,7 @@ use crate::error::DBError;
 use crate::messages::control_db::Database;
 use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use once_cell::sync::OnceCell;
 use std::io;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -22,6 +23,9 @@ pub struct ReplicaContext {
     pub subscriptions: ModuleSubscriptions,
     pub module_instance_memory_tracker: ModuleInstanceMemoryTracker,
     pub module_http: ModuleHttpConfig,
+    /// The client for procedure HTTP requests, built on first use.
+    /// Shared by all of this replica's module instances, so they reuse connections.
+    pub module_http_client: OnceCell<reqwest::Client>,
 }
 
 impl ReplicaContext {

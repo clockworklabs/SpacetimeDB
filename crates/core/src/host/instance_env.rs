@@ -1039,22 +1039,14 @@ impl InstanceEnv {
             return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
         }
 
-        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
-            if is_blocked_ip_literal(attempt.url()) {
-                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
-            } else {
-                reqwest::redirect::Policy::default().redirect(attempt)
-            }
-        });
-
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
-        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let execute_fut = reqwest::Client::builder()
-            .dns_resolver(Arc::new(FilteredDnsResolver))
-            .redirect(redirect_policy)
-            .build()
+        // All of the replica's requests share one client, and so one connection pool.
+        let execute_fut = self
+            .replica_ctx
+            .module_http_client
+            .get_or_try_init(build_module_http_client)
             .map_err(http_error)?
             .execute(reqwest);
 
@@ -1130,6 +1122,23 @@ const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 const MODULE_HTTP_DISABLED_ERROR: &str = "module outbound HTTP requests are disabled";
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
+
+/// Build the client [`InstanceEnv::http_request`] sends requests with,
+/// which refuses to connect to private or special-purpose addresses,
+/// whether they come from DNS or from an IP literal in a redirect.
+fn build_module_http_client() -> reqwest::Result<reqwest::Client> {
+    let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
+        if is_blocked_ip_literal(attempt.url()) {
+            attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
+        } else {
+            reqwest::redirect::Policy::default().redirect(attempt)
+        }
+    });
+    reqwest::Client::builder()
+        .dns_resolver(Arc::new(FilteredDnsResolver))
+        .redirect(redirect_policy)
+        .build()
+}
 
 struct FilteredDnsResolver;
 
@@ -1497,6 +1506,7 @@ mod test {
                 subscriptions: subs,
                 module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
                 module_http,
+                module_http_client: Default::default(),
             },
             runtime,
         ))
@@ -2586,7 +2596,7 @@ mod test {
     /// otherwise blocked by [`is_blocked_ip`].
     #[cfg(feature = "allow_loopback_http_for_tests")]
     fn spawn_encoded_body_server(encoding: &str, body: Vec<u8>) -> (u16, std::thread::JoinHandle<String>) {
-        use std::io::{Read, Write};
+        use std::io::Write;
         use std::net::TcpListener;
 
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind test server");
@@ -2604,16 +2614,7 @@ mod test {
         );
         let handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("test server failed to accept");
-
-            // Read the request head. We never send a request body, so `\r\n\r\n` terminates it.
-            let mut request = Vec::new();
-            let mut byte = [0u8; 1];
-            while !request.ends_with(b"\r\n\r\n") {
-                match stream.read(&mut byte).expect("test server failed to read request") {
-                    0 => break,
-                    _ => request.push(byte[0]),
-                }
-            }
+            let request = read_request_head(&mut stream);
 
             stream
                 .write_all(head.as_bytes())
@@ -2624,6 +2625,53 @@ mod test {
             stream.flush().expect("test server failed to flush response");
 
             String::from_utf8_lossy(&request).into_owned()
+        });
+        (port, handle)
+    }
+
+    /// Read a request head, which `\r\n\r\n` terminates as our test requests have no body.
+    /// Returns an empty head if the client closed the connection first.
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn read_request_head(stream: &mut impl std::io::Read) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut byte = [0u8; 1];
+        while !request.ends_with(b"\r\n\r\n") {
+            match stream.read(&mut byte).expect("test server failed to read request") {
+                0 => break,
+                _ => request.push(byte[0]),
+            }
+        }
+        request
+    }
+
+    /// Spin up a keep-alive HTTP/1.1 server on loopback which answers `requests` requests,
+    /// on as many connections as the client opens.
+    ///
+    /// Returns the bound port, and a handle yielding how many connections it accepted.
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn spawn_keep_alive_server(requests: usize) -> (u16, std::thread::JoinHandle<usize>) {
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind test server");
+        let port = listener
+            .local_addr()
+            .expect("failed to read test server address")
+            .port();
+        let handle = std::thread::spawn(move || {
+            let (mut served, mut accepted) = (0, 0);
+            while served < requests {
+                let (mut stream, _) = listener.accept().expect("test server failed to accept");
+                accepted += 1;
+                // Serve this connection until the client closes it or we're done.
+                while served < requests && !read_request_head(&mut stream).is_empty() {
+                    stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                        .expect("test server failed to write response");
+                    served += 1;
+                }
+            }
+            accepted
         });
         (port, handle)
     }
@@ -2868,6 +2916,26 @@ mod test {
             "procedure HTTPS requests should offer `h2` via ALPN; offered {offered:?}"
         );
 
+        Ok(())
+    }
+
+    /// Consecutive requests from a replica reuse one pooled connection,
+    /// rather than paying for a new connection (and TLS handshake) each time.
+    #[test]
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn http_requests_reuse_connection() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, runtime) = instance_env(db)?;
+
+        let (port, server) = spawn_keep_alive_server(2);
+        for _ in 0..2 {
+            let (response, body) = get_via_http_request(&mut env, &runtime, port);
+            assert_eq!(response.code, 200);
+            assert_eq!(&body[..], b"ok");
+        }
+        let accepted = server.join().expect("test server thread panicked");
+
+        assert_eq!(accepted, 1, "both requests should share one connection");
         Ok(())
     }
 }

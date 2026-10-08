@@ -57,6 +57,21 @@ fn main() -> Result<()> {
         "--test-threads=2",
     )
     .run()?;
+    // Procedure HTTP tests that talk to a loopback server only build with this feature,
+    // which `cargo test --all` above doesn't enable.
+    cmd!(
+        "cargo",
+        "test",
+        "-p",
+        "spacetimedb-core",
+        "--lib",
+        "--features",
+        "allow_loopback_http_for_tests",
+        "--",
+        "--test-threads=2",
+        "host::instance_env::test::http_request",
+    )
+    .run()?;
     // The SDK test harness uses the same child-process server guard as smoketests,
     // which expects release CLI/standalone binaries to already exist.
     if !use_prebuilt_runtime {
