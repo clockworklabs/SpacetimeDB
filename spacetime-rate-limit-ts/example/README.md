@@ -1,181 +1,85 @@
 # Powerhouse rate-limit example
 
-Powerhouse is an arcade-style reactor game built with
-[`@spacetimedb/rate-limit`](../). The browser requests actions; SpacetimeDB
-owns energy, heat, upgrades, events, and the fixed-window limiter buckets registered
-under the `rateLimit` namespace.
+A reactor game that shows how to limit repeated actions. Tap the reactor to
+generate energy, buy upgrades, and watch what happens when you act too quickly.
 
-## What this demonstrates
+## Run it locally
 
-- Mounting the Rate Limit submodule in an application module.
-- Deriving server-owned actor keys and fixed gameplay scopes.
-- Enforcing limits from procedures with typed allow/deny results.
-- Using independent buckets for taps, overcharge, upgrades, and repair.
-- Showing caller-specific cooldown status through scoped views.
-- Bounded scheduled cleanup and administrator-only maintenance controls.
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
-## Prerequisites
+Start SpacetimeDB in a separate terminal:
 
-- Node.js 20 or later and pnpm 10.
-- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
-- A local SpacetimeDB server registered as `local`.
-- A logged-in CLI identity for publishing and optional admin grants.
-
-This example uses the workspace SDK. Keep the matching local server running in
-a separate terminal:
-
-```powershell
+```bash
 spacetime start
 ```
 
-```powershell
-spacetime server ping local
-spacetime login show
-```
+From `spacetime-rate-limit-ts/example`, run:
 
-## Quick start
-
-From `spacetime-rate-limit-ts/example`:
-
-```powershell
+```bash
 pnpm install
-pnpm --dir spacetimedb install
-node -e "require('node:fs').copyFileSync('.env.example', '.env')"
-pnpm run build:module:fresh
+pnpm run build:module
 pnpm run dev
 ```
 
-Open <http://127.0.0.1:8792>, start the reactor, and tap rapidly enough to fill
-the tap bucket and heat meter.
+Open <http://127.0.0.1:8792>.
 
-`build:module:fresh` deletes and recreates only the local
-`spacetime-rate-limit-example` database. Use `pnpm run build:module` to preserve current
-players, upgrades, and limiter state.
+## Try it
 
-## Use in your project
+1. Tap the reactor to generate energy. Watch **Tap Charges** decrease.
+2. Keep tapping until you reach the limit. Wait for the charges to refill, then
+   tap again.
+3. Watch the heat meter too. Overheating can stop your taps even when you have
+   charges left. Heat is a separate game rule.
+4. Spend energy on upgrades and try the other actions. They have their own
+   limits and cooldowns.
+5. Open the app in a private browser window to join as another player. Players
+   have separate tap limits, while the reactor and upgrade purchases are shared.
 
-This workspace tests the submodule source in this repository. Consumer
-applications install the published release:
+## Change the example
 
-```bash
-npm install @spacetimedb/rate-limit spacetimedb
-```
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts) sets the limits and
+  checks them when a player acts.
+- [spacetimedb/src/reactor-rules.ts](./spacetimedb/src/reactor-rules.ts) defines
+  the game rules and upgrades.
+- [src/app.ts](./src/app.ts) connects the browser to SpacetimeDB.
+- [public/ui.js](./public/ui.js) handles the game display and controls.
 
-Follow the package's
-[integration guide](../README.md#integrate-into-an-application). Copy the
-per-action policy and caller-status patterns; the reactor game, upgrades, and
-heat model are application code.
+After changing the server code, run `pnpm run build:module`. This keeps current
+players and upgrades. Restart `pnpm run dev` after changing the browser code.
+
+To start over, run `pnpm run build:module:fresh`. **This deletes all data in the
+local `spacetime-rate-limit-example` database.**
+
+For instructions on limiting actions in your own app, see the
+[Rate Limit integration guide](../README.md#integrate-into-an-application).
 
 ## Configuration
 
-| Variable              | Default                        | Purpose                              |
-| --------------------- | ------------------------------ | ------------------------------------ |
-| `HOST`                | `127.0.0.1`                    | Development web-server bind address. |
-| `PORT`                | `8792`                         | Development web-server port.         |
-| `STDB_URI`            | `ws://127.0.0.1:3000`          | Browser WebSocket endpoint.          |
-| `SPACETIMEDB_DB_NAME` | `spacetime-rate-limit-example` | Published database name.             |
+See [.env.example](./.env.example) to change the database address or web-server
+port. The defaults work without a `.env` file.
 
-The Node process serves static files, `GET /api/health`, and browser-safe
-`GET /api/config`. Gameplay calls go directly from the browser to SpacetimeDB.
+## Optional admin controls
 
-## Limiting model
+The CLI identity that first publishes the database is its initial administrator.
+To grant access to your browser identity, run this command while logged in as
+that administrator. Replace `BROWSER_IDENTITY_HEX` with the connected browser's
+identity:
 
-Each protected action has a limiter configured once with
-`rateLimit.client({ scope, limit, windowSeconds })`. The host procedure calls
-`limiter.consume(tx.as.rateLimit, { key })` inside its transaction with an actor
-key derived from `ctx.sender`. The returned result includes remaining capacity,
-reset time, and retry delay. The `reactor_limit_status` view reads the same
-limiters with `limiter.peek(ctx.db.rateLimit, key)`.
-
-Tap Batteries and Upgrade Bay levels change the tap limit and the shop window.
-Each level has its own limiter and scope (`reactor.tap.0`, `reactor.tap.1`, and so
-on), so buying a level starts a fresh bucket. Those lanes are capped at the last
-level that has a limiter.
-
-The submodule implements fixed-window limiting. Application heat and cooldown
-mechanics are separate game rules layered over the rate limit, so a request may
-be rejected by either system.
-
-The primary UI subscribes to application-owned views such as `reactor_state`,
-`reactor_limit_status`, and `reactor_shop`. Raw bucket and limiter event data is
-reserved for administrators.
-
-## Gameplay
-
-- Reactor taps generate energy while consuming the `reactor.tap` limit.
-- Heat cools according to server time; an overheated reactor rejects more taps
-  until it recovers.
-- Overcharge, repair, and shop installation use separate scopes and windows.
-- Installed upgrades change server-owned capabilities and expose matching buttons.
-- Recent events explain successful and rejected actions.
-
-The browser interpolates timers for presentation, but procedure responses and
-subscribed server timestamps are authoritative.
-
-## Administration
-
-A fresh publish seeds the publisher as the initial Rate Limit submodule
-administrator. The debug drawer remains empty and maintenance calls fail for an
-ordinary browser identity. To exercise those controls locally, grant the browser
-identity from the logged-in owner identity:
-
-```powershell
+```bash
 spacetime call --server local spacetime-rate-limit-example rate_limit.add_rate_limit_admin 0x<BROWSER_IDENTITY_HEX>
 ```
 
-Admin resets and sweeps are bounded. Do not turn an unbounded delete into an
-operator convenience endpoint.
+## Before deploying
 
-## Security and deployment boundaries
-
-- Actor keys are derived from trusted module context, not accepted from the
-  browser. A client-selected actor key would allow trivial limit evasion.
-- A limit must guard the authoritative operation in the same server-side flow;
-  disabling a browser button is only presentation.
-- Combine rate limiting with authentication, authorization, quotas, billing
-  controls, and network-level defenses.
-- Stored browser tokens are development credentials and must not be logged or
-  committed.
-- The admin event view returns at most 1,000 raw limiter events.
-- The included Express process is a local static server. Production needs TLS,
-  explicit binding, origin policy, and supervision.
-
-## Build and verification
-
-```powershell
-pnpm --dir spacetimedb run build
-pnpm run build
-pnpm exec tsc -p tsconfig.json
-```
-
-For a release smoke test:
-
-1. Confirm normal taps consume capacity and expose decreasing remaining counts.
-2. Exceed each action limit and verify the denied operation makes no game-state
-   change.
-3. Wait through a reset boundary and confirm the next action is accepted.
-4. Verify two browser identities have independent player and bucket state.
-5. Confirm a non-admin cannot view raw events, reset demo state, change config, or
-   trigger privileged maintenance.
-6. Grant an admin identity and verify bounded sweep/reset behavior.
+This game uses browser identities to distinguish players. In an app with user
+accounts, connect the limits to those accounts so a user cannot get a fresh
+allowance by opening a new browser session. Keep permission checks on the server;
+rate limits do not decide who is allowed to perform an action.
 
 ## Troubleshooting
 
-- **Actions fail immediately:** inspect both limiter status and reactor heat; they
-  are independent rejection paths.
-- **Debug data is empty:** grant the connected browser identity Rate Limit submodule
-  administrator access.
-- **State is stale:** confirm `STDB_URI` targets the database published by
-  the `local` server registration.
-- **An identity fails after reset:** reload once so the client can replace a
-  rejected development token.
-
-## Important files
-
-- `spacetimedb/src/index.ts` - submodule registration, reactor rules, scoped views, and
-  bounded maintenance operations.
-- `src/app.ts` - connection, procedures, subscriptions, and UI bridge.
-- `server.ts` - static development server and browser-safe configuration.
-- `public/index.html` - Powerhouse interface.
-- `public/ui.js` - reactor rendering and interaction handling.
-- `public/styles.css` - Powerhouse presentation.
+- **Taps are rejected:** check both **Tap Charges** and reactor heat. Either can
+  stop an action.
+- **Debug data is empty:** grant your browser identity admin access using the
+  command above.

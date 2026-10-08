@@ -1,8 +1,7 @@
 # @spacetimedb/crypto
 
-SHA-256, HMAC-SHA256, encoding helpers, constant-time byte comparison, and
-webhook-signature verification for SpacetimeDB TypeScript modules. Hashing is
-implemented with `@noble/hashes`.
+Hash data, create HMAC signatures, and verify webhook signatures in SpacetimeDB.
+The package also includes byte comparison and hex and base64 conversion helpers.
 
 ## Install
 
@@ -10,19 +9,10 @@ implemented with `@noble/hashes`.
 npm install @spacetimedb/crypto
 ```
 
-For the surrounding SpacetimeDB module workflow, see
-[Getting started](https://spacetimedb.com/docs/).
+## Verify a webhook
 
-## Usage
-
-### Integrate into an application
-
-This pure helper package supplies hashing, encoding, and signature verification
-functions. Import the function needed by the host HTTP handler. Pass the exact
-raw request bytes and deterministic module time, then parse the provider payload
-after signature verification succeeds.
-
-Verify a Stripe webhook with the raw body and module time:
+In your HTTP handler, verify a Stripe webhook with the raw request body and
+the module's timestamp:
 
 ```ts
 import { SyncResponse } from 'spacetimedb/server';
@@ -54,8 +44,8 @@ tables and keep them out of public rows and procedure results.
   Resend webhooks.
 - `verifyGithubSignature(options)` verifies GitHub's SHA-256 webhook signature.
 
-The verifiers return `{ ok: true }` or `{ ok: false, reason }`. `reason` is one
-of the `errors` codes, so the caller decides what to log or return:
+The verifiers return `{ ok: true }` or `{ ok: false, reason }`, with these
+`errors` codes:
 
 | Code                                 | Meaning                                                |
 | ------------------------------------ | ------------------------------------------------------ |

@@ -1,4 +1,12 @@
-import { createSignal, onCleanup, createMemo, createComputed } from 'solid-js';
+import type { UntypedClientTable } from '../sdk/client_table';
+import { getByAccessorPath } from '../lib/accessor_path';
+import {
+  createSignal,
+  onCleanup,
+  createMemo,
+  createComputed,
+  untrack,
+} from 'solid-js';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
@@ -93,7 +101,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!connection) {
       return [];
     }
-    const table = connection.db[accessorName()];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName()
+    );
     const result: readonly Prettify<UseTableRowType>[] = whereExpr()
       ? (Array.from(table.iter()).filter(row =>
           evaluateBooleanExpr(whereExpr()!, row as Record<string, any>)
@@ -102,25 +113,32 @@ export function useTable<TableDef extends UntypedTableDef>(
     return result;
   };
 
-  const [isReady, setIsReady] = createSignal(false);
+  const [appliedConnectionId, setAppliedConnectionId] = createSignal<
+    string | null
+  >(null);
+  const isReady = () =>
+    connectionState.isActive &&
+    appliedConnectionId() === connectionState.connectionId.toHexString();
 
   createComputed(() => {
+    setAppliedConnectionId(null);
     if (!enabled()) {
-      setIsReady(false);
+      setRows(reconcile([]));
       return;
     }
 
     const connection = connectionState.getConnection();
-    if (!connectionState.isActive || !connection) {
-      setIsReady(false);
+    if (!connection) {
+      setRows(reconcile([]));
       return;
     }
 
     const cancel = connection
       .subscriptionBuilder()
       .onApplied(() => {
-        setIsReady(true);
+        setAppliedConnectionId(connection.connectionId.toHexString());
       })
+      .onError(() => setAppliedConnectionId(null))
       .subscribe(querySql());
 
     onCleanup(() => {
@@ -128,7 +146,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     });
 
     // Bind to table events
-    const table = connection.db[accessorName()];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName()
+    );
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,
@@ -190,7 +211,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     table.onUpdate?.(onUpdate);
 
     // Load initial snapshot
-    setRows(reconcile(computeSnapshot()));
+    untrack(() => setRows(reconcile(computeSnapshot())));
 
     onCleanup(() => {
       table.removeOnInsert(onInsert);
