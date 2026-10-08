@@ -21,6 +21,7 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
 use spacetimedb_table::table::Table;
+use spacetimedb_table::tiered::{PageEvictionPolicy, PageManager};
 use spacetimedb_table::var_len::{NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -264,7 +265,12 @@ fn make_table(c: &mut Criterion) {
                 let mut tables = Vec::with_capacity(num_iters as usize);
                 let start = WallTime.start();
                 for schema in schemas {
-                    tables.push(Table::new(schema.into(), SquashedOffset::COMMITTED_STATE));
+                    tables.push(Table::new(
+                        schema.into(),
+                        SquashedOffset::COMMITTED_STATE,
+                        PageManager::new_for_test().into(),
+                        PageEvictionPolicy::NeverEvict,
+                    ));
                 }
                 let elapsed = WallTime.end(start);
                 black_box(tables);
@@ -283,7 +289,12 @@ fn make_table(c: &mut Criterion) {
 fn make_table_for_row_type<R: Row>(name: &str) -> Table {
     let ty = R::row_type_for_schema();
     let schema = schema_from_ty(ty.clone(), name);
-    Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
+    Table::new(
+        schema.into(),
+        SquashedOffset::COMMITTED_STATE,
+        PageManager::new_for_test().into(),
+        PageEvictionPolicy::NeverEvict,
+    )
 }
 
 fn use_type_throughput<T>(group: &mut BenchmarkGroup<'_, impl Measurement>) {
@@ -296,15 +307,14 @@ fn table_insert_one_row(c: &mut Criterion) {
         let val = black_box(val.to_product());
 
         // Insert before benching to alloc and fault in a page.
-        let pool = PagePool::new_for_test();
         let mut ctx = (table, NullBlobStore);
-        let ptr = ctx.0.insert(&pool, &mut ctx.1, &val).unwrap().1.pointer();
+        let ptr = ctx.0.insert(&mut ctx.1, &val).unwrap().1.pointer();
         let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
             table.delete(bs, ptr, |_| ()).unwrap();
         };
         group.bench_function(name, |b| {
             iter_time_with(b, &mut ctx, pre, |_, _, (table, bs)| {
-                table.insert(&pool, bs, &val).map(|r| r.1.pointer())
+                table.insert(bs, &val).map(|r| r.1.pointer())
             });
         });
     }
@@ -348,8 +358,8 @@ fn table_delete_one_row(c: &mut Criterion) {
 
         // Insert before benching to alloc and fault in a page.
         let mut ctx = (table, NullBlobStore, PagePool::new_for_test());
-        let insert = |_: u64, (table, bs, pool): &mut (Table, NullBlobStore, PagePool)| {
-            table.insert(pool, bs, &val).unwrap().1.pointer()
+        let insert = |_: u64, (table, bs, _pool): &mut (Table, NullBlobStore, PagePool)| {
+            table.insert(bs, &val).unwrap().1.pointer()
         };
 
         group.bench_function(name, |b| {
@@ -396,9 +406,8 @@ fn table_extract_one_row(c: &mut Criterion) {
         let mut table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
-        let pool = PagePool::new_for_test();
         let mut blob_store = NullBlobStore;
-        let row = black_box(table.insert(&pool, &mut blob_store, &val).unwrap().1);
+        let row = black_box(table.insert(&mut blob_store, &val).unwrap().1);
         group.bench_function(name, |b| {
             b.iter_with_large_drop(|| black_box(row.to_product_value()));
         });
@@ -514,14 +523,21 @@ impl IndexedRow for Box<str> {
 
 fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let schema = R::make_schema();
-    let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
+    let mut tbl = Table::new(
+        schema.into(),
+        SquashedOffset::COMMITTED_STATE,
+        PageManager::new_for_test().into(),
+        PageEvictionPolicy::NeverEvict,
+    );
 
     let cols = R::indexed_columns();
     let index_id = IndexId::SENTINEL;
     let algo = BTreeAlgorithm { columns: cols }.into();
     let idx = tbl.new_index(&algo, unique).unwrap();
     // SAFETY: index was derived from the table.
-    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) }.unwrap();
+    unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) }
+        .unwrap()
+        .unwrap();
 
     (tbl, index_id)
 }
@@ -536,7 +552,7 @@ fn powers<const N: usize>(ps: [u64; N]) -> [u64; N] {
 }
 
 fn insert_num_same<R: IndexedRow>(
-    pool: &PagePool,
+    _pool: &PagePool,
     tbl: &mut Table,
     mut make_row: impl FnMut() -> R,
     num_same: usize,
@@ -547,9 +563,7 @@ fn insert_num_same<R: IndexedRow>(
             if let Some(slot) = row.elements.get_mut(1) {
                 *slot = n.into();
             }
-            tbl.insert(pool, &mut NullBlobStore, &row)
-                .map(|(_, row)| row.pointer())
-                .ok()
+            tbl.insert(&mut NullBlobStore, &row).map(|(_, row)| row.pointer()).ok()
         })
         .last()
         .flatten()
@@ -619,8 +633,8 @@ fn index_insert(c: &mut Criterion) {
                     insert_num_same(pool, tbl, || make_row(num_rows), num_same - 1);
                     make_row(num_rows).to_product()
                 };
-                iter_time_with(b, &mut ctx, pre, |row, _, (tbl, bs, pool)| {
-                    tbl.insert(pool, bs, &row).map(|r| r.1.pointer())
+                iter_time_with(b, &mut ctx, pre, |row, _, (tbl, bs, _pool)| {
+                    tbl.insert(bs, &row).map(|r| r.1.pointer())
                 });
             },
         );
@@ -679,11 +693,13 @@ fn index_seek(c: &mut Criterion) {
                             let mut iter = index.seek_point_via_algebraic_value(&col_to_seek);
                             (iter.next(), iter.next())
                         });
+                        let row = row.transpose().expect("page fault during index seek");
+                        let none = none.transpose().expect("page fault during index seek");
                         assert!(
                             num_same > 1 || none.is_none(),
                             "Found a second row at {:?}: {:?} (first row is {:?})",
                             none,
-                            none.unwrap().to_product_value(),
+                            none.as_ref().unwrap().to_product_value(),
                             row.unwrap().to_product_value(),
                         );
                     }

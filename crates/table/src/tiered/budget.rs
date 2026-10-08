@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 #[error("memory limit exceeded")]
 pub struct BudgetExceeded {
     pub requested_bytes: u64,

@@ -106,6 +106,7 @@ impl SchedulerStarter {
 
         // Find all Scheduled tables
         for st_scheduled_row in self.db.iter(&tx, ST_SCHEDULED_ID)? {
+            let st_scheduled_row = st_scheduled_row?;
             let table_id = st_scheduled_row.read_col(StScheduledFields::TableId)?;
             let function_name =
                 Arc::<str>::from(st_scheduled_row.read_col::<Box<str>>(StScheduledFields::ReducerName)?);
@@ -119,6 +120,7 @@ impl SchedulerStarter {
 
             // Insert each entry (row) in the scheduled table into `queue`.
             for scheduled_row in self.db.iter(&tx, table_id)? {
+                let scheduled_row = scheduled_row?;
                 let (schedule_id, schedule_at) = get_schedule_from_row(&scheduled_row, id_column, at_column)?;
                 let row_hash = scheduled_row_hash(&scheduled_row)?;
                 // calculate duration left to call the scheduled reducer
@@ -1060,7 +1062,8 @@ fn get_schedule_row_mut<'a>(
 ) -> anyhow::Result<Option<RowRef<'a>>> {
     Ok(db
         .iter_by_col_eq_mut(tx, id.table_id, id.id_column, &id.schedule_id.into())?
-        .next())
+        .next()
+        .transpose()?)
 }
 
 /// Helper to get `schedule_id` and `schedule_at`
