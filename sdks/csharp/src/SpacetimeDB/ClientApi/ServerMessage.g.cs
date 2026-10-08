@@ -16,6 +16,7 @@ namespace SpacetimeDB.ClientApi
         TransactionUpdate TransactionUpdate,
         OneOffQueryResult OneOffQueryResult,
         ReducerResult ReducerResult,
-        ProcedureResult ProcedureResult
+        ProcedureResult ProcedureResult,
+        SubscribeBatchApplied SubscribeBatchApplied
     )>;
 }

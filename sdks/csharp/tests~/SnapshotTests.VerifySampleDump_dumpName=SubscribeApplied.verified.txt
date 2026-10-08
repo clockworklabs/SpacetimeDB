@@ -106,10 +106,12 @@
         },
         Db: {
           Message: {
+            RemoteTableName: message,
             Count: 4
           },
           User: {
             Identity: {},
+            RemoteTableName: user,
             Count: 3
           }
         },
@@ -138,10 +140,12 @@
         },
         Db: {
           Message: {
+            RemoteTableName: message,
             Count: 4
           },
           User: {
             Identity: {},
+            RemoteTableName: user,
             Count: 3
           }
         },

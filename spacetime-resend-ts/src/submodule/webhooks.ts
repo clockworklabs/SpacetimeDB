@@ -1,0 +1,402 @@
+import * as v from 'valibot';
+import { Timestamp } from 'spacetimedb';
+import {
+  EmailStatus,
+  WebhookEventStatus,
+  spacetimedb,
+  t,
+  vEmailEvent,
+  type EmailEvent,
+  type EmailStatusValue,
+  type ModuleTimestamp,
+  type ReducerModuleCtx,
+  type WebhookEventStatusValue,
+  type WriteCtx,
+} from './schema.js';
+import { upsertEmail } from './email_writes.js';
+import { requireAdmin } from './auth.js';
+import { verifySvixSignature } from '@spacetimedb/crypto';
+import {
+  SyncResponse,
+  type Request,
+  type HandlerContext,
+} from 'spacetimedb/server';
+import {
+  assertExhaustive,
+  safeJsonParse,
+  summarizeIssues,
+  throwSenderError,
+} from './validation.js';
+import { parseResendEventType } from './webhook-metadata.js';
+import { errors } from './errors.js';
+
+type ResendTags = EmailEvent['data']['tags'];
+
+function tagsToJson(tags: ResendTags): string | undefined {
+  if (!tags) return undefined;
+  try {
+    return JSON.stringify(tags);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractTagFields(tags: ResendTags): {
+  userId: string | undefined;
+  orgId: string | undefined;
+} {
+  if (!tags) return { userId: undefined, orgId: undefined };
+  return { userId: tags['userId'], orgId: tags['orgId'] };
+}
+
+function recordDeliveryEvent(
+  ctx: WriteCtx,
+  now: ModuleTimestamp,
+  args: {
+    eventId: string;
+    resendId: string;
+    eventType: string;
+    createdAtIso: string;
+    detailJson: string | undefined;
+  }
+) {
+  if (ctx.db.resendDeliveryEvent.eventId.find(args.eventId)) return;
+  ctx.db.resendDeliveryEvent.insert({
+    eventId: args.eventId,
+    resendId: args.resendId,
+    eventType: args.eventType,
+    createdAtIso: args.createdAtIso,
+    detailJson: args.detailJson,
+    insertedAt: now,
+  });
+}
+
+function updateWebhookStatus(
+  ctx: ReducerModuleCtx,
+  eventId: string,
+  status: WebhookEventStatusValue,
+  errorMessage: string | undefined
+) {
+  const existing = ctx.db.resendWebhookEvent.eventId.find(eventId);
+  if (!existing) return;
+
+  const isTerminal = status.tag !== 'Received';
+  const updated = {
+    ...existing,
+    status,
+    errorMessage,
+    processedAt: isTerminal ? ctx.timestamp : existing.processedAt,
+  };
+
+  ctx.db.resendWebhookEvent.eventId.update(updated);
+}
+
+function makeEmailUpsertArgs(
+  event: EmailEvent,
+  now: ModuleTimestamp
+): Parameters<typeof upsertEmail>[2] {
+  const data = event.data;
+  const tagFields = extractTagFields(data.tags);
+  const tagsJson = tagsToJson(data.tags);
+  const subject = data.subject;
+
+  const base = {
+    resendId: data.email_id,
+    fromAddress: data.from,
+    toAddressesJson: JSON.stringify(data.to),
+    subject,
+    // undefined preserves whatever send_email recorded.
+    html: undefined,
+    text: undefined,
+    lastError: undefined,
+    bouncedAt: undefined,
+    bounceJson: undefined,
+    failedAt: undefined,
+    failureReason: undefined,
+    complained: false,
+    complainedAt: undefined,
+    opened: false,
+    openedAt: undefined,
+    clicked: false,
+    clickedAt: undefined,
+    deliveredAt: undefined,
+    sentAt: undefined,
+    tagsJson,
+    userId: tagFields.userId,
+    orgId: tagFields.orgId,
+    // status undefined = preserve existing or default to queued; branches override.
+    status: undefined as EmailStatusValue | undefined,
+  } satisfies Parameters<typeof upsertEmail>[2];
+
+  switch (event.type) {
+    case 'email.sent':
+      return { ...base, status: EmailStatus.Sent, sentAt: now };
+    case 'email.delivered':
+      return { ...base, status: EmailStatus.Delivered, deliveredAt: now };
+    case 'email.delivery_delayed':
+      return { ...base, status: EmailStatus.DeliveryDelayed };
+    case 'email.bounced':
+      return {
+        ...base,
+        status: EmailStatus.Bounced,
+        bouncedAt: now,
+        bounceJson: JSON.stringify(event.data.bounce),
+        lastError: event.data.bounce.message,
+      };
+    case 'email.failed':
+      return {
+        ...base,
+        status: EmailStatus.Failed,
+        failedAt: now,
+        failureReason: event.data.failed.reason,
+        lastError: event.data.failed.reason,
+      };
+    case 'email.complained':
+      return { ...base, complained: true, complainedAt: now };
+    case 'email.opened':
+      return { ...base, opened: true, openedAt: now };
+    case 'email.clicked':
+      return { ...base, clicked: true, clickedAt: now };
+    default:
+      return assertExhaustive(event);
+  }
+}
+
+function detailJsonForEvent(event: EmailEvent): string | undefined {
+  switch (event.type) {
+    case 'email.bounced':
+      return JSON.stringify(event.data.bounce);
+    case 'email.failed':
+      return JSON.stringify(event.data.failed);
+    case 'email.clicked':
+      return JSON.stringify(event.data.click);
+    case 'email.sent':
+    case 'email.delivered':
+    case 'email.delivery_delayed':
+    case 'email.complained':
+    case 'email.opened':
+      return undefined;
+    default:
+      return assertExhaustive(event);
+  }
+}
+
+// Resend also sends event types this submodule does not track, such as
+// `contact.*`, `domain.*`, and `email.received`. Those are acknowledged as Ignored.
+const vHandledEventType = v.object({
+  type: v.picklist(
+    vEmailEvent.options.map(option => option.entries.type.literal)
+  ),
+});
+
+function applyResendEvent(
+  ctx: ReducerModuleCtx,
+  eventId: string,
+  payloadJson: string
+): { status: WebhookEventStatusValue; error: string | undefined } {
+  const parsed = safeJsonParse(payloadJson);
+  if (parsed === undefined) {
+    return { status: WebhookEventStatus.Failed, error: 'invalid JSON payload' };
+  }
+
+  const result = v.safeParse(vEmailEvent, parsed);
+  if (!result.success) {
+    if (!v.is(vHandledEventType, parsed)) {
+      return { status: WebhookEventStatus.Ignored, error: undefined };
+    }
+    return {
+      status: WebhookEventStatus.Failed,
+      error: `payload validation failed: ${summarizeIssues(result.issues)}`,
+    };
+  }
+
+  const event = result.output;
+  const now = ctx.timestamp;
+  const eventMillis = Date.parse(event.created_at);
+  if (!Number.isFinite(eventMillis)) {
+    return {
+      status: WebhookEventStatus.Failed,
+      error: 'invalid event timestamp',
+    };
+  }
+  const eventTime = new Timestamp(BigInt(eventMillis) * 1000n);
+  upsertEmail(ctx, now, {
+    ...makeEmailUpsertArgs(event, eventTime),
+    statusUpdatedAt: eventTime,
+  });
+  recordDeliveryEvent(ctx, now, {
+    eventId,
+    resendId: event.data.email_id,
+    eventType: event.type,
+    createdAtIso: event.created_at,
+    detailJson: detailJsonForEvent(event),
+  });
+  return { status: WebhookEventStatus.Processed, error: undefined };
+}
+
+export interface ResendWebhookIngestArgs {
+  eventId: string;
+  eventType: string;
+  payloadJson: string;
+  signatureHeader?: string | undefined;
+  timestampHeader?: string | undefined;
+}
+
+const MAX_WEBHOOK_BODY_LENGTH = 1024 * 1024;
+const MAX_WEBHOOK_HEADER_LENGTH = 8192;
+const MAX_WEBHOOK_METADATA_LENGTH = 255;
+
+type WebhookRejection = { status: number; code: string };
+
+// The reducer and HTTP route verify, store, and apply events in one transaction.
+// Returns a rejection when the request is refused before anything is written,
+// otherwise the stored event status.
+function applyResendWebhook(
+  ctx: WriteCtx,
+  args: Omit<ResendWebhookIngestArgs, 'eventType'>
+): WebhookRejection | WebhookEventStatusValue {
+  if (
+    args.eventId.length === 0 ||
+    args.eventId.length > MAX_WEBHOOK_METADATA_LENGTH
+  ) {
+    return { status: 400, code: errors.webhookMetadataInvalid };
+  }
+  if (args.payloadJson.length > MAX_WEBHOOK_BODY_LENGTH) {
+    return { status: 413, code: errors.webhookPayloadTooLarge };
+  }
+  if (
+    (args.signatureHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH ||
+    (args.timestampHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH
+  ) {
+    return { status: 400, code: errors.webhookHeaderTooLarge };
+  }
+
+  const cfg = ctx.db.resendConfig.singleton.find(true);
+  if (!cfg?.webhookSigningSecret) {
+    return { status: 500, code: errors.webhookSecretNotConfigured };
+  }
+  const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
+  const signature = verifySvixSignature({
+    svixId: args.eventId,
+    svixTimestamp: args.timestampHeader ?? '',
+    svixSignature: args.signatureHeader ?? '',
+    rawBody: args.payloadJson,
+    secret: cfg.webhookSigningSecret,
+    nowSeconds,
+  });
+  if (!signature.ok) {
+    return {
+      status: 401,
+      code: `${errors.webhookSignatureMismatch}:${signature.reason}`,
+    };
+  }
+
+  const signedEventType = parseResendEventType(args.payloadJson);
+  if (
+    !signedEventType ||
+    signedEventType.length > MAX_WEBHOOK_METADATA_LENGTH
+  ) {
+    return { status: 400, code: errors.webhookPayloadInvalid };
+  }
+
+  const existing = ctx.db.resendWebhookEvent.eventId.find(args.eventId);
+  if (
+    existing?.status.tag === 'Processed' ||
+    existing?.status.tag === 'Ignored'
+  ) {
+    return existing.status;
+  }
+
+  if (!existing)
+    ctx.db.resendWebhookEvent.insert({
+      eventId: args.eventId,
+      eventType: signedEventType,
+      payloadJson: args.payloadJson,
+      signatureHeader: args.signatureHeader,
+      timestampHeader: args.timestampHeader,
+      status: WebhookEventStatus.Received,
+      errorMessage: undefined,
+      receivedAt: ctx.timestamp,
+      processedAt: undefined,
+    });
+
+  const outcome = applyResendEvent(
+    ctx as ReducerModuleCtx,
+    args.eventId,
+    existing?.payloadJson ?? args.payloadJson
+  );
+  updateWebhookStatus(
+    ctx as ReducerModuleCtx,
+    args.eventId,
+    outcome.status,
+    outcome.error
+  );
+  return outcome.status;
+}
+
+export const ingestResendWebhook = spacetimedb.reducer(
+  {
+    eventId: t.string(),
+    eventType: t.string(),
+    payloadJson: t.string(),
+    signatureHeader: t.option(t.string()),
+    timestampHeader: t.option(t.string()),
+  },
+  (ctx, { eventType, ...args }) => {
+    if (eventType !== parseResendEventType(args.payloadJson)) {
+      throwSenderError(errors.webhookMetadataMismatch);
+    }
+    // A Failed event row commits so it can be read and replayed.
+    const result = applyResendWebhook(ctx, args);
+    if ('code' in result) throwSenderError(result.code);
+  }
+);
+
+function webhookJson(body: unknown, status: number): SyncResponse {
+  return new SyncResponse(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+// Native SpacetimeDB HTTP route handler. Host modules register it on a router so
+// Resend can post directly to the database.
+export function makeResendWebhookHandler() {
+  // The host passes the submodule-scoped context, so this handler remains schema-agnostic.
+  return function resendWebhook(
+    ctx: HandlerContext<typeof spacetimedb.schemaType>,
+    req: Request
+  ): SyncResponse {
+    if (req.method.toUpperCase() !== 'POST') {
+      return webhookJson(
+        { ok: false, code: errors.webhookMethodNotAllowed },
+        405
+      );
+    }
+
+    const args = {
+      eventId: req.headers.get('svix-id') ?? '',
+      payloadJson: req.text(),
+      signatureHeader: req.headers.get('svix-signature') ?? undefined,
+      timestampHeader: req.headers.get('svix-timestamp') ?? undefined,
+    };
+    const result = ctx.withTx(tx => applyResendWebhook(tx as WriteCtx, args));
+    if ('code' in result)
+      return webhookJson({ ok: false, code: result.code }, result.status);
+    return result.tag === 'Failed'
+      ? webhookJson({ ok: false, code: errors.webhookPayloadInvalid }, 400)
+      : webhookJson({ ok: true, code: 'ok' }, 200);
+  };
+}
+
+export const replayWebhookEvent = spacetimedb.reducer(
+  { eventId: t.string() },
+  (ctx, { eventId }) => {
+    // Administrators may run this operation over stored events.
+    requireAdmin(ctx, ctx.sender);
+    const event = ctx.db.resendWebhookEvent.eventId.find(eventId);
+    if (!event) throwSenderError(`${errors.webhookEventNotFound}:${eventId}`);
+    const outcome = applyResendEvent(ctx, eventId, event.payloadJson);
+    updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
+  }
+);

@@ -1,6 +1,11 @@
 # @spacetimedb/rate-limit
 
-Fixed-window rate limiter submodule for SpacetimeDB TypeScript modules.
+Limit how often a user or service can perform an action in your SpacetimeDB
+application. For example, allow each user to create 10 posts per minute.
+
+Choose a limit for each action, check it before doing the work, and report how
+much capacity remains. Limits reset after a fixed time window, and expired
+tracking records are cleaned up automatically.
 
 ## Install
 
@@ -8,22 +13,10 @@ Fixed-window rate limiter submodule for SpacetimeDB TypeScript modules.
 npm install @spacetimedb/rate-limit spacetimedb
 ```
 
-For the install-to-publish workflow, see
-[Getting started](https://spacetimedb.com/docs/).
+## Integrate into an application
 
-This package gives you:
-
-- a `./submodule` namespace with submodule-owned bucket/config/admin tables
-- configured limiter clients that consume and read buckets in host transactions
-- a scheduled, bounded sweep of expired buckets
-- admin-gated operations for diagnostics and maintenance
-
-## Usage
-
-### Integrate into an application
-
-Register the namespace, install its scheduled cleanup and admin state, then
-consume from a limiter before performing the protected action:
+Add Rate Limit to your module and initialize it. This example limits each user
+to 10 posts per minute:
 
 ```ts
 import { schema, SenderError, t, table } from 'spacetimedb/server';
@@ -51,9 +44,8 @@ export const init = spacetimedb.init(ctx => {
 export default spacetimedb;
 ```
 
-Configure each policy once at module scope, then consume inside the same
-transaction as the protected write. Derive the actor key from trusted request
-or session state:
+Configure the limit once, then check it in the same transaction that creates
+the post. Use the caller's identity or authenticated user ID as the key:
 
 ```ts
 const postLimiter = rateLimit.client({

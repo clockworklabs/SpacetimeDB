@@ -183,6 +183,15 @@ pub enum ValidationError {
     LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
     #[error("submodule namespace `{namespace}` is {len} bytes, which exceeds the 63-byte limit")]
     NamespaceTooLong { namespace: RawIdentifier, len: usize },
+    #[error(
+        "naming conflict between {kind} `{name}` and submodule namespace `{namespace}`; \
+         a {kind} cannot share its accessor name with a namespace mounted in the same module"
+    )]
+    NamespaceNameConflict {
+        kind: &'static str,
+        name: RawIdentifier,
+        namespace: RawIdentifier,
+    },
     #[error("invalid environment declaration: {0}")]
     Environment(#[from] spacetimedb_lib::environment::EnvironmentSchemaError),
     #[error("submodule {namespace:?} cannot declare environment variables")]
