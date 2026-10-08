@@ -10,6 +10,8 @@ public sealed class NamespaceRegistry
     private readonly CaseConversionPolicy rootPolicy;
     private readonly HashSet<string> ambiguous = new(StringComparer.Ordinal);
     private readonly string[] instancePaths;
+    private readonly string[] canonicalPaths;
+    private readonly CaseConversionPolicy[] policies;
     private readonly Dictionary<string, int[]> instances = new(StringComparer.Ordinal);
     private readonly Dictionary<(int Parent, string Accessor), int> children = [];
 
@@ -69,7 +71,8 @@ public sealed class NamespaceRegistry
         }
         rootPolicy = scopes[0].Policy;
         instancePaths = new string[scopes.Length];
-        var canonicalPaths = new string[scopes.Length];
+        canonicalPaths = new string[scopes.Length];
+        policies = [.. scopes.Select(scope => scope.Policy)];
         for (var id = 0; id < scopes.Length; id++)
         {
             var scope = scopes[id];
@@ -241,6 +244,12 @@ public sealed class NamespaceRegistry
         }
         return explicitName ?? CanonicalName.Convert(sourceName, rootPolicy);
     }
+
+    public string ResolveFunction(int instanceId, string sourceName, string? explicitName) =>
+        Qualify(
+            canonicalPaths[instanceId],
+            explicitName ?? CanonicalName.Convert(sourceName, policies[instanceId])
+        );
 
     public string Resolve(string assemblyIdentity, string localName) =>
         ResolveNamespace(assemblyIdentity) is { } name ? name + "." + localName : localName;

@@ -115,6 +115,28 @@ cargo test --release --package spacetimedb-testing --test standalone_integration
 cargo test --release --package spacetimedb-testing --test standalone_integration_test test_calling_bench_db_circles -- --exact --nocapture
 ```
 
+## Comparing C# artifacts
+
+The `csharp_artifact` example accepts an already-built `benchmarks-cs` WASM module.
+It measures empty reducer dispatch, a 10,000-row string-table scan, and the existing
+circles cross-join workload (`initial_load = 100`). It uses the
+same in-process host and excludes compilation and publication from measurements.
+
+Build each revision with the same .NET SDK, NativeAOT toolchain, and release CLI
+settings in separate worktrees. Use the optimized `StdbModule.opt.wasm` artifacts
+from the `native` output directory. Build the runner once, then run it directly:
+
+```sh
+cargo build --release -p spacetimedb-bench --example csharp_artifact
+CSHARP_BENCH_WASM=/absolute/path/to/before.wasm target/release/examples/csharp_artifact --bench --save-baseline before
+CSHARP_BENCH_WASM=/absolute/path/to/after.wasm target/release/examples/csharp_artifact --bench --baseline before
+```
+
+Defaults are 30 samples, 3 seconds warmup, and 20 seconds measurement per workload.
+Criterion options can override these. Do not run builds or other tests during
+measurement; repeat in reverse order before attributing a small change to code.
+This checks existing flat modules, not nested-instance startup cost or memory use.
+
 ## Pretty report
 To generate a nicely formatted markdown report, you can use the "summarize" binary.
 This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml)).

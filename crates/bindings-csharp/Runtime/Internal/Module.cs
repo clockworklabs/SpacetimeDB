@@ -80,6 +80,12 @@ public static class Module
         string? explicitName
     ) => Namespaces.ResolveFunction(assemblyIdentity, sourceName, explicitName);
 
+    public static string ResolveFunctionName(
+        int instanceId,
+        string sourceName,
+        string? explicitName
+    ) => Namespaces.ResolveFunction(instanceId, sourceName, explicitName);
+
     public static SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
         Namespaces.ResolveSqlName(assemblyIdentity, localName);
 

@@ -266,7 +266,7 @@ public static partial class Functions
             });
         }
         catch (InvalidOperationException error) when (error.Message == "rollback") { }
-        return ctx.WithTx(tx =>
+        var result = ctx.WithTx(tx =>
         {
             if (tx.Db.User.Id.Find(1)?.Value != id)
             {
@@ -274,6 +274,8 @@ public static partial class Functions
             }
             return tx.Db.User.Id.Find(2)!.Value.Value;
         });
+        Log.Info($"next:{id}");
+        return result;
     }
 
     [View(Accessor = "Current", Public = true)]
