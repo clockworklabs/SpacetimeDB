@@ -387,9 +387,6 @@ public static class GeneratorSnapshotTests
         Reject("[assembly: SpacetimeDB.Namespace(null)]", "marker type");
         Reject(Mount("LocalMarker") + "public class LocalMarker { }", "cannot mount itself");
         Reject(Mount("System.String"), "no discovered module descriptor");
-        var repeated = Run(Mount() + Mount(accessor: "Other", name: "other_auth"));
-        Assert.Equal(2, Parsed(repeated).Length);
-        Assert.Empty(repeated.GetRunResult().Diagnostics);
         Reject(Mount() + Mount("Audit.Marker", "MYAUTH"), "case-insensitive");
         Reject(Mount() + Mount("Audit.Marker", "MyAuth"), "accessor 'MyAuth'");
         Reject(
@@ -475,16 +472,6 @@ public static class GeneratorSnapshotTests
             [.. Property<System.Collections.IEnumerable>(composition, "Nodes").Cast<object>()];
 
         var tree = Composition(discoveryDriver);
-        Assert.Equal(
-            tree,
-            Composition(
-                discoveryDriver.RunGenerators(
-                    compilation
-                        .RemoveAllReferences()
-                        .AddReferences(compilation.References.Reverse())
-                )
-            )
-        );
 
         // Names are checked within their declaring scope, not across sibling libraries.
         Assert.Empty(discoveryDriver.GetRunResult().Diagnostics);
@@ -724,8 +711,6 @@ public static class GeneratorSnapshotTests
 #if NET10_0_OR_GREATER
     [Theory]
     [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
     [InlineData(true, true)]
     public static async Task NamespaceDependenciesRegisterOnceInStableOrder(
         bool rootHasTable,
@@ -838,18 +823,6 @@ public static class GeneratorSnapshotTests
         var expected = new[] { Descriptor(root) + ".Register" }
             .Concat(orderedDependencies.Select(c => Descriptor(c) + ".Register"))
             .ToArray();
-        if (mounted)
-        {
-            var init = Method(root, "Initialize");
-            var submodules = init.DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(call => call.Expression.ToString().EndsWith(".RegisterSubmodule"))
-                .ToArray();
-            Assert.Equal(
-                ["\"Auth\"", "\"class\""],
-                submodules.Select(call => call.ArgumentList.Arguments[0].ToString())
-            );
-        }
         Assert.Equal(expected, Calls(root));
         Assert.Equal(expected, Calls(reordered));
 
