@@ -30,6 +30,9 @@
           "points": 3,
           "statedBy": "Only an admin can schedule or cancel a restock.",
           "steps": [
+            { "do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel", "schedule-restock-item"] },
+            { "do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": ["admin-panel", "schedule-restock-item"] },
+            { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true, "unlessVisible": "schedule-restock-item" },
             { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Desk Lamp" },
             { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
             { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "3" },

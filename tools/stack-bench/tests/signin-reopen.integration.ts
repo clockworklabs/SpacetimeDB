@@ -98,3 +98,26 @@ test('sign-in opens the application address when the current page has no sign-in
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+// A forced click presses a position, not an element. When a sticky header covers the
+// control there, the simultaneous clicks must still reach the control itself.
+test('simultaneous clicks reach a control that a sticky header covers', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    await page.setContent(`<header style="position:sticky;top:0;height:120px;background:#eee">Store</header>
+      <div style="height:900px"></div><button id="add">Add</button><div style="height:1500px"></div>
+      <script>window.adds = 0; document.querySelector('#add').onclick = () => window.adds++;</script>`);
+    await page.evaluate(() => scrollTo(0, (document.querySelector('#add') as HTMLElement).offsetTop - 40));
+    const actor = { page, loc: (id: string) => page.locator(`#${id}`) };
+    const capabilities = { actors: { get: () => actor }, concurrency: {
+      defaultWithin: 4000, dispatch: async () => null, expand: (value: string | undefined) => value,
+      sleep: (ms: number) => page.waitForTimeout(ms), testId: (id: string) => `#${id}`,
+      hostPressure: () => null,
+    } };
+    const result = await executeAction(ACTION_REGISTRY, 'clickConcurrently',
+      { do: 'clickConcurrently', actors: ['a', 'b'], testid: 'add', settleMs: 0 }, { capabilities });
+    assert.equal(result.status, 'passed', JSON.stringify(result.summary));
+    assert.equal(await page.evaluate(() => (window as unknown as { adds: number }).adds), 2);
+  } finally { await browser.close(); }
+});

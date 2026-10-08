@@ -756,7 +756,11 @@ async function clickConcurrently(
   const notReady = (await settleConcurrentActions(resolved.map(async ({ target, locator }) => {
     try {
       await locator.waitFor({ state: 'visible', timeout: input.readyWithin ?? 15000 });
-      return await locator.isEnabled() ? null : target.actor;
+      if (!await locator.isEnabled()) return target.actor;
+      // A forced click presses the control's position. Scroll it where nothing, such as a
+      // sticky header, covers it; a control that stays covered keeps the forced click.
+      await locator.click({ trial: true, timeout: input.within ?? concurrency.defaultWithin }).catch(() => {});
+      return null;
     } catch (error) {
       if (errorShape(error).name !== 'TimeoutError') throw error;
       readyTimedOut = true;

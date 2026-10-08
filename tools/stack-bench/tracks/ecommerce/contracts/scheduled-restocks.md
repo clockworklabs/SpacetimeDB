@@ -2,14 +2,18 @@
 
 Use `admin-link` to open the administrator area. If these controls are on a separate screen within
 it, expose `restocks-link` there to reach them. Use `schedule-restock-item`, `schedule-restock-warehouse`, `schedule-restock-qty`, and
-`schedule-restock-delay` for the inputs. Use `schedule-restock-submit` to schedule the restock.
+`schedule-restock-delay` for the inputs. For a `select`, each item and warehouse must have exactly
+one option whose value or label is its exact name. `schedule-restock-delay` takes whole seconds.
+Use `schedule-restock-submit` to schedule the restock. Scheduling may close these controls;
+`restocks-link` then opens them again.
 Set its `data-action-input` to a JSON object with exactly `item`, `warehouse`, `quantity`, and
 `delaySeconds`. `item` and `warehouse` are their names as strings; `quantity` and
 `delaySeconds` are JSON integers. Use `pending-restock-item` for each pending row and set its
 `data-entity-id` to the restock's server identifier.
 Each row contains the item name and sets `data-quantity` to its integer quantity. Use
-`pending-restock-remaining` for its remaining seconds, `pending-restock-cancel` to cancel it,
-and `stock-ledger-entry` for a completed stock movement.
+`pending-restock-remaining` for its remaining seconds, counting down while the page is open,
+`pending-restock-cancel` to cancel it, and `stock-ledger-entry` for a completed stock movement.
+Show the ledger entries on the same screen as the pending restocks.
 
 <!-- interface:http -->
 Expose `POST /api/admin/scheduled-restocks` and `DELETE /api/admin/scheduled-restocks/:id`.

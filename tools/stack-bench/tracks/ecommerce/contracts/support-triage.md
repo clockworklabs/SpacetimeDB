@@ -4,7 +4,7 @@ Open the staff area with `staff-link`. If its ticket queue is on a separate tab 
 screen, expose `support-queue-link` there to open it. Omit this control when the
 editable ticket controls are already shown.
 
-Use `support-ticket` for each ticket in the staff view. Within a ticket, use
+Use `support-ticket` for each ticket in the staff view, showing its subject. Within a ticket, use
 `support-assignee`, `support-priority`, and `support-status-input` for the editable fields.
 Use `support-update` to apply the changes. Use `support-status` to show the current status.
 On that `support-ticket`, expose `data-submit-state` for the latest update:

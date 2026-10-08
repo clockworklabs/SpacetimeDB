@@ -7,7 +7,7 @@ If an overlay blocks catalog navigation, expose a visible `overlay-close` contro
 that dismisses it before `catalog-link` is used. Screens without a blocking
 overlay need no such control. Dialogs, panels, and ordinary page layouts are all allowed.
 Use `cart-count` for the total units, `cart-item` for each line, `cart-quantity` for its
-quantity, and `cart-total` for the numeric total. Use `cart-remove` to remove a line and
+quantity, and `cart-total` for the numeric total, shown only in the open cart. Use `cart-remove` to remove a line and
 `empty-cart` for an empty cart. Keep `cart-count` visible, showing 0, while the cart is empty.
 
 Put `data-buy-input` on each `item-card`. Its value is a JSON object containing that item's
