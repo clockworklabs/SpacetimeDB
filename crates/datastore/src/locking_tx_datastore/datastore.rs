@@ -1104,17 +1104,18 @@ pub(crate) mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
-        StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
-        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
-        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
-        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
-        ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+        system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
+        StConstraintFields, StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow,
+        StOutboundMsgRow, StOutboundStreamRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields,
+        StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME,
+        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID,
+        ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME,
+        ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME,
+        ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID,
+        ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID,
+        ST_VIEW_SUB_NAME,
     };
     use crate::system_tables::{
         ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
@@ -1130,7 +1131,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
-    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
+    use spacetimedb_lib::{resolved_type_via_v9, Identity, ScheduleAt, TimeDuration};
     use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
@@ -1140,8 +1141,8 @@ pub(crate) mod tests {
     use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::schema::{
-        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
-        SequenceSchema,
+        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
+        ScheduleSchema, SequenceSchema,
     };
     use spacetimedb_schema::table_name::TableName;
 
@@ -1446,6 +1447,7 @@ pub(crate) mod tests {
             schedule,
             pk,
             false,
+            None,
             None,
         )
     }
@@ -3046,6 +3048,66 @@ pub(crate) mod tests {
         // The whole point of the test.
         assert!(insert_flags.is_scheduler_table);
         assert!(update_flags.is_scheduler_table);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_outbox_insert_records_stream_sequence() -> ResultTest<()> {
+        let mut schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::identity()),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+        schema.outbox = Some(OutboxSchema {
+            remote_reducer: Identifier::new_unsafe_assume_valid("receive".into()),
+            target_column: ColId(1),
+            arg_columns: vec![ColId(2)],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        });
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let target = Identity::ONE;
+
+        for msg_id in [10u64, 11] {
+            let row = to_vec(&product![msg_id, target]).unwrap();
+            let (row_ptr, insert_flags) = {
+                let (_, row_ref, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+                (row_ref.pointer(), insert_flags)
+            };
+            assert!(insert_flags.is_outbox_table);
+            tx.record_outbox_insert(table_id, row_ptr)?;
+        }
+
+        let stream_rows = tx
+            .iter(ST_OUTBOUND_STREAM_ID)?
+            .map(StOutboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].outbox_table_id, table_id);
+        assert_eq!(stream_rows[0].target_identity, IdentityViaU256(target));
+        assert_eq!(stream_rows[0].next_seq, 3);
+        assert_eq!(stream_rows[0].ack_prefix, 0);
+
+        let mut outbound_rows = tx
+            .iter(ST_OUTBOUND_MSG_ID)?
+            .map(StOutboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        outbound_rows.sort_by_key(|row| row.seq);
+        assert_eq!(outbound_rows.iter().map(|row| row.seq).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
+            vec![10, 11]
+        );
 
         Ok(())
     }

@@ -12,7 +12,7 @@ use crate::traits::TxOffset;
 use crate::{
     error::ViewError,
     system_tables::{
-        system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
         StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields,
         ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
@@ -22,11 +22,13 @@ use crate::{
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
-        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
-        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
+        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgRow, StOutboundStreamFields,
+        StOutboundStreamRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow,
+        StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
+        SystemTable, INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, ST_CLIENT_ID,
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
-        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -53,6 +55,7 @@ use spacetimedb_primitives::{
 use spacetimedb_sats::{
     bsatn::to_writer,
     memory_usage::MemoryUsage,
+    product,
     raw_identifier::{RawIdentifier, RawNamespacedIdentifier},
     ser::Serialize,
     AlgebraicValue, ProductType, ProductValue,
@@ -3304,6 +3307,132 @@ impl MutTxId {
         })
     }
 
+    /// Read the stable IDC message id from the user-visible outbox row.
+    fn outbox_message_id(outbox_table_id: TableId, schema: &TableSchema, row_ref: RowRef<'_>) -> Result<u64> {
+        let msg_col = schema
+            .primary_key
+            .ok_or_else(|| anyhow::anyhow!("outbox table {outbox_table_id:?} must have a primary key"))?;
+        Ok(row_ref.read_col::<u64>(msg_col)?)
+    }
+
+    /// Read the receiver database identity from the user-visible outbox row.
+    fn outbox_target_identity(
+        outbox_table_id: TableId,
+        schema: &TableSchema,
+        row_ref: RowRef<'_>,
+    ) -> Result<IdentityViaU256> {
+        let target_col = schema
+            .outbox
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("table {outbox_table_id:?} is not an outbox table"))?
+            .target_column;
+        let AlgebraicValue::Product(identity) = row_ref.read_col::<AlgebraicValue>(target_col)? else {
+            return Err(anyhow::anyhow!("outbox target column must be an Identity").into());
+        };
+        let Some(value) = identity.elements[0].as_u256() else {
+            return Err(anyhow::anyhow!("outbox target column must be an Identity").into());
+        };
+        Ok(IdentityViaU256(Identity::from_u256(**value)))
+    }
+
+    /// Read the message id and receiver identity from the user-visible outbox row.
+    fn read_outbox_msg_id_and_target_identity(
+        &self,
+        outbox_table_id: TableId,
+        row_ptr: RowPointer,
+    ) -> Result<(u64, IdentityViaU256)> {
+        let schema = self.schema_for_table(outbox_table_id)?;
+        let row_ref = self
+            .get(outbox_table_id, row_ptr)?
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, outbox_table_id.0))?;
+        let msg_id = Self::outbox_message_id(outbox_table_id, &schema, row_ref)?;
+        let target_identity = Self::outbox_target_identity(outbox_table_id, &schema, row_ref)?;
+        Ok((msg_id, target_identity))
+    }
+
+    /// Find the sender-side stream for this outbox table and receiver.
+    ///
+    /// This lookup is backed by the `(outbox_table_id, target_identity)` system-table index.
+    fn st_outbound_stream(
+        &self,
+        outbox_table_id: TableId,
+        target_identity: IdentityViaU256,
+    ) -> Result<Option<StOutboundStreamRow>> {
+        let stream_key = AlgebraicValue::Product(product![outbox_table_id, target_identity]);
+        self.iter_by_col_eq(
+            ST_OUTBOUND_STREAM_ID,
+            col_list![
+                StOutboundStreamFields::OutboxTableId,
+                StOutboundStreamFields::TargetIdentity
+            ],
+            &stream_key,
+        )?
+        .map(StOutboundStreamRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    /// Reserve the next sequence number for this outbox table and receiver.
+    ///
+    /// A sender stream is created lazily on the first message for a receiver. Existing
+    /// streams are replaced because system table rows are updated by delete + insert here.
+    fn advance_st_outbound_stream(
+        &mut self,
+        outbox_table_id: TableId,
+        target_identity: IdentityViaU256,
+    ) -> Result<(u64, u64)> {
+        let (stream_id, seq, ack_prefix) =
+            if let Some(row) = self.st_outbound_stream(outbox_table_id, target_identity)? {
+                self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &row.clone().into())?;
+                (row.stream_id, row.next_seq, row.ack_prefix)
+            } else {
+                // `stream_id = 0` asks the auto-inc column to allocate the durable stream id.
+                (0, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, INITIAL_OUTBOUND_STREAM_ACK_PREFIX)
+            };
+
+        let inserted = self.insert_via_serialize_bsatn(
+            ST_OUTBOUND_STREAM_ID,
+            &StOutboundStreamRow {
+                stream_id,
+                outbox_table_id,
+                target_identity,
+                next_seq: seq + 1,
+                ack_prefix,
+            },
+        )?;
+        let stream_id = inserted.1.collapse().read_col(StOutboundStreamFields::StreamId)?;
+        Ok((stream_id, seq))
+    }
+
+    /// Retain the queued message until the IDC actor sends it and observes the result.
+    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<()> {
+        self.insert_via_serialize_bsatn(
+            ST_OUTBOUND_MSG_ID,
+            &StOutboundMsgRow {
+                stream_id,
+                msg_id,
+                seq,
+                retry_count: 0,
+                last_transport_error: None,
+                result_status: None,
+                result_payload: None,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Record the runtime state for a newly-inserted outbox row.
+    ///
+    /// Module code writes only the user outbox table. This mirrors that insert into
+    /// system tables so the host IDC actor can send messages outside the reducer tx.
+    #[cold]
+    #[inline(never)]
+    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<()> {
+        let (msg_id, target_identity) = self.read_outbox_msg_id_and_target_identity(outbox_table_id, row_ptr)?;
+        let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity)?;
+        self.insert_st_outbound_msg(stream_id, msg_id, seq)
+    }
+
     /// Insert a row, encoded in BSATN, into a table.
     ///
     /// Zero placeholders, i.e., sequence triggers,
@@ -3434,6 +3563,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
 
     let insert_flags = InsertFlags {
         is_scheduler_table: tx_table.is_scheduler(),
+        is_outbox_table: tx_table.is_outbox(),
     };
     let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
 
@@ -3579,6 +3709,7 @@ impl MutTxId {
 
         let update_flags = UpdateFlags {
             is_scheduler_table: tx_table.is_scheduler(),
+            is_outbox_table: tx_table.is_outbox(),
         };
         let ok = |row_ref| Ok((cols_to_gen, row_ref, update_flags));
 
