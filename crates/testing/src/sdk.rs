@@ -4,7 +4,8 @@ use spacetimedb::messages::control_db::HostType;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_guard::SpacetimeDbGuard;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
-use std::fs::create_dir_all;
+use std::fs::{copy, create_dir_all, read_dir};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::invoke_cli;
@@ -69,12 +70,29 @@ pub struct Test {
     /// - `SPACETIME_SDK_TEST_DB_NAME` bound to the database identity or name.
     /// - `SPACETIME_SDK_TEST_SERVER_URL` bound to the server URL for this test.
     run_command: String,
+
+    prepared_client: Option<PreparedClient>,
+    prepared_client_key: Option<String>,
+}
+
+#[derive(Clone)]
+// These are artifact execution strategies, not SDK test modes. The test suite
+// still has only native and browser modes; `Node` packages existing TypeScript
+// clients that run in both modes.
+enum PreparedClient {
+    Native { binary_name: String, args: Vec<String> },
+    Browser { artifact_name: String, selector: String },
+    Node { entrypoint: PathBuf, args: Vec<String> },
 }
 
 pub const TEST_MODULE_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_PROJECT";
 pub const TEST_DB_NAME_ENV_VAR: &str = "SPACETIME_SDK_TEST_DB_NAME";
 pub const TEST_SERVER_URL_ENV_VAR: &str = "SPACETIME_SDK_TEST_SERVER_URL";
 pub const TEST_CLIENT_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_CLIENT_PROJECT";
+pub const PRECOMPILED_MODULE_DIR_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_DIR";
+pub const PREPARED_CLIENT_DIR_ENV_VAR: &str = "SPACETIME_SDK_TEST_CLIENT_DIR";
+pub const PREPARE_CLIENT_DIR_ENV_VAR: &str = "SPACETIME_SDK_TEST_PREPARE_CLIENT_DIR";
+pub const TEST_WORKSPACE_ROOT_ENV_VAR: &str = "SPACETIME_SDK_TEST_WORKSPACE_ROOT";
 
 fn language_is_unreal(language: &str) -> bool {
     language.eq_ignore_ascii_case("unrealcpp")
@@ -90,24 +108,211 @@ impl Test {
 
         let (file, host_type) = compile_module(&self.module_name);
 
-        generate_bindings(
-            paths,
-            &self.generate_language,
-            &file,
-            host_type,
-            &self.client_project,
-            &self.generate_subdir,
-            self.generate_include_private,
-        );
-
-        compile_client(&self.compile_command, &self.client_project);
+        let prepared_client_dir = std::env::var_os(PREPARED_CLIENT_DIR_ENV_VAR).map(PathBuf::from);
+        if prepared_client_dir.is_none() {
+            self.generate_bindings(paths, &file, host_type);
+            compile_client(&self.compile_command, &self.client_project);
+        }
 
         let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
         let server_url = guard.host_url.as_str();
         let db_name = publish_module(paths, server_url, &file, host_type);
 
-        run_client(&self.run_command, &self.client_project, server_url, &db_name);
+        if let Some(prepared_client_dir) = prepared_client_dir {
+            self.run_prepared_client(&prepared_client_dir, server_url, &db_name);
+        } else {
+            run_client(&self.run_command, &self.client_project, server_url, &db_name);
+        }
     }
+
+    pub fn prepare(self) {
+        let output_dir = PathBuf::from(
+            std::env::var_os(PREPARE_CLIENT_DIR_ENV_VAR)
+                .unwrap_or_else(|| panic!("{PREPARE_CLIENT_DIR_ENV_VAR} is not set")),
+        );
+        let sdk_paths = SdkTestPaths::new();
+        let (file, host_type) = compile_module(&self.module_name);
+        // Preparation is serial and must rebuild each explicitly requested artifact,
+        // including artifacts for distinct modules that share a client project.
+        self.generate_bindings_uncached(&sdk_paths.paths, &file, host_type);
+        compile_client_uncached(&self.compile_command, &self.client_project);
+        self.export_prepared_client(&output_dir);
+    }
+
+    fn generate_bindings(&self, paths: &SpacetimePaths, file: &str, host_type: HostType) {
+        generate_bindings(
+            paths,
+            &self.generate_language,
+            file,
+            host_type,
+            &self.client_project,
+            &self.generate_subdir,
+            self.generate_include_private,
+        );
+    }
+
+    fn generate_bindings_uncached(&self, paths: &SpacetimePaths, file: &str, host_type: HostType) {
+        generate_bindings_uncached(
+            paths,
+            &self.generate_language,
+            file,
+            host_type,
+            &self.client_project,
+            &self.generate_subdir,
+            self.generate_include_private,
+        );
+    }
+
+    fn client_artifact_dir(&self, root: &Path) -> PathBuf {
+        let key = self.prepared_client_key.as_deref().unwrap_or_else(|| {
+            Path::new(&self.client_project)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("SDK client project should end in a UTF-8 directory name")
+        });
+        root.join(key)
+    }
+
+    fn export_prepared_client(&self, output_dir: &Path) {
+        let prepared = self
+            .prepared_client
+            .as_ref()
+            .expect("SDK test does not describe how to prepare its client");
+        let artifact_dir = self.client_artifact_dir(output_dir);
+        match prepared {
+            PreparedClient::Native { binary_name, .. } => {
+                let source = cargo_target_dir().join("debug").join(binary_name);
+                copy_file(&source, &artifact_dir.join("bin").join(binary_name));
+            }
+            PreparedClient::Browser { artifact_name, .. } => {
+                let package_name = Path::new(&self.client_project).file_name().unwrap();
+                let source = Path::new(&self.client_project)
+                    .join("target/sdk-test-web-bindgen")
+                    .join(package_name);
+                copy_dir(&source, &artifact_dir.join("web"));
+                assert!(
+                    artifact_dir.join("web").join(format!("{artifact_name}.cjs")).is_file(),
+                    "Prepared browser client is missing its CommonJS entrypoint"
+                );
+            }
+            PreparedClient::Node { entrypoint, .. } => {
+                let source = Path::new(&self.client_project).join(entrypoint);
+                copy_file(&source, &artifact_dir.join(entrypoint));
+                copy_file(
+                    &Path::new(&self.client_project).join("package.json"),
+                    &artifact_dir.join("package.json"),
+                );
+            }
+        }
+    }
+
+    fn run_prepared_client(&self, root: &Path, server_url: &str, db_name: &str) {
+        let prepared = self
+            .prepared_client
+            .as_ref()
+            .expect("SDK test does not describe how to run its prepared client");
+        let artifact_dir = self.client_artifact_dir(root);
+        let (exe, args) = match prepared {
+            PreparedClient::Native { binary_name, args } => (
+                artifact_dir.join("bin").join(binary_name).into_os_string(),
+                args.iter().map(Into::into).collect(),
+            ),
+            PreparedClient::Browser {
+                artifact_name,
+                selector,
+            } => {
+                let js_module = artifact_dir.join("web").join(format!("{artifact_name}.cjs"));
+                let script = browser_node_script(&js_module, selector);
+                (
+                    "node".into(),
+                    vec!["--experimental-websocket".into(), "-e".into(), script.into()],
+                )
+            }
+            PreparedClient::Node { entrypoint, args } => {
+                let mut node_args = vec![artifact_dir.join(entrypoint).into_os_string()];
+                node_args.extend(args.iter().map(Into::into));
+                ("node".into(), node_args)
+            }
+        };
+
+        run_client_command(exe, args, &self.client_project, server_url, db_name, &self.run_command);
+    }
+}
+
+pub fn workspace_path(path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    if path.exists() {
+        return path.to_path_buf();
+    }
+
+    let build_workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("spacetimedb-testing should be two directories below the workspace root");
+    match path.strip_prefix(build_workspace_root) {
+        Ok(relative) => runtime_workspace_root().join(relative),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
+fn runtime_workspace_root() -> PathBuf {
+    std::env::var_os(TEST_WORKSPACE_ROOT_ENV_VAR)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .and_then(Path::parent)
+                .expect("spacetimedb-testing should be two directories below the workspace root")
+                .to_path_buf()
+        })
+}
+
+fn cargo_target_dir() -> PathBuf {
+    std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| runtime_workspace_root().join("target"))
+}
+
+fn copy_file(source: &Path, destination: &Path) {
+    create_dir_all(destination.parent().unwrap()).unwrap();
+    copy(source, destination).unwrap_or_else(|error| {
+        panic!(
+            "Failed to copy {} to {}: {error}",
+            source.display(),
+            destination.display()
+        )
+    });
+}
+
+fn copy_dir(source: &Path, destination: &Path) {
+    create_dir_all(destination).unwrap();
+    for entry in read_dir(source).unwrap_or_else(|error| panic!("Failed to read {}: {error}", source.display())) {
+        let entry = entry.unwrap();
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&source_path, &destination_path);
+        } else {
+            copy_file(&source_path, &destination_path);
+        }
+    }
+}
+
+fn browser_node_script(js_module: &Path, selector: &str) -> String {
+    format!(
+        "(async () => {{ \
+         const m = require({js_module:?}); \
+         if (m.default) {{ await m.default(); }} \
+         const run = m.run || m.main || m.start; \
+         if (!run) throw new Error(\"No exported run/main/start function from wasm module\"); \
+         const dbName = process.env.SPACETIME_SDK_TEST_DB_NAME; \
+         if (!dbName) throw new Error(\"Missing SPACETIME_SDK_TEST_DB_NAME\"); \
+         const serverUrl = process.env.SPACETIME_SDK_TEST_SERVER_URL; \
+         if (!serverUrl) throw new Error(\"Missing SPACETIME_SDK_TEST_SERVER_URL\"); \
+         await run({selector:?}, dbName, serverUrl); \
+         process.exit(0); \
+         }})().catch((e) => {{ console.error(e); process.exit(1); }});"
+    )
 }
 
 fn status_ok_or_panic(output: std::process::Output, command: &str, test_name: &str) {
@@ -170,12 +375,53 @@ macro_rules! memoized {
 // with toolchains like .NET which don't expect parallel invocations
 // of their build tools on the same project folder.
 fn compile_module(module: &str) -> (String, HostType) {
+    if let Some(module_dir) = std::env::var_os(PRECOMPILED_MODULE_DIR_ENV_VAR) {
+        let module_dir = PathBuf::from(module_dir);
+        for (extension, host_type) in [("wasm", HostType::Wasm), ("js", HostType::Js)] {
+            let path = module_dir.join(module).with_extension(extension);
+            if path.is_file() {
+                return (path.to_string_lossy().into_owned(), host_type);
+            }
+        }
+        panic!(
+            "No precompiled SDK test module found for {module:?} in {}",
+            module_dir.display()
+        );
+    }
+
     let module = module.to_owned();
 
     memoized!(|module: String| -> (String, HostType) {
         let module = CompiledModule::compile(module, CompilationMode::Debug);
         (module.path().to_str().unwrap().to_owned(), module.host_type)
     })
+}
+
+/// Compile all SDK test modules into a stable directory for archived CI tests.
+pub fn build_precompiled_modules(output_dir: &Path) -> anyhow::Result<usize> {
+    let workspace_root = std::env::current_dir()?;
+    let modules_dir = workspace_root.join("modules");
+    let mut module_names = std::fs::read_dir(&modules_dir)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with("sdk-test"))
+        .collect::<Vec<_>>();
+    module_names.sort();
+
+    create_dir_all(output_dir)?;
+    for module_name in &module_names {
+        log::info!("Building precompiled SDK test module {module_name}...");
+        let module = CompiledModule::compile(module_name, CompilationMode::Debug);
+        let extension = match module.host_type {
+            HostType::Wasm => "wasm",
+            HostType::Js => "js",
+        };
+        let destination = output_dir.join(module_name).with_extension(extension);
+        std::fs::copy(module.path(), &destination)?;
+    }
+
+    Ok(module_names.len())
 }
 
 // Note: this function does not memoize because we want each test to publish the same
@@ -218,6 +464,49 @@ fn publish_module(paths: &SpacetimePaths, server_url: &str, wasm_file: &str, hos
 /// and the `generate_subdir` an arbitrary relative path within it.
 /// These will be combined as `"{client_project}/{generate_subdir}"` to produce the `--out-dir`.
 ///
+fn generate_bindings_uncached(
+    paths: &SpacetimePaths,
+    language: &str,
+    wasm_file: &str,
+    host_type: HostType,
+    client_project: &str,
+    generate_subdir: &str,
+    generate_include_private: bool,
+) {
+    let mut args: Vec<&str> = vec![
+        "generate",
+        "--yes",
+        "--lang",
+        language,
+        match host_type {
+            HostType::Wasm => "--bin-path",
+            HostType::Js => "--js-path",
+        },
+        wasm_file,
+    ];
+
+    if generate_include_private {
+        args.push("--include-private");
+    }
+
+    let generate_dir: String;
+
+    // `generate --lang unrealcpp` takes different arguments from non-Unreal languages
+    // to account for some quirks of Unreal project structure.
+    if language_is_unreal(language) {
+        // For unreal, we use `client_project` as the uproject directory,
+        // and `generate_subdir` as the module name.
+        args.extend_from_slice(&["--uproject-dir", client_project]);
+        args.extend_from_slice(&["--module-name", generate_subdir]);
+    } else {
+        generate_dir = format!("{client_project}/{generate_subdir}");
+        create_dir_all(&generate_dir).unwrap();
+        args.extend_from_slice(&["--out-dir", &generate_dir]);
+    }
+
+    invoke_cli(paths, &args);
+}
+
 /// Note: this function is memoized to ensure we only run `spacetime generate` once for each target directory.
 ///
 /// Without this lock, if multiple `Test`s ran concurrently in the same process
@@ -261,38 +550,15 @@ fn generate_bindings(
     // so our memoization has unit as the value.
     // This makes it run at most once for each key.
     memoized!(|(client_project, generate_subdir): (String, String)| -> () {
-        let mut args: Vec<&str> = vec![
-            "generate",
-            "--yes",
-            "--lang",
+        generate_bindings_uncached(
+            paths,
             language,
-            match host_type {
-                HostType::Wasm => "--bin-path",
-                HostType::Js => "--js-path",
-            },
             wasm_file,
-        ];
-
-        if generate_include_private {
-            args.push("--include-private");
-        }
-
-        let generate_dir: String;
-
-        // `generate --lang unrealcpp` takes different arguments from non-Unreal languages
-        // to account for some quirks of Unreal project structure.
-        if language_is_unreal(language) {
-            // For unreal, we use `client_project` as the uproject directory,
-            // and `generate_subdir` as the module name.
-            args.extend_from_slice(&["--uproject-dir", client_project]);
-            args.extend_from_slice(&["--module-name", generate_subdir]);
-        } else {
-            generate_dir = format!("{client_project}/{generate_subdir}");
-            create_dir_all(&generate_dir).unwrap();
-            args.extend_from_slice(&["--out-dir", &generate_dir]);
-        }
-
-        invoke_cli(paths, &args);
+            host_type,
+            client_project,
+            generate_subdir,
+            generate_include_private,
+        );
     })
 }
 
@@ -328,29 +594,51 @@ fn split_command_string(command: &str) -> (String, Vec<String>) {
     (exe, iter.collect())
 }
 
+fn compile_client_uncached(compile_command: &str, client_project: &str) {
+    let (exe, args) = split_command_string(compile_command);
+
+    let output = cmd(exe, args)
+        .dir(client_project)
+        .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
+        .stderr_to_stdout()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .expect("Error running compile command");
+
+    status_ok_or_panic(output, compile_command, "(compiling)");
+}
+
 // Note: this function is memoized to ensure we only compile each client once.
 fn compile_client(compile_command: &str, client_project: &str) {
     let client_project = client_project.to_owned();
 
     memoized!(|client_project: String| -> () {
-        let (exe, args) = split_command_string(compile_command);
-
-        let output = cmd(exe, args)
-            .dir(client_project)
-            .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
-            .stderr_to_stdout()
-            .stdout_capture()
-            .unchecked()
-            .run()
-            .expect("Error running compile command");
-
-        status_ok_or_panic(output, compile_command, "(compiling)");
+        compile_client_uncached(compile_command, client_project);
     })
 }
 
 fn run_client(run_command: &str, client_project: &str, server_url: &str, db_name: &str) {
     let (exe, args) = split_command_string(run_command);
 
+    run_client_command(
+        exe.into(),
+        args.into_iter().map(Into::into).collect(),
+        client_project,
+        server_url,
+        db_name,
+        run_command,
+    );
+}
+
+fn run_client_command(
+    exe: std::ffi::OsString,
+    args: Vec<std::ffi::OsString>,
+    client_project: &str,
+    server_url: &str,
+    db_name: &str,
+    command_description: &str,
+) {
     let output = cmd(exe, args)
         .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
@@ -366,7 +654,7 @@ fn run_client(run_command: &str, client_project: &str, server_url: &str, db_name
         .run()
         .expect("Error running run command");
 
-    status_ok_or_panic(output, run_command, "(running)");
+    status_ok_or_panic(output, command_description, "(running)");
 }
 
 #[derive(Clone, Default)]
@@ -379,6 +667,8 @@ pub struct TestBuilder {
     generate_subdir: Option<String>,
     compile_command: Option<String>,
     run_command: Option<String>,
+    prepared_client: Option<PreparedClient>,
+    prepared_client_key: Option<String>,
 }
 
 impl TestBuilder {
@@ -397,8 +687,9 @@ impl TestBuilder {
     }
 
     pub fn with_client(self, client_project: impl Into<String>) -> Self {
+        let client_project = client_project.into();
         TestBuilder {
-            client_project: Some(client_project.into()),
+            client_project: Some(workspace_path(client_project).to_string_lossy().into_owned()),
             ..self
         }
     }
@@ -435,6 +726,51 @@ impl TestBuilder {
     pub fn with_run_command(self, run_command: impl Into<String>) -> Self {
         TestBuilder {
             run_command: Some(run_command.into()),
+            ..self
+        }
+    }
+
+    pub fn with_prepared_native_client(
+        self,
+        binary_name: impl Into<String>,
+        args: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        TestBuilder {
+            prepared_client: Some(PreparedClient::Native {
+                binary_name: binary_name.into(),
+                args: args.into_iter().map(Into::into).collect(),
+            }),
+            ..self
+        }
+    }
+
+    pub fn with_prepared_client_key(self, key: impl Into<String>) -> Self {
+        TestBuilder {
+            prepared_client_key: Some(key.into()),
+            ..self
+        }
+    }
+
+    pub fn with_prepared_browser_client(self, artifact_name: impl Into<String>, selector: impl Into<String>) -> Self {
+        TestBuilder {
+            prepared_client: Some(PreparedClient::Browser {
+                artifact_name: artifact_name.into(),
+                selector: selector.into(),
+            }),
+            ..self
+        }
+    }
+
+    pub fn with_prepared_node_client(
+        self,
+        entrypoint: impl Into<PathBuf>,
+        args: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        TestBuilder {
+            prepared_client: Some(PreparedClient::Node {
+                entrypoint: entrypoint.into(),
+                args: args.into_iter().map(Into::into).collect(),
+            }),
             ..self
         }
     }
@@ -477,6 +813,8 @@ impl TestBuilder {
             run_command: self
                 .run_command
                 .expect("Supply a run command using TestBuilder::with_run_command"),
+            prepared_client: self.prepared_client,
+            prepared_client_key: self.prepared_client_key,
         }
     }
 }
