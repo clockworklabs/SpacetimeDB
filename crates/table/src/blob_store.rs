@@ -12,10 +12,11 @@
 //!   It is not optimize and is mainly intended for testing purposes.
 
 use blake3::hash;
-use core::mem;
+use core::{fmt, mem};
 use spacetimedb_data_structures::map::{hash_map::Entry, HashMap};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use spacetimedb_memory_usage::MemoryUsage;
+use std::fmt::Write;
 
 /// The content address of a blob-stored object.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug, Serialize, Deserialize)]
@@ -45,6 +46,18 @@ impl TryFrom<&[u8]> for BlobHash {
     fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
         let data: [u8; Self::SIZE] = data.try_into().map_err(drop)?;
         Ok(Self { data })
+    }
+}
+
+impl fmt::Display for BlobHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const ALPHABET: &[u8; 16] = b"0123456789abcdef";
+        for &b in self.data.iter() {
+            f.write_char(ALPHABET[(b >> 4) as usize] as char)?;
+            f.write_char(ALPHABET[(b & 0xf) as usize] as char)?;
+        }
+
+        Ok(())
     }
 }
 

@@ -63,7 +63,6 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_table::table_index::IndexKey;
-use spacetimedb_table::tiered::PageError;
 use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
@@ -612,15 +611,7 @@ impl RelationalDB {
                 | SnapshotError::BadMagic { .. }
                 | SnapshotError::BadVersion { .. } => false,
 
-                SnapshotError::Page(inner) => match inner {
-                    PageError::MemoryLimitExceeded(_) | PageError::Io(_) => true,
-
-                    PageError::TooManyPages
-                    | PageError::Page(_)
-                    | PageError::MissingPage(_)
-                    | PageError::MissingObject(_)
-                    | PageError::Deserialize(_) => false,
-                },
+                SnapshotError::Page(inner) => inner.is_transient(),
             }
         }
 

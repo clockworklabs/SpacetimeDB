@@ -1,5 +1,5 @@
 use std::{
-    fmt, io,
+    fmt,
     mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
     sync::{
@@ -10,15 +10,14 @@ use std::{
 
 use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock};
 use slab::Slab;
-use spacetimedb_lib::bsatn::DecodeError;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    indexes::{PageIndex, PAGE_SIZE},
-    page::{self, Page, PageMetadata},
+    indexes::PAGE_SIZE,
+    page::{Page, PageMetadata},
     page_pool::PagePool,
-    tiered::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig},
+    tiered::{error::PageError, storage::TieredStorage, BudgetExceeded, BudgetPermit, ByteBudget},
 };
 
 #[cfg(test)]
@@ -102,47 +101,6 @@ impl Drop for PageFrameWriteGuard {
             }
         }
     }
-}
-
-/// Placeholder trait for disk / object storage.
-pub trait PageBackingStore: fmt::Debug + Send + Sync + 'static {
-    /// Load a [Page] by its content hash from backing storage .
-    fn load_page(&self, hash: blake3::Hash) -> Result<Box<Page>, PageIoError>;
-}
-
-impl PageBackingStore for () {
-    fn load_page(&self, _: blake3::Hash) -> Result<Box<Page>, PageIoError> {
-        unimplemented!("no page backing store configured")
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum PageError {
-    #[error("maximum number of pages exceeded")]
-    TooManyPages,
-    #[error(transparent)]
-    MemoryLimitExceeded(#[from] BudgetExceeded),
-    #[error(transparent)]
-    Page(page::Error),
-    #[error("page at index {0:?} is missing")]
-    MissingPage(PageIndex),
-    #[error("object {0} is missing")]
-    MissingObject(blake3::Hash),
-    #[error(transparent)]
-    Io(#[from] PageIoError),
-    #[error("error decoding page from bsatn")]
-    Deserialize(DecodeError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum PageIoError {
-    #[error("expected page hash {expected} doesn't match computed page hash {computed}")]
-    HashMismatch {
-        expected: blake3::Hash,
-        computed: blake3::Hash,
-    },
-    #[error(transparent)]
-    Io(#[from] io::Error),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -501,13 +459,13 @@ pub struct ReservedPage {
 pub struct PageManager {
     frames: RwLock<FrameRegistry>,
     pool: PagePool,
-    store: Arc<dyn PageBackingStore>,
+    store: Arc<TieredStorage>,
     memory: ByteBudget,
     access_epoch: AtomicU64,
 }
 
 impl PageManager {
-    pub fn new(pool: PagePool, store: Arc<dyn PageBackingStore>, memory: ByteBudget) -> Self {
+    pub fn new(pool: PagePool, store: Arc<TieredStorage>, memory: ByteBudget) -> Self {
         Self {
             frames: <_>::default(),
             pool,
@@ -520,8 +478,8 @@ impl PageManager {
     pub fn new_for_test() -> Self {
         Self::new(
             PagePool::new_for_test(),
-            Arc::new(()),
-            ByteBudget::new(ByteBudgetConfig::unlimited()).unwrap(),
+            TieredStorage::new_for_test().into(),
+            ByteBudget::unlimited(),
         )
     }
 
@@ -582,7 +540,7 @@ impl PageManager {
             }
             PageSlot::NonResident { hash, metadata, .. } => {
                 let permit = self.acquire_memory_budget_permit()?;
-                let page = self.store.load_page(hash)?;
+                let page = self.fault_page(hash)?;
                 let frame = self.frames.write().register(
                     self.pool.clone(),
                     permit,
@@ -715,6 +673,13 @@ impl PageManager {
     fn acquire_memory_budget_permit(&self) -> Result<BudgetPermit, BudgetExceeded> {
         // TODO: Try to evict pages if acquisition fails.
         self.memory.acquire(PAGE_SIZE as _)
+    }
+
+    fn fault_page(&self, hash: blake3::Hash) -> Result<Box<Page>, PageError> {
+        let bytes = self.store.read(hash.into())?;
+        let page = self.pool.take_deserialize_from(&bytes)?;
+
+        Ok(page)
     }
 }
 

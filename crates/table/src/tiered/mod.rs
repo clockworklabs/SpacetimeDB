@@ -1,8 +1,18 @@
+mod blob_manager;
+mod blob_set;
 mod budget;
-pub use budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage};
-
+mod error;
+mod map;
 mod page_manager;
-pub use page_manager::{PageError, PageEvictionPolicy, PageHandle, PageManager, ReservedPage};
-
 mod page_set;
-pub use page_set::{PageSet, PreparedCommit};
+mod storage;
+
+pub use self::{
+    blob_manager::BlobHandle,
+    blob_set::BlobSet,
+    budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
+    error::{BlobError, PageError},
+    page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
+    page_set::{PageSet, PreparedCommit},
+    storage::TieredStorage,
+};
