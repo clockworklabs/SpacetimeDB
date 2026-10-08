@@ -66,56 +66,7 @@ where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,
 {
-    let command = cmd("cargo", args);
-    if cfg!(target_os = "windows") {
-        command
-            .env("CARGO_TARGET_DIR", "C:/actions-runner/_work/target")
-            .env("OPENSSL_RUST_USE_NASM", "1")
-            .env("RUST_BACKTRACE", "full")
-    } else {
-        command
-    }
-}
-
-fn expected_target_dir() -> Result<PathBuf> {
-    if cfg!(target_os = "windows") {
-        return Ok(PathBuf::from(r"C:\actions-runner\_work\target"));
-    }
-    let home = env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home).join("actions-runner/_work/target"))
-}
-
-fn checked_target_dir() -> Result<PathBuf> {
-    ensure!(
-        cfg!(any(target_os = "linux", target_os = "windows")),
-        "cache warming is supported only on Linux and Windows"
-    );
-    let expected = expected_target_dir()?;
-    if cfg!(target_os = "windows") {
-        ensure!(
-            !env::current_exe()?.starts_with(&expected),
-            "run cache warming without CARGO_TARGET_DIR set"
-        );
-        return Ok(expected);
-    }
-    let target = env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .context("CARGO_TARGET_DIR is not set")?;
-    ensure!(
-        target == expected,
-        "refusing to reset unexpected Cargo target {}; expected {}",
-        target.display(),
-        expected.display()
-    );
-    Ok(target)
-}
-
-fn reset_cargo_target(target: &Path) -> Result<()> {
-    if target.exists() {
-        fs::remove_dir_all(target).with_context(|| format!("failed to remove {}", target.display()))?;
-    }
-    fs::create_dir_all(target).with_context(|| format!("failed to create {}", target.display()))?;
-    Ok(())
+    cmd("cargo", args)
 }
 
 fn warm_runtime_builds(runner: &mut WarmRunner) {
@@ -177,6 +128,26 @@ fn warm_windows_runtime_builds(runner: &mut WarmRunner) {
             "spacetimedb-standalone/allow_loopback_http_for_tests",
         ]))
     });
+}
+
+fn warm_windows_package_build(runner: &mut WarmRunner) {
+    runner.required(
+        "Build release CLI, standalone and updater for x86_64-pc-windows-msvc",
+        || {
+            run(cargo([
+                "build",
+                "--release",
+                "--target",
+                "x86_64-pc-windows-msvc",
+                "-p",
+                "spacetimedb-cli",
+                "-p",
+                "spacetimedb-standalone",
+                "-p",
+                "spacetimedb-update",
+            ]))
+        },
+    );
 }
 
 fn warm_test_builds(runner: &mut WarmRunner) {
@@ -458,6 +429,7 @@ const FAMILIES: &[(&str, WarmFamily)] = &[
 const WINDOWS_FAMILIES: &[(&str, WarmFamily)] = &[
     ("runtime builds", warm_windows_runtime_builds),
     ("smoketest archive", warm_windows_smoketests),
+    ("package build", warm_windows_package_build),
 ];
 
 fn families() -> &'static [(&'static str, WarmFamily)] {
@@ -468,51 +440,20 @@ fn families() -> &'static [(&'static str, WarmFamily)] {
     }
 }
 
-fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
+fn warm_families(runner: &mut WarmRunner) {
     for &(name, family) in families() {
         let started = Instant::now();
-        reset_cargo_target(target)?;
-        runner.set_pass(match name {
-            "runtime builds" => "sccache population: runtime builds",
-            "test builds" => "sccache population: test builds",
-            "lint and docs builds" => "sccache population: lint and docs builds",
-            "local installs" => "sccache population: local installs",
-            "CI tools" => "sccache population: CI tools",
-            "independent modules" => "sccache population: independent modules",
-            "smoketest archive" => "sccache population: smoketest archive",
-            _ => unreachable!(),
-        });
+        runner.set_pass(name);
         family(runner);
         eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
     }
-    Ok(())
-}
-
-fn seed_target(runner: &mut WarmRunner, target: &Path) -> Result<()> {
-    reset_cargo_target(target)?;
-    for &(name, family) in families() {
-        let started = Instant::now();
-        runner.set_pass(match name {
-            "runtime builds" => "target seed: runtime builds",
-            "test builds" => "target seed: test builds",
-            "lint and docs builds" => "target seed: lint and docs builds",
-            "local installs" => "target seed: local installs",
-            "CI tools" => "target seed: CI tools",
-            "independent modules" => "target seed: independent modules",
-            "smoketest archive" => "target seed: smoketest archive",
-            _ => unreachable!(),
-        });
-        family(runner);
-        eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
-    }
-    Ok(())
 }
 
 fn ensure_cargo_nextest() -> Result<()> {
     if cargo(["nextest", "--version"]).unchecked().run()?.status.success() {
         return Ok(());
     }
-    run(cargo(["install", "--locked", "cargo-nextest"]).env_remove("CARGO_TARGET_DIR"))
+    run(cargo(["install", "--locked", "cargo-nextest"]))
 }
 
 fn warm_smoketest_archive() -> Result<()> {
@@ -547,7 +488,10 @@ fn main() -> Result<()> {
         Path::new("Cargo.toml").is_file(),
         "run this command from the repository root"
     );
-    let target = checked_target_dir()?;
+    ensure!(
+        cfg!(any(target_os = "linux", target_os = "windows")),
+        "cache warming is supported only on Linux and Windows"
+    );
     let mut runner = WarmRunner::new();
 
     runner.set_pass("dependency fetch");
@@ -561,11 +505,11 @@ fn main() -> Result<()> {
         )
     });
 
-    populate_sccache(&mut runner, &target)?;
-    seed_target(&mut runner, &target)?;
+    // Target resets, pruning and snapshots belong to the VM image scripts.
+    warm_families(&mut runner);
 
     if cfg!(target_os = "linux") {
-        runner.set_pass("target seed: smoketests");
+        runner.set_pass("smoketests");
         runner.required("Install cargo-nextest", ensure_cargo_nextest);
         runner.required("Build standalone smoketest archive", warm_smoketest_archive);
     }
