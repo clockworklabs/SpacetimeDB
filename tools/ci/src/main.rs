@@ -33,6 +33,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-smoketests",
     },
     Command {
+        path: &["sdk-tests"],
+        package: "ci-sdk-tests",
+    },
+    Command {
         path: &["smoketests", "check-mod-list"],
         package: "ci-smoketest-checks",
     },
