@@ -226,6 +226,7 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
     let outbound_msg_type = builder.add_type::<StOutboundMsgRow>();
     let outbound_msg_cols = [
         StOutboundMsgFields::OutboxTableId.col_id(),
+        StOutboundMsgFields::TargetIdentity.col_id(),
         StOutboundMsgFields::Seq.col_id(),
     ];
     builder
