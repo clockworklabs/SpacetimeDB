@@ -7,9 +7,9 @@ use crate::system_tables::{
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
     StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields,
     StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
-    StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
-    ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
+    StTableRow, StViewFields, StViewParamFields, StViewParamRow, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID,
+    ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+    ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -241,9 +241,19 @@ pub trait StateView {
                 iter.next().map(|row| -> Result<_> {
                     let row = StViewRow::try_from(row)?;
 
+                    // Look up the view's parameters, in position order.
+                    let mut params = self
+                        .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
+                        .map(StViewParamRow::try_from)
+                        .collect::<Result<Vec<_>>>()?;
+                    params.sort_by_key(|param| param.param_pos);
+
                     Ok(ViewDefInfo {
                         view_id: row.view_id,
                         is_anonymous: row.is_anonymous,
+                        params: ViewDefInfo::params_from_columns(
+                            params.into_iter().map(|param| (param.param_name, param.param_type.0)),
+                        ),
                     })
                 })
             })

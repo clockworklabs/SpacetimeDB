@@ -36,11 +36,11 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
-        let (name, alias) = Self::parse_relvar(relation)?;
+        let (name, alias, args) = Self::parse_relvar(relation)?;
         if joins.is_empty() {
-            return Ok(SqlFrom::Expr(name, alias));
+            return Ok(SqlFrom::Expr(name, alias, args));
         }
-        Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
+        Ok(SqlFrom::Join(name, alias, args, Self::parse_joins(joins)?))
     }
 
     /// Parse a sequence of JOIN clauses
@@ -50,10 +50,20 @@ trait RelParser {
 
     /// Parse a single JOIN clause
     fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
-        let (var, alias) = Self::parse_relvar(join.relation)?;
+        let (var, alias, args) = Self::parse_relvar(join.relation)?;
         match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::CrossJoin => Ok(SqlJoin {
+                var,
+                alias,
+                args,
+                on: None,
+            }),
+            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin {
+                var,
+                alias,
+                args,
+                on: None,
+            }),
             JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
                 left,
                 op: BinaryOperator::Eq,
@@ -64,6 +74,7 @@ trait RelParser {
                 Ok(SqlJoin {
                     var,
                     alias,
+                    args,
                     on: Some(parse_expr(
                         Expr::BinaryOp {
                             left,
@@ -78,32 +89,33 @@ trait RelParser {
         }
     }
 
-    /// Parse a table reference in a FROM clause
-    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
+    /// Parse a table reference in a FROM clause,
+    /// along with its view call arguments, e.g. `42` in `v(42)`.
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent, Vec<SqlLiteral>)> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
                 name,
                 alias: None,
-                args: None,
+                args,
                 with_hints,
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() => {
                 let name = parse_ident(name)?;
                 let alias = name.clone();
-                Ok((name, alias))
+                Ok((name, alias, parse_view_args(args)?))
             }
             // Relvar with alias
             TableFactor::Table {
                 name,
                 alias: Some(TableAlias { name: alias, columns }),
-                args: None,
+                args,
                 with_hints,
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((parse_ident(name)?, alias.into()))
+                Ok((parse_ident(name)?, alias.into(), parse_view_args(args)?))
             }
             _ => Err(SqlUnsupported::From(expr).into()),
         }
@@ -300,6 +312,20 @@ fn parse_signed_literal_expr(
         })
         .into()),
     }
+}
+
+/// Parse the arguments of a view call.
+///
+/// `v` (`None`) and `v()` (`Some(vec![])`) both mean no arguments.
+/// Only positional literals are allowed.
+fn parse_view_args(args: Option<Vec<FunctionArg>>) -> SqlParseResult<Vec<SqlLiteral>> {
+    args.into_iter()
+        .flatten()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => parse_literal_expr(expr, SqlUnsupported::ViewArg),
+            arg => Err(SqlUnsupported::ViewArgKind(arg).into()),
+        })
+        .collect()
 }
 
 /// Parse a literal expression.

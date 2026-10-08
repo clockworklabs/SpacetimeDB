@@ -1819,7 +1819,7 @@ impl WasmInstanceEnv {
                 let view_def = resolved.view_def;
                 let view_name = &resolved.view_name;
                 let fn_ptr = resolved.global_fn_ptr;
-                let sender = tx
+                let instance_args = tx
                     .as_ref()
                     .expect("procedure tx missing while looking up refreshed view args")
                     .view_instance_args(&view_call)
@@ -1828,12 +1828,14 @@ impl WasmInstanceEnv {
                             "failed to look up materialized view args for view {}",
                             view_call.view_id
                         )
-                    })?
-                    .sender();
+                    })?;
+                let sender = instance_args.sender();
+                let args = crate::host::FunctionArgs::from_view_args(instance_args.args())
+                    .into_tuple_for_def(resolved.owning_def, view_def)?;
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
                 let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender)
+                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender, &args)
                 });
                 tx = Some(next_tx);
                 let return_data = call_result?;
@@ -1891,6 +1893,7 @@ impl WasmInstanceEnv {
         view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
+        args: &crate::host::ArgsTuple,
     ) -> anyhow::Result<ViewReturnData> {
         let (prev_func_name, prev_func_type) = caller
             .data_mut()
@@ -1901,7 +1904,7 @@ impl WasmInstanceEnv {
         let call_result = (|| -> anyhow::Result<i32> {
             let (args_source, result_sink) = {
                 let env = caller.data_mut();
-                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
+                let args_source = env.create_bytes_source(args.get_bsatn().clone())?;
                 let result_sink = env.create_bytes_sink();
                 (args_source, result_sink)
             };

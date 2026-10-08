@@ -1602,7 +1602,7 @@ mod test {
         env.tx.set_raw(tx);
         assert_eq!(env.env_get("A")?.as_deref(), Some("uncommitted"));
         assert!(env.env_get("UNDECLARED").is_err());
-        let view = ViewCallInfo::anonymous(ViewId(88));
+        let view = ViewCallInfo::anonymous(ViewId(88), &ProductValue::default());
         env.start_funcall(
             NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("view".into())?),
             Timestamp::now(),

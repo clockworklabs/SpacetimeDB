@@ -75,6 +75,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
                 schema,
                 limit: None,
                 delta: None,
+                view_args: _,
             },
             _,
         ) => tx.table_row_count(schema.table_id).unwrap_or_default(),

@@ -298,7 +298,16 @@ pub enum PipelinedExecutor {
 impl From<PhysicalPlan> for PipelinedExecutor {
     fn from(plan: PhysicalPlan) -> Self {
         match plan {
-            PhysicalPlan::TableScan(TableScan { schema, limit, delta }, _) => Self::TableScan(PipelinedScan {
+            // A view's args are applied by its `arg_hash` filter
+            PhysicalPlan::TableScan(
+                TableScan {
+                    schema,
+                    limit,
+                    delta,
+                    view_args: _,
+                },
+                _,
+            ) => Self::TableScan(PipelinedScan {
                 table: schema.table_id,
                 limit,
                 delta,

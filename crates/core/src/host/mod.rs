@@ -45,6 +45,12 @@ pub enum FunctionArgs {
 }
 
 impl FunctionArgs {
+    /// Encodes a view instance's stored args,
+    /// so they are decoded and type-checked against the view's params like any other args.
+    pub(crate) fn from_view_args(args: &ProductValue) -> Self {
+        Self::Bsatn(bsatn::to_vec(args).expect("view args should encode").into())
+    }
+
     fn into_tuple_for_def<Def: FunctionDef>(
         self,
         module: &ModuleDef,
@@ -93,6 +99,11 @@ impl ArgsTuple {
             bsatn: OnceCell::with_value(Bytes::new()),
             json: OnceCell::with_value(ByteString::from_static("[]")),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tuple(&self) -> &ProductValue {
+        &self.tuple
     }
 
     pub fn get_bsatn(&self) -> &Bytes {

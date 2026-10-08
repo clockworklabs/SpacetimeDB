@@ -55,7 +55,7 @@ use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -1174,6 +1174,8 @@ pub struct CallViewParams {
     pub caller: Identity,
     pub sender: Option<Identity>,
     pub args: ArgsTuple,
+    /// The key of the instance being evaluated: its rows are stored, and its reads tracked, under it.
+    pub view_call: ViewCallInfo,
     pub row_type: AlgebraicTypeRef,
     pub timestamp: Timestamp,
     /// The typespace of the module that owns this view.
@@ -3031,26 +3033,30 @@ impl ModuleHost {
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
-        use FunctionArgs::*;
-        let mut view_ids = HashSet::new();
-        view_collector.collect_views(&mut view_ids);
-        for view_id in view_ids {
+        let mut view_calls = HashSet::new();
+        view_collector.collect_views(&mut view_calls);
+        for ViewCall { view_id, args } in view_calls {
             let st_view_row = tx.lookup_st_view(view_id)?;
             let view_name: NamespacedIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let args = if is_anonymous {
-                ViewInstanceArgs::Anonymous
-            } else {
-                ViewInstanceArgs::Sender(caller)
-            };
-            let view_call = ViewCallInfo::from_args(view_id, args);
+            let args = ViewInstanceArgs::for_schema(is_anonymous, caller, args);
+            let view_call = ViewCallInfo::from_args(view_id, &args);
             let sender = args.sender();
             let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
-                let (res, trapped) =
-                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
+                let (res, trapped) = Self::call_view(
+                    instance,
+                    tx,
+                    &view_name,
+                    view_id,
+                    table_id,
+                    FunctionArgs::from_view_args(args.args()),
+                    view_call.clone(),
+                    caller,
+                    sender,
+                )?;
                 tx = res.tx;
                 if trapped {
                     return Ok((tx, true));
@@ -3058,7 +3064,7 @@ impl ModuleHost {
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_call.clone(), args)?;
+                tx.update_view_timestamp(view_call.clone(), args.clone())?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
@@ -3108,8 +3114,8 @@ impl ModuleHost {
                     break;
                 }
             };
-            let sender = match tx.view_instance_args(&view_call) {
-                Some(args) => args.sender(),
+            let instance_args = match tx.view_instance_args(&view_call) {
+                Some(args) => args,
                 None => {
                     outcome = ViewOutcome::Failed(format!(
                         "failed to look up materialized view args for view {}",
@@ -3126,7 +3132,9 @@ impl ModuleHost {
                 global_fn_ptr,
                 owning_def,
             } = resolved;
-            let args = match FunctionArgs::Nullary.into_tuple_for_def(owning_def, view_def) {
+            let sender = instance_args.sender();
+            let args = match FunctionArgs::from_view_args(instance_args.args()).into_tuple_for_def(owning_def, view_def)
+            {
                 Ok(args) => args,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
@@ -3144,6 +3152,7 @@ impl ModuleHost {
                 caller,
                 sender,
                 args,
+                view_call,
                 view_def.product_type_ref,
                 timestamp,
                 Arc::new(owning_def.typespace().clone()),
@@ -3185,6 +3194,7 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
@@ -3195,6 +3205,7 @@ impl ModuleHost {
             view_id,
             table_id,
             args,
+            view_call,
             caller,
             sender,
             Timestamp::now(),
@@ -3208,6 +3219,7 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
         timestamp: Timestamp,
@@ -3231,6 +3243,7 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             Arc::new(owning_def.typespace().clone()),
@@ -3247,6 +3260,7 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
         args: ArgsTuple,
+        view_call: ViewCallInfo,
         row_type: AlgebraicTypeRef,
         timestamp: Timestamp,
         view_typespace: Arc<Typespace>,
@@ -3261,6 +3275,7 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             view_typespace,
         };

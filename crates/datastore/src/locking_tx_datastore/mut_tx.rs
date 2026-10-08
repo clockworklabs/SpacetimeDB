@@ -43,7 +43,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
     db::auth::StAccess, db::raw_def::v9::RawSql, empty_view_arg_hash_value, metrics::ExecutionMetrics,
-    sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
+    sender_view_arg_hash_value, view_instance_arg_hash_value, ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
     col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
@@ -88,24 +88,24 @@ pub struct ViewCallInfo {
 }
 
 impl ViewCallInfo {
-    pub fn anonymous(view_id: ViewId) -> Self {
+    pub fn anonymous(view_id: ViewId, args: &ProductValue) -> Self {
         Self {
             view_id,
-            arg_hash: MutTxId::anonymous_view_arg_hash(),
+            arg_hash: view_instance_arg_hash_value(None, args),
         }
     }
 
-    pub fn sender(view_id: ViewId, sender: Identity) -> Self {
+    pub fn sender(view_id: ViewId, sender: Identity, args: &ProductValue) -> Self {
         Self {
             view_id,
-            arg_hash: MutTxId::view_arg_hash(sender),
+            arg_hash: view_instance_arg_hash_value(Some(sender), args),
         }
     }
 
-    pub fn from_args(view_id: ViewId, args: ViewInstanceArgs) -> Self {
-        match args {
-            ViewInstanceArgs::Anonymous => Self::anonymous(view_id),
-            ViewInstanceArgs::Sender(sender) => Self::sender(view_id, sender),
+    pub fn from_args(view_id: ViewId, args: &ViewInstanceArgs) -> Self {
+        Self {
+            view_id,
+            arg_hash: view_instance_arg_hash_value(args.sender(), args.args()),
         }
     }
 }
@@ -116,22 +116,41 @@ impl MemoryUsage for ViewCallInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewInstanceArgs {
-    Anonymous,
-    Sender(Identity),
+    Anonymous { args: ProductValue },
+    Sender { sender: Identity, args: ProductValue },
 }
 
 impl ViewInstanceArgs {
-    pub fn sender(self) -> Option<Identity> {
+    /// Builds the variant matching the view's schema-level scope.
+    pub fn for_schema(is_anonymous: bool, sender: Identity, args: ProductValue) -> Self {
+        if is_anonymous {
+            Self::Anonymous { args }
+        } else {
+            Self::Sender { sender, args }
+        }
+    }
+
+    pub fn sender(&self) -> Option<Identity> {
         match self {
-            Self::Anonymous => None,
-            Self::Sender(sender) => Some(sender),
+            Self::Anonymous { .. } => None,
+            Self::Sender { sender, .. } => Some(*sender),
+        }
+    }
+
+    pub fn args(&self) -> &ProductValue {
+        match self {
+            Self::Anonymous { args } | Self::Sender { args, .. } => args,
         }
     }
 }
 
-impl MemoryUsage for ViewInstanceArgs {}
+impl MemoryUsage for ViewInstanceArgs {
+    fn heap_usage(&self) -> usize {
+        self.args().heap_usage()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct ViewInstanceState {
@@ -142,7 +161,7 @@ pub(super) struct ViewInstanceState {
 
 impl MemoryUsage for ViewInstanceState {
     fn heap_usage(&self) -> usize {
-        self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>()
+        self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>() + self.args.heap_usage()
     }
 }
 
@@ -291,10 +310,13 @@ impl ViewReadSets {
         self.view_removals.insert(view_id);
     }
 
-    /// Removes keys for exactly `call` from the read set.
-    fn remove_view_call(&mut self, call: &ViewCallInfo) {
+    /// Removes keys for exactly the `calls` from the read set, in one pass.
+    fn remove_view_calls(&mut self, calls: &HashSet<ViewCallInfo>) {
+        if calls.is_empty() {
+            return;
+        }
         self.tables.retain(|_, readset| {
-            readset.remove_view_call(call);
+            readset.remove_view_calls(calls);
             !readset.is_empty()
         });
     }
@@ -305,13 +327,9 @@ impl ViewReadSets {
             self.remove_view(view_id);
         }
 
-        for call in readset.removals {
-            self.remove_view_call(&call);
-        }
-
-        for call in readset.replacements {
-            self.remove_view_call(&call);
-        }
+        let mut calls = readset.removals;
+        calls.extend(readset.replacements);
+        self.remove_view_calls(&calls);
 
         for (table_id, rs) in readset.tables {
             self.tables.entry(table_id).or_default().merge(rs);
@@ -398,13 +416,13 @@ impl TableReadSet {
         });
     }
 
-    /// Removes keys for exactly `call` from the read set.
-    fn remove_view_call(&mut self, call: &ViewCallInfo) {
-        self.table_scans.retain(|candidate| candidate != call);
+    /// Removes keys for exactly the `calls` from the read set.
+    fn remove_view_calls(&mut self, calls: &HashSet<ViewCallInfo>) {
+        self.table_scans.retain(|candidate| !calls.contains(candidate));
 
         self.index_reads.retain(|_cols, key_map| {
             key_map.retain(|_key, views| {
-                views.retain(|candidate| candidate != call);
+                views.retain(|candidate| !calls.contains(candidate));
                 !views.is_empty()
             });
             !key_map.is_empty()
@@ -2987,13 +3005,13 @@ impl MutTxId {
 
     /// Returns the stored arguments needed to execute this materialized view argument.
     pub fn view_instance_args(&self, call: &ViewCallInfo) -> Option<ViewInstanceArgs> {
-        self.get_view_instance(call).map(|state| state.args)
+        self.get_view_instance(call).map(|state| state.args.clone())
     }
 
-    /// Returns all materialized view instances for `view_id`.
-    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
+    /// Returns all materialized view instances for `view_id`, with the key each is stored under.
+    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<(ViewCallInfo, ViewInstanceArgs)> {
         self.effective_view_instances_for_view(view_id)
-            .map(|(_, state)| state.args)
+            .map(|(call, state)| (call.clone(), state.args.clone()))
             .collect()
     }
 
@@ -3025,10 +3043,13 @@ impl MutTxId {
         args: ViewInstanceArgs,
         last_used: Timestamp,
     ) -> Result<()> {
-        let mut state = self
-            .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, last_used));
-        state.args = args;
+        let mut state = match self.get_view_instance_cloned(&call) {
+            Some(mut state) => {
+                state.args = args;
+                state
+            }
+            None => ViewInstanceState::new(args, last_used),
+        };
         state.last_used = last_used;
         self.view_instances.set(call, state);
         Ok(())
@@ -3036,10 +3057,13 @@ impl MutTxId {
 
     /// Increment this subscriber's refcount for a materialized view argument.
     pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
-        let mut state = self
-            .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
-        state.args = args;
+        let mut state = match self.get_view_instance_cloned(&call) {
+            Some(mut state) => {
+                state.args = args;
+                state
+            }
+            None => ViewInstanceState::new(args, Timestamp::now()),
+        };
         *state.active_subscribers.entry(subscriber).or_default() += 1;
         state.last_used = Timestamp::now();
         self.view_instances.set(call, state);
