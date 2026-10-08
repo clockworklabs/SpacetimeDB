@@ -132,7 +132,7 @@ spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
-spacetimedb-engine = { workspace = true, features = ["test"] }
+spacetimedb-engine = { path = "../engine", features = ["test"] }
 
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true

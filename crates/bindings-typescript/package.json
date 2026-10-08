@@ -8,6 +8,7 @@
   },
   "files": [
     "src",
+    "!src/server/test-utils/portable-datastore-wasm",
     "dist",
     "README.md",
     "LICENSE.txt"
@@ -26,21 +27,27 @@
     "build:js": "tsup",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm -s build:js && pnpm -s build:types",
+    "build:package": "pnpm -s build && pnpm -s prepare:test-utils-wasm:clean",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
-    "test": "vitest run",
+    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
+    "test:unit": "vitest run",
     "test:typecheck": "vitest typecheck --run",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
     "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
+    "generate:test-utils-wasm": "node scripts/generate-test-utils-wasm.mjs",
+    "prepare:test-utils-wasm": "pnpm -s generate:test-utils-wasm && node scripts/copy-test-utils-wasm.mjs",
+    "prepare:test-utils-wasm:clean": "pnpm -s generate:test-utils-wasm --clean && node scripts/copy-test-utils-wasm.mjs",
+    "check:package": "node scripts/check-package-test-utils-wasm.mjs",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
     "generate:examples:chat-react-ts": "pnpm --filter @clockworklabs/chat-react-ts generate",
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
-    "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
+    "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -71,6 +78,21 @@
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"
+    },
+    "./server/test-utils": {
+      "types": "./dist/server/test-utils/index.d.ts",
+      "import": "./dist/server/test-utils/index.mjs",
+      "default": "./dist/server/test-utils/index.mjs"
+    },
+    "./server/test-utils/vitest": {
+      "types": "./dist/server/test-utils/vitest.d.ts",
+      "import": "./dist/server/test-utils/vitest.mjs",
+      "default": "./dist/server/test-utils/vitest.mjs"
+    },
+    "./server/test-utils/wasm": {
+      "types": "./dist/server/test-utils/wasm.d.ts",
+      "import": "./dist/server/test-utils/wasm.mjs",
+      "default": "./dist/server/test-utils/wasm.mjs"
     },
     "./vue": {
       "types": "./dist/vue/index.d.ts",

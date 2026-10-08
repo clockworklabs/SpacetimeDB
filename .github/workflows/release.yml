@@ -318,6 +318,33 @@ jobs:
           chmod +x ./shared-bin/cargo-release
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
+      # The TypeScript package's prepublish hook builds the portable datastore
+      # Wasm from source, so npm publishing needs Rust and wasm-bindgen.
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          cargo install --locked wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          wasm-bindgen --version
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:

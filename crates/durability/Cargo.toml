@@ -27,7 +27,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-spacetimedb-commitlog = { workspace = true, features = ["test"] }
+spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 tempfile.workspace = true
 tokio.workspace = true
 
