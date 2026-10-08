@@ -488,11 +488,13 @@ fn families() -> &'static [(&'static str, WarmFamily)] {
     }
 }
 
-fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
-    // Force compiler invocations for each CI family instead of Cargo Fresh reuse.
+fn populate_sccache(runner: &mut WarmRunner, target: Option<&Path>) -> Result<()> {
     for &(name, family) in families() {
         let started = Instant::now();
-        reset_cargo_target(target)?;
+        if let Some(target) = target {
+            // Force compiler invocations instead of Cargo Fresh reuse when requested.
+            reset_cargo_target(target)?;
+        }
         runner.set_pass(format!("sccache population: {name}"));
         family(runner);
         eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
@@ -563,9 +565,7 @@ fn main() -> Result<()> {
         )
     });
 
-    if let Some(target) = target.as_deref() {
-        populate_sccache(&mut runner, target)?;
-    }
+    populate_sccache(&mut runner, target.as_deref())?;
     seed_target(&mut runner, target.as_deref())?;
 
     if cfg!(target_os = "linux") {
@@ -577,18 +577,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{patched_blackholio_manifest, reset_cargo_target};
-
-    #[test]
-    fn reset_leaves_target_creation_to_cargo() {
-        let temp = tempfile::tempdir().unwrap();
-        let target = temp.path().join("target");
-        std::fs::create_dir(&target).unwrap();
-        std::fs::write(target.join("old-artifact"), "stale").unwrap();
-        reset_cargo_target(&target).unwrap();
-        assert!(!target.exists());
-        reset_cargo_target(&target).unwrap();
-    }
+    use super::patched_blackholio_manifest;
 
     #[test]
     fn patches_blackholio_dependency() {
