@@ -774,7 +774,7 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
         m.insert("st_env_key_key", ConstraintId(26));
         m.insert("st_outbound_stream_outbox_table_id_target_identity_key", ConstraintId(27));
-        m.insert("st_outbound_msg_outbox_table_id_seq_key", ConstraintId(28));
+        m.insert("st_outbound_msg_outbox_table_id_target_identity_seq_key", ConstraintId(28));
         m.insert("st_inbound_stream_sender_identity_sender_outbox_table_id_key", ConstraintId(29));
         m.insert("st_inbound_msg_sender_identity_sender_outbox_table_id_seq_key", ConstraintId(30));
         m
@@ -817,7 +817,7 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
         m.insert("st_env_key_idx_btree", IndexId(30));
         m.insert("st_outbound_stream_outbox_table_id_target_identity_idx_btree", IndexId(31));
-        m.insert("st_outbound_msg_outbox_table_id_seq_idx_btree", IndexId(32));
+        m.insert("st_outbound_msg_outbox_table_id_target_identity_seq_idx_btree", IndexId(32));
         m.insert("st_inbound_stream_sender_identity_sender_outbox_table_id_idx_btree", IndexId(33));
         m.insert("st_inbound_msg_sender_identity_sender_outbox_table_id_seq_idx_btree", IndexId(34));
         m
