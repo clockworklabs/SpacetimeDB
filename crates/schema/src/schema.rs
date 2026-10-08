@@ -965,6 +965,7 @@ impl Schema for TableSchema {
             table_access,
             is_event,
             accessor_name,
+            outbox,
             ..
         } = def;
 
@@ -991,6 +992,13 @@ impl Schema for TableSchema {
             .as_ref()
             .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
 
+        let outbox = outbox.as_ref().map(|outbox| OutboxSchema {
+            remote_reducer: outbox.remote_reducer.clone(),
+            target_column: outbox.target_column,
+            on_result_reducer: outbox.on_result_reducer.clone(),
+            signature_hash: outbox.signature_hash.clone(),
+        });
+
         TableSchema::new(
             table_id,
             TableName::new(name.clone()),
@@ -1005,7 +1013,7 @@ impl Schema for TableSchema {
             *primary_key,
             *is_event,
             Some(accessor_name.clone().into()),
-            None,
+            outbox,
         )
     }
 

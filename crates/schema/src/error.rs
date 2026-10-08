@@ -146,6 +146,19 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
+    #[error("table {table} is assigned in multiple outboxes")]
+    DuplicateOutbox { table: Identifier },
+    #[error("outbox table {table} must have a primary key")]
+    OutboxMissingPrimaryKey { table: Identifier },
+    #[error("outbox table {table} primary key must be u64, found {found}")]
+    OutboxInvalidPrimaryKey {
+        table: Identifier,
+        found: PrettyAlgebraicType,
+    },
+    #[error("outbox table {table} must have exactly one non-primary-key identity target column")]
+    OutboxTargetColumnMissing { table: Identifier },
+    #[error("outbox table {table} must not have multiple non-primary-key identity target columns")]
+    OutboxTargetColumnAmbiguous { table: Identifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
     #[error("HTTP handler name {name} is used for multiple HTTP handlers")]

@@ -7,7 +7,7 @@ use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_lib::http::character_is_acceptable_for_route_path;
 use spacetimedb_primitives::ReducerId;
-use spacetimedb_sats::{Typespace, WithTypespace};
+use spacetimedb_sats::{AlgebraicType, Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
     check_function_names_are_unique, check_scheduled_functions_exist, convert, generate_schedule_name,
@@ -220,6 +220,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         })
         .unwrap_or_else(|| Ok(Vec::new()));
 
+    let raw_outboxes = def.outboxes().cloned().unwrap_or_default();
+
     // Validate lifecycle reducers - they reference reducers by name
     let lifecycle_validations = reducers
         .as_ref()
@@ -287,6 +289,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
+
+                attach_outboxes_to_tables(&mut tables, raw_outboxes)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
@@ -803,6 +807,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_access,
             is_event,
             accessor_name: identifier(raw_table_name)?,
+            outbox: None,
         })
     }
 
@@ -1159,6 +1164,65 @@ fn attach_schedules_to_tables(
         }
 
         table.schedule = Some(schedule);
+    }
+
+    Ok(())
+}
+
+fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxes: Vec<RawOutboxDefV10>) -> Result<()> {
+    for outbox in outboxes {
+        let table_ident = identifier(outbox.table_name.clone())?;
+        let table = tables
+            .values_mut()
+            .find(|table| table.accessor_name == table_ident)
+            .ok_or_else(|| ValidationError::TableNotFound {
+                table: outbox.table_name.clone(),
+            })?;
+
+        if table.outbox.is_some() {
+            return Err(ValidationError::DuplicateOutbox {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        let primary_key = table
+            .primary_key
+            .ok_or_else(|| ValidationError::OutboxMissingPrimaryKey {
+                table: table.name.clone(),
+            })?;
+        let primary_key_ty = &table.columns[primary_key.idx()].ty;
+        if *primary_key_ty != AlgebraicType::U64 {
+            return Err(ValidationError::OutboxInvalidPrimaryKey {
+                table: table.name.clone(),
+                found: primary_key_ty.clone().into(),
+            }
+            .into());
+        }
+
+        let mut target_columns = table
+            .columns
+            .iter()
+            .filter(|col| col.col_id != primary_key && (col.ty == AlgebraicType::U256 || col.ty.is_identity()))
+            .map(|col| col.col_id);
+        let target_column = target_columns
+            .next()
+            .ok_or_else(|| ValidationError::OutboxTargetColumnMissing {
+                table: table.name.clone(),
+            })?;
+        if target_columns.next().is_some() {
+            return Err(ValidationError::OutboxTargetColumnAmbiguous {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        table.outbox = Some(OutboxDef {
+            remote_reducer: identifier(outbox.remote_reducer)?,
+            target_column,
+            on_result_reducer: outbox.on_result_reducer.map(identifier).transpose()?,
+            signature_hash: None,
+        });
     }
 
     Ok(())
@@ -1604,6 +1668,40 @@ mod tests {
             def.reducers[&extra_reducer_name].visibility,
             FunctionVisibility::ClientCallable
         );
+    }
+
+    #[test]
+    fn outbox_flows_from_module_def_to_table_schema() {
+        use crate::schema::{Schema, TableSchema};
+        use spacetimedb_primitives::TableId;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox("outbound_pings", "receive_ping", Option::<&str>::None);
+
+        let module: ModuleDef = builder.finish().try_into().expect("valid outbox module");
+        let table = module.table("outbound_pings").expect("outbox table exists");
+        let outbox = table.outbox.as_ref().expect("TableDef carries outbox metadata");
+        assert_eq!(&outbox.remote_reducer[..], "receive_ping");
+        assert_eq!(outbox.target_column, ColId(1));
+
+        let schema = TableSchema::from_module_def(&module, table, (), TableId::SENTINEL);
+        let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
+        assert_eq!(&outbox.remote_reducer[..], "receive_ping");
+        assert_eq!(outbox.target_column, ColId(1));
     }
 
     #[test]
