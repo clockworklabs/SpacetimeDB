@@ -1346,38 +1346,13 @@ impl Page {
     /// where the fixed size part is `fixed_row_size` bytes large,
     /// and the variable part requires `num_granules`.
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_granules: usize) -> bool {
-        let has_fixed_free = self.header.fixed.next_free.has();
-        let var_first = self.header.var.first;
-        let fixed_last = self.header.fixed.last;
-
-        if num_granules == 0 {
-            // No granules needed. Just verify that there's space for the fixed part.
-            return has_fixed_free || gap_enough_size_for_row(var_first, fixed_last, fixed_row_size);
-        }
-
-        // Determine the gap remaining after allocating for the fixed part.
-        let gap_remaining = gap_remaining_size(var_first, fixed_last);
-        let gap_avail_for_granules = if has_fixed_free {
-            // If we have a free fixed length block, then we can use the whole gap for var-len granules.
-            gap_remaining
-        } else {
-            // If we need to grow the fixed-length store into the gap,
-            if gap_remaining < fixed_row_size {
-                // If the gap is too small for fixed-length row, fail.
-                return false;
-            }
-
-            // Otherwise, the space available in the gap for var-len granules
-            // is the current gap size less the fixed-len row size.
-            gap_remaining - fixed_row_size
-        };
-
-        // Convert the gap size to granules.
-        let gap_in_granules = VarLenGranule::space_to_granules(gap_avail_for_granules);
-        // Account for granules available in the freelist.
-        let needed_granules_after_freelist = num_granules.saturating_sub(self.header.var.freelist_len as usize);
-
-        gap_in_granules >= needed_granules_after_freelist
+        has_space_for_row(
+            self.header.fixed.next_free.has(),
+            gap_remaining_size(self.header.var.first, self.header.fixed.last),
+            self.available_var_len_granules() as _,
+            fixed_row_size,
+            num_granules,
+        )
     }
 
     /// Returns whether the row is full with respect to storing a fixed row with `fixed_row_size`
@@ -1938,6 +1913,30 @@ impl Page {
     pub fn unmodified_hash(&self) -> Option<&blake3::Hash> {
         self.header.unmodified_hash.as_ref()
     }
+
+    pub fn metadata(&self, fixed_row_size: Size) -> PageMetadata {
+        PageMetadata {
+            num_rows: self.num_rows() as _,
+            bytes_used_by_rows: self.bytes_used_by_rows(fixed_row_size) as _,
+            has_free_fixed_slot: self.header.fixed.next_free.has(),
+            gap_bytes: gap_remaining_size(self.header.var.first, self.header.fixed.last).0 as _,
+            available_granules: self.available_var_len_granules() as _,
+        }
+    }
+
+    pub fn capacity(&self, fixed_row_size: Size) -> PageCapacity {
+        let allocated_fixed_slots = self.header.fixed.last / fixed_row_size;
+        let free_fixed_slots = allocated_fixed_slots
+            .checked_sub(self.header.fixed.num_rows as usize)
+            .expect("live row count exceeds allocated fixed slots");
+
+        PageCapacity {
+            num_rows: self.num_rows(),
+            gap_size: gap_remaining_size(self.header.var.first, self.header.fixed.last),
+            free_fixed_slots,
+            available_granules: self.available_var_len_granules(),
+        }
+    }
 }
 
 /// An iterator over the `PageOffset`s of all present fixed-length rows in a [`Page`].
@@ -1993,6 +1992,137 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
         self.next_granule = granule.header.next();
 
         Some(granule)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct PageMetadata {
+    pub num_rows: u16,
+    pub bytes_used_by_rows: u32,
+    has_free_fixed_slot: bool,
+    gap_bytes: u16,
+    available_granules: u16,
+}
+
+impl PageMetadata {
+    pub fn has_space_for_row(&self, fixed_row_size: Size, num_var_len_granules: usize) -> bool {
+        has_space_for_row(
+            self.has_free_fixed_slot,
+            Size(self.gap_bytes),
+            self.available_granules as _,
+            fixed_row_size,
+            num_var_len_granules,
+        )
+    }
+
+    pub fn is_full(&self, fixed_row_size: Size) -> bool {
+        !self.has_space_for_row(fixed_row_size, 0)
+    }
+
+    pub fn available_var_len_granules(&self) -> usize {
+        self.available_granules as _
+    }
+}
+
+fn has_space_for_row(
+    has_fixed_free: bool,
+    gap_size: Size,
+    available_granules: usize,
+    fixed_row_size: Size,
+    num_granules: usize,
+) -> bool {
+    if num_granules == 0 {
+        // No granules needed. Just verify that there's space for the fixed part.
+        return has_fixed_free || gap_size >= fixed_row_size;
+    }
+
+    // Determine the gap remaining after allocating for the fixed part.
+    let gap_avail_for_granules = if has_fixed_free {
+        // If we have a free fixed length block, then we can use the whole gap for var-len granules.
+        gap_size
+    } else {
+        // If we need to grow the fixed-length store into the gap,
+        if gap_size < fixed_row_size {
+            // If the gap is too small for fixed-length row, fail.
+            return false;
+        }
+
+        // Otherwise, the space available in the gap for var-len granules
+        // is the current gap size less the fixed-len row size.
+        gap_size - fixed_row_size
+    };
+
+    // Convert the gap size to granules.
+    let gap_in_granules = VarLenGranule::space_to_granules(gap_avail_for_granules);
+    // Account for granules available in the freelist.
+    let freelist_len = available_granules
+        .checked_sub(VarLenGranule::space_to_granules(gap_size))
+        .expect("available granules must include the gap");
+    let needed_granules_after_freelist = num_granules.saturating_sub(freelist_len);
+
+    gap_in_granules >= needed_granules_after_freelist
+}
+
+pub struct PageCapacity {
+    pub num_rows: usize,
+    gap_size: Size,
+    free_fixed_slots: usize,
+    available_granules: usize,
+}
+
+impl PageCapacity {
+    pub fn empty(fixed_row_size: Size) -> Self {
+        let header = PageHeader::new(max_rows_in_page(fixed_row_size));
+        Self {
+            num_rows: 0,
+            gap_size: gap_remaining_size(header.var.first, header.fixed.last),
+            free_fixed_slots: 0,
+            available_granules: header.available_var_len_granules(),
+        }
+    }
+
+    pub fn has_space_for_row(&self, fixed_row_size: Size, num_granules: usize) -> bool {
+        has_space_for_row(
+            self.free_fixed_slots != 0,
+            self.gap_size,
+            self.available_granules as _,
+            fixed_row_size,
+            num_granules,
+        )
+    }
+
+    pub fn available_var_len_granules(&self) -> usize {
+        self.available_granules
+    }
+
+    pub fn release_row(&mut self, row_granules: usize) {
+        assert!(self.num_rows != 0);
+
+        self.num_rows -= 1;
+        self.free_fixed_slots += 1;
+        self.available_granules += row_granules;
+    }
+
+    pub fn reserve_row(&mut self, fixed_row_size: Size, required_granules: usize) {
+        assert!(self.has_space_for_row(fixed_row_size, required_granules));
+
+        let gap_granules = VarLenGranule::space_to_granules(self.gap_size);
+        let freelist_granules = self
+            .available_granules
+            .checked_sub(gap_granules)
+            .expect("available granules must include the gap");
+
+        if self.free_fixed_slots != 0 {
+            self.free_fixed_slots -= 1;
+        } else {
+            self.gap_size = self.gap_size.checked_sub(fixed_row_size).unwrap();
+        }
+
+        let from_gap = required_granules.saturating_sub(freelist_granules);
+        self.gap_size = self.gap_size.checked_sub(VarLenGranule::SIZE * from_gap).unwrap();
+        self.available_granules =
+            freelist_granules.saturating_sub(required_granules) + VarLenGranule::space_to_granules(self.gap_size);
+        self.num_rows += 1;
     }
 }
 
