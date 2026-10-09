@@ -100,7 +100,10 @@ impl<'a> Files<'a> {
 
     fn url(&self, rest: &str) -> String {
         let db = self.test.database_identity.as_ref().expect("published");
-        format!("{}/v1/database/{db}/files{rest}", self.test.server_url.trim_end_matches('/'))
+        format!(
+            "{}/v1/database/{db}/files{rest}",
+            self.test.server_url.trim_end_matches('/')
+        )
     }
 
     fn upload(&self, body: &[u8], content_type: &str, authorized: bool) -> reqwest::blocking::Response {
@@ -125,7 +128,10 @@ impl<'a> Files<'a> {
     }
 
     fn metadata(&self, file_ref: &str) -> reqwest::blocking::Response {
-        self.client.get(self.url(&format!("/{file_ref}/metadata"))).send().unwrap()
+        self.client
+            .get(self.url(&format!("/{file_ref}/metadata")))
+            .send()
+            .unwrap()
     }
 }
 
@@ -155,7 +161,10 @@ fn test_file_storage() {
     let files = Files::new(&test);
 
     // Uploads need an identity or a token, and allow_upload's approval.
-    assert_eq!(files.upload(b"hello", "text/plain", false).status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        files.upload(b"hello", "text/plain", false).status(),
+        StatusCode::UNAUTHORIZED
+    );
     let rejected = files.upload(b"nope", "application/x-forbidden", true);
     assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
     assert!(rejected.text().unwrap().contains("forbidden content type"));
@@ -226,7 +235,10 @@ fn test_file_storage() {
     assert_eq!(files.metadata(&note).status(), StatusCode::NOT_FOUND);
     assert_eq!(files.download(&note, None).status(), StatusCode::OK);
     assert_eq!(files.download(&copy, None).status(), StatusCode::OK);
-    assert!(test.call("delete_named", &["\"note\""]).is_err(), "the note is already deleted");
+    assert!(
+        test.call("delete_named", &["\"note\""]).is_err(),
+        "the note is already deleted"
+    );
 
     // The files' records are private.
     let private = test.sql("SELECT * FROM st_file");

@@ -44,7 +44,9 @@ pub trait FileStore: Send + Sync + 'static {
 
     /// Stores a spooled file under its hash, and returns once the object is durable.
     ///
-    /// If an object with this hash already exists, the spool is discarded.
+    /// If an object with this hash already exists, the spool is discarded and the object's
+    /// `stored_at` is refreshed. Reclamation relies on that refresh to spare an object that is
+    /// about to be referenced again.
     async fn persist(&self, spooled: Spooled) -> io::Result<()>;
 
     /// The size of the object stored under `hash`, or `None` if there is none.
@@ -61,6 +63,24 @@ pub trait FileStore: Send + Sync + 'static {
 
     /// Deletes the object stored under `hash`. Deleting a missing object succeeds.
     async fn delete(&self, hash: &Hash) -> io::Result<()>;
+
+    /// Deletes the object stored under `hash` only if it was last persisted before `cutoff`,
+    /// and returns whether it did.
+    ///
+    /// Reclamation uses this so that persisting the same contents again, which refreshes the object,
+    /// saves it even after reclamation has decided to delete it. An S3 store would make this a
+    /// conditional delete. The default checks and then deletes, which leaves a small window.
+    async fn delete_if_older_than(&self, hash: &Hash, cutoff: SystemTime) -> io::Result<bool> {
+        let stale = self
+            .list()
+            .await?
+            .into_iter()
+            .any(|object| object.hash == *hash && object.stored_at < cutoff);
+        if stale {
+            self.delete(hash).await?;
+        }
+        Ok(stale)
+    }
 
     /// Stores `bytes`, which must hash to `hash`, and returns once the object is durable.
     async fn persist_bytes(&self, hash: Hash, bytes: Bytes) -> io::Result<()> {
@@ -169,18 +189,19 @@ struct TempPath(Option<PathBuf>);
 
 impl TempPath {
     fn path(&self) -> &Path {
-        self.0.as_deref().expect("a temporary file always has a path until it is taken")
+        self.0
+            .as_deref()
+            .expect("a temporary file always has a path until it is taken")
     }
 }
 
 impl Drop for TempPath {
     fn drop(&mut self) {
-        if let Some(path) = self.0.take() {
-            if let Err(e) = std::fs::remove_file(&path) {
-                if e.kind() != io::ErrorKind::NotFound {
-                    log::warn!("failed to remove temporary file {}: {e}", path.display());
-                }
-            }
+        if let Some(path) = self.0.take()
+            && let Err(e) = std::fs::remove_file(&path)
+            && e.kind() != io::ErrorKind::NotFound
+        {
+            log::warn!("failed to remove temporary file {}: {e}", path.display());
         }
     }
 }
@@ -232,7 +253,16 @@ impl FileStore for LocalFileStore {
     async fn persist(&self, spooled: Spooled) -> io::Result<()> {
         let dest = self.object_path(&spooled.hash());
         if tokio::fs::try_exists(&dest).await? {
-            return Ok(());
+            // Refresh the object's age, so a reclamation pass that already chose it spares it.
+            let dest = dest.clone();
+            return tokio::task::spawn_blocking(move || {
+                std::fs::File::options()
+                    .write(true)
+                    .open(&dest)?
+                    .set_modified(SystemTime::now())
+            })
+            .await
+            .map_err(io::Error::other)?;
         }
         let src = spooled.into_path();
         tokio::task::spawn_blocking(move || {
@@ -309,6 +339,20 @@ impl FileStore for LocalFileStore {
             _ => Ok(()),
         }
     }
+
+    async fn delete_if_older_than(&self, hash: &Hash, cutoff: SystemTime) -> io::Result<bool> {
+        let path = self.object_path(hash);
+        let stored_at = match tokio::fs::metadata(&path).await {
+            Ok(meta) => meta.modified()?,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        if stored_at >= cutoff {
+            return Ok(false);
+        }
+        self.delete(hash).await?;
+        Ok(true)
+    }
 }
 
 /// What [`reclaim_unreferenced`] did.
@@ -339,16 +383,15 @@ pub async fn reclaim_unreferenced(
     now: SystemTime,
 ) -> io::Result<ReclaimStats> {
     let mut stats = ReclaimStats::default();
+    let cutoff = now.checked_sub(grace).unwrap_or(SystemTime::UNIX_EPOCH);
     for object in store.list().await? {
         if roots.contains(&object.hash) {
             continue;
         }
-        let age = now.duration_since(object.stored_at).unwrap_or_default();
-        if age < grace {
+        if object.stored_at >= cutoff || !store.delete_if_older_than(&object.hash, cutoff).await? {
             stats.spared_young_objects += 1;
             continue;
         }
-        store.delete(&object.hash).await?;
         stats.deleted_objects += 1;
         stats.deleted_bytes += object.size;
     }
@@ -439,15 +482,22 @@ mod tests {
         let mut hashes = Vec::new();
         for contents in [&b"kept"[..], b"young", b"garbage"] {
             let hash = content_hash(contents);
-            store.persist_bytes(hash, Bytes::copy_from_slice(contents)).await.unwrap();
+            store
+                .persist_bytes(hash, Bytes::copy_from_slice(contents))
+                .await
+                .unwrap();
             hashes.push(hash);
         }
-        let [kept, young, garbage] = hashes[..] else { unreachable!() };
+        let [kept, young, garbage] = hashes[..] else {
+            unreachable!()
+        };
         let roots = HashSet::from([kept]);
         let grace = Duration::from_secs(60);
 
         // Everything is younger than the grace period, so nothing is deleted yet.
-        let stats = reclaim_unreferenced(&store, &roots, grace, SystemTime::now()).await.unwrap();
+        let stats = reclaim_unreferenced(&store, &roots, grace, SystemTime::now())
+            .await
+            .unwrap();
         assert_eq!(stats.deleted_objects, 0);
         assert_eq!(stats.spared_young_objects, 2);
 
@@ -461,7 +511,9 @@ mod tests {
             .set_modified(old)
             .unwrap();
 
-        let stats = reclaim_unreferenced(&store, &roots, grace, SystemTime::now()).await.unwrap();
+        let stats = reclaim_unreferenced(&store, &roots, grace, SystemTime::now())
+            .await
+            .unwrap();
         assert_eq!(stats.deleted_objects, 1);
         assert_eq!(stats.deleted_bytes, b"garbage".len() as u64);
         assert_eq!(store.size(&garbage).await.unwrap(), None);
@@ -479,5 +531,26 @@ mod tests {
         assert_eq!(std::fs::read_dir(dir.path().join("tmp")).unwrap().count(), 1);
         let _store = LocalFileStore::open(dir.path()).unwrap();
         assert_eq!(std::fs::read_dir(dir.path().join("tmp")).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn persisting_again_saves_an_object_from_reclamation() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalFileStore::open(dir.path()).unwrap();
+        let hash = content_hash(b"again");
+        store.persist_bytes(hash, Bytes::from_static(b"again")).await.unwrap();
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        std::fs::File::options()
+            .write(true)
+            .open(store.object_path(&hash))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        // Reclamation decided on a cutoff before the object was persisted again.
+        let cutoff = SystemTime::now() - Duration::from_secs(60);
+        store.persist_bytes(hash, Bytes::from_static(b"again")).await.unwrap();
+        assert!(!store.delete_if_older_than(&hash, cutoff).await.unwrap());
+        assert!(store.size(&hash).await.unwrap().is_some());
     }
 }

@@ -265,7 +265,9 @@ impl WasmPointee for spacetimedb_lib::FileRef {
         Ok(())
     }
     fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
-        Ok(Self::from_u256(spacetimedb_sats::u256::from_le_bytes(*mem.deref_array(ptr)?)))
+        Ok(Self::from_u256(spacetimedb_sats::u256::from_le_bytes(
+            *mem.deref_array(ptr)?,
+        )))
     }
 }
 

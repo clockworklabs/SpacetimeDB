@@ -425,8 +425,11 @@ impl Snapshot {
 
     /// Decodes a manifest, including one written before `file_hashes` existed.
     fn from_bsatn(bytes: &[u8]) -> Result<Self, bsatn::DecodeError> {
-        bsatn::from_slice::<Snapshot>(bytes)
-            .or_else(|err| bsatn::from_slice::<SnapshotWithoutFiles>(bytes).map(Snapshot::from).map_err(|_| err))
+        bsatn::from_slice::<Snapshot>(bytes).or_else(|err| {
+            bsatn::from_slice::<SnapshotWithoutFiles>(bytes)
+                .map(Snapshot::from)
+                .map_err(|_| err)
+        })
     }
 }
 
@@ -1864,7 +1867,10 @@ mod tests {
     fn retained_file_hashes_covers_every_snapshot() -> anyhow::Result<()> {
         let tmp = tempdir()?;
         let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
-        let files = [vec![file_entry(b"a"), file_entry(b"b")], vec![file_entry(b"b"), file_entry(b"c")]];
+        let files = [
+            vec![file_entry(b"a"), file_entry(b"b")],
+            vec![file_entry(b"b"), file_entry(b"c")],
+        ];
         for (tx_offset, files) in files.into_iter().enumerate() {
             let tx_offset = tx_offset as TxOffset;
             let dir = repo.snapshot_dir_path(tx_offset);

@@ -50,8 +50,8 @@ pub use spacetimedb_lib::ConnectionId;
 #[cfg(feature = "unstable")]
 use crate::http::HandlerContext;
 use crate::http::HttpClient;
-pub use spacetimedb_lib::FilterableValue;
 pub use files::{FileError, FileId, FileMetadata, FileRef, UploadRequest};
+pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;

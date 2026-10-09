@@ -169,11 +169,9 @@ impl RelationalDB {
         // and the gate holds back the durable offset until they are.
         let files = files.filter(|_| durability.is_some());
         let durability = match (durability, &files, &durability_runtime) {
-            (Some(durability), Some(files), Some(runtime)) => Some(Arc::new(FileGatedDurability::new(
-                durability,
-                files.clone(),
-                runtime.clone(),
-            )) as Arc<Durability>),
+            (Some(durability), Some(files), Some(runtime)) => {
+                Some(Arc::new(FileGatedDurability::new(durability, files.clone(), runtime.clone())) as Arc<Durability>)
+            }
             (durability, ..) => durability,
         };
 

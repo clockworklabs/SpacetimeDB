@@ -267,7 +267,10 @@ impl PersistenceProvider for LocalPersistenceProvider {
         ));
 
         let files_dir = replica_dir_for_files.files();
-        let store = asyncify(&runtime, move || spacetimedb_file_store::LocalFileStore::open(files_dir.0)).await?;
+        let store = asyncify(&runtime, move || {
+            spacetimedb_file_store::LocalFileStore::open(files_dir.0)
+        })
+        .await?;
         let files = DatabaseFiles::new(Arc::new(store), runtime.clone());
 
         Ok(Persistence {

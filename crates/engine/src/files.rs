@@ -145,7 +145,9 @@ impl DatabaseFiles {
                     self.note_persisted(hash);
                     return;
                 }
-                Ok(None) => log::error!("a committed transaction references file {hash}, which is not in the file store"),
+                Ok(None) => {
+                    log::error!("a committed transaction references file {hash}, which is not in the file store")
+                }
                 Err(e) => log::warn!("failed to check the file store for {hash}: {e}"),
             }
             self.runtime.sleep(backoff).await;
@@ -161,7 +163,8 @@ impl DatabaseFiles {
     /// uploads whose `st_file` row hasn't committed yet.
     pub async fn reclaim(&self, mut roots: HashSet<Hash>, grace: Duration) -> std::io::Result<ReclaimStats> {
         roots.extend(self.uploads.lock().in_flight.keys().copied());
-        let stats = spacetimedb_file_store::reclaim_unreferenced(&*self.store, &roots, grace, SystemTime::now()).await?;
+        let stats =
+            spacetimedb_file_store::reclaim_unreferenced(&*self.store, &roots, grace, SystemTime::now()).await?;
         // Forget cached answers for anything that might have been deleted.
         self.uploads.lock().persisted.retain(|hash| roots.contains(hash));
         Ok(stats)
@@ -187,9 +190,7 @@ fn any_file_row(state: &impl StateView, id: FileId) -> Result<Option<(RowPointer
 
 /// Looks up the live file `id` names.
 pub fn live_file_row(state: &impl StateView, id: FileId) -> Result<Option<StFileRow>, DatastoreError> {
-    Ok(any_file_row(state, id)?
-        .map(|(_, row)| row)
-        .filter(StFileRow::is_live))
+    Ok(any_file_row(state, id)?.map(|(_, row)| row).filter(StFileRow::is_live))
 }
 
 /// Looks up the live file `file_ref` names, if its read secret matches.
@@ -214,7 +215,11 @@ pub fn servable_file_row_for_ref(
 /// The bytes of a staged file, if they haven't been persisted and cleaned up yet.
 pub fn staged_bytes(state: &impl StateView, hash: Hash) -> Result<Option<Box<[u8]>>, DatastoreError> {
     state
-        .iter_by_col_eq(ST_FILE_STAGED_ID, StFileStagedFields::ContentHash, &hash.to_u256().into())?
+        .iter_by_col_eq(
+            ST_FILE_STAGED_ID,
+            StFileStagedFields::ContentHash,
+            &hash.to_u256().into(),
+        )?
         .next()
         .map(|row| StFileStagedRow::try_from(row).map(|row| row.bytes))
         .transpose()
@@ -291,7 +296,13 @@ pub fn delete_file(db: &RelationalDB, tx: &mut MutTx, file_ref: FileRef) -> Resu
     }
     let deleted_at_offset = Some(tx.next_tx_offset());
     db.delete(tx, ST_FILE_ID, [pointer]);
-    insert_file_row(tx, &StFileRow { deleted_at_offset, ..row })?;
+    insert_file_row(
+        tx,
+        &StFileRow {
+            deleted_at_offset,
+            ..row
+        },
+    )?;
     Ok(true)
 }
 
@@ -325,11 +336,18 @@ fn inserted_files(txdata: &Txdata) -> (Vec<Hash>, Vec<(Hash, Bytes)>) {
     let hash_at = |row: &ProductValue, col: usize| row.elements.get(col)?.as_u256().map(|v| Hash::from_u256(**v));
     for ops in mutations.inserts.iter() {
         if ops.table_id == ST_FILE_ID {
-            hashes.extend(ops.rowdata.iter().filter_map(|row| hash_at(row, StFileFields::ContentHash as usize)));
+            hashes.extend(
+                ops.rowdata
+                    .iter()
+                    .filter_map(|row| hash_at(row, StFileFields::ContentHash as usize)),
+            );
         } else if ops.table_id == ST_FILE_STAGED_ID {
             for row in ops.rowdata.iter() {
                 let hash = hash_at(row, StFileStagedFields::ContentHash as usize);
-                let bytes = row.elements.get(StFileStagedFields::Bytes as usize).and_then(|v| v.as_bytes());
+                let bytes = row
+                    .elements
+                    .get(StFileStagedFields::Bytes as usize)
+                    .and_then(|v| v.as_bytes());
                 if let (Some(hash), Some(bytes)) = (hash, bytes) {
                     staged.push((hash, Bytes::copy_from_slice(bytes)));
                 }
@@ -416,7 +434,10 @@ impl Gate {
         for (hash, bytes) in staged {
             files.persist_staged(hash, bytes);
         }
-        let pending: Vec<Hash> = hashes.into_iter().filter(|hash| !files.is_known_persisted(hash)).collect();
+        let pending: Vec<Hash> = hashes
+            .into_iter()
+            .filter(|hash| !files.is_known_persisted(hash))
+            .collect();
 
         let mut state = self.state.lock();
         debug_assert!(
@@ -565,7 +586,11 @@ fn delete_staged(db: &RelationalDB, hashes: Vec<Hash>) -> Result<(), DBError> {
     db.with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
         for hash in hashes {
             let pointer = tx
-                .iter_by_col_eq(ST_FILE_STAGED_ID, StFileStagedFields::ContentHash, &hash.to_u256().into())?
+                .iter_by_col_eq(
+                    ST_FILE_STAGED_ID,
+                    StFileStagedFields::ContentHash,
+                    &hash.to_u256().into(),
+                )?
                 .next()
                 .map(|row| row.pointer());
             if let Some(pointer) = pointer {
@@ -922,7 +947,10 @@ mod tests {
 
         // The staged bytes are deleted once they're persisted.
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while stdb.with_read_only(Workload::ForTests, |tx| staged_bytes(tx, hash))?.is_some() {
+        while stdb
+            .with_read_only(Workload::ForTests, |tx| staged_bytes(tx, hash))?
+            .is_some()
+        {
             assert!(std::time::Instant::now() < deadline, "staged row was never cleaned up");
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -968,7 +996,10 @@ mod tests {
         // The original is gone to modules, but its record stays until it's purged, so it still downloads.
         assert!(live.is_none());
         assert!(servable.expect("the record stays").deleted_at_offset.is_some());
-        assert_eq!(copy_row.expect("the copy survives").content_hash, content_hash(b"shared"));
+        assert_eq!(
+            copy_row.expect("the copy survives").content_hash,
+            content_hash(b"shared")
+        );
         // Deleting it again finds nothing live.
         assert!(!stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original))?);
         // Nor can a deleted file be copied.
@@ -1013,13 +1044,19 @@ mod tests {
             created.borrow_mut().push(create_file(tx, b"deleted", None, now)?);
             Ok(())
         })?;
-        let [_live, snapshotted, deleted] = created.borrow()[..] else { unreachable!() };
+        let [_live, snapshotted, deleted] = created.borrow()[..] else {
+            unreachable!()
+        };
         let deleted_at = commit_and_confirm(&|tx| {
             assert!(delete_file(&stdb, tx, snapshotted)?);
             assert!(delete_file(&stdb, tx, deleted)?);
             Ok(())
         })?;
-        rt.block_on(files.store().persist_bytes(content_hash(b"orphan"), Bytes::from_static(b"orphan")))?;
+        rt.block_on(
+            files
+                .store()
+                .persist_bytes(content_hash(b"orphan"), Bytes::from_static(b"orphan")),
+        )?;
 
         // Deleted files are still roots, because reverting to before their deletion restores them.
         let stats = rt.block_on(reclaim_files(&stdb, Duration::ZERO, &runtime))?;

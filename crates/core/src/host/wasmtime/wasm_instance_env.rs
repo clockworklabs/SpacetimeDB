@@ -1646,7 +1646,11 @@ impl WasmInstanceEnv {
     /// Deletes the file `file_ref[..32]` names, and writes 1 to `out` if there was one, else 0.
     ///
     /// The file's bytes stay downloadable until reclamation finds nothing retained references them.
-    pub fn file_delete(caller: Caller<'_, Self>, file_ref: WasmPtr<spacetimedb_lib::FileRef>, out: WasmPtr<u8>) -> RtResult<u32> {
+    pub fn file_delete(
+        caller: Caller<'_, Self>,
+        file_ref: WasmPtr<spacetimedb_lib::FileRef>,
+        out: WasmPtr<u8>,
+    ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::FileDelete, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let file_ref = spacetimedb_lib::FileRef::read_from(mem, file_ref)?;

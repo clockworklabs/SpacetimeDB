@@ -134,12 +134,18 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
             .map_err(|e| error(StatusCode::BAD_REQUEST, format!("failed to read the upload: {e}")))?
         {
             if spool.size() + chunk.len() as u64 > declared_size {
-                return Err(error(StatusCode::PAYLOAD_TOO_LARGE, "the body is longer than its Content-Length"));
+                return Err(error(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "the body is longer than its Content-Length",
+                ));
             }
             spool.write(&chunk).await.map_err(log_and_500)?;
         }
         if spool.size() != declared_size {
-            return Err(error(StatusCode::BAD_REQUEST, "the body is shorter than its Content-Length"));
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                "the body is shorter than its Content-Length",
+            ));
         }
         spool.finish().await.map_err(log_and_500)
     })
@@ -147,11 +153,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     .map_err(|_| error(StatusCode::REQUEST_TIMEOUT, "the upload took too long"))??;
     let hash = spooled.hash();
     let size = spooled.size();
-    files
-        .store()
-        .persist(spooled)
-        .await
-        .map_err(log_and_500)?;
+    files.store().persist(spooled).await.map_err(log_and_500)?;
     files.note_persisted(hash);
 
     // Record the file, and wait until the record is durable.
@@ -179,10 +181,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     .map_err(log_and_500)?
     .map_err(log_and_500)?;
     if let (Some(offset), Some(mut durable)) = (offset, db.durable_tx_offset()) {
-        durable
-            .wait_for(offset)
-            .await
-            .map_err(log_and_500)?;
+        durable.wait_for(offset).await.map_err(log_and_500)?;
     }
 
     let body = serde_json::json!({
@@ -369,10 +368,7 @@ async fn download_inner<S: ControlStateDelegate + NodeDelegate>(
         }
         Err(e) => return Err(log_and_500(e)),
     };
-    builder
-        .status(status)
-        .body(body)
-        .map_err(log_and_500)
+    builder.status(status).body(body).map_err(log_and_500)
 }
 
 /// Formats a timestamp as an HTTP date.
