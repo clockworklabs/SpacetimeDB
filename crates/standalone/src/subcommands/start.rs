@@ -351,7 +351,7 @@ fn start_containers(args: &ArgMatches, ctx: &Arc<StandaloneEnv>, listen_addr: So
         scratch_quota: false,
         scratch_capacity: None,
         api_url,
-        state_dir: ctx.data_dir().0.join("containers"),
+        state_dir: ctx.data_dir().containers().0,
         name_with_supervisor_id: true,
     };
     if !listen_addr.ip().is_loopback() {

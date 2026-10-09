@@ -21,6 +21,10 @@ impl ServerDataDir {
         WasmtimeCacheDir(self.0.join("cache/wasmtime"))
     }
 
+    pub fn containers(&self) -> ContainersDir {
+        ContainersDir(self.0.join("containers"))
+    }
+
     pub fn metadata_toml(&self) -> MetadataTomlPath {
         MetadataTomlPath(self.0.join("metadata.toml"))
     }
@@ -91,6 +95,12 @@ impl LogsDir {
 path_type! {
     /// The directory we give to wasmtime to cache its compiled artifacts in.
     WasmtimeCacheDir: dir
+}
+
+path_type! {
+    /// The directory where the container supervisor keeps its state,
+    /// including the credentials of each running container.
+    ContainersDir: dir
 }
 
 path_type! {
