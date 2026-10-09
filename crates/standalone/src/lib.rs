@@ -621,6 +621,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
         Ok(())
     }
+
+    /// Standalone runs containers with a Docker daemon on its own machine, which may already
+    /// have the image.
+    fn accepts_local_container_images(&self) -> bool {
+        true
+    }
 }
 
 impl StandaloneEnv {

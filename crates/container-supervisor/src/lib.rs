@@ -39,7 +39,7 @@ use spacetimedb::Identity;
 use spacetimedb_client_api::auth::{JwtAuthProvider as _, TokenClaims};
 use spacetimedb_client_api::NodeDelegate;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_lib::container::{ContainerSpec, ContainerState, RestartPolicy};
+use spacetimedb_lib::container::{is_local_image_id, ContainerSpec, ContainerState, RestartPolicy};
 use tracing::{info, warn};
 
 const LABEL_SUPERVISOR: &str = "spacetimedb.supervisor";
@@ -587,8 +587,14 @@ impl<N: ContainerControl> Supervisor<N> {
     }
 
     async fn ensure_image(&self, image: &str) -> anyhow::Result<()> {
-        if self.docker.inspect_image(image).await.is_ok() {
+        let inspected = self.docker.inspect_image(image).await;
+        if inspected.is_ok() {
             return Ok(());
+        }
+        if is_local_image_id(image) {
+            return inspected.map(drop).with_context(|| {
+                format!("image {image} is not in this server's Docker daemon, and local image IDs are never pulled")
+            });
         }
         info!(image, "pulling image");
         self.docker

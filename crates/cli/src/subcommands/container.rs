@@ -34,12 +34,10 @@ pub fn cli() -> Command {
         .subcommand(target(
             Command::new("set")
                 .about("Attach a container to a database, replacing any existing one")
-                .arg(
-                    Arg::new("image")
-                        .long("image")
-                        .required(true)
-                        .help("An OCI image reference pinned to a digest, like `name@sha256:<hex>`"),
-                )
+                .arg(Arg::new("image").long("image").required(true).help(
+                    "An OCI image reference pinned to a digest, like `name@sha256:<hex>`, or, for a server \
+                     that uses your Docker daemon, a local image ID, like `sha256:<hex>`",
+                ))
                 .arg(
                     Arg::new("env_key")
                         .long("env-key")
@@ -162,7 +160,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
                     _ => RestartPolicy::OnFailure,
                 },
             };
-            spec.validate().map_err(anyhow::Error::msg)?;
+            // The server decides whether it accepts local image IDs.
+            spec.validate_with(true).map_err(anyhow::Error::msg)?;
             client.put(&url).json(&spec)
         }
         "status" => client.get(&url),
