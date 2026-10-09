@@ -4,7 +4,7 @@ import type { ClientRequest, IncomingMessage, OutgoingHttpHeaders, ServerRespons
 import { request as httpsRequest } from 'node:https';
 import type { RequestOptions } from 'node:https';
 import type { Socket } from 'node:net';
-import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { linkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
@@ -413,8 +413,12 @@ async function main() {
   server.listen(0, config.listenHost ?? '127.0.0.1', () => {
     const address: string | AddressInfo | null = server.address();
     if (!address || typeof address === 'string') fail('listener address is unavailable');
-    writeFileSync(readyPath, `${JSON.stringify({ host: address.address, port: address.port })}\n`,
+    // Publish the file whole: the starter polls for it and reads it at once.
+    const pending = `${readyPath}.pending`;
+    writeFileSync(pending, `${JSON.stringify({ host: address.address, port: address.port })}\n`,
       { flag: 'wx', mode: 0o600 });
+    linkSync(pending, readyPath);
+    rmSync(pending);
   });
   let stopping = false;
   const stop = () => {
