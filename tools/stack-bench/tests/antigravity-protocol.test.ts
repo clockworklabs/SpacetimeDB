@@ -43,17 +43,19 @@ test('the launcher passes the prompt unchanged as one stream message and selects
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('an Antigravity result maps to the shared result: cache reads apart, thinking as output', () => {
+// The final usage of a live L1 session: input without the cache reads, output with thinking.
+test('an Antigravity result maps to the shared result as reported', () => {
   const result = parseAntigravityResult(stream({ status: 'SUCCESS', response: 'done\n', num_turns: 1,
-    usage: usage(1000, 50, 30, 400) }));
+    usage: usage(732018, 74097, 35246, 10839770) }));
   assert.deepEqual(result, { type: 'result', session_id: SESSION, is_error: false, result: 'done\n', num_turns: 1,
-    usage: { input_tokens: 600, output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 } });
+    usage: { input_tokens: 732018, output_tokens: 74097, cache_read_input_tokens: 10839770,
+      cache_creation_input_tokens: 0 } });
 });
 
 test('a resumed Antigravity conversation reports only this invocation', () => {
   const prior = { input_tokens: 600, output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 };
   const resumed = parseAntigravityResult(stream({ status: 'SUCCESS', response: 'ok', num_turns: 2,
-    usage: usage(2500, 120, 40, 900) }), prior);
+    usage: usage(1600, 160, 40, 900) }), prior);
   assert.deepEqual(resumed.usage, { input_tokens: 1000, output_tokens: 80, cache_read_input_tokens: 500,
     cache_creation_input_tokens: 0 });
   assert.equal(parseAntigravityResult(stream({ status: 'SUCCESS', response: 'ok', num_turns: 2,
@@ -66,7 +68,7 @@ test('Antigravity errors, bad usage and missing results are provider errors', ()
   assert.equal(failed.is_error, true);
   assert.match(String(failed.result), /quota exceeded/);
   assert.equal(parseAntigravityResult(stream({ status: 'SUCCESS', response: 'x', num_turns: 1,
-    usage: usage(10, 1, 0, 20) })).is_error, true);
+    usage: { input_tokens: -1, output_tokens: 1, cache_read_tokens: 0 } })).is_error, true);
   const missing = parseAntigravityResult(stream(null));
   assert.equal(missing.is_error, true);
   assert.match(String(missing.result), /no result/);

@@ -44,8 +44,8 @@ const record = (value: unknown): value is RecordValue =>
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 // The stream ends with one `result` event. Its usage covers the whole conversation, so a
-// resumed session subtracts what earlier invocations reported. Input includes cache reads;
-// thinking is billed as output.
+// resumed session subtracts what earlier invocations reported. Input excludes cache reads, and
+// output already includes thinking (checked against the broker on a live session).
 export function parseAntigravityResult(stdout: string, prior: CodexUsage | null = null): RecordValue {
   const errors: string[] = [];
   let sessionId: string | null = null;
@@ -69,11 +69,10 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   const raw = record(result.usage) ? result.usage : {};
   const usage: CodexUsage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
   if (!value) { /* no usage to read */ }
-  else if (![raw.input_tokens, raw.output_tokens, raw.thinking_tokens, raw.cache_read_tokens].every(count)
-    || (raw.cache_read_tokens as number) > (raw.input_tokens as number)) errors.push('Invalid Antigravity token usage');
-  else {
-    const total = { input_tokens: (raw.input_tokens as number) - (raw.cache_read_tokens as number),
-      output_tokens: (raw.output_tokens as number) + (raw.thinking_tokens as number),
+  else if (![raw.input_tokens, raw.output_tokens, raw.cache_read_tokens].every(count)) {
+    errors.push('Invalid Antigravity token usage');
+  } else {
+    const total = { input_tokens: raw.input_tokens as number, output_tokens: raw.output_tokens as number,
       cache_read_input_tokens: raw.cache_read_tokens as number, cache_creation_input_tokens: 0 };
     const keys = Object.keys(total) as (keyof CodexUsage)[];
     if (prior && keys.some(key => total[key] < prior[key])) errors.push('Antigravity usage went backwards on resume');
