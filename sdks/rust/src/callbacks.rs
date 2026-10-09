@@ -217,7 +217,7 @@ pub(crate) type ReducerCallback<M> = Box<
 /// function. Users should not reference this struct directly.
 pub(crate) struct ReducerCallbacks<M: SpacetimeModule> {
     /// Maps WebSocket `request_id` to the arguments of that call and user-supplied callback.
-    callbacks: HashMap<u32, (M::Reducer, ReducerCallback<M>)>,
+    pub(crate) callbacks: HashMap<u32, (M::Reducer, ReducerCallback<M>)>,
 }
 
 impl<M: SpacetimeModule> Default for ReducerCallbacks<M> {
@@ -247,7 +247,7 @@ pub(crate) type ProcedureCallback<M> =
     Box<dyn FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<Bytes, InternalError>) + Send + 'static>;
 
 pub struct ProcedureCallbacks<M: SpacetimeModule> {
-    request_id_to_callback: HashMap<u32, ProcedureCallback<M>>,
+    pub(crate) request_id_to_callback: HashMap<u32, ProcedureCallback<M>>,
 }
 
 impl<M: SpacetimeModule> Default for ProcedureCallbacks<M> {

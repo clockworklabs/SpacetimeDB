@@ -28,10 +28,14 @@ use crate::{
     spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
     subscription::{PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager},
     websocket::{WsConnection, WsParams},
-    Event, ReducerEvent, Status,
+    AutomaticReconnectOptions, Event, NextReconnect, ReducerEvent, Status, TokenProvider,
 };
 use bytes::Bytes;
-use futures::StreamExt;
+use futures::{
+    future::{AbortHandle, Abortable},
+    StreamExt,
+};
+
 #[cfg(feature = "browser")]
 use futures::{pin_mut, FutureExt};
 use futures_channel::mpsc;
@@ -103,6 +107,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     /// This may be none if we have not yet received the [`ws::v2::InitialConnection`] message.
     connection_id: SharedCell<Option<ConnectionId>>,
 
+    reconnect: SharedCell<ReconnectState>,
     pub(crate) extra_logging: Option<SharedCell<File>>,
 }
 
@@ -123,6 +128,7 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
             identity: Arc::clone(&self.identity),
             connection_id: Arc::clone(&self.connection_id),
             extra_logging: Option::<Arc<_>>::clone(&self.extra_logging),
+            reconnect: self.reconnect.clone(),
         }
     }
 }
@@ -135,54 +141,113 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// Process a parsed WebSocket message,
     /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
+        let result = self.process_message_inner(msg);
+        let ended = self.inner.lock().unwrap().connection_lifecycle == ConnectionLifecycle::Ended;
+        match result {
+            Err(crate::Error::Disconnected) if !ended => self.connection_lost(None, false, false),
+            Err(error) if !ended => self.connection_lost(Some(error), true, false),
+            result => result,
+        }
+    }
+
+    fn process_message_inner(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
+        // Discard queued messages after explicit disconnect or a terminal failure.
+        if self.inner.lock().unwrap().connection_lifecycle == ConnectionLifecycle::Ended {
+            return Err(crate::Error::Disconnected);
+        }
         self.debug_log(|out| writeln!(out, "`process_message`: {msg:?}"));
         match msg {
             // Error: route as a connection error if we never finished connecting,
             // otherwise treat it as an erroneous disconnect.
-            ParsedMessage::Error(e) => Err(self.end_connection(Some(e))),
-
-            // Initial `IdentityToken` message:
-            // confirm that the received identity and connection ID are what we expect,
-            // store them, then invoke the on_connect callback.
+            ParsedMessage::Error(e) => self.connection_lost(Some(e), true, false),
+            ParsedMessage::TransportError(e) => {
+                let terminal = e.is_terminal();
+                let auth = e.is_auth();
+                self.connection_lost(
+                    Some(InternalError::new(e.to_string()).with_cause(e).into()),
+                    terminal,
+                    auth,
+                )
+            }
             ParsedMessage::IdentityToken(identity, token, conn_id) => {
-                let on_connect = {
-                    let mut inner = self.inner.lock().unwrap();
-                    match inner.connection_lifecycle {
-                        ConnectionLifecycle::Connecting => {
-                            inner.connection_lifecycle = ConnectionLifecycle::Connected;
-                            inner.on_connect.take()
-                        }
-                        ConnectionLifecycle::Connected => None,
-                        ConnectionLifecycle::Ended => return Ok(()),
-                    }
+                if self.inner.lock().unwrap().connection_lifecycle == ConnectionLifecycle::Ended {
+                    return Ok(());
+                }
+                if self
+                    .identity
+                    .lock()
+                    .unwrap()
+                    .is_some_and(|previous| previous != identity)
+                {
+                    return self.connection_lost(
+                        Some(InternalError::new("Reconnect returned a different identity").into()),
+                        true,
+                        false,
+                    );
+                }
+                let reconnecting = {
+                    let mut state = self.reconnect.lock().unwrap();
+                    let reconnecting = state.reconnecting;
+                    state.reconnecting = false;
+                    state.attempt = 0;
+                    state.token = Some(token.to_string());
+                    reconnecting
                 };
+                *self.identity.lock().unwrap() = Some(identity);
+                *self.connection_id.lock().unwrap() = Some(conn_id);
                 {
-                    // Don't hold the `self.identity` lock while running callbacks.
-                    // Callbacks can (will) call [`DbContext::identity`], which acquires that lock,
-                    // so holding it while running a callback causes deadlocks.
-                    let mut ident_store = self.identity.lock().unwrap();
-                    if let Some(prev_identity) = *ident_store {
-                        assert_eq!(prev_identity, identity);
+                    let mut inner = self.inner.lock().unwrap();
+                    if inner.connection_lifecycle == ConnectionLifecycle::Connected {
+                        drop(inner);
+                        return self.connection_lost(
+                            Some(InternalError::new("Duplicate InitialConnection").into()),
+                            true,
+                            false,
+                        );
                     }
-                    *ident_store = Some(identity);
+                    inner.connection_lifecycle = ConnectionLifecycle::Connected;
                 }
-                {
-                    // Don't hold the `self.connection_id` lock while running callbacks.
-                    // Callbacks can (will) call [`DbContext::connection_id`], which acquires that lock,
-                    // so holding it while running a callback causes deadlocks.
-                    let mut conn_id_store = self.connection_id.lock().unwrap();
-                    // This would only happen if the client is using the unstable `set_connection_id` method.
-                    if let Some(prev_conn_id) = *conn_id_store {
-                        assert_eq!(prev_conn_id, conn_id);
+                let ctx = <M::DbConnection as DbConnection>::new(self.clone());
+                if reconnecting {
+                    let callback = self.inner.lock().unwrap().on_automatic_reconnect.take();
+                    if let Some(mut callback) = callback {
+                        callback(&ctx, identity, &token);
+                        self.inner.lock().unwrap().on_automatic_reconnect = Some(callback);
                     }
-                    *conn_id_store = Some(conn_id);
+                } else {
+                    let callback = self.inner.lock().unwrap().on_connect.take();
+                    if let Some(callback) = callback {
+                        callback(&ctx, identity, &token);
+                    }
                 }
-                if let Some(on_connect) = on_connect {
-                    let ctx = <M::DbConnection as DbConnection>::new(self.clone());
-                    on_connect(&ctx, identity, &token);
+                if reconnecting {
+                    // Include subscriptions queued from the reconnect callback in the batch.
+                    self.reconnect.lock().unwrap().preparing_replay = true;
+                    self.apply_pending_mutations()?;
+                    if self.inner.lock().unwrap().connection_lifecycle != ConnectionLifecycle::Connected {
+                        return Ok(());
+                    }
+                    let mut inner = self.inner.lock().unwrap();
+                    let sets = inner.subscriptions.replay(&self.make_event_ctx(()));
+                    let request_id = next_request_id();
+                    inner.replay = Some((request_id, sets.iter().map(|set| set.query_set_id).collect()));
+                    self.reconnect.lock().unwrap().preparing_replay = false;
+                    drop(inner);
+                    if sets.is_empty() {
+                        self.apply_replay(ws::v2::SubscribeBatchApplied {
+                            request_id,
+                            results: Box::new([]),
+                        })?;
+                    } else {
+                        self.send_message(ws::v2::ClientMessage::SubscribeBatch(ws::v2::SubscribeBatch {
+                            request_id,
+                            sets,
+                        }))?;
+                    }
                 }
                 Ok(())
             }
+            ParsedMessage::SubscribeBatchApplied(batch) => self.apply_replay(batch),
 
             // Transaction update:
             // apply the received diff to the client cache,
@@ -312,47 +377,223 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         applied_diff.invoke_row_callbacks(&row_event_ctx, &mut inner.db_callbacks);
     }
 
-    /// Mark the connection lifecycle as ended, route the terminal event to the
-    /// appropriate connection callback, and mark [`Self::is_active`] false.
-    ///
-    /// Returns the terminal error that should be returned from `advance_*` methods.
-    fn end_connection(&self, callback_error: Option<crate::Error>) -> crate::Error {
-        let mut inner = self.inner.lock().unwrap();
-        let return_error = callback_error.clone().unwrap_or(crate::Error::Disconnected);
+    fn send_message(&self, message: ws::v2::ClientMessage) -> crate::Result<()> {
+        self.send_chan
+            .lock()
+            .unwrap()
+            .as_ref()
+            .ok_or(crate::Error::Disconnected)?
+            .unbounded_send(message)
+            .map_err(|_| crate::Error::Disconnected)
+    }
 
-        let lifecycle = inner.connection_lifecycle;
+    fn apply_replay(&self, batch: ws::v2::SubscribeBatchApplied) -> crate::Result<()> {
+        let expected = self.inner.lock().unwrap().replay.take();
+        let ids: Vec<_> = batch.results.iter().map(|result| result.query_set_id).collect();
+        if expected != Some((batch.request_id, ids)) {
+            return self.connection_lost(
+                Some(InternalError::new("Unexpected subscription replay response").into()),
+                true,
+                false,
+            );
+        }
+        let mut tables = self.cache.lock().unwrap().removal_snapshot();
+        let mut outcomes = Vec::new();
+        for result in batch.results {
+            let error = match result.outcome {
+                ws::v2::SubscribeSetOutcome::Applied(rows) => {
+                    tables.extend(rows.tables.into_vec().into_iter().map(|table| {
+                        ws::v2::TableUpdate {
+                            table_name: table.table,
+                            rows: vec![ws::v2::TableUpdateRows::PersistentTable(ws::v2::PersistentTableRows {
+                                inserts: table.rows,
+                                deletes: Default::default(),
+                            })]
+                            .into(),
+                        }
+                    }));
+                    None
+                }
+                ws::v2::SubscribeSetOutcome::Error(error) => Some(error.to_string()),
+            };
+            outcomes.push((result.query_set_id, error));
+        }
+        let update = M::DbUpdate::parse_update(ws::v2::TransactionUpdate {
+            query_sets: vec![ws::v2::QuerySetUpdate {
+                query_set_id: QuerySetId { id: 0 },
+                tables: tables.into(),
+            }]
+            .into(),
+        });
+        let update = match update {
+            Ok(update) => update,
+            Err(error) => return self.connection_lost(Some(error), true, false),
+        };
+        self.apply_update(update, |inner| {
+            for (id, error) in outcomes {
+                if let Some(error) = error {
+                    inner.subscriptions.subscription_error(
+                        &self.make_event_ctx(Some(crate::Error::SubscriptionError { error })),
+                        id,
+                    );
+                } else {
+                    inner.subscriptions.subscription_applied(&self.make_event_ctx(()), id);
+                }
+            }
+            Event::SubscribeApplied
+        });
+        Ok(())
+    }
+
+    fn fail_pending_operations(&self, inner: &mut DbContextImplInner<M>) {
+        let error = InternalError::new("Connection lost before the result was received")
+            .with_cause(crate::Error::UnknownResult);
+        for (_, (reducer, callback)) in std::mem::take(&mut inner.reducer_callbacks.callbacks) {
+            let ctx = self.make_event_ctx(ReducerEvent {
+                reducer,
+                timestamp: Timestamp::UNIX_EPOCH,
+                status: Status::Panic(error.clone()),
+            });
+            callback(&ctx, Err(error.clone()));
+        }
+        for (_, callback) in std::mem::take(&mut inner.procedure_callbacks.request_id_to_callback) {
+            callback(&self.make_event_ctx(()), Err(error.clone()));
+        }
+    }
+
+    fn connection_lost(&self, error: Option<crate::Error>, terminal: bool, auth: bool) -> crate::Result<()> {
+        let lifecycle = self.inner.lock().unwrap().connection_lifecycle;
         if lifecycle == ConnectionLifecycle::Ended {
-            return return_error;
+            return Err(crate::Error::Disconnected);
         }
-        inner.connection_lifecycle = ConnectionLifecycle::Ended;
-
-        // Set `send_chan` to `None`, since `Self::is_active` checks that.
         *self.send_chan.lock().unwrap() = None;
-
-        match lifecycle {
-            ConnectionLifecycle::Connecting => {
-                let callback_error = callback_error.unwrap_or_else(|| crate::Error::FailedToConnect {
-                    source: InternalError::new("Connection closed before receiving the initial connection message"),
-                });
-                let ctx: M::ErrorContext = self.make_event_ctx(Some(callback_error.clone()));
-                if let Some(connect_error_callback) = inner.on_connect_error.take() {
-                    connect_error_callback(&ctx, callback_error.clone());
+        let next = {
+            let mut state = self.reconnect.lock().unwrap();
+            let can_retry = state.options.is_some()
+                && self.identity.lock().unwrap().is_some()
+                && !terminal
+                && !(auth && (state.provider.is_none() || state.used_fresh_token));
+            if can_retry {
+                state.force_refresh |= auth;
+                state.reconnecting = true;
+                state.preparing_replay = true;
+                state.attempt = state.attempt.saturating_add(1);
+                Some(NextReconnect {
+                    attempt: state.attempt,
+                    delay: state.options.unwrap().delay(state.attempt, rand::random()),
+                })
+            } else {
+                state.reconnecting = false;
+                state.preparing_replay = false;
+                state.generation += 1;
+                if let Some(abort) = state.abort.take() {
+                    abort.abort();
                 }
-                callback_error
+                None
             }
-            ConnectionLifecycle::Connected => {
-                let ctx: M::ErrorContext = self.make_event_ctx(callback_error.clone());
-                if let Some(disconnect_callback) = inner.on_disconnect.take() {
-                    disconnect_callback(&ctx, callback_error.clone());
-                }
-
-                // Call the `on_disconnect` method for all subscriptions.
-                inner.subscriptions.on_disconnect(&ctx);
-
-                return_error
-            }
-            ConnectionLifecycle::Ended => return_error,
+        };
+        if let Some(next) = next {
+            self.schedule_reconnect(next);
         }
+        let mut inner = self.inner.lock().unwrap();
+        inner.connection_lifecycle = if next.is_some() {
+            ConnectionLifecycle::Connecting
+        } else {
+            ConnectionLifecycle::Ended
+        };
+        inner.replay = None;
+        self.fail_pending_operations(&mut inner);
+        if next.is_some() {
+            inner.subscriptions.suspend(&self.make_event_ctx(()));
+        } else {
+            inner.subscriptions.on_disconnect(&self.make_event_ctx(()));
+        }
+        let callback_error = if lifecycle == ConnectionLifecycle::Connecting {
+            Some(error.unwrap_or_else(|| InternalError::new("Connection closed before InitialConnection").into()))
+        } else {
+            error
+        };
+        let ctx = self.make_event_ctx(callback_error.clone());
+        if lifecycle == ConnectionLifecycle::Connected {
+            if let Some(callback) = inner.on_disconnect.as_mut() {
+                callback(&ctx, callback_error.clone(), next);
+            }
+        } else if let Some(callback) = inner.on_connect_error.as_mut() {
+            callback(&ctx, callback_error.clone().unwrap(), next);
+        }
+        if next.is_some() {
+            Ok(())
+        } else {
+            Err(callback_error.unwrap_or(crate::Error::Disconnected))
+        }
+    }
+
+    fn schedule_reconnect(&self, next: NextReconnect) {
+        let (park_send, park_recv) = mpsc::unbounded();
+        *get_lock_sync(&self.recv) = park_recv;
+        let mut state = self.reconnect.lock().unwrap();
+        state.generation += 1;
+        let generation = state.generation;
+        let config = state.config.clone();
+        let mut token = state.token.clone();
+        let provider = state.provider.clone();
+        let force_refresh = state.force_refresh;
+        let (abort, registration) = AbortHandle::new_pair();
+        state.abort = Some(abort);
+        drop(state);
+        let pending = self.pending_mutations_send.clone();
+        let extra_logging = self.extra_logging.clone();
+        #[cfg(not(feature = "browser"))]
+        let runtime = self.runtime.clone();
+        let task = async move {
+            #[cfg(not(feature = "browser"))]
+            tokio::time::sleep(next.delay).await;
+            #[cfg(feature = "browser")]
+            gloo_timers::future::TimeoutFuture::new(next.delay.as_millis().min(u32::MAX as u128) as u32).await;
+            let provider = provider.filter(|_| {
+                force_refresh || crate::reconnect::token_needs_refresh(token.as_deref(), crate::reconnect::now())
+            });
+            let fresh = provider.is_some();
+            let result = async {
+                if let Some(provider) = provider {
+                    token = Some(provider.token().await.map_err(ReconnectFailure::Provider)?);
+                    if token.as_ref().is_none_or(|token| token.is_empty()) {
+                        return Err(ReconnectFailure::Provider(
+                            InternalError::new("Token provider returned an empty token").into(),
+                        ));
+                    }
+                }
+                let socket =
+                    WsConnection::connect(config.uri, &config.database_name, token.as_deref(), None, config.params)
+                        .await
+                        .map_err(ReconnectFailure::Transport)?;
+                #[cfg(not(feature = "browser"))]
+                let (_, raw_recv, send) = socket.spawn_message_loop(&runtime, extra_logging.clone());
+                #[cfg(feature = "browser")]
+                let (raw_recv, send) = socket.spawn_message_loop();
+                #[cfg(not(feature = "browser"))]
+                let (_, recv) = spawn_parse_loop(raw_recv, &runtime, extra_logging);
+                #[cfg(feature = "browser")]
+                let recv = spawn_parse_loop(raw_recv, extra_logging);
+                Ok((send, recv))
+            }
+            .await;
+            let _ = pending.unbounded_send(PendingMutation::ReconnectReady {
+                _park_send: park_send,
+                generation,
+                token,
+                fresh,
+                result,
+            });
+        };
+        #[cfg(not(feature = "browser"))]
+        self.runtime.spawn(async move {
+            let _ = Abortable::new(task, registration).await;
+        });
+        #[cfg(feature = "browser")]
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = Abortable::new(task, registration).await;
+        });
     }
 
     fn make_event_ctx<E, Ctx: AbstractEventContext<Module = M, Event = E>>(&self, event: E) -> Ctx {
@@ -371,14 +612,61 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply an individual [`PendingMutation`].
     fn apply_mutation(&self, mutation: PendingMutation<M>) -> crate::Result<()> {
+        let explicit_disconnect = matches!(&mutation, PendingMutation::Disconnect);
+        match self.apply_mutation_inner(mutation) {
+            Err(crate::Error::Disconnected) if !explicit_disconnect => self.connection_lost(None, false, false),
+            result => result,
+        }
+    }
+
+    fn apply_mutation_inner(&self, mutation: PendingMutation<M>) -> crate::Result<()> {
         self.debug_log(|out| writeln!(out, "`apply_mutation`: {mutation:?}"));
         match mutation {
+            PendingMutation::ReconnectReady {
+                _park_send,
+                generation,
+                token,
+                fresh,
+                result,
+            } => {
+                {
+                    let mut state = self.reconnect.lock().unwrap();
+                    if generation != state.generation {
+                        return Ok(());
+                    }
+                    state.used_fresh_token = fresh;
+                    if fresh && !matches!(&result, Err(ReconnectFailure::Provider(_))) {
+                        state.token = token;
+                        state.force_refresh = false;
+                    }
+                }
+                match result {
+                    Ok((send, recv)) => {
+                        *self.send_chan.lock().unwrap() = Some(send);
+                        *get_lock_sync(&self.recv) = recv;
+                    }
+                    Err(ReconnectFailure::Provider(error)) => return self.connection_lost(Some(error), false, false),
+                    Err(ReconnectFailure::Transport(error)) => {
+                        let terminal = error.is_terminal();
+                        let auth = error.is_auth();
+                        return self.connection_lost(
+                            Some(InternalError::new(error.to_string()).with_cause(error).into()),
+                            terminal,
+                            auth,
+                        );
+                    }
+                }
+            }
+
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
             PendingMutation::Subscribe { query_set_id, handle } => {
                 let mut inner = self.inner.lock().unwrap();
                 // Register the subscription, so we can handle related messages from the server.
                 inner.subscriptions.register_subscription(query_set_id, handle.clone());
+                if self.reconnect.lock().unwrap().preparing_replay {
+                    return Ok(());
+                }
                 if let Some(msg) = handle.start() {
                     self.send_chan
                         .lock()
@@ -386,13 +674,19 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         .as_mut()
                         .ok_or(crate::Error::Disconnected)?
                         .unbounded_send(ws::v2::ClientMessage::Subscribe(msg))
-                        .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
+                        .map_err(|_| crate::Error::Disconnected)?;
                 }
                 // else, the handle was already cancelled.
             }
 
             PendingMutation::Unsubscribe { query_set_id } => {
                 let mut inner = self.inner.lock().unwrap();
+                if self.reconnect.lock().unwrap().preparing_replay {
+                    inner
+                        .subscriptions
+                        .unsubscribe_applied(&self.make_event_ctx(()), query_set_id);
+                    return Ok(());
+                }
                 match inner.subscriptions.handle_pending_unsubscribe(query_set_id) {
                     PendingUnsubscribeResult::DoNothing =>
                     // The subscription was already unsubscribed, so we don't need to send an unsubscribe message.
@@ -410,13 +704,25 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                             .as_mut()
                             .ok_or(crate::Error::Disconnected)?
                             .unbounded_send(ws::v2::ClientMessage::Unsubscribe(m))
-                            .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
+                            .map_err(|_| crate::Error::Disconnected)?;
                     }
                 }
             }
 
             // CallReducer: send the `CallReducer` WS message.
             PendingMutation::InvokeReducerWithCallback { reducer, callback } => {
+                if !self.is_active() {
+                    let error = InternalError::new("Disconnected").with_cause(crate::Error::Disconnected);
+                    callback(
+                        &self.make_event_ctx(ReducerEvent {
+                            reducer,
+                            timestamp: Timestamp::UNIX_EPOCH,
+                            status: Status::Panic(error.clone()),
+                        }),
+                        Err(error),
+                    );
+                    return Ok(());
+                }
                 let request_id = next_request_id();
 
                 let reducer_name = reducer.reducer_name();
@@ -443,7 +749,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .as_mut()
                     .ok_or(crate::Error::Disconnected)?
                     .unbounded_send(msg)
-                    .expect("Unable to send reducer call message: WS sender loop has dropped its recv channel");
+                    .map_err(|_| crate::Error::Disconnected)?;
             }
 
             // Invoke a procedure: stash its callback, then send the `CallProcedure` WS message.
@@ -452,6 +758,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 args,
                 callback,
             } => {
+                if !self.is_active() {
+                    callback(
+                        &self.make_event_ctx(()),
+                        Err(InternalError::new("Disconnected").with_cause(crate::Error::Disconnected)),
+                    );
+                    return Ok(());
+                }
                 // We need to include a request_id in the message so that we can find the callback once it completes.
                 let request_id = next_request_id();
                 self.inner
@@ -472,25 +785,31 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .as_mut()
                     .ok_or(crate::Error::Disconnected)?
                     .unbounded_send(msg)
-                    .expect("Unable to send procedure call message: WS sender loop has dropped its recv channel");
+                    .map_err(|_| crate::Error::Disconnected)?;
             }
 
             // Disconnect: close the connection.
             PendingMutation::Disconnect => {
                 {
-                    let mut inner = self.inner.lock().unwrap();
-                    if inner.connection_lifecycle == ConnectionLifecycle::Connecting {
-                        // If the user cancels before the initial connection finishes,
-                        // don't report that as a connection error.
-                        inner.connection_lifecycle = ConnectionLifecycle::Ended;
+                    let mut state = self.reconnect.lock().unwrap();
+                    state.generation += 1;
+                    state.reconnecting = false;
+                    state.preparing_replay = false;
+                    if let Some(abort) = state.abort.take() {
+                        abort.abort();
                     }
                 }
-                // Set `send_chan` to `None`, since `Self::is_active` checks that.
-                // This will close the WebSocket loop in websocket.rs,
-                // sending a close frame to the server,
-                // eventually resulting in disconnect callbacks being called
-                // if the initial connection had completed.
                 *self.send_chan.lock().unwrap() = None;
+                let mut inner = self.inner.lock().unwrap();
+                inner.connection_lifecycle = ConnectionLifecycle::Ended;
+                inner.replay = None;
+                self.fail_pending_operations(&mut inner);
+                let ctx = self.make_event_ctx(None);
+                inner.subscriptions.on_disconnect(&self.make_event_ctx(()));
+                if let Some(callback) = inner.on_disconnect.as_mut() {
+                    callback(&ctx, None, None);
+                }
+                return Err(crate::Error::Disconnected);
             }
 
             // Callback stuff: these all do what you expect.
@@ -578,8 +897,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // returns `Err(_)`. Similar behavior as `Iterator::next` and
         // `Stream::poll_next`. No comment on whether this is a good mental
         // model or not.
-        let res = match get_lock_sync(&self.recv).try_next() {
-            Ok(None) => Err(self.end_connection(None)),
+        let incoming = get_lock_sync(&self.recv).try_next();
+        let res = match incoming {
+            Ok(None) => self.connection_lost(None, false, false).map(|_| true),
             Err(_) => Ok(false),
             Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
@@ -634,7 +954,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     pub fn advance_one_message_blocking(&self) -> crate::Result<()> {
         match self.runtime.block_on(self.get_message()) {
             Message::Local(pending) => self.apply_mutation(pending),
-            Message::Ws(None) => Err(self.end_connection(None)),
+            Message::Ws(None) => self.connection_lost(None, false, false),
             Message::Ws(Some(msg)) => self.process_message(msg),
         }
     }
@@ -645,7 +965,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     pub async fn advance_one_message_async(&self) -> crate::Result<()> {
         match self.get_message().await {
             Message::Local(pending) => self.apply_mutation(pending),
-            Message::Ws(None) => Err(self.end_connection(None)),
+            Message::Ws(None) => self.connection_lost(None, false, false),
             Message::Ws(Some(msg)) => self.process_message(msg),
         }
     }
@@ -706,12 +1026,23 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn is_active(&self) -> bool {
-        self.send_chan.lock().unwrap().is_some()
+        !self.is_reconnecting()
+            && self
+                .send_chan
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|sender| !sender.is_closed())
+    }
+
+    /// True while waiting for or establishing an automatic reconnect.
+    pub fn is_reconnecting(&self) -> bool {
+        self.reconnect.lock().unwrap().reconnecting
     }
 
     /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn disconnect(&self) -> crate::Result<()> {
-        if !self.is_active() {
+        if !self.is_active() && !self.is_reconnecting() {
             return Err(crate::Error::Disconnected);
         }
         self.pending_mutations_send
@@ -754,6 +1085,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     where
         <M as SpacetimeModule>::Reducer: From<Args>,
     {
+        if !self.is_active() {
+            return Err(crate::Error::Disconnected);
+        }
         self.queue_mutation(PendingMutation::InvokeReducerWithCallback {
             reducer: reducer.into(),
             callback: Box::new(callback),
@@ -788,6 +1122,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             + Send
             + 'static,
     ) {
+        if !self.is_active() {
+            callback(
+                &self.make_event_ctx(()),
+                Err(InternalError::new("Disconnected").with_cause(crate::Error::Disconnected)),
+            );
+            return;
+        }
         self.queue_mutation(PendingMutation::InvokeProcedureWithCallback {
             procedure: procedure_name,
             args: bsatn::to_vec(&args).expect("Failed to BSATN serialize procedure args"),
@@ -806,10 +1147,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
 type OnConnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
 
-type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, crate::Error) + Send + 'static>;
+type OnAutomaticReconnectCallback<M> =
+    Box<dyn FnMut(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
+
+type OnConnectErrorCallback<M> =
+    Box<dyn FnMut(&<M as SpacetimeModule>::ErrorContext, crate::Error, Option<NextReconnect>) + Send + 'static>;
 
 type OnDisconnectCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, Option<crate::Error>) + Send + 'static>;
+    Box<dyn FnMut(&<M as SpacetimeModule>::ErrorContext, Option<crate::Error>, Option<NextReconnect>) + Send + 'static>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConnectionLifecycle {
@@ -835,10 +1180,12 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
 
     connection_lifecycle: ConnectionLifecycle,
     on_connect: Option<OnConnectCallback<M>>,
+    on_automatic_reconnect: Option<OnAutomaticReconnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     procedure_callbacks: ProcedureCallbacks<M>,
+    replay: Option<(u32, Vec<QuerySetId>)>,
 }
 
 /// A builder-pattern constructor for a `DbConnection` connection to the module `M`.
@@ -855,12 +1202,15 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     token: Option<String>,
 
     on_connect: Option<OnConnectCallback<M>>,
+    on_automatic_reconnect: Option<OnAutomaticReconnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     additional_logging_path: Option<PathBuf>,
 
     params: WsParams,
+    reconnect_options: Option<AutomaticReconnectOptions>,
+    token_provider: Option<Arc<dyn TokenProvider>>,
 }
 
 /// This process's global connection ID, which will be attacked to all connections it makes.
@@ -914,10 +1264,62 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             database_name: None,
             token: None,
             on_connect: None,
+            on_automatic_reconnect: None,
             on_connect_error: None,
             on_disconnect: None,
             additional_logging_path: None,
             params: <_>::default(),
+            reconnect_options: None,
+            token_provider: None,
+        }
+    }
+
+    /// Enable unlimited automatic reconnect with the default backoff bounds.
+    pub fn with_automatic_reconnect(self) -> Self {
+        self.with_automatic_reconnect_options(AutomaticReconnectOptions::default())
+    }
+
+    /// Enable automatic reconnect using custom backoff bounds.
+    pub fn with_automatic_reconnect_options(mut self, options: AutomaticReconnectOptions) -> Self {
+        self.reconnect_options = Some(options.resolve());
+        self
+    }
+
+    pub fn with_token_provider(mut self, provider: impl TokenProvider) -> Self {
+        self.token_provider = Some(Arc::new(provider));
+        self
+    }
+
+    /// Called for each successful automatic reconnect, before subscription replay.
+    /// `on_connect` is reserved for the initial connection.
+    pub fn on_automatic_reconnect(
+        mut self,
+        callback: impl FnMut(&M::DbConnection, Identity, &str) + Send + 'static,
+    ) -> Self {
+        self.on_automatic_reconnect = Some(Box::new(callback));
+        self
+    }
+
+    fn reconnect_state(&mut self) -> ReconnectState {
+        if self.reconnect_options.is_some() {
+            self.params.session_id = Some(ConnectionId::from_u128(rand::random()));
+        }
+        ReconnectState {
+            config: ConnectionConfig {
+                uri: self.uri.clone().expect("with_uri is required"),
+                database_name: self.database_name.clone().expect("with_database_name is required"),
+                params: self.params,
+            },
+            options: self.reconnect_options,
+            provider: self.token_provider.clone(),
+            token: self.token.clone(),
+            attempt: 0,
+            generation: 0,
+            reconnecting: false,
+            preparing_replay: false,
+            used_fresh_token: false,
+            force_refresh: false,
+            abort: None,
         }
     }
 
@@ -962,7 +1364,8 @@ but you must call one of them, or else the connection will never progress.
     /// Open a WebSocket connection, build an empty client cache, &c,
     /// to construct a [`DbContextImpl`].
     #[cfg(not(feature = "browser"))]
-    fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+    fn build_impl(mut self) -> crate::Result<DbContextImpl<M>> {
+        let reconnect = self.reconnect_state();
         let extra_logging = self
             .additional_logging_path
             .map(|path| {
@@ -978,7 +1381,7 @@ but you must call one of them, or else the connection will never progress.
         let connection_id_override = get_connection_id_override();
         let ws_connection = tokio::task::block_in_place(|| {
             handle.block_on(WsConnection::connect(
-                self.uri.unwrap(),
+                self.uri.clone().unwrap(),
                 self.database_name.as_ref().unwrap(),
                 self.token.as_deref(),
                 connection_id_override,
@@ -998,7 +1401,13 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(TokioMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(runtime, self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(
+            runtime,
+            self.on_connect,
+            self.on_automatic_reconnect,
+            self.on_connect_error,
+            self.on_disconnect,
+        );
         Ok(build_db_ctx(
             handle,
             inner_ctx,
@@ -1008,13 +1417,15 @@ but you must call one of them, or else the connection will never progress.
             pending_mutations_recv,
             connection_id_override,
             extra_logging,
+            reconnect,
         ))
     }
 
     /// Open a WebSocket connection, build an empty client cache, &c,
     /// to construct a [`DbContextImpl`].
     #[cfg(feature = "browser")]
-    async fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+    async fn build_impl(mut self) -> crate::Result<DbContextImpl<M>> {
+        let reconnect = self.reconnect_state();
         // The wasm/browser SDK target runs under `wasm32-unknown-unknown`, where we do not
         // have the native file APIs that back `with_debug_to_file`. Keeping the
         // shared `extra_logging` field as `None` lets the rest of the connection and
@@ -1042,7 +1453,12 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(StdMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(
+            self.on_connect,
+            self.on_automatic_reconnect,
+            self.on_connect_error,
+            self.on_disconnect,
+        );
         Ok(build_db_ctx(
             inner_ctx,
             raw_msg_send,
@@ -1051,6 +1467,7 @@ but you must call one of them, or else the connection will never progress.
             pending_mutations_recv,
             connection_id_override,
             extra_logging,
+            reconnect,
         ))
     }
 
@@ -1159,7 +1576,10 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
     /// This callback is invoked only before the initial connection message is
     /// received from the host. Errors which prevent [`Self::build`] from creating
     /// a connection are returned by [`Self::build`] instead.
-    pub fn on_connect_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static) -> Self {
+    pub fn on_connect_error(
+        mut self,
+        callback: impl FnMut(&M::ErrorContext, crate::Error, Option<NextReconnect>) + Send + 'static,
+    ) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect_error` callback.
@@ -1179,7 +1599,7 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
     /// [`Self::on_connect_error`] instead.
     pub fn on_disconnect(
         mut self,
-        callback: impl FnOnce(&M::ErrorContext, Option<crate::Error>) + Send + 'static,
+        callback: impl FnMut(&M::ErrorContext, Option<crate::Error>, Option<NextReconnect>) + Send + 'static,
     ) -> Self {
         if self.on_disconnect.is_some() {
             panic!(
@@ -1198,6 +1618,7 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
     #[cfg(not(feature = "browser"))] runtime: Option<Runtime>,
 
     on_connect_cb: Option<OnConnectCallback<M>>,
+    on_automatic_reconnect: Option<OnAutomaticReconnectCallback<M>>,
     on_connect_error_cb: Option<OnConnectErrorCallback<M>>,
     on_disconnect_cb: Option<OnDisconnectCallback<M>>,
 ) -> Arc<StdMutex<DbContextImplInner<M>>> {
@@ -1211,10 +1632,12 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
 
         connection_lifecycle: ConnectionLifecycle::Connecting,
         on_connect: on_connect_cb,
+        on_automatic_reconnect,
         on_connect_error: on_connect_error_cb,
         on_disconnect: on_disconnect_cb,
 
         procedure_callbacks: ProcedureCallbacks::default(),
+        replay: None,
     }))
 }
 
@@ -1230,6 +1653,7 @@ fn build_db_ctx<M: SpacetimeModule>(
     pending_mutations_recv: SharedAsyncCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
     connection_id: Option<ConnectionId>,
     extra_logging: Option<SharedCell<File>>,
+    reconnect: ReconnectState,
 ) -> DbContextImpl<M> {
     let mut cache = ClientCache::new(extra_logging.clone());
     M::register_tables(&mut cache);
@@ -1247,6 +1671,7 @@ fn build_db_ctx<M: SpacetimeModule>(
         identity: Arc::new(StdMutex::new(None)),
         connection_id: Arc::new(StdMutex::new(connection_id)),
         extra_logging,
+        reconnect: Arc::new(StdMutex::new(reconnect)),
     }
 }
 
@@ -1276,13 +1701,15 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
     }
 }
 
-/// Synchronous lock helper: native = blocking_lock, browser = lock().unwrap()
+/// Synchronous receiver access must not overlap another connection advancement.
 #[cfg(not(feature = "browser"))]
 fn get_lock_sync<T>(mutex: &TokioMutex<T>) -> tokio::sync::MutexGuard<'_, T> {
-    mutex.blocking_lock()
+    mutex
+        .try_lock()
+        .expect("Concurrent connection advancement is unsupported")
 }
 
-/// Synchronous lock helper: native = blocking_lock, browser = lock().unwrap()
+/// Browser receiver access uses a synchronous mutex.
 #[cfg(feature = "browser")]
 fn get_lock_sync<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap()
@@ -1302,7 +1729,7 @@ pub async fn get_lock_async<T>(mutex: &StdMutex<T>) -> std::sync::MutexGuard<'_,
 }
 
 #[derive(Debug)]
-enum ParsedMessage<M: SpacetimeModule> {
+pub(crate) enum ParsedMessage<M: SpacetimeModule> {
     TransactionUpdate(M::DbUpdate),
     IdentityToken(Identity, Box<str>, ConnectionId),
     SubscribeApplied {
@@ -1318,6 +1745,8 @@ enum ParsedMessage<M: SpacetimeModule> {
         error: String,
     },
     Error(crate::Error),
+    TransportError(crate::websocket::WsError),
+    SubscribeBatchApplied(ws::v2::SubscribeBatchApplied),
     ReducerResult {
         request_id: u32,
         timestamp: Timestamp,
@@ -1331,7 +1760,7 @@ enum ParsedMessage<M: SpacetimeModule> {
 
 #[cfg(not(feature = "browser"))]
 fn spawn_parse_loop<M: SpacetimeModule>(
-    raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+    raw_message_recv: mpsc::UnboundedReceiver<Result<ws::v2::ServerMessage, crate::websocket::WsError>>,
     handle: &runtime::Handle,
     extra_logging: Option<SharedCell<File>>,
 ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedReceiver<ParsedMessage<M>>) {
@@ -1342,7 +1771,7 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 
 #[cfg(feature = "browser")]
 fn spawn_parse_loop<M: SpacetimeModule>(
-    raw_message_recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+    raw_message_recv: mpsc::UnboundedReceiver<Result<ws::v2::ServerMessage, crate::websocket::WsError>>,
     extra_logging: Option<SharedCell<File>>,
 ) -> mpsc::UnboundedReceiver<ParsedMessage<M>> {
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
@@ -1353,7 +1782,7 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 /// A loop which reads raw WS messages from `recv`, parses them into domain types,
 /// and pushes the [`ParsedMessage`]s into `send`.
 async fn parse_loop<M: SpacetimeModule>(
-    mut recv: mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+    mut recv: mpsc::UnboundedReceiver<Result<ws::v2::ServerMessage, crate::websocket::WsError>>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
     extra_logging: Option<SharedCell<File>>,
 ) {
@@ -1361,6 +1790,13 @@ async fn parse_loop<M: SpacetimeModule>(
         debug_log(&extra_logging, |file| {
             writeln!(file, "`parse_loop`: Got raw message: {msg:?}")
         });
+        let msg = match msg {
+            Ok(msg) => msg,
+            Err(error) => {
+                let _ = send.unbounded_send(ParsedMessage::TransportError(error));
+                break;
+            }
+        };
         let parsed = match msg {
             ws::v2::ServerMessage::TransactionUpdate(transaction_update) => {
                 match M::DbUpdate::parse_update(transaction_update) {
@@ -1387,10 +1823,12 @@ async fn parse_loop<M: SpacetimeModule>(
                         ret_value,
                         transaction_update,
                     }) => {
-                        assert!(
-                            ret_value.is_empty(),
-                            "Reducer return value should be unit, i.e. 0 bytes, but got {ret_value:?}"
-                        );
+                        if !ret_value.is_empty() {
+                            let _ = send.unbounded_send(ParsedMessage::Error(
+                                InternalError::new("Non-unit reducer return value").into(),
+                            ));
+                            break;
+                        }
                         match M::DbUpdate::parse_update(transaction_update) {
                             Ok(db_update) => ParsedMessage::ReducerResult {
                                 request_id,
@@ -1437,7 +1875,7 @@ async fn parse_loop<M: SpacetimeModule>(
                 connection_id,
             }) => ParsedMessage::IdentityToken(identity, token, connection_id),
             ws::v2::ServerMessage::OneOffQueryResult(_) => {
-                unreachable!("The Rust SDK does not implement one-off queries")
+                ParsedMessage::Error(InternalError::new("Unexpected one-off query response").into())
             }
             ws::v2::ServerMessage::SubscribeApplied(subscribe_applied) => {
                 let db_update = subscribe_applied.rows;
@@ -1460,7 +1898,10 @@ async fn parse_loop<M: SpacetimeModule>(
                 ..
             }) => {
                 let Some(db_update) = db_update else {
-                    unreachable!("The Rust SDK always requests rows to delete when unsubscribing")
+                    let _ = send.unbounded_send(ParsedMessage::Error(
+                        InternalError::new("Unsubscribe response omitted dropped rows").into(),
+                    ));
+                    break;
                 };
                 match M::DbUpdate::parse_unsubscribe_rows(db_update) {
                     Err(e) => ParsedMessage::Error(
@@ -1478,11 +1919,7 @@ async fn parse_loop<M: SpacetimeModule>(
                 query_set_id: e.query_set_id,
                 error: e.error.to_string(),
             },
-            // This SDK negotiates v2 and never sends `SubscribeBatch`,
-            // so the server should never send this response.
-            ws::v2::ServerMessage::SubscribeBatchApplied(_) => ParsedMessage::Error(
-                InternalError::new("Received SubscribeBatchApplied, which this client never requests").into(),
-            ),
+            ws::v2::ServerMessage::SubscribeBatchApplied(batch) => ParsedMessage::SubscribeBatchApplied(batch),
             ws::v2::ServerMessage::ProcedureResult(procedure_result) => ParsedMessage::ProcedureResult {
                 request_id: procedure_result.request_id,
                 result: match procedure_result.status {
@@ -1494,13 +1931,29 @@ async fn parse_loop<M: SpacetimeModule>(
         debug_log(&extra_logging, |file| {
             writeln!(file, "`parse_loop`: Parsed as: {parsed:?}")
         });
-        send.unbounded_send(parsed)
-            .expect("Failed to send ParsedMessage to main thread");
+        if send.unbounded_send(parsed).is_err() {
+            break;
+        }
     }
 }
 
 /// Operations a user can make to a `DbContext` which must be postponed
 pub(crate) enum PendingMutation<M: SpacetimeModule> {
+    ReconnectReady {
+        // Keep the parked receive stream open until this mutation swaps it.
+        // Otherwise the async runner can observe EOF before ReconnectReady.
+        _park_send: mpsc::UnboundedSender<ParsedMessage<M>>,
+        generation: u64,
+        token: Option<String>,
+        fresh: bool,
+        result: Result<
+            (
+                mpsc::UnboundedSender<ws::v2::ClientMessage>,
+                mpsc::UnboundedReceiver<ParsedMessage<M>>,
+            ),
+            ReconnectFailure,
+        >,
+    },
     Unsubscribe {
         query_set_id: QuerySetId,
     },
@@ -1551,6 +2004,9 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
 impl<M: SpacetimeModule> std::fmt::Debug for PendingMutation<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            PendingMutation::ReconnectReady { generation, .. } => {
+                f.debug_tuple("ReconnectReady").field(generation).finish()
+            }
             PendingMutation::Unsubscribe { query_set_id } => f
                 .debug_struct("PendingMutation::Unsubscribe")
                 .field("query_set_id", query_set_id)
@@ -1626,4 +2082,35 @@ pub(crate) fn next_query_set_id() -> QuerySetId {
     QuerySetId {
         id: NEXT_QUERY_SET_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     }
+}
+
+#[derive(Clone)]
+struct ConnectionConfig {
+    uri: Uri,
+    database_name: String,
+    params: WsParams,
+}
+struct ReconnectState {
+    config: ConnectionConfig,
+    options: Option<AutomaticReconnectOptions>,
+    provider: Option<Arc<dyn TokenProvider>>,
+    token: Option<String>,
+    attempt: u32,
+    generation: u64,
+    reconnecting: bool,
+    preparing_replay: bool,
+    used_fresh_token: bool,
+    force_refresh: bool,
+    abort: Option<AbortHandle>,
+}
+impl Drop for ReconnectState {
+    fn drop(&mut self) {
+        if let Some(abort) = self.abort.take() {
+            abort.abort();
+        }
+    }
+}
+pub(crate) enum ReconnectFailure {
+    Provider(crate::Error),
+    Transport(crate::websocket::WsError),
 }
