@@ -8908,6 +8908,7 @@ dependencies = [
  "gloo-console",
  "gloo-net",
  "gloo-storage",
+ "gloo-timers",
  "gloo-utils",
  "home",
  "http",
@@ -8931,6 +8932,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "web-time",
 ]
 
 [[package]]
