@@ -657,7 +657,6 @@ impl InstanceEnv {
         Ok(stdb.delete_by_rel(tx, table_id, relation))
     }
 
-    /// Deletes all rows in the table identified by `table_id`.
     /// Creates a file from `bytes` in the current transaction.
     ///
     /// The bytes are staged in the transaction, and so in the commitlog, until the host persists them.
@@ -672,6 +671,12 @@ impl InstanceEnv {
                 size: bytes.len(),
                 max: MAX_CREATED_FILE_BYTES,
             });
+        }
+        if content_type
+            .as_deref()
+            .is_some_and(|ty| !spacetimedb_lib::file::is_valid_content_type(ty))
+        {
+            return Err(NodesError::InvalidContentType);
         }
         let stdb = self.relational_db();
         if stdb.files().is_none() {
@@ -721,6 +726,7 @@ impl InstanceEnv {
         row.map(|row| row.file_ref()).ok_or(NodesError::NoSuchFile)
     }
 
+    /// Deletes all rows in the table identified by `table_id`.
     pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;

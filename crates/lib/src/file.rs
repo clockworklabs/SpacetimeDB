@@ -122,6 +122,19 @@ impl FromStr for FileRef {
     }
 }
 
+/// The longest content type a file may declare.
+pub const MAX_CONTENT_TYPE_LEN: usize = 255;
+
+/// Whether `content_type` can be served as a `Content-Type` header: nonempty, at most
+/// [`MAX_CONTENT_TYPE_LEN`] bytes, and only visible ASCII, spaces, and tabs.
+///
+/// This doesn't check that it is a well-formed media type; nothing verifies what a file claims to be.
+pub fn is_valid_content_type(content_type: &str) -> bool {
+    !content_type.is_empty()
+        && content_type.len() <= MAX_CONTENT_TYPE_LEN
+        && content_type.bytes().all(|b| b == b'\t' || (b' '..=b'~').contains(&b))
+}
+
 /// The BLAKE3 hash of a file's contents, which is also the file's key in the object store.
 pub fn content_hash(bytes: &[u8]) -> Hash {
     Hash::from_byte_array(*blake3::hash(bytes).as_bytes())
@@ -186,6 +199,15 @@ mod tests {
     fn file_ref_debug_hides_the_secret() {
         let file_ref = FileRef::new(FileId(1), 0xdead_beef);
         assert!(!format!("{file_ref:?}").contains("deadbeef"));
+    }
+
+    #[test]
+    fn content_types_must_be_servable() {
+        assert!(is_valid_content_type("text/plain; charset=utf-8"));
+        assert!(!is_valid_content_type(""));
+        assert!(!is_valid_content_type("text/plain\n"));
+        assert!(!is_valid_content_type("text/\u{e9}"));
+        assert!(!is_valid_content_type(&"a".repeat(MAX_CONTENT_TYPE_LEN + 1)));
     }
 
     #[test]

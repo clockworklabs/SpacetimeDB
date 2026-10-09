@@ -34,6 +34,8 @@ pub enum FileError {
     TooLarge,
     /// This database doesn't support File Storage.
     Unavailable,
+    /// The content type can't be served as an HTTP header.
+    InvalidContentType,
     /// The host reported another error.
     Host(sys::Errno),
 }
@@ -44,6 +46,7 @@ impl fmt::Display for FileError {
             Self::NoSuchFile => f.write_str("no such file"),
             Self::TooLarge => f.write_str("the file is too large to create in a transaction"),
             Self::Unavailable => f.write_str("this database doesn't support File Storage"),
+            Self::InvalidContentType => f.write_str("the content type can't be served as an HTTP header"),
             Self::Host(errno) => write!(f, "file operation failed: {errno}"),
         }
     }
@@ -57,6 +60,7 @@ impl From<sys::Errno> for FileError {
             sys::Errno::NO_SUCH_FILE => Self::NoSuchFile,
             sys::Errno::FILE_TOO_LARGE => Self::TooLarge,
             sys::Errno::FILES_UNAVAILABLE => Self::Unavailable,
+            sys::Errno::INVALID_CONTENT_TYPE => Self::InvalidContentType,
             errno => Self::Host(errno),
         }
     }

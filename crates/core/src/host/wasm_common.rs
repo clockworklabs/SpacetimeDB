@@ -373,6 +373,7 @@ pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), Nod
         NodesError::NoSuchFile => errno::NO_SUCH_FILE,
         NodesError::FileTooLarge { .. } => errno::FILE_TOO_LARGE,
         NodesError::FilesUnavailable => errno::FILES_UNAVAILABLE,
+        NodesError::InvalidContentType => errno::INVALID_CONTENT_TYPE,
         NodesError::Internal(ref internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {

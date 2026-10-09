@@ -80,6 +80,8 @@ pub enum NodesError {
     FileTooLarge { size: usize, max: usize },
     #[error("this database doesn't support File Storage")]
     FilesUnavailable,
+    #[error("the content type can't be served as an HTTP header")]
+    InvalidContentType,
 }
 
 impl From<DBError> for NodesError {

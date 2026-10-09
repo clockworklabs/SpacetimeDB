@@ -84,10 +84,13 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse().ok())
         .ok_or_else(|| error(StatusCode::LENGTH_REQUIRED, "an upload must declare its Content-Length"))?;
-    let content_type = headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned);
+    let content_type = match headers.get(header::CONTENT_TYPE) {
+        None => None,
+        Some(value) => match value.to_str() {
+            Ok(ty) if spacetimedb_lib::file::is_valid_content_type(ty) => Some(ty.to_owned()),
+            _ => return Err(error(StatusCode::BAD_REQUEST, "the Content-Type can't be served back")),
+        },
+    };
     let sender = auth.get().map(|auth| auth.claims.identity);
     if sender.is_none() && token.is_none() {
         return Err(error(
@@ -153,8 +156,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     .map_err(|_| error(StatusCode::REQUEST_TIMEOUT, "the upload took too long"))??;
     let hash = spooled.hash();
     let size = spooled.size();
-    files.store().persist(spooled).await.map_err(log_and_500)?;
-    files.note_persisted(hash);
+    files.persist(spooled).await.map_err(log_and_500)?;
 
     // Record the file, and wait until the record is durable.
     let row = StFileRow {
@@ -248,20 +250,33 @@ fn parse_range(headers: &HeaderMap, len: u64) -> Result<Option<Range<u64>>, ()> 
     let Some(spec) = value.strip_prefix("bytes=").filter(|spec| !spec.contains(',')) else {
         return Ok(None);
     };
-    let (start, end) = spec.split_once('-').ok_or(())?;
+    // RFC 9110 has a server ignore a malformed range and serve the whole object.
+    let Some((start, end)) = spec.split_once('-') else {
+        return Ok(None);
+    };
     let range = match (start.trim(), end.trim()) {
         ("", suffix) => {
-            let suffix: u64 = suffix.parse().map_err(|_| ())?;
+            let Ok(suffix) = suffix.parse::<u64>() else {
+                return Ok(None);
+            };
             len.saturating_sub(suffix)..len
         }
-        (start, "") => start.parse().map_err(|_| ())?..len,
         (start, end) => {
-            let start: u64 = start.parse().map_err(|_| ())?;
-            let end: u64 = end.parse().map_err(|_| ())?;
-            start..end.saturating_add(1).min(len)
+            let Ok(start) = start.parse::<u64>() else {
+                return Ok(None);
+            };
+            let end = match end {
+                "" => len,
+                end => match end.parse::<u64>() {
+                    Ok(end) if end >= start => end.saturating_add(1).min(len),
+                    _ => return Ok(None),
+                },
+            };
+            start..end
         }
     };
-    if range.start >= range.end || range.start >= len {
+    // A range that starts at or past the end, or an empty suffix, can't be satisfied.
+    if range.start >= range.end {
         return Err(());
     }
     Ok(Some(range))
@@ -292,17 +307,17 @@ async fn download_inner<S: ControlStateDelegate + NodeDelegate>(
     let row = find_file(&db, &file_ref, Lookup::Servable).await?;
     let etag = format!("\"{}\"", row.content_hash.to_hex());
 
+    // A stored type was validated when the file was created, but fall back rather than fail if not.
+    let content_type = params
+        .content_type
+        .as_deref()
+        .or(row.content_type.as_deref())
+        .filter(|ty| spacetimedb_lib::file::is_valid_content_type(ty))
+        .unwrap_or("application/octet-stream");
     let mut builder = Response::builder()
         .header(header::ETAG, &etag)
         .header(header::ACCEPT_RANGES, "bytes")
-        .header(
-            header::CONTENT_TYPE,
-            params
-                .content_type
-                .as_deref()
-                .or(row.content_type.as_deref())
-                .unwrap_or("application/octet-stream"),
-        )
+        .header(header::CONTENT_TYPE, content_type)
         .header(header::LAST_MODIFIED, httpdate(row.created_at.0))
         // Contents never change, but a cached copy can outlive the file's reclamation.
         .header(header::CACHE_CONTROL, "private, max-age=3600")
@@ -311,7 +326,14 @@ async fn download_inner<S: ControlStateDelegate + NodeDelegate>(
         .header(header::REFERRER_POLICY, "no-referrer")
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
     if let Some(name) = &params.download {
-        let name = name.replace(['"', '\\', '\r', '\n'], "_");
+        // Keep the name a valid quoted string: visible ASCII and spaces, without quotes or backslashes.
+        let name: String = name
+            .chars()
+            .map(|c| match c {
+                ' '..='~' if c != '"' && c != '\\' => c,
+                _ => '_',
+            })
+            .collect();
         builder = builder.header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\""));
     }
 
@@ -360,11 +382,18 @@ async fn download_inner<S: ControlStateDelegate + NodeDelegate>(
             .await
             .map_err(log_and_500)?
             .map_err(log_and_500)?;
-            let Some(bytes) = staged else {
-                log::error!("file {hash} has a live st_file row but no bytes");
-                return Err(error(StatusCode::NOT_FOUND, "no such file"));
-            };
-            Body::from(bytes[served.start as usize..served.end as usize].to_vec())
+            match staged {
+                Some(bytes) => Body::from(bytes[served.start as usize..served.end as usize].to_vec()),
+                // The upload may have finished, and its staged row been deleted, since the first read.
+                None => match files.store().read(&hash, served.clone()).await {
+                    Ok(stream) => Body::from_stream(stream),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        log::error!("file {hash} has an st_file row but no bytes");
+                        return Err(error(StatusCode::NOT_FOUND, "no such file"));
+                    }
+                    Err(e) => return Err(log_and_500(e)),
+                },
+            }
         }
         Err(e) => return Err(log_and_500(e)),
     };
@@ -417,7 +446,12 @@ mod tests {
         assert_eq!(range("bytes=-3", 10), Ok(Some(7..10)));
         assert_eq!(range("bytes=8-100", 10), Ok(Some(8..10)));
         assert_eq!(range("bytes=10-", 10), Err(()));
-        assert_eq!(range("bytes=5-4", 10), Err(()));
+        assert_eq!(range("bytes=-0", 10), Err(()));
+        assert_eq!(range("bytes=0-", 0), Err(()));
+        // Malformed ranges are ignored.
+        assert_eq!(range("bytes=5-4", 10), Ok(None));
+        assert_eq!(range("bytes=abc", 10), Ok(None));
+        assert_eq!(range("bytes=-", 10), Ok(None));
         // Multiple ranges fall back to the whole file.
         assert_eq!(range("bytes=0-1,3-4", 10), Ok(None));
     }

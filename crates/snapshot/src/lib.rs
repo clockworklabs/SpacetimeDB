@@ -424,11 +424,21 @@ impl Snapshot {
     }
 
     /// Decodes a manifest, including one written before `file_hashes` existed.
-    fn from_bsatn(bytes: &[u8]) -> Result<Self, bsatn::DecodeError> {
-        bsatn::from_slice::<Snapshot>(bytes).or_else(|err| {
-            bsatn::from_slice::<SnapshotWithoutFiles>(bytes)
-                .map(Snapshot::from)
-                .map_err(|_| err)
+    ///
+    /// Use this rather than decoding a [`Snapshot`] directly, which fails on those older manifests.
+    /// A manifest that ends where `file_hashes` would begin has no files; a malformed file list is
+    /// an error. Bytes after the file list are ignored, as older binaries ignore the file list.
+    pub fn from_bsatn(bytes: &[u8]) -> Result<Self, bsatn::DecodeError> {
+        let mut reader = bytes;
+        let prefix: SnapshotWithoutFiles = bsatn::from_reader(&mut reader)?;
+        let file_hashes = if reader.is_empty() {
+            Vec::new()
+        } else {
+            bsatn::from_reader(&mut reader)?
+        };
+        Ok(Snapshot {
+            file_hashes,
+            ..prefix.into()
         })
     }
 }
@@ -1881,6 +1891,18 @@ mod tests {
         }
         let expected = [b"a", b"b", b"c"].map(|contents| file_entry(contents).hash).into();
         assert_eq!(repo.retained_file_hashes()?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn a_malformed_file_list_is_an_error() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+        let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
+        let mut bytes = bsatn::to_vec(&repo.empty_snapshot(3))?;
+        // Claim one more file than the manifest holds.
+        let len = bytes.len();
+        bytes[len - 4..].copy_from_slice(&1u32.to_le_bytes());
+        assert!(Snapshot::from_bsatn(&bytes).is_err());
         Ok(())
     }
 }

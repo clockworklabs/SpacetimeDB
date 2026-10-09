@@ -46,19 +46,38 @@ pub struct DatabaseFiles {
     store: Arc<dyn FileStore>,
     runtime: Handle,
     uploads: Mutex<Uploads>,
+    /// Persists hold this shared and reclamation holds it exclusively while it checks and deletes one
+    /// object, so an object can't be deleted between being persisted again and being referenced.
+    persist_lock: tokio::sync::RwLock<()>,
     /// Hashes of staged files that are now persisted, so their `st_file_staged` rows can go.
     staged_persisted: mpsc::UnboundedSender<Hash>,
     staged_persisted_rx: Mutex<Option<mpsc::UnboundedReceiver<Hash>>>,
+    /// Becomes `true` once files staged before the database opened are persisted again.
+    /// Until then, [`FileGatedDurability`] reports nothing durable.
+    startup_settled: watch::Sender<bool>,
 }
 
 #[derive(Default)]
 struct Uploads {
     /// Hashes known to be persisted in the store.
     ///
-    /// A cache of positive answers. Reclamation removes the hashes it deletes.
+    /// A cache of positive answers. Reclamation removes each hash before it deletes the object.
     persisted: HashSet<Hash>,
     /// Staged files being persisted. Each receiver becomes `true` once its file is persisted.
     in_flight: HashMap<Hash, watch::Receiver<bool>>,
+}
+
+/// Removes an upload's `in_flight` entry however its task ends, so a failed upload can't
+/// leave waiters on a channel that will never report.
+struct InFlightGuard {
+    files: Arc<DatabaseFiles>,
+    hash: Hash,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.files.uploads.lock().in_flight.remove(&self.hash);
+    }
 }
 
 impl DatabaseFiles {
@@ -68,8 +87,10 @@ impl DatabaseFiles {
             store,
             runtime,
             uploads: Mutex::default(),
+            persist_lock: tokio::sync::RwLock::new(()),
             staged_persisted,
             staged_persisted_rx: Mutex::new(Some(rx)),
+            startup_settled: watch::channel(false).0,
         })
     }
 
@@ -77,14 +98,29 @@ impl DatabaseFiles {
         &self.store
     }
 
-    /// Records that `hash` is persisted in the store, for example after an upload.
-    pub fn note_persisted(&self, hash: Hash) {
+    /// Stores a spooled upload, and returns once its bytes are durable.
+    pub async fn persist(&self, spooled: Spooled) -> std::io::Result<()> {
+        let hash = spooled.hash();
+        let _persisting = self.persist_lock.read().await;
+        self.store.persist(spooled).await?;
+        self.note_persisted(hash);
+        Ok(())
+    }
+
+    /// Records that `hash` is persisted in the store.
+    fn note_persisted(&self, hash: Hash) {
         self.uploads.lock().persisted.insert(hash);
     }
 
     /// Whether `hash` is known to be persisted. `false` means unknown, not absent.
     pub fn is_known_persisted(&self, hash: &Hash) -> bool {
         self.uploads.lock().persisted.contains(hash)
+    }
+
+    /// Reports that files staged before the database opened are persisted again,
+    /// which lets [`FileGatedDurability`] report transactions durable.
+    pub fn settle_startup(&self) {
+        self.startup_settled.send_replace(true);
     }
 
     /// Starts persisting the bytes of a staged file, unless that is already under way.
@@ -101,21 +137,32 @@ impl DatabaseFiles {
             uploads.in_flight.insert(hash, rx);
             tx
         };
-        let this = self.clone();
+        let guard = InFlightGuard {
+            files: self.clone(),
+            hash,
+        };
         self.runtime.spawn(async move {
+            let this = guard.files.clone();
             let mut backoff = Duration::from_millis(50);
-            // Persisting is idempotent and refreshes the object's age even if it already exists,
-            // which protects it from a reclamation pass that started before this transaction committed.
-            while let Err(e) = this.store.persist_bytes(hash, bytes.clone()).await {
-                log::warn!("failed to persist staged file {hash}, retrying in {backoff:?}: {e}");
+            loop {
+                // Persisting is idempotent and refreshes the object's age even if it already exists,
+                // which protects it from a reclamation pass that started before this transaction committed.
+                let persisted = {
+                    let _persisting = this.persist_lock.read().await;
+                    let persisted = this.store.persist_bytes(hash, bytes.clone()).await;
+                    if persisted.is_ok() {
+                        this.note_persisted(hash);
+                    }
+                    persisted
+                };
+                match persisted {
+                    Ok(()) => break,
+                    Err(e) => log::warn!("failed to persist staged file {hash}, retrying in {backoff:?}: {e}"),
+                }
                 this.runtime.sleep(backoff).await;
                 backoff = (backoff * 2).min(Duration::from_secs(5));
             }
-            {
-                let mut uploads = this.uploads.lock();
-                uploads.in_flight.remove(&hash);
-                uploads.persisted.insert(hash);
-            }
+            drop(guard);
             tx.send_replace(true);
             let _ = this.staged_persisted.send(hash);
         });
@@ -136,10 +183,12 @@ impl DatabaseFiles {
                 }
                 uploads.in_flight.get(&hash).cloned()
             };
-            if let Some(mut done) = in_flight {
-                let _ = done.wait_for(|done| *done).await;
+            if let Some(mut done) = in_flight
+                && done.wait_for(|done| *done).await.is_ok()
+            {
                 continue;
             }
+            // No upload is under way, or it ended without persisting: ask the store.
             match self.store.size(&hash).await {
                 Ok(Some(_)) => {
                     self.note_persisted(hash);
@@ -157,16 +206,32 @@ impl DatabaseFiles {
 
     /// Deletes every object in the store that nothing can still need.
     ///
-    /// The roots are the files that live `st_file` rows name, that any retained snapshot lists,
-    /// and that `st_file` rows inserted in the retained commitlog name, plus staged files still
-    /// being persisted. Objects persisted within [`RECLAIM_GRACE`] are spared, which covers
-    /// uploads whose `st_file` row hasn't committed yet.
+    /// `roots` must hold every hash that `st_file` rows name and that retained snapshots list.
+    /// Staged files still being persisted are added here. Objects persisted within `grace` are spared,
+    /// which covers uploads whose `st_file` row hasn't committed yet.
     pub async fn reclaim(&self, mut roots: HashSet<Hash>, grace: Duration) -> std::io::Result<ReclaimStats> {
         roots.extend(self.uploads.lock().in_flight.keys().copied());
-        let stats =
-            spacetimedb_file_store::reclaim_unreferenced(&*self.store, &roots, grace, SystemTime::now()).await?;
-        // Forget cached answers for anything that might have been deleted.
-        self.uploads.lock().persisted.retain(|hash| roots.contains(hash));
+        let cutoff = SystemTime::now().checked_sub(grace).unwrap_or(SystemTime::UNIX_EPOCH);
+        let mut stats = ReclaimStats::default();
+        for object in self.store.list().await? {
+            if roots.contains(&object.hash) {
+                continue;
+            }
+            if object.stored_at >= cutoff {
+                stats.spared_young_objects += 1;
+                continue;
+            }
+            // Check and delete with persists excluded, so an object persisted again in the meantime
+            // is either seen as young here or written afresh after the delete.
+            let _reclaiming = self.persist_lock.write().await;
+            self.uploads.lock().persisted.remove(&object.hash);
+            if self.store.delete_if_older_than(&object.hash, cutoff).await? {
+                stats.deleted_objects += 1;
+                stats.deleted_bytes += object.size;
+            } else {
+                stats.spared_young_objects += 1;
+            }
+        }
         Ok(stats)
     }
 }
@@ -389,33 +454,31 @@ struct GateState {
     waiting: BTreeMap<TxOffset, usize>,
     /// `None` once the inner durability has exited, which tells waiters it is gone.
     published: Option<watch::Sender<Option<TxOffset>>>,
+    /// The offset last reported durable, which outlives `published`.
+    last_published: Option<TxOffset>,
+    /// Whether files staged before the database opened are persisted again. Until they are,
+    /// any transaction may reference one of them, so nothing is reported durable.
+    startup_settled: bool,
     /// Set by `close`, after which the reported offset no longer moves.
     closed: bool,
 }
 
 impl Gate {
-    fn publish(state: &GateState) {
-        if state.closed {
+    fn publish(state: &mut GateState) {
+        if state.closed || !state.startup_settled {
             return;
         }
         let mut offset = state.inner_durable.min(state.registered_through);
         if let Some(&first_waiting) = state.waiting.keys().next() {
             offset = offset.min(first_waiting.checked_sub(1));
         }
-        if let Some(published) = &state.published {
-            published.send_if_modified(|current| {
-                let advanced = offset > *current;
-                if advanced {
-                    *current = offset;
-                }
-                advanced
-            });
+        if offset <= state.last_published {
+            return;
         }
-    }
-
-    fn reported(&self) -> Option<TxOffset> {
-        let state = self.state.lock();
-        state.published.as_ref().and_then(|published| *published.borrow())
+        state.last_published = offset;
+        if let Some(published) = &state.published {
+            published.send_replace(offset);
+        }
     }
 
     fn file_persisted(&self, offset: TxOffset) {
@@ -426,7 +489,7 @@ impl Gate {
                 state.waiting.remove(&offset);
             }
         }
-        Self::publish(&state);
+        Self::publish(&mut state);
     }
 
     fn register(self: &Arc<Self>, files: &Arc<DatabaseFiles>, runtime: &Handle, offset: TxOffset, txdata: &Txdata) {
@@ -448,7 +511,7 @@ impl Gate {
         if !pending.is_empty() {
             state.waiting.insert(offset, pending.len());
         }
-        Self::publish(&state);
+        Self::publish(&mut state);
         drop(state);
 
         for hash in pending {
@@ -463,10 +526,14 @@ impl Gate {
 }
 
 impl FileGatedDurability {
+    /// Wraps `inner`.
+    ///
+    /// Reports nothing durable until [`DatabaseFiles::settle_startup`], because the transactions
+    /// replayed when the database opened may reference staged files that were never persisted.
     pub fn new(inner: Arc<Durability>, files: Arc<DatabaseFiles>, runtime: Handle) -> Self {
         let mut inner_offset = inner.durable_tx_offset();
         let initial = inner_offset.last_seen();
-        let (published, _) = watch::channel(initial);
+        let (published, _) = watch::channel(None);
         let gate = Arc::new(Gate {
             state: Mutex::new(GateState {
                 inner_durable: initial,
@@ -475,8 +542,20 @@ impl FileGatedDurability {
                 registered_through: initial,
                 waiting: BTreeMap::new(),
                 published: Some(published),
+                last_published: None,
+                startup_settled: false,
                 closed: false,
             }),
+        });
+
+        let mut settled = files.startup_settled.subscribe();
+        let settler = gate.clone();
+        runtime.clone().spawn(async move {
+            if settled.wait_for(|settled| *settled).await.is_ok() {
+                let mut state = settler.state.lock();
+                state.startup_settled = true;
+                Gate::publish(&mut state);
+            }
         });
 
         let watcher = gate.clone();
@@ -487,7 +566,7 @@ impl FileGatedDurability {
                     Ok(offset) => {
                         let mut state = watcher.state.lock();
                         state.inner_durable = Some(offset);
-                        Gate::publish(&state);
+                        Gate::publish(&mut state);
                     }
                     Err(_) => {
                         // Dropping the sender tells everyone waiting that the durability is gone.
@@ -525,8 +604,9 @@ impl spacetimedb_durability::Durability for FileGatedDurability {
         let state = self.gate.state.lock();
         match &state.published {
             Some(published) => published.subscribe().into(),
-            // The inner durability exited; hand out a handle that says so.
-            None => watch::channel(None).1.into(),
+            // The inner durability exited. Hand out a handle that says so, and that still
+            // remembers the last offset reported durable.
+            None => watch::channel(state.last_published).1.into(),
         }
     }
 
@@ -535,13 +615,11 @@ impl spacetimedb_durability::Durability for FileGatedDurability {
         let gate = self.gate.clone();
         Box::pin(async move {
             let inner = close.await;
-            {
-                let mut state = gate.state.lock();
-                state.inner_durable = state.inner_durable.max(inner);
-                Gate::publish(&state);
-                state.closed = true;
-            }
-            gate.reported()
+            let mut state = gate.state.lock();
+            state.inner_durable = state.inner_durable.max(inner);
+            Gate::publish(&mut state);
+            state.closed = true;
+            state.last_published
         })
     }
 }
@@ -601,12 +679,15 @@ fn delete_staged(db: &RelationalDB, hashes: Vec<Hash>) -> Result<(), DBError> {
     })
 }
 
-/// Runs the background work a database's files need: re-persisting files that were staged
-/// before a restart, deleting `st_file_staged` rows once their bytes are persisted,
-/// and reclaiming unreferenced bytes every [`RECLAIM_INTERVAL`].
+/// Runs the background work a database's files need:
 ///
-/// Call once per database, after it is open. The tasks hold the database weakly,
-/// and stop once it is dropped.
+/// - re-persisting files that were staged before the database opened, then letting the
+///   [`FileGatedDurability`] report transactions durable;
+/// - deleting `st_file_staged` rows once their bytes are persisted;
+/// - reclaiming unreferenced bytes every [`RECLAIM_INTERVAL`].
+///
+/// Call once per database, after it is open. Until this runs, confirmed reads see nothing.
+/// The tasks hold the database weakly, and stop once it is dropped.
 pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
     let Some(files) = db.files().cloned() else {
         return;
@@ -616,19 +697,38 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
     };
 
     // Anything still staged was committed but maybe never persisted, for example because the host
-    // crashed first. Its bytes are in the database, so persist them again.
-    match db.with_read_only(Workload::Internal, |tx| -> Result<Vec<StFileStagedRow>, DBError> {
-        let rows = tx.iter(ST_FILE_STAGED_ID)?;
-        Ok(rows.map(StFileStagedRow::try_from).collect::<Result<_, _>>()?)
-    }) {
-        Ok(staged) => {
-            for row in staged {
-                files.persist_staged(row.content_hash, Bytes::from(row.bytes.into_vec()));
+    // crashed first. Its bytes are in the database, so persist them again before any transaction
+    // is reported durable.
+    let identity = db.database_identity();
+    let settler = runtime.clone();
+    let weak = Arc::downgrade(&db);
+    runtime.spawn(async move {
+        let Some(db) = weak.upgrade() else { return };
+        let staged = settler
+            .spawn_blocking(move || {
+                db.with_read_only(Workload::Internal, |tx| -> Result<Vec<StFileStagedRow>, DBError> {
+                    let rows = tx.iter(ST_FILE_STAGED_ID)?;
+                    Ok(rows.map(StFileStagedRow::try_from).collect::<Result<_, _>>()?)
+                })
+            })
+            .await;
+        let staged = match staged {
+            Ok(staged) => staged,
+            Err(e) => {
+                // Without knowing what was staged, nothing can be confirmed safely.
+                log::error!("[{identity}] failed to read staged files, so no transaction will be confirmed: {e}");
+                return;
             }
+        };
+        let hashes: Vec<Hash> = staged.iter().map(|row| row.content_hash).collect();
+        for row in staged {
+            files.persist_staged(row.content_hash, Bytes::from(row.bytes.into_vec()));
         }
-        Err(e) => log::error!("[{}] failed to read staged files: {e}", db.database_identity()),
-    }
-    drop(files);
+        for hash in hashes {
+            files.clone().wait_persisted(hash).await;
+        }
+        files.settle_startup();
+    });
 
     let weak = Arc::downgrade(&db);
     let blocking = runtime.clone();
@@ -827,6 +927,7 @@ mod tests {
             released: Semaphore::new(0),
         });
         let files = DatabaseFiles::new(store.clone(), runtime.clone());
+        files.settle_startup();
         let inner = ManualDurability::new();
         let gated = FileGatedDurability::new(inner.clone(), files.clone(), runtime);
         let mut confirmed = gated.durable_tx_offset();
@@ -860,6 +961,7 @@ mod tests {
         let runtime = Handle::tokio_current();
         let store = Arc::new(LocalFileStore::open(dir.path()).unwrap());
         let files = DatabaseFiles::new(store, runtime.clone());
+        files.settle_startup();
         let inner = ManualDurability::new();
         let gated = FileGatedDurability::new(inner.clone(), files, runtime);
         let confirmed = gated.durable_tx_offset();
@@ -879,6 +981,7 @@ mod tests {
         let runtime = Handle::tokio_current();
         let store = Arc::new(LocalFileStore::open(dir.path()).unwrap());
         let files = DatabaseFiles::new(store.clone(), runtime.clone());
+        files.settle_startup();
         let inner = ManualDurability::new();
         let gated = FileGatedDurability::new(inner.clone(), files, runtime);
         let mut confirmed = gated.durable_tx_offset();
@@ -909,6 +1012,7 @@ mod tests {
             released: Semaphore::new(0),
         });
         let files = DatabaseFiles::new(store.clone(), runtime.clone());
+        files.settle_startup();
         let inner = ManualDurability::new();
         let gated = FileGatedDurability::new(inner.clone(), files, runtime);
         let confirmed = gated.durable_tx_offset();
@@ -924,12 +1028,57 @@ mod tests {
         assert_eq!(confirmed.last_seen(), Some(0));
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn nothing_is_confirmed_until_startup_settles() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Handle::tokio_current();
+        let store = Arc::new(LocalFileStore::open(dir.path()).unwrap());
+        let files = DatabaseFiles::new(store, runtime.clone());
+        let inner = ManualDurability::new();
+        // Transactions up to 4 were replayed when the database opened. Any of them may reference
+        // a staged file that was never persisted.
+        inner.make_durable(4);
+        let gated = FileGatedDurability::new(inner.clone(), files.clone(), runtime);
+        let mut confirmed = gated.durable_tx_offset();
+
+        gated.append_tx(tx(5, &[], &[]));
+        inner.make_durable(5);
+        settle().await;
+        assert_eq!(confirmed.last_seen(), None);
+
+        files.settle_startup();
+        tokio::time::timeout(Duration::from_secs(5), confirmed.wait_for(5))
+            .await
+            .expect("settling releases the hold")
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_last_confirmed_offset_survives_the_inner_durability() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Handle::tokio_current();
+        let store = Arc::new(LocalFileStore::open(dir.path()).unwrap());
+        let files = DatabaseFiles::new(store, runtime.clone());
+        files.settle_startup();
+        let inner = ManualDurability::new();
+        let gated = FileGatedDurability::new(inner.clone(), files, runtime);
+        let mut confirmed = gated.durable_tx_offset();
+        gated.append_tx(tx(0, &[], &[]));
+        inner.make_durable(0);
+        confirmed.wait_for(0).await.unwrap();
+
+        // The inner durability exits, as `Local` does when its actor stops.
+        drop(gated);
+        drop(inner);
+        settle().await;
+        assert_eq!(confirmed.last_seen(), Some(0));
+        assert!(confirmed.get().is_err(), "waiters learn that the durability is gone");
+    }
+
     #[test]
     fn created_files_are_persisted_cleaned_up_and_snapshotted() -> anyhow::Result<()> {
         let stdb = TestDB::durable_with_files()?;
         let rt = stdb.runtime().expect("durable").clone();
-        let runtime = Handle::tokio(rt.clone());
-        spawn_file_maintenance(stdb.db.clone(), runtime);
         let files = stdb.files().expect("files are enabled").clone();
         wait_for_snapshot(&stdb, &rt, 1);
 

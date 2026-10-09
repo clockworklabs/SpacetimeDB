@@ -2158,6 +2158,9 @@ pub mod tests_utils {
             let rt = TokioRuntimeBuilder::new_multi_thread().enable_all().build()?;
             let _rt = rt.enter();
             let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true, true)?;
+            let db = Arc::new(db);
+            // As a host would, so that staged files are persisted and transactions confirmed.
+            crate::files::spawn_file_maintenance(db.clone(), Handle::tokio(rt.handle().clone()));
             let durable = DurableState {
                 durability,
                 rt,
@@ -2165,7 +2168,7 @@ pub mod tests_utils {
             };
 
             Ok(Self {
-                db: Arc::new(db),
+                db,
                 durable: Some(durable),
                 want_snapshot_repo: true,
                 want_files: true,
@@ -2277,6 +2280,10 @@ pub mod tests_utils {
                     self.want_snapshot_repo,
                     self.want_files,
                 )?;
+                let db = Arc::new(db);
+                if self.want_files {
+                    crate::files::spawn_file_maintenance(db.clone(), Handle::tokio(rt.handle().clone()));
+                }
                 let durable = DurableState {
                     durability: handle,
                     rt,
@@ -2284,7 +2291,7 @@ pub mod tests_utils {
                 };
 
                 Ok(Self {
-                    db: Arc::new(db),
+                    db,
                     durable: Some(durable),
                     ..self
                 })
