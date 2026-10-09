@@ -451,7 +451,7 @@ async fn start_containers(
     };
 
     let options = ContainerOptions {
-        docker_host,
+        docker_host: docker_host.clone(),
         runtime: args.get_one::<String>("container_runtime").cloned().or(config.runtime),
         // Quotas need overlay2 on XFS with project quotas, which few development machines have.
         scratch_quota: false,
@@ -469,7 +469,7 @@ async fn start_containers(
         }
         Err(e) => return Err(e),
     }
-    ctx.enable_containers();
+    ctx.enable_containers(docker_host);
     log::warn!("{enabled_message}");
     Ok(())
 }

@@ -1,5 +1,5 @@
 use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
-use spacetimedb_lib::container::{ContainerInfo, ContainerSpec};
+use spacetimedb_lib::container::{is_local_image_id, ContainerInfo, ContainerPlatform, ContainerSpec};
 use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentRemove, EnvironmentUpdate};
 
 use std::borrow::Cow;
@@ -34,6 +34,7 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::db::container_image;
 use spacetimedb::host::module_host::{
     ClientConnectedError, DurabilityExited, DurableOffset, TransactionOffset, UpdateEnvironmentResult,
 };
@@ -50,6 +51,7 @@ use spacetimedb_client_api_messages::name::{
     PublishResult,
 };
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{http as st_http, ConnectionId};
@@ -745,15 +747,144 @@ pub async fn container_put<S>(
     axum::Json(spec): axum::Json<ContainerSpec>,
 ) -> axum::response::Result<()>
 where
-    S: ControlStateDelegate + Authorization,
+    S: ControlStateDelegate + NodeDelegate + Authorization,
 {
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
-    spec.validate_with(ctx.accepts_local_container_images())
-        .map_err(ContainerError::Invalid)?;
+    spec.validate_with(true).map_err(ContainerError::Invalid)?;
+    if is_local_image_id(&spec.image) && !has_container_image(&ctx, &database, &spec.image).await? {
+        return Err(ContainerError::Invalid(format!(
+            "image `{}` is a local image ID, but the database does not store it, and this server's Docker \
+             daemon does not have it or does not share it. Publish with the image in spacetime.json to upload \
+             it, or push it to a registry and pass a reference pinned to a digest, like `name@sha256:<64 hex digits>`",
+            spec.image
+        ))
+        .into());
+    }
     ctx.set_container(&auth.claims.identity, &database.database_identity, Some(spec))
         .await?;
     Ok(())
+}
+
+/// Whether the database stores the image `image_id`, or this node's Docker daemon has it.
+async fn has_container_image<S>(ctx: &S, database: &Database, image_id: &str) -> axum::response::Result<bool>
+where
+    S: ControlStateDelegate + NodeDelegate,
+{
+    if ctx.has_container_image(image_id).await? {
+        return Ok(true);
+    }
+    let module = find_database_module(ctx, database).await?;
+    let stored = module
+        .relational_db()
+        .with_read_only(Workload::Internal, |tx| container_image::contains(tx, image_id))
+        .map_err(log_and_500)?;
+    Ok(stored)
+}
+
+/// What images stored in the database must be built for.
+pub async fn container_platform<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<axum::Json<ContainerPlatform>>
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    let platform = ctx.container_platform().await?;
+    let max_image_bytes = ctx.max_container_image_bytes(&database).await?;
+    Ok(axum::Json(ContainerPlatform {
+        platform,
+        max_image_bytes,
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct ContainerImageParams {
+    image_id: String,
+}
+
+/// 200 if the database stores the image, or this node's Docker daemon has it; 404 otherwise.
+pub async fn container_image_head<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(ContainerImageParams { image_id }): Path<ContainerImageParams>,
+) -> axum::response::Result<StatusCode>
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    if !is_local_image_id(&image_id) {
+        let message = format!("`{image_id}` is not an image ID, like `sha256:<64 hex digits>`");
+        return Err(ContainerError::Invalid(message).into());
+    }
+    Ok(match has_container_image(&ctx, &database, &image_id).await? {
+        true => StatusCode::OK,
+        false => StatusCode::NOT_FOUND,
+    })
+}
+
+/// Store an image in the database: the gzipped output of `docker save`, at most
+/// [`NodeDelegate::max_container_image_bytes`]. Answers 201 if it was stored, and 200 if the
+/// database already had it.
+pub async fn container_image_put<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Path(ContainerImageParams { image_id }): Path<ContainerImageParams>,
+    body: Body,
+) -> axum::response::Result<StatusCode>
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    if !is_local_image_id(&image_id) {
+        let message = format!("`{image_id}` is not an image ID, like `sha256:<64 hex digits>`");
+        return Err(ContainerError::Invalid(message).into());
+    }
+    // Like the other container routes, answer 501 on a server without containers.
+    ctx.container_platform().await?;
+    let module = find_database_module(&ctx, &database).await?;
+    let db = module.relational_db().clone();
+    let stored = db
+        .with_read_only(Workload::Internal, |tx| container_image::contains(tx, &image_id))
+        .map_err(log_and_500)?;
+    if stored {
+        return Ok(StatusCode::OK);
+    }
+    let max = ctx.max_container_image_bytes(&database).await?;
+    let image = axum::body::to_bytes(body, usize::try_from(max).unwrap_or(usize::MAX))
+        .await
+        .map_err(|e| match e.into_inner().is::<http_body_util::LengthLimitError>() {
+            true => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!("the image must be at most {} MiB", max >> 20),
+            ),
+            false => (StatusCode::BAD_REQUEST, "unable to read the image".to_string()),
+        })?;
+    // Keep the image the container uses when deleting older ones.
+    let in_use = ctx
+        .get_container(&database.database_identity)
+        .await?
+        .map(|container| container.spec.image);
+    let stored = spacetimedb::util::asyncify(move || {
+        container_image::verify(&image, &image_id).map_err(ContainerError::Invalid)?;
+        let image = Vec::from(image).into_boxed_slice();
+        db.with_auto_commit(Workload::Internal, |tx| {
+            container_image::store(&db, tx, &image_id, image, Timestamp::now(), in_use.as_deref())
+        })
+        .map_err(|e| ContainerError::Internal(e.into()))
+    })
+    .await?;
+    Ok(match stored {
+        true => StatusCode::CREATED,
+        false => StatusCode::OK,
+    })
 }
 
 pub async fn container_delete<S>(
@@ -1774,6 +1905,12 @@ pub struct DatabaseRoutes<S> {
     pub container_start: MethodRouter<S>,
     /// POST: /database/:name_or_identity/container/stop
     pub container_stop: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/container/platform
+    pub container_platform_get: MethodRouter<S>,
+    /// HEAD: /database/:name_or_identity/container/image/:image_id
+    pub container_image_head: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/container/image/:image_id
+    pub container_image_put: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
@@ -1803,7 +1940,7 @@ where
     S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
-        use axum::routing::{any, delete, get, patch, post, put};
+        use axum::routing::{any, delete, get, head, patch, post, put};
         Self {
             root_post: post(publish::<S>),
             db_put: put(publish::<S>),
@@ -1824,6 +1961,9 @@ where
             container_delete: delete(container_delete::<S>),
             container_start: post(container_start::<S>),
             container_stop: post(container_stop::<S>),
+            container_platform_get: get(container_platform::<S>),
+            container_image_head: head(container_image_head::<S>),
+            container_image_put: put(container_image_put::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
             mcp_post: post(crate::routes::mcp::mcp::<S>),
@@ -1864,6 +2004,9 @@ where
             .route("/container", self.container_delete)
             .route("/container/start", self.container_start)
             .route("/container/stop", self.container_stop)
+            .route("/container/platform", self.container_platform_get)
+            .route("/container/image/:image_id", self.container_image_head)
+            .route("/container/image/:image_id", self.container_image_put)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
             .route("/mcp", self.mcp_post)
