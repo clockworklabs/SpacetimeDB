@@ -144,8 +144,9 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
     if (provider !== 'openrouter' && (pricing.input <= 0 || pricing.output <= 0)) {
       throw new Error(`${model}: input and output pricing must be positive`);
     }
-    if ((provider === 'openai' || provider === 'xai') && maxOutputTokens === undefined) {
-      throw new Error(`${model}: an output-token limit and source are required for ${provider === 'xai' ? 'Grok Build' : 'Codex'}`);
+    if ((provider === 'openai' || provider === 'xai' || provider === 'google') && maxOutputTokens === undefined) {
+      throw new Error(`${model}: an output-token limit and source are required for ${provider === 'xai' ? 'Grok Build'
+        : provider === 'google' ? 'Antigravity' : 'Codex'}`);
     }
     if (provider === 'openrouter' && (maxOutputTokens === undefined || !providerRoute)) {
       throw new Error(`${model}: OpenRouter needs a provider route and output-token limit`);

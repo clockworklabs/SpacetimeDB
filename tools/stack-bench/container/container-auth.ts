@@ -9,7 +9,7 @@ export const SUBSCRIPTION_TOKEN_ENVIRONMENT = 'CLAUDE_CODE_OAUTH_TOKEN';
 export const LEGACY_SUBSCRIPTION_TOKEN_TARGET = '/run/secrets/claude-code-oauth-token';
 
 export type ContainerAuth = {
-  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
+  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai' | 'google';
   upstream?: AnthropicUpstream;
   accountId?: string;
   mode: 'api-key' | 'subscription-token';
@@ -19,7 +19,7 @@ export type ContainerAuth = {
 type ReadTextFile = (path: PathLike | number, encoding: BufferEncoding) => string;
 
 export interface ResolveContainerAuthOptions {
-  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
+  provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai' | 'google';
   apiKey?: string;
   env?: NodeJS.ProcessEnv;
   credentialsPath?: string;
@@ -48,6 +48,10 @@ export function resolveContainerAuth({ provider = 'anthropic', apiKey = '', env 
     if (!exists(authFile)) throw new Error('GROK_AUTH_FILE does not exist');
     // run-build refreshes the sign-in before taking this snapshot for a session.
     return { provider, mode: 'subscription-token', credential: readGrokLogin(read(authFile, 'utf8')).token };
+  }
+  if (provider === 'google') {
+    if (!apiKey) throw new Error('Google requires a Gemini API key');
+    return { provider, mode: 'api-key', credential: apiKey };
   }
   if (provider === 'openrouter') {
     if (!apiKey) throw new Error('OpenRouter requires an API key');

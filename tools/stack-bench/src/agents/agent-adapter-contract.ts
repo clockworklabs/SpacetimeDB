@@ -130,7 +130,7 @@ export function validateProviderRoute(provider: string | null, route: unknown): 
 }
 
 export function validateProviderOutputLimit(provider: string | null, limit: unknown): number | undefined {
-  if (provider !== 'openrouter' && provider !== 'openai' && provider !== 'xai') {
+  if (provider !== 'openrouter' && provider !== 'openai' && provider !== 'xai' && provider !== 'google') {
     if (limit !== undefined) throw new Error('maxOutputTokens is only supported by the openrouter, codex and grok-build adapters');
     return undefined;
   }

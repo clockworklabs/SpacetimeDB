@@ -43,6 +43,13 @@ ENV GROK_DISABLE_AUTOUPDATER=1
 RUN curl -fsSL "https://x.ai/cli/grok-${GROK_VERSION}-linux-x86_64.gz" | gzip -dc > /usr/local/bin/grok \
     && echo "${GROK_SHA256}  /usr/local/bin/grok" | sha256sum -c - \
     && chmod 0755 /usr/local/bin/grok && grok --version
+# The release Google's installer resolves for linux_x64, checked against its manifest's SHA-512.
+ARG AGY_URL=https://storage.googleapis.com/antigravity-public/antigravity-cli/1.3.2-5813501495738368/linux-x64/cli_linux_x64.tar.gz
+ARG AGY_SHA512=8dc2bb8471cfa6326e29e2896add767ad2d1f3714304b70fbae720d68af011182e7afde43964a7a3f54c604ab72c4fad772c8595608b059cfc582fb6798a25d2
+RUN curl -fsSL "${AGY_URL}" -o /tmp/agy.tar.gz \
+    && echo "${AGY_SHA512}  /tmp/agy.tar.gz" | sha512sum -c - \
+    && tar -xzf /tmp/agy.tar.gz -C /tmp antigravity && install -m 0755 /tmp/antigravity /usr/local/bin/agy \
+    && rm /tmp/agy.tar.gz /tmp/antigravity && agy --version
 
 # The coding session can change the app and its own temporary state. It does
 # not run as root, so it cannot change the system or harness control files.

@@ -15,7 +15,7 @@ export const executionCredentialsSchema = z.object({
 export type ExecutionCredentials = z.infer<typeof executionCredentialsSchema>;
 export const assignmentSchema = z.object({
   id: label, version: label,
-  provider: z.enum(['anthropic', 'openai', 'openrouter', 'xai']),
+  provider: z.enum(['anthropic', 'openai', 'openrouter', 'xai', 'google']),
   mode: z.enum(['api-key', 'subscription-token']),
   // A maker's own Anthropic-compatible endpoint, for its models run in Claude Code.
   upstream: z.enum(ANTHROPIC_UPSTREAM_IDS).optional(),
@@ -24,7 +24,8 @@ export type CredentialAssignment = z.infer<typeof assignmentSchema>;
 const profileSchema = assignmentSchema.omit({ id: true }).extend({
   secretFile: z.string().refine(isAbsolute, 'secretFile must be absolute'),
 }).strict().refine(profile => profile.provider !== 'openrouter' || profile.mode === 'api-key',
-  'OpenRouter requires api-key mode').refine(profile => !profile.upstream
+  'OpenRouter requires api-key mode').refine(profile => profile.provider !== 'google' || profile.mode === 'api-key',
+  'Google requires api-key mode').refine(profile => !profile.upstream
   || (profile.provider === 'anthropic' && profile.mode === 'api-key'), 'only an Anthropic API key names an upstream');
 const PROFILE_FILE = 'STACK_BENCH_CREDENTIAL_PROFILES_FILE';
 const ASSIGNMENT = 'STACK_BENCH_CREDENTIAL_ASSIGNMENT';
@@ -34,6 +35,7 @@ const authenticationVariables = {
   openai: ['OPENAI_API_KEY', 'CODEX_AUTH'],
   openrouter: ['OPENROUTER_API_KEY'],
   xai: ['XAI_API_KEY', 'GROK_AUTH'],
+  google: ['GEMINI_API_KEY'],
 } as const;
 
 /** Public selection metadata. Never return credential paths or values to a client. */

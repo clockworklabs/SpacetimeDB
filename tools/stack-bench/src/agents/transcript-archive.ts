@@ -6,6 +6,7 @@ import { STACK_BENCH_ROOT } from '../package-root.js';
 import { stackBenchResultsRoot } from '../runtime/operational-paths.js';
 import { codexTranscriptDirectory } from './codex-protocol.js';
 import { grokTranscriptDirectory } from './grok-protocol.js';
+import { antigravityTranscriptDirectory } from './antigravity-protocol.js';
 
 function transcriptStoreFor(appDirectory: string, storeRoot: string): string | null {
   if (!existsSync(storeRoot)) return null;
@@ -26,7 +27,7 @@ function collectTranscripts(directory: string, recursive: boolean): string[] {
 export function transcriptDirectories(appDirectory: string,
   storeRoot = join(homedir(), '.claude', 'projects')): string[] {
   return [transcriptStoreFor(appDirectory, storeRoot), codexTranscriptDirectory(appDirectory),
-    grokTranscriptDirectory(appDirectory)]
+    grokTranscriptDirectory(appDirectory), antigravityTranscriptDirectory(appDirectory)]
     .filter((directory): directory is string => directory !== null && existsSync(directory));
 }
 

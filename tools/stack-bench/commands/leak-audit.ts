@@ -9,6 +9,7 @@ import { CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-polic
 import { transcriptDirectories } from '../src/agents/transcript-archive.js';
 import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
 import { GROK_AUDIT_TOOLS, grokTranscriptDirectory } from '../src/agents/grok-protocol.js';
+import { ANTIGRAVITY_AUDIT_TOOLS, antigravityTranscriptDirectory } from '../src/agents/antigravity-protocol.js';
 
 const norm = (value: unknown): string => String(value ?? '')
   .replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
@@ -147,9 +148,26 @@ function grokContent(part: TranscriptContent): TranscriptContent {
   return { ...part, name: tool.name, input: tool.path ? { ...part.input, file_path: input?.[tool.path] } : part.input };
 }
 
+// Antigravity reports each tool as a step that starts, then finishes or fails.
+function antigravityContent(step: Record<string, unknown>): TranscriptContent[] {
+  const info = step.tool_info as { name?: string; parameters?: Record<string, string | undefined>; output?: string } | undefined;
+  const tool = step.step_type === 'tool' ? ANTIGRAVITY_AUDIT_TOOLS[info?.name ?? ''] : undefined;
+  if (!tool) return [];
+  const id = `${String(step.conversation_id)}:${String(step.step_index)}`;
+  if (step.state === 'ACTIVE') {
+    const parameters = info?.parameters ?? {};
+    return [{ type: 'tool_use', id, name: tool.name,
+      input: tool.path ? { file_path: parameters[tool.path] } : { command: parameters.CommandLine } }];
+  }
+  return [{ type: 'tool_result', tool_use_id: id, is_error: step.state !== 'DONE' && !info?.output?.trim() }];
+}
+
 function transcriptContent(event: Record<string, unknown>): TranscriptContent[] {
   const message = event.message as { content?: TranscriptContent[] } | undefined;
   if (Array.isArray(message?.content)) return message.content.map(grokContent);
+  if (event.event === 'step_update' && event.step_update && typeof event.step_update === 'object') {
+    return antigravityContent(event.step_update as Record<string, unknown>);
+  }
   if (event.type !== 'item.started' && event.type !== 'item.completed') return [];
   const item = event.item as { id?: string; type?: string; command?: string;
     aggregated_output?: string; exit_code?: number; status?: string;
@@ -277,9 +295,10 @@ for (const root of roots) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       if (e.isDirectory()) {
-        // Codex and Grok native sessions are agent-writable; audit controller event logs only.
+        // Codex, Grok and Antigravity native sessions are agent-writable; audit controller event logs only.
         if (!/node_modules/.test(p) && root !== codexTranscriptDirectory(requestedApp)
-          && root !== grokTranscriptDirectory(requestedApp)) stack.push(p);
+          && root !== grokTranscriptDirectory(requestedApp)
+          && root !== antigravityTranscriptDirectory(requestedApp)) stack.push(p);
         continue;
       }
       if (!/\.jsonl$/.test(e.name)) continue;

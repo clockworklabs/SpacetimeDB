@@ -31,8 +31,8 @@ test('production framing follows every coding adapter but not model-free control
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const adapter = AGENT_ADAPTER_REGISTRY.get(id);
     const routed = adapter.provider === 'openrouter';
-    // Grok Build requests must declare the output cap the broker prices.
-    const capped = routed || adapter.provider === 'xai';
+    // Grok Build and Antigravity requests must declare the output cap the broker prices.
+    const capped = routed || adapter.provider === 'xai' || adapter.provider === 'google';
     const input = { ...request, pricing, maxBudgetUsd: 12.5,
       ...(routed ? { providerRoute: 'openai' } : {}), ...(capped ? { maxOutputTokens: 8192 } : {}) };
     const enabled = agentRequestArgv(adapter, { ...input, productionQuality: true });

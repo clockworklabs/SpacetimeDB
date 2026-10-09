@@ -201,6 +201,41 @@ test('Anthropic-compatible upstreams receive the request under their path with a
   }
 });
 
+// The CLI names the model in the path and sends the broker's token as its Gemini key.
+test('Google requests reach the selected model with the real key and only file, shell and task tools', async () => {
+  const path = '/v1beta/models/test-model:streamGenerateContent?alt=sse';
+  const tools = [{ functionDeclarations: ['view_file', 'run_command', 'search_web', 'invoke_subagent', 'ask_question']
+    .map(name => ({ name })) }];
+  await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {
+    const send_ = (to: string, body: Record<string, unknown>) => send(brokerPort, { path: to,
+      headers: { 'x-goog-api-key': sessionToken, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal((await send_(path, { contents: [], tools })).status, 200);
+    assert.equal(seen[0]!.url, path);
+    assert.equal(seen[0]!.headers['x-goog-api-key'], credential);
+    const forwarded = JSON.parse(seen[0]!.body);
+    assert.deepEqual(forwarded.tools[0].functionDeclarations.map((tool: { name: string }) => tool.name),
+      ['view_file', 'run_command']);
+    assert.equal(forwarded.generationConfig.maxOutputTokens, 4096);
+    // Another model, or a "title" call that is not one, never reaches Google.
+    assert.equal((await send_('/v1beta/models/other-model:streamGenerateContent?alt=sse', { contents: [] })).status, 404);
+    const title = '/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?alt=sse';
+    assert.equal((await send_(title, { contents: [], systemInstruction: { parts: [{ text: 'Write code.' }] } })).status, 400);
+    assert.equal((await send_(title, { contents: [],
+      systemInstruction: { parts: [{ text: 'You are a conversation title generator. Respond with a title.' }] } })).status, 200);
+    assert.equal(seen.length, 2);
+  }, { provider: 'google', upstreamBody: `data: ${JSON.stringify({ candidates: [],
+    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1, totalTokenCount: 11 } })}\r\n\r\n` });
+  const protocol = brokerProtocol({ provider: 'google', mode: 'api-key', credential: 'x'.repeat(16),
+    sessionToken: 'y'.repeat(16), model: 'test-model', maxOutputTokens: 4096 });
+  const events = [{ candidates: [{ content: { parts: [{ text: 'a' }] } }] },
+    { usageMetadata: { promptTokenCount: 1000, cachedContentTokenCount: 400, candidatesTokenCount: 50,
+      thoughtsTokenCount: 30, totalTokenCount: 1080 } }].map(event => `data: ${JSON.stringify(event)}\r\n\r\n`).join('');
+  assert.deepEqual(protocol.responseUsage(Buffer.from(events)), { input_tokens: 600, output_tokens: 80,
+    cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
+  assert.equal(protocol.requestPricing({ tools: [{ googleSearch: {} }] }).unpriced, 'hosted-tool');
+  assert.equal(brokerHostname({ provider: 'google', mode: 'api-key' }), 'generativelanguage.googleapis.com');
+});
+
 // Remote and file-backed content remains available; its extra input is unpriced.
 test('Anthropic forwards nested remote content and retains unpriced spend', async t => {
   for (const source of [{ type: 'url', url: 'https://example.test/content' },

@@ -262,3 +262,36 @@ test('a Grok Build stream is audited through its own tool names', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('an Antigravity stream is audited through its tool steps', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-antigravity-audit-'));
+  const id = '86eb1dda-1452-4d14-ab41-9afdc260bdd2';
+  const transcript = join(root, `${id}.events.jsonl`);
+  // The shapes agy 1.3.2 prints with --output-format stream-json: each tool starts, then ends.
+  const step = (index: number, state: string, name: string, parameters: Record<string, string>, output?: string) =>
+    ({ event: 'step_update', step_update: { conversation_id: id, step_index: index, state, step_type: 'tool',
+      tool_name: name, tool_info: { name, parameters, ...(output === undefined ? {} : { output }) } } });
+  try {
+    const events = [
+      { event: 'init', conversation_id: id, init: { model: 'gemini-3.8-flash', cwd: '/app' } },
+      step(2, 'ACTIVE', 'run_command', { CommandLine: 'cat /tools/stack-bench/grader/grade.ts' }),
+      step(2, 'DONE', 'run_command', { CommandLine: 'cat /tools/stack-bench/grader/grade.ts' }, 'x'),
+      step(3, 'ACTIVE', 'view_file', { AbsolutePath: '/outside/notes.md' }),
+      step(3, 'DONE', 'view_file', { AbsolutePath: '/outside/notes.md' }, 'x'),
+      step(4, 'ACTIVE', 'write_to_file', { TargetFile: '/app/src/app.ts' }),
+      step(4, 'DONE', 'write_to_file', { TargetFile: '/app/src/app.ts' }),
+      step(5, 'ACTIVE', 'view_file', { AbsolutePath: '/tools/stack-bench/tracks/spec.md' }),
+      step(5, 'ERROR', 'view_file', { AbsolutePath: '/tools/stack-bench/tracks/spec.md' }),
+      { event: 'result', result: { conversation_id: id, status: 'SUCCESS' } },
+    ];
+    writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+    const audit = auditTranscript(transcript, 'C:/host/app');
+    assert.equal(audit.cwd, '/app');
+    assert.deepEqual(audit.hits.map(hit => [hit.path, hit.via]), [
+      ['/tools/stack-bench/grader/grade.ts', 'Bash'], ['/outside/notes.md', 'Read']]);
+    assert.deepEqual(audit.refused.map(hit => [hit.path, hit.via]), [['/tools/stack-bench/tracks/spec.md', 'Read']]);
+    assert.equal(audit.fileTool, 3, 'the in-app write is a file tool use, not a hit');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

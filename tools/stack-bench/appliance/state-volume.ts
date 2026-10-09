@@ -75,6 +75,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_OPENAI_API_KEY_FILE=${root}/secrets/openai_api_key`,
     `STACK_BENCH_CODEX_AUTH_FILE=${root}/secrets/codex_auth`,
     `STACK_BENCH_GROK_AUTH_FILE=${root}/secrets/grok_auth`,
+    `STACK_BENCH_GEMINI_API_KEY_FILE=${root}/secrets/gemini_api_key`,
     'STACK_BENCH_RELEASE_MANIFEST=',
     '',
   ].join('\n');

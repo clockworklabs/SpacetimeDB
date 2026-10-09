@@ -9,9 +9,11 @@ import { runTranscriptAwareProcess } from '../src/agents/claude-terminal-recover
 import type { PricingRates } from '../src/evidence/pricing-authority.js';
 import { containerClaudeTranscriptReader } from './claude-transcript-reader.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
-import { validateClaudeNativeSession, validateCodexNativeSession, validateGrokNativeSession }
+import { validateAntigravityNativeSession, validateClaudeNativeSession, validateCodexNativeSession, validateGrokNativeSession }
   from '../src/agents/native-session-validation.js';
 import { grokArguments, grokTranscriptDirectory, parseGrokResult } from '../src/agents/grok-protocol.js';
+import { ANTIGRAVITY_LAUNCHER, antigravityArguments, antigravityTranscriptDirectory, parseAntigravityResult }
+  from '../src/agents/antigravity-protocol.js';
 
 type Invocation = { model: string; effort: string; baseUrl: string; resumeSession: string | null;
   maxBudgetUsd: string | null };
@@ -89,6 +91,29 @@ const grokProvider: CodingProvider = {
   },
 };
 
+// The CLI sends the broker's session token as its Gemini key, and the broker sends the real
+// key to Google. Its whole state directory persists between sessions so a session can resume.
+const googleProvider: CodingProvider = {
+  requiresBudget: true,
+  executable: 'sh', apiKeyEnvironment: 'GEMINI_API_KEY',
+  containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.gemini/antigravity-cli`,
+  tokenEnvironment: 'GEMINI_API_KEY',
+  environment: baseUrl => [`GOOGLE_GEMINI_BASE_URL=${baseUrl}`],
+  projects: appDir => join(antigravityTranscriptDirectory(appDir), 'state'),
+  rates: () => null,
+  args: options => ['-c', ANTIGRAVITY_LAUNCHER, 'agy', ...antigravityArguments(options)],
+  run: runCodexProcess,
+  validateContinuation: validateAntigravityNativeSession,
+  // The controller keeps the stream as the session's audited transcript, beside the
+  // agent-writable native state.
+  result: (stdout, appDir, invocationToken, prior) => {
+    const result = parseAntigravityResult(stdout, prior);
+    const name = typeof result.session_id === 'string' ? result.session_id : `interrupted-${invocationToken}`;
+    appendFileSync(join(antigravityTranscriptDirectory(appDir), `${name}.events.jsonl`), `${stdout}\n`, { mode: 0o600 });
+    return result;
+  },
+};
+
 export const CODING_PROVIDERS = {
   anthropic: {
     requiresBudget: false,
@@ -136,6 +161,7 @@ export const CODING_PROVIDERS = {
   openai: codexProvider,
   openrouter: { ...codexProvider, apiKeyEnvironment: 'OPENROUTER_API_KEY' },
   xai: grokProvider,
+  google: googleProvider,
 } satisfies Record<string, CodingProvider>;
 
 export type CodingProviderId = keyof typeof CODING_PROVIDERS;

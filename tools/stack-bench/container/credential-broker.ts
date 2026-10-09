@@ -62,7 +62,7 @@ function fail(message: string): never {
 
 function clientAuthorized(request: IncomingMessage, sessionToken: string): boolean {
   return request.headers.authorization === `Bearer ${sessionToken}`
-    || request.headers['x-api-key'] === sessionToken;
+    || request.headers['x-api-key'] === sessionToken || request.headers['x-goog-api-key'] === sessionToken;
 }
 
 function requestPath(value: string | undefined): string | null {

@@ -4,6 +4,7 @@ import { createParser } from 'eventsource-parser';
 import { ANTHROPIC_UPSTREAMS, firstUnpricedReason } from './credential-broker-accounting.js';
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
+import { ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS } from '../src/agents/antigravity-protocol.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 // Account Responses does not promise max_output_tokens. Reserve the documented
@@ -348,6 +349,7 @@ export function brokerHostname({ provider, mode, upstream }: Pick<BrokerConfig, 
   if (upstream) return ANTHROPIC_UPSTREAMS[upstream].hostname;
   if (!provider || provider === 'anthropic') return 'api.anthropic.com';
   if (provider === 'openrouter') return 'openrouter.ai';
+  if (provider === 'google') return 'generativelanguage.googleapis.com';
   if (provider === 'xai') return mode === 'subscription-token' ? 'cli-chat-proxy.grok.com' : 'api.x.ai';
   return mode === 'subscription-token' ? 'chatgpt.com' : 'api.openai.com';
 }
@@ -373,6 +375,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     responseUsage,
   };
   if (config.provider === 'xai') return grokProtocol(config);
+  if (config.provider === 'google') return googleProtocol(config);
   const router = config.provider === 'openrouter';
   if (router && (!/^[a-z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(config.model)
     || config.model.startsWith('openrouter/') || /(?:^|[-/])latest$/.test(config.model))) {
@@ -495,4 +498,88 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
     responseRejection: responsesRejection,
   };
+}
+
+// The Gemini API as the Antigravity CLI calls it with an API key; the model is in the path.
+// The CLI also titles each conversation on a small model, which is forwarded and priced at
+// the selected model's rates.
+function googleProtocol(config: BrokerConfig): BrokerProtocol {
+  const call = (model: string) => `/v1beta/models/${model}:streamGenerateContent`;
+  const title = call(ANTIGRAVITY_TITLE_MODEL);
+  return {
+    hostname: brokerHostname(config),
+    allowedPaths: new Set([call(config.model), title]),
+    upstreamPath: path => path,
+    billable: () => true,
+    headers: request => {
+      const headers = upstreamHeaders(request, config);
+      delete headers['x-api-key'];
+      delete headers.authorization;
+      headers['x-goog-api-key'] = config.credential;
+      return headers;
+    },
+    parseRequest: (body, path) => {
+      const payload: unknown = JSON.parse(body.toString('utf8'));
+      if (!isRecord(payload)) fail('request body must be an object');
+      if (path === title && (!JSON.stringify(payload.systemInstruction ?? '').includes(ANTIGRAVITY_TITLE_PROMPT)
+        || payload.tools !== undefined)) fail('request model does not match the selected model');
+      const generation = isRecord(payload.generationConfig) ? payload.generationConfig : {};
+      const limit = generation.maxOutputTokens;
+      if (limit !== undefined && (!Number.isSafeInteger(limit) || (limit as number) < 1
+        || (limit as number) > config.maxOutputTokens)) fail('invalid maxOutputTokens');
+      payload.generationConfig = { ...generation, maxOutputTokens: limit ?? config.maxOutputTokens };
+      // The CLI cannot remove a tool, so only the file, shell and task functions reach the model.
+      if (Array.isArray(payload.tools)) payload.tools = payload.tools.map(tool => isRecord(tool)
+        && Array.isArray(tool.functionDeclarations) ? { ...tool, functionDeclarations: tool.functionDeclarations
+          .filter(declaration => isRecord(declaration) && ANTIGRAVITY_TOOLS.includes(String(declaration.name))) } : tool);
+      return payload;
+    },
+    requestPricing: payload => {
+      const unpriced = firstUnpricedReason(
+        Array.isArray(payload.tools) && payload.tools.some(tool => !isRecord(tool)
+          || Object.keys(tool).some(key => key !== 'functionDeclarations')) ? 'hosted-tool' : null,
+        payload.cachedContent !== undefined ? 'stored-context' : null,
+        JSON.stringify(payload.contents ?? []).includes('"fileData"') ? 'unpriced-input' : null,
+        payload.serviceTier !== undefined && payload.serviceTier !== 'standard' ? 'service-tier' : null);
+      return { unpriced, requiresUsage: null, bounded: unpriced === null };
+    },
+    outputLimit: payload => {
+      const generation = isRecord(payload.generationConfig) ? payload.generationConfig : {};
+      const thinking = isRecord(generation.thinkingConfig) ? generation.thinkingConfig.thinkingBudget : 0;
+      return (generation.maxOutputTokens as number)
+        + (typeof thinking === 'number' && thinking > 0 ? thinking : 0);
+    },
+    responseUsage: googleUsage,
+  };
+}
+
+// The last streamed chunk carries the call's usage. Prompt tokens include cache reads;
+// thinking is billed as output.
+function googleUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null {
+  let usage: JsonRecord | null = null;
+  let failed = false;
+  const accept = (value: unknown): void => {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (!isRecord(item)) continue;
+      if (isRecord(item.error)) failed = true;
+      if (isRecord(item.usageMetadata)) usage = item.usageMetadata;
+    }
+  };
+  try {
+    const text = decodedResponseBody(body, encoding).toString('utf8');
+    try { accept(JSON.parse(text)); }
+    catch {
+      const parser = createParser({ maxBufferSize: MAX_REQUEST_BYTES, onError: () => { failed = true; },
+        onEvent: ({ data }) => { try { accept(JSON.parse(data)); } catch { failed = true; } } });
+      parser.feed(`${text}\n\n`);
+    }
+  } catch { return null; }
+  const final = usage as JsonRecord | null;
+  if (failed || !final) return null;
+  const prompt = final.promptTokenCount, cached = final.cachedContentTokenCount ?? 0;
+  const output = final.candidatesTokenCount ?? 0, thinking = final.thoughtsTokenCount ?? 0;
+  if (![prompt, cached, output, thinking].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+    || (cached as number) > (prompt as number)) return null;
+  return { input_tokens: (prompt as number) - (cached as number), output_tokens: (output as number) + (thinking as number),
+    cache_read_input_tokens: cached, cache_creation_input_tokens: 0 };
 }

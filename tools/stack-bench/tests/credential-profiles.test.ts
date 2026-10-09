@@ -140,3 +140,21 @@ test('an upstream profile is an Anthropic API key, pinned with its endpoint', ()
     assert.throws(() => readPinnedExecutionCredential(selected.env), /changed after admission/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a Google profile is a Gemini API key', () => {
+  const root = mkdtempSync(join(tmpdir(), 'credential-profiles-'));
+  try {
+    const secretFile = join(root, 'secret');
+    const registry = join(root, 'profiles.json');
+    writeFileSync(secretFile, 'SYNTHETIC_SECRET_GEMINI');
+    writeFileSync(registry, JSON.stringify({
+      gemini: { provider: 'google', mode: 'api-key', secretFile, version: 'v1' },
+      account: { provider: 'google', mode: 'subscription-token', secretFile, version: 'v1' } }));
+    const source = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry };
+    const selected = resolveExecutionCredentials('antigravity', 'a', { default: 'gemini' }, source);
+    assert.equal(selected.env.GEMINI_API_KEY_FILE, secretFile);
+    assert.deepEqual(resolveContainerAuth({ provider: 'google', env: selected.env }),
+      { provider: 'google', mode: 'api-key', credential: 'SYNTHETIC_SECRET_GEMINI' });
+    assert.throws(() => resolveExecutionCredentials('antigravity', 'a', { default: 'account' }, source), /invalid/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

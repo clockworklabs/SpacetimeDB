@@ -188,3 +188,14 @@ export function validateGrokNativeSession(directory: string, sessionId: string, 
     throw new Error('Native Grok session does not match the selected session and model');
   }
 }
+
+// The CLI keeps a conversation as a database plus a transcript directory. It records the
+// model only by display name; the broker refuses any other model on a resumed session.
+export function validateAntigravityNativeSession(directory: string, sessionId: string): void {
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) throw new Error('Native Antigravity session ID is invalid');
+  for (const path of [join(directory, 'conversations', `${sessionId}.db`), join(directory, 'brain', sessionId)]) {
+    let entry;
+    try { entry = lstatSync(path); } catch { throw new Error('Native Antigravity session is missing'); }
+    if (entry.isSymbolicLink()) throw new Error('Native session contains a symbolic link');
+  }
+}
