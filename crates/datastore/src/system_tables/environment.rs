@@ -34,9 +34,10 @@ pub(crate) fn st_env_schema() -> TableSchema {
     st_schema(ST_ENV_NAME, ST_ENV_ID)
 }
 /// Module code must use env_get even when it guesses numeric identifiers.
+/// Container images are stored and checked by the container API only.
 pub fn is_module_restricted_table(table: TableId) -> bool {
-    table == ST_ENV_ID
+    table == ST_ENV_ID || table == ST_CONTAINER_IMAGE_ID
 }
 pub fn is_module_restricted_index(index: IndexId) -> bool {
-    index == IndexId(30)
+    index == IndexId(30) || index == IndexId(38)
 }

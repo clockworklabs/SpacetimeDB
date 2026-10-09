@@ -1,3 +1,4 @@
+pub mod container_image;
 pub mod environment;
 
 pub mod persistence {
