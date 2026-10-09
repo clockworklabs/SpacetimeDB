@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use spacetimedb::auth::identity::ContainerClaim;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb_client_api::auth::LOCALHOST;
-use spacetimedb_lib::container::ContainerSpec;
+use spacetimedb_lib::container::{ContainerSpec, ContainerState};
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::Hash;
 use tempfile::TempDir;
@@ -207,9 +207,11 @@ fn test_container_generations() -> anyhow::Result<()> {
     assert_eq!(state(), Some((3, true)));
     assert!(current(3) && !current(2));
 
-    // So do replacing a running container's spec and resetting its database.
+    // So do replacing a running container's spec and resetting its database,
+    // which stops the container and starts it again once the new replica runs.
     cdb.set_container(id, &ALICE, spec("c"))?;
-    cdb.restart_container(id)?;
+    cdb.set_container_running(id, false)?;
+    cdb.set_container_running(id, true)?;
     assert_eq!(state(), Some((5, true)));
     assert!(current(5) && !current(4));
 
@@ -233,5 +235,49 @@ fn test_container_generations() -> anyhow::Result<()> {
     cdb.set_container(id, &ALICE, spec("a"))?;
     assert_eq!(cdb.get_container(id)?.map(|c| c.generation), Some(7));
     assert!(current(7) && !current(6));
+    Ok(())
+}
+
+#[test]
+fn test_container_status_reports() -> anyhow::Result<()> {
+    let tmp = TempDir::with_prefix("container")?;
+    let cdb = ControlDb::at(tmp.path())?;
+    let id = cdb.insert_database(Database {
+        id: 0,
+        database_identity: *ALICE,
+        owner_identity: *BOB,
+        host_type: HostType::Wasm,
+        initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
+    })?;
+    let spec = Some(ContainerSpec {
+        image: format!("a@sha256:{}", "a".repeat(64)),
+        command: None,
+        env_keys: vec![],
+        resources: Default::default(),
+        ports: vec![],
+        restart: Default::default(),
+    });
+    let state = || cdb.get_container(id).unwrap().and_then(|c| c.state);
+    let running = || -> Vec<_> {
+        let running = cdb.running_containers().unwrap();
+        running.into_iter().map(|(db, c)| (db.id, c.generation)).collect()
+    };
+
+    // A container whose database is gone is not listed.
+    cdb.set_container(id, &ALICE, spec.clone())?;
+    cdb.set_container(id + 1, &ALICE, spec.clone())?;
+    assert_eq!(running(), [(id, 1)]);
+
+    // Only reports for the current generation are recorded.
+    cdb.set_container_status(id, 1, ContainerState::Running)?;
+    cdb.set_container_status(id, 0, ContainerState::Exited(1))?;
+    assert_eq!(state(), Some(ContainerState::Running));
+
+    // A stopped container is not listed, and reports for it are dropped.
+    cdb.set_container_running(id, false)?;
+    assert_eq!(running(), []);
+    cdb.set_container_status(id, 1, ContainerState::Exited(0))?;
+    assert_eq!(state(), None);
     Ok(())
 }

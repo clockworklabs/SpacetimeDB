@@ -749,7 +749,8 @@ where
 {
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
-    spec.validate().map_err(ContainerError::Invalid)?;
+    spec.validate_with(ctx.accepts_local_container_images())
+        .map_err(ContainerError::Invalid)?;
     ctx.set_container(&auth.claims.identity, &database.database_identity, Some(spec))
         .await?;
     Ok(())

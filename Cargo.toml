@@ -10,6 +10,7 @@ members = [
   "crates/client-api",
   "crates/client-api-messages",
   "crates/commitlog",
+  "crates/container-supervisor",
   "crates/core",
   "crates/data-structures",
   "crates/datastore",
@@ -167,6 +168,7 @@ spacetimedb-client-api = { path = "crates/client-api", version = "=2.12.0" }
 spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=2.12.0" }
 spacetimedb-codegen = { path = "crates/codegen", version = "=2.12.0" }
 spacetimedb-commitlog = { path = "crates/commitlog", version = "=2.12.0" }
+spacetimedb-container-supervisor = { path = "crates/container-supervisor", version = "=2.12.0" }
 spacetimedb-core = { path = "crates/core", version = "=2.12.0" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.12.0" }
 spacetimedb-datastore = { path = "crates/datastore", version = "=2.12.0" }
@@ -212,6 +214,7 @@ base64 = "0.21.2"
 bigdecimal = "0.4.7"
 bitflags = "2.3.3"
 blake3 = "1.5.1"
+bollard = "0.21.1"
 brotli = "3.5"
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
 bytes = "1.10.1"
