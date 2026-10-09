@@ -10,6 +10,8 @@ pub const ST_INBOUND_STREAM_ID: TableId = TableId(24);
 pub const ST_INBOUND_STREAM_NAME: &str = "st_inbound_stream";
 pub const ST_INBOUND_MSG_ID: TableId = TableId(25);
 pub const ST_INBOUND_MSG_NAME: &str = "st_inbound_msg";
+pub const ST_OUTBOX_ID: TableId = TableId(26);
+pub const ST_OUTBOX_NAME: &str = "st_outbox";
 
 /// Initial next sequence number for a newly-created outbound IDC stream.
 pub const INITIAL_OUTBOUND_STREAM_NEXT_SEQ: u64 = 1;
@@ -46,6 +48,15 @@ st_fields_enum!(enum StInboundMsgFields {
     "seq", Seq = 2,
     "result_status", ResultStatus = 3,
     "result_payload", ResultPayload = 4,
+});
+
+st_fields_enum!(enum StOutboxFields {
+    "table_id", TableId = 0,
+    "remote_reducer", RemoteReducer = 1,
+    "target_column", TargetColumn = 2,
+    "arg_columns", ArgColumns = 3,
+    "on_result_reducer", OnResultReducer = 4,
+    "signature_hash", SignatureHash = 5,
 });
 
 /// System Table [ST_OUTBOUND_STREAM_NAME]
@@ -207,6 +218,63 @@ impl From<StInboundMsgRow> for ProductValue {
     }
 }
 
+/// System Table [ST_OUTBOX_NAME]
+/// IDC outbox metadata for user tables.
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StOutboxRow {
+    /// User table this outbox metadata belongs to.
+    pub table_id: TableId,
+    /// Reducer to invoke on the receiver database.
+    pub remote_reducer: NamespacedIdentifier,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
+    /// Columns to encode as reducer arguments.
+    pub arg_columns: Vec<ColId>,
+    /// Local reducer to invoke with the remote result.
+    pub on_result_reducer: Option<NamespacedIdentifier>,
+    /// Receiver reducer signature hash as seen by sender bindings.
+    pub signature_hash: String,
+}
+
+impl TryFrom<RowRef<'_>> for StOutboxRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StOutboxRow> for ProductValue {
+    fn from(row: StOutboxRow) -> Self {
+        to_product_value(&row)
+    }
+}
+
+impl From<(TableId, OutboxSchema)> for StOutboxRow {
+    fn from((table_id, outbox): (TableId, OutboxSchema)) -> Self {
+        Self {
+            table_id,
+            remote_reducer: outbox.remote_reducer.into(),
+            target_column: outbox.target_column,
+            arg_columns: outbox.arg_columns,
+            on_result_reducer: outbox.on_result_reducer.map(Into::into),
+            signature_hash: outbox.signature_hash,
+        }
+    }
+}
+
+impl From<StOutboxRow> for OutboxSchema {
+    fn from(row: StOutboxRow) -> Self {
+        Self {
+            remote_reducer: ReducerName::new(row.remote_reducer),
+            target_column: row.target_column,
+            arg_columns: row.arg_columns,
+            on_result_reducer: row.on_result_reducer.map(ReducerName::new),
+            signature_hash: row.signature_hash,
+        }
+    }
+}
+
 pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
     let outbound_stream_type = builder.add_type::<StOutboundStreamRow>();
     let outbound_stream_cols = [
@@ -276,6 +344,18 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
         .with_access(v9::TableAccess::Private)
         .with_unique_constraint(inbound_msg_cols)
         .with_index_no_accessor_name(btree(inbound_msg_cols));
+
+    let outbox_type = builder.add_type::<StOutboxRow>();
+    builder
+        .build_table(
+            ST_OUTBOX_NAME,
+            *outbox_type.as_ref().expect("system row must be a product"),
+        )
+        .with_type(TableType::System)
+        .with_access(v9::TableAccess::Private)
+        .with_primary_key(StOutboxFields::TableId)
+        .with_unique_constraint(StOutboxFields::TableId)
+        .with_index_no_accessor_name(btree(StOutboxFields::TableId));
 }
 
 pub(crate) fn st_outbound_stream_schema() -> TableSchema {
@@ -292,4 +372,8 @@ pub(crate) fn st_inbound_stream_schema() -> TableSchema {
 
 pub(crate) fn st_inbound_msg_schema() -> TableSchema {
     st_schema(ST_INBOUND_MSG_NAME, ST_INBOUND_MSG_ID)
+}
+
+pub(crate) fn st_outbox_schema() -> TableSchema {
+    st_schema(ST_OUTBOX_NAME, ST_OUTBOX_ID)
 }

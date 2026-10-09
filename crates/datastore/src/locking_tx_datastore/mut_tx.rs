@@ -23,12 +23,13 @@ use crate::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
         StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields, StOutboundMsgRow,
-        StOutboundStreamFields, StOutboundStreamRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
-        StTableFields, StTableRow, SystemTable, INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ,
-        ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID,
-        ST_INDEX_ID, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StRowLevelSecurityFields,
+        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
+        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
+        INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID,
+        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID,
+        ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -926,6 +927,7 @@ impl MutTxId {
 
         let schedule = table_schema.schedule.clone();
         let is_event = table_schema.is_event;
+        let outbox = table_schema.outbox.clone();
         let mut schema_internal = table_schema;
         // Extract all indexes, constraints, and sequences from the schema.
         // We will add them back later with correct ids.
@@ -959,6 +961,10 @@ impl MutTxId {
         if is_event {
             let row = StEventTableRow { table_id };
             self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+        }
+
+        if let Some(outbox) = outbox {
+            self.insert_st_outbox(table_id, outbox)?;
         }
 
         // Create the indexes for the table.
@@ -1218,6 +1224,15 @@ impl MutTxId {
         self.delete_col_eq(ST_VIEW_SUB_ID, StViewSubFields::ViewId.col_id(), &view_id.into())
     }
 
+    fn insert_st_outbox(&mut self, table_id: TableId, outbox: OutboxSchema) -> Result<()> {
+        self.insert_via_serialize_bsatn(ST_OUTBOX_ID, &StOutboxRow::from((table_id, outbox)))?;
+        Ok(())
+    }
+
+    fn drop_st_outbox(&mut self, table_id: TableId) -> Result<()> {
+        self.delete_col_eq(ST_OUTBOX_ID, StOutboxFields::TableId.col_id(), &table_id.into())
+    }
+
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
         self.clear_table(table_id)?;
 
@@ -1256,6 +1271,10 @@ impl MutTxId {
                 StEventTableFields::TableId.col_id(),
                 &table_id.into(),
             )?;
+        }
+
+        if schema.outbox.is_some() {
+            self.drop_st_outbox(table_id)?;
         }
 
         // Delete the table from memory, both in the tx an committed states.
@@ -1413,11 +1432,17 @@ impl MutTxId {
     pub(crate) fn alter_table_outbox(&mut self, table_id: TableId, outbox: Option<OutboxSchema>) -> Result<()> {
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         let old_outbox = tx_table.get_schema().outbox.clone();
+        let new_outbox = outbox.clone();
 
         tx_table.set_outbox(outbox.clone());
         commit_table.set_outbox(outbox);
 
         self.push_schema_change(PendingSchemaChange::TableAlterOutbox(table_id, old_outbox));
+
+        self.drop_st_outbox(table_id)?;
+        if let Some(outbox) = new_outbox {
+            self.insert_st_outbox(table_id, outbox)?;
+        }
 
         Ok(())
     }
