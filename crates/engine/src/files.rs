@@ -1365,7 +1365,7 @@ mod tests {
         let stdb = TestDB::durable_with_files()?;
         let rt = stdb.runtime().expect("durable").clone();
         wait_for_snapshot(&stdb, &rt, 1);
-        let objects = std::path::PathBuf::from(stdb.path().expect("durable").files().0).join("objects");
+        let objects = stdb.path().expect("durable").files().0.join("objects");
         let set_writable = |writable: bool| {
             let mode = if writable { 0o755 } else { 0o555 };
             std::fs::set_permissions(&objects, std::fs::Permissions::from_mode(mode))

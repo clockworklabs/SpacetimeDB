@@ -42,6 +42,35 @@ pub struct CommitlogConfig {
     pub write_buffer_size: Option<NonZeroUsize>,
 }
 
+/// Where a database keeps the bytes of its files, exposed through server config as `[file-store]`.
+///
+/// By default they live in the replica directory. With `[file-store.s3]`, they live in an
+/// S3-compatible bucket instead, under `{prefix}{database identity}/`.
+#[derive(Clone, Debug, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct FileStoreConfig {
+    pub s3: Option<S3FileStoreConfig>,
+}
+
+/// An S3-compatible bucket for file bytes.
+#[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct S3FileStoreConfig {
+    pub endpoint: String,
+    #[serde(default = "default_region")]
+    pub region: String,
+    pub bucket: String,
+    #[serde(default)]
+    pub prefix: String,
+    /// Omit both to send unsigned requests, for a local server that accepts them.
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+}
+
+fn default_region() -> String {
+    "us-east-1".into()
+}
+
 impl DurabilityConfig {
     fn into_options(self) -> spacetimedb_durability::local::Options {
         let mut opts = spacetimedb_durability::local::Options::default();
@@ -220,6 +249,7 @@ pub trait PersistenceProvider: Send + Sync {
 pub struct LocalPersistenceProvider {
     data_dir: Arc<ServerDataDir>,
     durability: DurabilityConfig,
+    file_store: FileStoreConfig,
 }
 
 impl LocalPersistenceProvider {
@@ -227,7 +257,13 @@ impl LocalPersistenceProvider {
         Self {
             data_dir: data_dir.into(),
             durability: DurabilityConfig::default(),
+            file_store: FileStoreConfig::default(),
         }
+    }
+
+    pub fn with_file_store_config(mut self, file_store: FileStoreConfig) -> Self {
+        self.file_store = file_store;
+        self
     }
 
     pub fn with_durability_config(mut self, durability: DurabilityConfig) -> Self {
@@ -267,11 +303,32 @@ impl PersistenceProvider for LocalPersistenceProvider {
         ));
 
         let files_dir = replica_dir_for_files.files();
-        let store = asyncify(&runtime, move || {
-            spacetimedb_file_store::LocalFileStore::open(files_dir.0)
-        })
-        .await?;
-        let files = DatabaseFiles::new(Arc::new(store), runtime.clone());
+        let store: Arc<dyn spacetimedb_file_store::FileStore> = match self.file_store.s3.clone() {
+            None => Arc::new(
+                asyncify(&runtime, move || {
+                    spacetimedb_file_store::LocalFileStore::open(files_dir.0)
+                })
+                .await?,
+            ),
+            Some(s3) => {
+                let config = spacetimedb_file_store::S3Config {
+                    endpoint: s3.endpoint,
+                    region: s3.region,
+                    bucket: s3.bucket,
+                    prefix: format!("{}{}/", s3.prefix, database_identity.to_hex()),
+                    credentials: s3.access_key_id.zip(s3.secret_access_key),
+                };
+                // Uploads are spooled and hashed locally before they go to the bucket.
+                let spools = files_dir.0.join("spools");
+                Arc::new(
+                    asyncify(&runtime, move || {
+                        spacetimedb_file_store::S3FileStore::open(config, spools)
+                    })
+                    .await?,
+                )
+            }
+        };
+        let files = DatabaseFiles::new(store, runtime.clone());
 
         Ok(Persistence {
             durability,

@@ -153,6 +153,14 @@ impl SpacetimeDbGuard {
         _data_dir_handle: Option<tempfile::TempDir>,
     ) -> Self {
         let spawn_id = next_spawn_id();
+        // Lets a run point every server at extra configuration, such as an S3 bucket for file storage.
+        if let Some(config) = env::var_os("SPACETIMEDB_SMOKETEST_SERVER_CONFIG") {
+            let config_path = data_dir.join("config.toml");
+            if !config_path.exists() {
+                std::fs::create_dir_all(&data_dir).expect("failed to create the data directory");
+                std::fs::write(&config_path, config.as_encoded_bytes()).expect("failed to write config.toml");
+            }
+        }
         let (child, logs, host_url, reader_threads) =
             Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli);
         SpacetimeDbGuard {

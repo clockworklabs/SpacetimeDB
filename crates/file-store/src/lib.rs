@@ -24,6 +24,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
+#[cfg(feature = "s3")]
+mod s3;
+#[cfg(feature = "s3")]
+pub use s3::{S3Config, S3FileStore};
+
 pub type ByteStream = Pin<Box<dyn Stream<Item = io::Result<Bytes>> + Send>>;
 
 /// An object in a [`FileStore`].
