@@ -1356,6 +1356,61 @@ mod tests {
         Ok(())
     }
 
+    /// A file whose upload never finished before a restart is persisted from its staged bytes
+    /// when the database reopens, and stays hidden from confirmed reads until it is.
+    #[cfg(unix)]
+    #[test]
+    fn staged_files_survive_a_restart_before_they_are_persisted() -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let stdb = TestDB::durable_with_files()?;
+        let rt = stdb.runtime().expect("durable").clone();
+        wait_for_snapshot(&stdb, &rt, 1);
+        let objects = std::path::PathBuf::from(stdb.path().expect("durable").files().0).join("objects");
+        let set_writable = |writable: bool| {
+            let mode = if writable { 0o755 } else { 0o555 };
+            std::fs::set_permissions(&objects, std::fs::Permissions::from_mode(mode))
+        };
+
+        // The store refuses writes, so the upload keeps failing.
+        set_writable(false)?;
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let file_ref = create_file(&mut tx, b"survives a restart", None, Timestamp::now())?;
+        let (offset, ..) = stdb.commit_tx(tx)?.expect("consumes an offset");
+        std::thread::sleep(Duration::from_millis(300));
+        let confirmed = stdb.durable_tx_offset().expect("durable").last_seen();
+        assert!(
+            confirmed < Some(offset),
+            "confirmed {confirmed:?} before the file was persisted"
+        );
+
+        // Restart. The transaction is durable in the log, and its bytes with it.
+        let stdb = stdb.reopen();
+        set_writable(true)?;
+        let stdb = stdb?;
+        let rt = stdb.runtime().expect("durable").clone();
+        rt.block_on(async {
+            let mut confirmed = stdb.durable_tx_offset().expect("durable");
+            tokio::time::timeout(Duration::from_secs(10), confirmed.wait_for(offset)).await
+        })??;
+        let files = stdb.files().expect("files are enabled").clone();
+        let hash = content_hash(b"survives a restart");
+        assert_eq!(rt.block_on(files.store().size(&hash))?, Some(18));
+        let row = stdb.with_read_only(Workload::ForTests, |tx| live_file_row_for_ref(tx, file_ref))?;
+        assert!(row.is_some(), "the file's record survived the restart");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while stdb
+            .with_read_only(Workload::ForTests, |tx| staged_bytes(tx, hash))?
+            .is_some()
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the staged row was never cleaned up"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        Ok(())
+    }
+
     #[test]
     fn copying_shares_bytes_and_deleting_keeps_them() -> anyhow::Result<()> {
         let stdb = TestDB::durable_with_files()?;
