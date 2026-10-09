@@ -69,12 +69,14 @@ pub enum ClientDisconnectCause {
     WebsocketStreamEnded,
     /// A newer connection for the same client session superseded this one.
     ConnectionSuperseded,
+    /// The connection authenticated with a container credential whose generation was superseded.
+    ContainerCredentialRevoked,
     /// The accepted websocket actor ended without a more specific recorded cause.
     Unknown,
 }
 
 impl ClientDisconnectCause {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::ClientClose,
         Self::IdleTimeout,
         Self::IncomingQueueFull,
@@ -97,6 +99,7 @@ impl ClientDisconnectCause {
         Self::WebsocketSendError,
         Self::WebsocketStreamEnded,
         Self::ConnectionSuperseded,
+        Self::ContainerCredentialRevoked,
         Self::Unknown,
     ];
 
@@ -124,6 +127,7 @@ impl ClientDisconnectCause {
             Self::WebsocketSendError => "websocket_send_error",
             Self::WebsocketStreamEnded => "websocket_stream_ended",
             Self::ConnectionSuperseded => "connection_superseded",
+            Self::ContainerCredentialRevoked => "container_credential_revoked",
             Self::Unknown => "unknown",
         }
     }
