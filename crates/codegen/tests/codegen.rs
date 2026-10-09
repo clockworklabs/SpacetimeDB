@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, generate_rust_module_bindings, CodegenOptions, Csharp, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -38,6 +38,40 @@ declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
     test_codegen_typescript => TypeScript,
     test_codegen_rust => Rust,
+}
+
+#[test]
+fn test_codegen_rust_module_bindings() {
+    let module = compiled_module();
+    let outfiles = generate_rust_module_bindings(module)
+        .into_iter()
+        .map(|f| (f.filename, f.code))
+        .collect::<HashMap<_, _>>();
+
+    assert!(outfiles.contains_key("repeating_test_arg_type.rs"));
+    assert!(outfiles.contains_key("nonrepeating_test_arg_type.rs"));
+    assert!(!outfiles.keys().any(|filename| filename.ends_with("_reducer.rs")));
+    assert!(!outfiles.keys().any(|filename| filename.ends_with("_procedure.rs")));
+
+    let root = outfiles
+        .get("lib.rs")
+        .expect("rust module bindings should emit a root lib.rs");
+
+    assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
+    assert!(root.contains("pub struct add;"));
+    assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
+    assert!(root.contains("const NAME: &'static str = \"add\";"));
+    assert!(root.contains("const ARG_NAMES: &'static [&'static str] = &[\"name\", \"age\"];"));
+    assert!(root.contains(
+        "const SIGNATURE_HASH: &'static str = \"26d5229326c3d7b333fe52bafde649dba62ece7f3c1951edfd9982c82ffbf853\";"
+    ));
+    assert!(!root.contains("pub struct init;"));
+    assert!(!root.contains("pub struct client_connected;"));
+    assert!(!root.contains("sleep_one_second"));
+    assert!(!root.contains("RemoteProcedures"));
+    assert!(!root.contains("DbConnection"));
+
+    insta::assert_snapshot!(root);
 }
 
 #[test]
