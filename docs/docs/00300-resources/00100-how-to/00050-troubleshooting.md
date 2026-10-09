@@ -22,6 +22,29 @@ spacetime login
 `spacetime logout` will discard your previous server-issued token, resulting in you no longer being able to manage any databases you previously published owned by that identity. If you still need access to the server-issued token, view it with `spacetime login show --token` and save it. You can then log back in with that token using `spacetime login --token`.
 :::
 
+### Lost access to a local database after `spacetime login`
+
+If commands like `spacetime publish`, `spacetime call` or `spacetime delete` stop working for a local database after you ran `spacetime login`, the database is probably owned by a server-issued identity that the login replaced.
+
+This happens when you publish to a local server before logging in. If the CLI has no token and doesn't log you in with spacetimedb.com (for example because you passed `-y`), it logs in directly to the local server instead and prints:
+
+```
+We have logged in directly to your target server.
+WARNING: This login will NOT work for any other servers.
+```
+
+The database you publish is then owned by that server-issued identity. The CLI keeps only one login. A later `spacetime login` discards the server-issued token as soon as it starts, without asking and before you finish logging in, and the new identity isn't the database's owner.
+
+To avoid this, run `spacetime login` before you publish anything. A GitHub or Google login works with any SpacetimeDB server, including your local one and Maincloud, so one login can own your local and Maincloud databases.
+
+If you have already published with a server-issued identity and want to switch to your spacetimedb.com login:
+
+1. Save the server-issued token: `spacetime login show --token`.
+2. Run `spacetime login`.
+3. To manage the old database, log back in with the saved token (`spacetime login --token <token>`), or delete the database while logged in with it and publish it again with your spacetimedb.com login. Deleting a database deletes its data.
+
+If the server-issued token is already gone, it can't be recovered. Publish the module again under a new database name.
+
 ### Client connection rejected
 
 If SpacetimeDB rejects connections from your application's client, it's most likely because you're supplying a token that was issued by a different SpacetimeDB server, or has expired. Clear the invalid token:
