@@ -481,7 +481,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .await?;
         let stored = self.program_store.put(&program.bytes).await?;
         anyhow::ensure!(stored == program.hash, "stored reset program changed");
-        self.control_db.restart_container(database.id)?;
+        // A running container stops while the replica is replaced, and starts again under a new
+        // generation once the new replica runs, so that it never starts with the old environment.
+        let container_running = self.control_db.get_container(previous.id)?.is_some_and(|c| c.running);
+        if container_running {
+            self.control_db.set_container_running(previous.id, false)?;
+        }
         let previous_replicas = self.control_db.get_replicas_by_database(database.id)?;
         for replica in &previous_replicas {
             self.on_delete_replica(replica.id).await?;
@@ -493,6 +498,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             &previous_replicas,
         )?;
         self.on_insert_replica(&replica).await?;
+        if container_running {
+            self.control_db.set_container_running(previous.id, true)?;
+        }
         Ok(())
     }
 
