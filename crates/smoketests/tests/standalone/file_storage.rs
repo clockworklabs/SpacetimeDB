@@ -262,3 +262,64 @@ fn test_file_storage() {
     let staged = test.sql("SELECT content_hash FROM st_file_staged").unwrap();
     assert!(!Regex::new("[0-9]{10,}").unwrap().is_match(&staged), "{staged}");
 }
+
+const VIEW_MODULE_CODE: &str = r#"
+use spacetimedb::{AnonymousViewContext, FileId, ReducerContext, SpacetimeType, Table, UploadRequest};
+
+#[spacetimedb::table(accessor = upload_log, public)]
+pub struct UploadLog {
+    #[primary_key]
+    file: FileId,
+    /// Always 0, so views can scan the table through an index.
+    #[index(btree)]
+    kind: u8,
+}
+
+#[derive(SpacetimeType)]
+pub struct UploadedFile {
+    size: u64,
+    content_type: Option<String>,
+}
+
+#[spacetimedb::reducer]
+pub fn allow_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
+    ctx.db.upload_log().insert(UploadLog { file: upload.file_id, kind: 0 });
+    Ok(())
+}
+
+/// Completed uploads, read from each file's metadata. `allow_upload` logs a file before its
+/// bytes arrive, so a file appears here only once its upload has committed.
+#[spacetimedb::view(accessor = uploaded_file, public)]
+pub fn uploaded_file(ctx: &AnonymousViewContext) -> Vec<UploadedFile> {
+    ctx.db
+        .upload_log()
+        .kind()
+        .filter(0u8)
+        .filter_map(|upload| ctx.files().reference(upload.file))
+        .filter_map(|file| ctx.files().metadata(file))
+        .map(|meta| UploadedFile { size: meta.size, content_type: meta.content_type })
+        .collect()
+}
+"#;
+
+#[test]
+fn test_file_storage_views_follow_uploads() {
+    require_local_server!();
+    let test = Smoketest::builder().module_code(VIEW_MODULE_CODE).build();
+    let files = Files::new(&test);
+
+    let sub = test
+        .subscribe(&["SELECT * FROM uploaded_file"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    let response = files.upload(b"hello, views", "text/plain", true);
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // The view's only change is the completed upload, which arrives with the file's record.
+    let events = sub.collect().unwrap();
+    assert_eq!(events.len(), 1, "{events:?}");
+    let inserts = &events[0]["uploaded_file"]["inserts"];
+    assert_eq!(inserts.as_array().map(Vec::len), Some(1), "{events:?}");
+    assert_eq!(inserts[0]["size"], 12, "{events:?}");
+}

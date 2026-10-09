@@ -512,6 +512,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.common.update_environment(environment, &mut self.instance)
     }
 
+    pub fn insert_uploaded_file(
+        &mut self,
+        row: spacetimedb_datastore::system_tables::StFileRow,
+    ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
+        self.common.insert_uploaded_file(row, &mut self.instance)
+    }
+
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
         let (res, trapped) = self.call_reducer_with_tx(None, params);
         self.trapped = trapped;
@@ -873,6 +880,44 @@ impl InstanceCommon {
         let CommitAndBroadcastEventSuccess { tx_offset, .. } =
             commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
         Ok(UpdateEnvironmentResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        })
+    }
+
+    /// Commits the `st_file` row of an uploaded file, re-evaluating subscribed views first,
+    /// since a view may read files' metadata.
+    pub(crate) fn insert_uploaded_file<I: WasmInstance>(
+        &mut self,
+        row: spacetimedb_datastore::system_tables::StFileRow,
+        inst: &mut I,
+    ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
+        let replica_ctx = inst.replica_ctx().clone();
+        let db = replica_ctx.relational_db();
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, _) = db.with_auto_rollback(tx, |tx| crate::db::files::insert_file_row(tx, &row))?;
+        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+        if trapped || out.outcome != ViewOutcome::Success {
+            let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
+            db.report_mut_tx_metrics(reducer, metrics, None);
+            anyhow::bail!("view evaluation failed while recording an uploaded file");
+        }
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: self.info.owner_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::update(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            execution_budget_used: out.execution_budget_used,
+            host_execution_duration: out.total_duration,
+            request_id: None,
+            timer: None,
+        };
+        let durable_offset = db.durable_tx_offset();
+        let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+        Ok(crate::host::module_host::UploadedFileRecorded {
             tx_offset,
             durable_offset,
         })

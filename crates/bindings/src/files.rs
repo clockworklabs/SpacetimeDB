@@ -18,7 +18,7 @@
 //! Reducers can also create small files directly with [`Files::create`].
 
 use crate::rt::read_bytes_source_into;
-use crate::{sys, IterBuf, ReducerContext};
+use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ViewContext};
 use core::fmt;
 
 pub use spacetimedb_lib::file::{content_hash, ALLOW_UPLOAD_REDUCER};
@@ -113,11 +113,7 @@ impl Files<'_> {
 
     /// The live metadata of the file `file_ref` names, without fetching its bytes.
     pub fn metadata(&self, file_ref: FileRef) -> Option<FileMetadata> {
-        let source = sys::file_metadata(to_bytes(file_ref))
-            .unwrap_or_else(|errno| panic!("failed to read file metadata: {errno}"))?;
-        let mut buf = IterBuf::take();
-        read_bytes_source_into(source, &mut buf);
-        Some(spacetimedb_lib::bsatn::from_slice(&buf).expect("the host sends valid file metadata"))
+        metadata(file_ref)
     }
 
     /// Resolves a file's ID to its reference.
@@ -125,10 +121,63 @@ impl Files<'_> {
     /// The reference grants read access, so check that the requester may read the file
     /// before disclosing it.
     pub fn reference(&self, id: FileId) -> Option<FileRef> {
-        match sys::file_reference(id.0.to_le_bytes()) {
-            Ok(bytes) => Some(from_bytes(bytes)),
-            Err(sys::Errno::NO_SUCH_FILE) => None,
-            Err(errno) => panic!("failed to resolve a file ID: {errno}"),
+        reference(id)
+    }
+}
+
+/// Read-only File Storage for views, from [`ViewContext::files`] and [`AnonymousViewContext::files`].
+///
+/// A view that reads a file's metadata is re-evaluated when files change.
+#[derive(Clone, Copy)]
+pub struct ReadonlyFiles<'ctx> {
+    _ctx: core::marker::PhantomData<&'ctx ()>,
+}
+
+impl ViewContext {
+    /// Read-only File Storage.
+    pub fn files(&self) -> ReadonlyFiles<'_> {
+        ReadonlyFiles {
+            _ctx: core::marker::PhantomData,
         }
+    }
+}
+
+impl AnonymousViewContext {
+    /// Read-only File Storage.
+    pub fn files(&self) -> ReadonlyFiles<'_> {
+        ReadonlyFiles {
+            _ctx: core::marker::PhantomData,
+        }
+    }
+}
+
+impl ReadonlyFiles<'_> {
+    /// The live metadata of the file `file_ref` names, without fetching its bytes.
+    pub fn metadata(&self, file_ref: FileRef) -> Option<FileMetadata> {
+        metadata(file_ref)
+    }
+
+    /// Resolves a file's ID to its reference.
+    ///
+    /// The reference grants read access, so check that the requester may read the file
+    /// before disclosing it.
+    pub fn reference(&self, id: FileId) -> Option<FileRef> {
+        reference(id)
+    }
+}
+
+fn metadata(file_ref: FileRef) -> Option<FileMetadata> {
+    let source = sys::file_metadata(to_bytes(file_ref))
+        .unwrap_or_else(|errno| panic!("failed to read file metadata: {errno}"))?;
+    let mut buf = IterBuf::take();
+    read_bytes_source_into(source, &mut buf);
+    Some(spacetimedb_lib::bsatn::from_slice(&buf).expect("the host sends valid file metadata"))
+}
+
+fn reference(id: FileId) -> Option<FileRef> {
+    match sys::file_reference(id.0.to_le_bytes()) {
+        Ok(bytes) => Some(from_bytes(bytes)),
+        Err(sys::Errno::NO_SUCH_FILE) => None,
+        Err(errno) => panic!("failed to resolve a file ID: {errno}"),
     }
 }

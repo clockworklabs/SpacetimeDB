@@ -1599,6 +1599,15 @@ impl UpdateDatabaseResult {
 }
 
 #[derive(Debug)]
+/// The commit of an uploaded file's `st_file` row.
+pub struct UploadedFileRecorded {
+    /// The transaction offset of the commit.
+    pub tx_offset: TransactionOffset,
+    /// The durable transaction offset of the database.
+    /// `None` if the database is in-memory only.
+    pub durable_offset: Option<DurableOffset>,
+}
+
 pub enum UpdateEnvironmentResult {
     NoUpdateNeeded,
     UpdatePerformed {
@@ -3358,6 +3367,20 @@ impl ModuleHost {
             environment,
             |environment, inst| inst.update_environment(environment),
             |environment, inst| inst.update_environment(environment).await,
+        )?
+    }
+
+    /// Commits the `st_file` row of an uploaded file, re-evaluating the views that read files.
+    pub async fn insert_uploaded_file(
+        &self,
+        row: spacetimedb_datastore::system_tables::StFileRow,
+    ) -> Result<UploadedFileRecorded, anyhow::Error> {
+        call_instance!(
+            self,
+            "<insert_uploaded_file>",
+            row,
+            |row, inst| inst.insert_uploaded_file(row),
+            |row, inst| inst.insert_uploaded_file(row).await,
         )?
     }
 

@@ -19,7 +19,6 @@ use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::{StFileRow, TimestampViaI64};
-use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{FileRef, Identity, Timestamp, UploadRequest};
 use std::ops::Range;
 use std::sync::Arc;
@@ -99,7 +98,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         ));
     }
 
-    let (db, files, module) = database_files(&ctx, &database).await?;
+    let (_db, files, module) = database_files(&ctx, &database).await?;
 
     // Decide before reading the body. The file's ID is fixed now, so `allow_upload` can record it.
     let file_ref = engine_files::mint_file_ref();
@@ -168,21 +167,13 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         content_type,
         deleted_at_offset: None,
     };
-    let offset = tokio::task::spawn_blocking({
-        let db = db.clone();
-        move || -> anyhow::Result<Option<u64>> {
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-            if let Err(e) = engine_files::insert_file_row(&mut tx, &row) {
-                let _ = db.rollback_mut_tx(tx);
-                return Err(e.into());
-            }
-            Ok(db.commit_tx(tx)?.map(|(offset, ..)| offset))
-        }
-    })
-    .await
-    .map_err(log_and_500)?
-    .map_err(log_and_500)?;
-    if let (Some(offset), Some(mut durable)) = (offset, db.durable_tx_offset()) {
+    // Through the module, so that views that read files' metadata are re-evaluated.
+    let recorded = module.insert_uploaded_file(row).await.map_err(log_and_500)?;
+    let offset = recorded
+        .tx_offset
+        .await
+        .map_err(|_| log_and_500("the file's record was not committed"))?;
+    if let Some(mut durable) = recorded.durable_offset {
         durable.wait_for(offset).await.map_err(log_and_500)?;
     }
 

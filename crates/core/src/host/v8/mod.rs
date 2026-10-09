@@ -496,6 +496,13 @@ impl JsMainInstance {
         self.request(UpdateEnvironmentRequest { environment }).await
     }
 
+    pub async fn insert_uploaded_file(
+        &self,
+        row: spacetimedb_datastore::system_tables::StFileRow,
+    ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
+        self.request(InsertUploadedFileRequest { row }).await
+    }
+
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
         self.request(CallReducerRequest { params }).await
     }
@@ -644,6 +651,12 @@ js_main_request! {
     UpdateEnvironmentRequest {
         environment: std::collections::BTreeMap<String, String>,
     } => "update_environment", anyhow::Result<UpdateEnvironmentResult>, UpdateEnvironment
+}
+
+js_main_request! {
+    InsertUploadedFileRequest {
+        row: spacetimedb_datastore::system_tables::StFileRow,
+    } => "insert_uploaded_file", anyhow::Result<crate::host::module_host::UploadedFileRecorded>, InsertUploadedFile
 }
 
 js_main_request! {
@@ -834,6 +847,11 @@ enum JsMainWorkerRequest {
     UpdateEnvironment {
         reply_tx: JsReplyTx<anyhow::Result<UpdateEnvironmentResult>>,
         environment: std::collections::BTreeMap<String, String>,
+    },
+    /// See [`JsMainInstance::insert_uploaded_file`].
+    InsertUploadedFile {
+        reply_tx: JsReplyTx<anyhow::Result<crate::host::module_host::UploadedFileRecorded>>,
+        row: spacetimedb_datastore::system_tables::StFileRow,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
@@ -1437,6 +1455,12 @@ fn handle_main_worker_request(
         JsMainWorkerRequest::UpdateEnvironment { reply_tx, environment } => {
             handle_worker_request("update_environment", reply_tx, || {
                 let res = instance_common.update_environment(environment, inst);
+                (res, false)
+            })
+        }
+        JsMainWorkerRequest::InsertUploadedFile { reply_tx, row } => {
+            handle_worker_request("insert_uploaded_file", reply_tx, || {
+                let res = instance_common.insert_uploaded_file(row, inst);
                 (res, false)
             })
         }
