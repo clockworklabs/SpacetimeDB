@@ -232,7 +232,7 @@ Failure to advance the connection means your client will not receive any updates
 
 :::
 
-In Rust and TypeScript, the connection processes messages automatically via the browser's event loop or Node.js's event loop. No manual polling is required.
+TypeScript processes messages through the browser or Node.js event loop. Rust applications must advance their connection using `frame_tick()`, `run_threaded()`, `run_async()`, or the browser target's `run_background_task()`.
 
 ## Connection Lifecycle
 
@@ -327,10 +327,10 @@ let conn = DbConnection::builder()
         println!("Connected! Saving token...");
         // Save token for reconnection
     })
-    .on_connect_error(|_ctx, error| {
+    .on_connect_error(|_ctx, error, _next| {
         eprintln!("Connection failed: {}", error);
     })
-    .on_disconnect(|_ctx, error| {
+    .on_disconnect(|_ctx, error, _next| {
         if let Some(err) = error {
             eprintln!("Disconnected with error: {}", err);
         } else {
@@ -450,7 +450,19 @@ Without automatic reconnect, create a new connection after a connection loss. Se
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-Automatic reconnect support is coming soon. For now, implement reconnection in your application: create a new connection and restore subscriptions after a connection loss.
+Enable `.with_automatic_reconnect()` to recover after an established connection drops. The same connection, table handles, callbacks, and subscription handles survive. While `is_reconnecting()` is true, cache reads return the last known rows. **Keep advancing the connection during outages**, using `frame_tick()`, `run_threaded()`, or `run_async()`; do not stop ticking when `is_active()` becomes false.
+
+`on_connect` fires only for the initial connection. Register `on_automatic_reconnect` for successful automatic reconnects. Both receive the connection, identity, and token. Subscriptions replay together in one atomic batch, and their `on_applied` callbacks fire again; unchanged rows do not fire row callbacks.
+
+`on_disconnect(|ctx, error, next| ...)` and `on_connect_error(|ctx, error, next| ...)` receive `Option<NextReconnect>`, with the next attempt number and `Duration`, or `None` when no retry is scheduled. Initial connection failures are not retried. `disconnect()` cancels recovery.
+
+Use `.with_automatic_reconnect_options(AutomaticReconnectOptions { min_delay, max_delay })` to configure backoff. Defaults are one second and 30 seconds, with exponential growth and 50% jitter clamped to the bounds. The minimum delay is at least 500 ms; the maximum is at least one second and the minimum delay.
+
+For expiring credentials, combine `.with_token(Some(initial_token))` and `.with_token_provider(|| async { /* return Result<String> */ })`. The provider refreshes near expiry or after rejection and must return a token for the same identity. Provider failures retry; rejection of a fresh token and identity changes are terminal.
+
+Calls made while reconnecting fail with a disconnected error. Calls interrupted by a drop may have executed: reducer/procedure callback errors expose `is_unknown_result()`. Calls are never replayed. Subscription creation is queued during recovery, and cancellation removes a set from replay.
+
+Regenerate Rust bindings to expose `is_reconnecting()`. Lifecycle error callbacks gain the third argument; subscription `on_applied` closures must implement `FnMut`. `on_connect` remains `FnOnce`. Automatic reconnect requires a server supporting session replacement and batch subscriptions.
 
 </TabItem>
 <TabItem value="unreal" label="Unreal">
