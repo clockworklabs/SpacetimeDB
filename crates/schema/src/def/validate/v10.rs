@@ -1187,6 +1187,12 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             }
             .into());
         }
+        if table.is_event {
+            return Err(ValidationError::OutboxEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
 
         let primary_key = table
             .primary_key
@@ -1730,6 +1736,39 @@ mod tests {
         let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
         assert_eq!(&outbox.remote_reducer[..], "receive_ping");
         assert_eq!(outbox.target_column, ColId(1));
+    }
+
+    #[test]
+    fn outbox_rejects_event_table() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_event(true)
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox(
+            "outbound_pings",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Option::<&str>::None,
+            "test-signature",
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::OutboxEventTable { table } => {
+            table == &expect_identifier("outbound_pings")
+        });
     }
 
     #[test]

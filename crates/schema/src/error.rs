@@ -148,6 +148,8 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("table {table} is assigned in multiple outboxes")]
     DuplicateOutbox { table: Identifier },
+    #[error("outbox table {table} must not be an event table")]
+    OutboxEventTable { table: Identifier },
     #[error("outbox table {table} must have a primary key")]
     OutboxMissingPrimaryKey { table: Identifier },
     #[error("outbox table {table} primary key must be u64, found {found}")]
