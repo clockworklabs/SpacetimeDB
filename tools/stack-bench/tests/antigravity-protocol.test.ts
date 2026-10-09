@@ -22,6 +22,9 @@ test('Antigravity reads the prompt as a stream message, pins model and effort, a
       '--effort', 'medium', '--dangerously-skip-permissions']);
   assert.deepEqual(antigravityArguments({ model: 'gemini-3.8-flash', effort: 'high', resumeSession: SESSION }).slice(-2),
     ['--conversation', SESSION]);
+  // The CLI's name for Gemini 3.1 Pro covers both API models; the effort selects one.
+  const pro = antigravityArguments({ model: 'gemini-3.1-pro-preview-customtools', effort: 'high', resumeSession: null });
+  assert.equal(pro[pro.indexOf('--model') + 1], 'gemini-3.1-pro');
 });
 
 test('the launcher passes the prompt unchanged as one stream message and selects API-key mode', {

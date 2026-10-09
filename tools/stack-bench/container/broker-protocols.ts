@@ -197,6 +197,8 @@ interface BrokerProtocol {
   inputTokenAdjustment?(payload: JsonRecord): number;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
+  // A call the CLI makes beside the session's own work, such as titling it.
+  sideCall?(path: string): boolean;
   responseRejection?(body: Buffer, encoding?: string | string[]): Pick<ProviderFailure, 'category' | 'code'> | null;
 }
 
@@ -550,6 +552,7 @@ function googleProtocol(config: BrokerConfig): BrokerProtocol {
         + (typeof thinking === 'number' && thinking > 0 ? thinking : 0);
     },
     responseUsage: googleUsage,
+    sideCall: path => path === title,
   };
 }
 

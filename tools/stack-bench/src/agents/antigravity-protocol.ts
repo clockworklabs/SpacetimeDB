@@ -31,10 +31,17 @@ export const ANTIGRAVITY_LAUNCHER = [
     + 'process.stdout.write(JSON.stringify({event:"user",message:{role:"user",content:s}})+"\\n"))\' | exec agy "$@"',
 ].join('\n');
 
+// Plans name the API model the broker allows. The CLI names some models differently and picks
+// the API model from the effort: Gemini 3.1 Pro at high effort calls the custom-tools endpoint.
+const ANTIGRAVITY_CLI_MODELS: Readonly<Record<string, string>> = {
+  'gemini-3.1-pro-preview-customtools': 'gemini-3.1-pro', 'gemini-3.1-pro-preview': 'gemini-3.1-pro',
+};
+
 export function antigravityArguments({ model, effort, resumeSession }: {
   model: string; effort: string; resumeSession: string | null;
 }): string[] {
-  return ['--print=', '--input-format', 'stream-json', '--output-format', 'stream-json', '--model', model,
+  return ['--print=', '--input-format', 'stream-json', '--output-format', 'stream-json',
+    '--model', ANTIGRAVITY_CLI_MODELS[model] ?? model,
     '--effort', effort, '--dangerously-skip-permissions', ...(resumeSession ? ['--conversation', resumeSession] : [])];
 }
 

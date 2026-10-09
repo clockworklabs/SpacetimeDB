@@ -102,7 +102,10 @@ export function createCredentialBroker(configInput: unknown, {
   const inFlight = new Set<() => void>();
   let lastResponseRequest = 0;
   let providerFailure: ProviderFailure | null = null;
+  // A side call that finishes later must not hide the session's own refused call.
+  const sideCalls = new Set<number>();
   const recordFailure = (request: number, failure: ProviderFailure | null): void => {
+    if (sideCalls.has(request)) return;
     if (request >= lastResponseRequest) { lastResponseRequest = request; providerFailure = failure; }
   };
   let billableRequests = 0;
@@ -193,6 +196,7 @@ export function createCredentialBroker(configInput: unknown, {
     }
     acceptedRequests += 1;
     const requestOrdinal = acceptedRequests;
+    if (protocol.sideCall?.(path)) sideCalls.add(requestOrdinal);
     recordLedger();
 
     const chunks: Buffer[] = [];

@@ -639,6 +639,39 @@ data: ${JSON.stringify({ type: 'response.output_item.added' })}
   }
 });
 
+// agy gives up on a rate limit after one attempt, then titles the conversation. The
+// title call succeeding must leave the refused call on record so the session is resumed.
+test('a side call that succeeds after a rate-limited session call leaves the rate limit on record', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'broker-side-call-'));
+  const upstream = createServer((request, response) => {
+    request.resume().on('end', () => {
+      if (request.url!.includes('gemini-3.1-flash-lite-preview')) {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.end(`data: ${JSON.stringify({ usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1 } })}\r\n\r\n`);
+      } else {
+        response.writeHead(429, { 'content-type': 'application/json' });
+        response.end('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}');
+      }
+    });
+  });
+  const upstreamPort = await listen(upstream);
+  const ledgerPath = join(root, 'ledger.json');
+  const sessionToken = 'session-token-value-1234567890';
+  const { server } = createCredentialBroker({ provider: 'google', mode: 'api-key', credential: 'provider-secret-value-1234567890',
+    sessionToken, model: 'test-model', maxOutputTokens: 4096, ledgerPath, maxBudgetUsd: 10,
+    pricingRates: { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2, cacheWrite1h: 2 } }, {
+    requestUpstream: httpRequest, upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort } });
+  const brokerPort = await listen(server);
+  try {
+    const headers = { 'x-goog-api-key': sessionToken, 'content-type': 'application/json' };
+    assert.equal((await send(brokerPort, { path: '/v1beta/models/test-model:streamGenerateContent?alt=sse', headers,
+      body: '{"contents":[]}' })).status, 429);
+    assert.equal((await send(brokerPort, { path: '/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?alt=sse',
+      headers, body: JSON.stringify({ contents: [], systemInstruction: { parts: [{ text: 'You are a conversation title generator.' }] } }) })).status, 200);
+    assert.equal(readCredentialBrokerLedger(ledgerPath).providerFailure?.category, 'rate-limit');
+  } finally { await close(server); await close(upstream); rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a provider the broker never reached costs nothing and can be waited out; a dropped connection is estimated', async () => {
   const root = mkdtempSync(join(tmpdir(), 'broker-unreachable-'));
   // A listener that accepts and immediately drops the connection, and a port with no listener.
