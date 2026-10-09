@@ -778,14 +778,31 @@ async fn execute_publish_configs<'a>(
         let mut request = builder.body(program_bytes).build()?;
         request
             .headers_mut()
-            .typed_insert(SpacetimeEnvironment(environment.values));
+            .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
+        // The same publish without values, for servers that defer them (below).
+        let without_environment = if environment.values.is_empty() {
+            None
+        } else {
+            request.try_clone()
+        };
         request
             .headers_mut()
-            .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
+            .typed_insert(SpacetimeEnvironment(environment.values));
 
         let res = client.execute(request).await?;
-        let response: PublishResult = res.json_or_error().await?;
-        match response {
+        let mut response = res.json_or_error::<PublishResult>().await;
+        // SpacetimeDB Cloud does not yet take environment values when it creates or
+        // resets a database. Publish without them, then set them as `--env-only` does.
+        let mut environment_deferred = false;
+        if let Some(request) = without_environment
+            && let Err(error) = &response
+            && format!("{error:#}").contains(environment::INITIAL_ENVIRONMENT_DEFERRED)
+        {
+            println!("This server defers environment values for new databases. Publishing without them first.");
+            response = client.execute(request).await?.json_or_error().await;
+            environment_deferred = true;
+        }
+        match response? {
             PublishResult::Success {
                 domain,
                 database_identity,
@@ -805,6 +822,18 @@ async fn execute_publish_configs<'a>(
                     && let Some(domain) = domain.as_ref()
                 {
                     println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
+                }
+
+                if environment_deferred {
+                    environment::update(
+                        &database_host,
+                        &auth_header,
+                        &database_identity.to_string(),
+                        command_config.get_config_value("env"),
+                        environment_options,
+                    )
+                    .await
+                    .context("The module is published, but setting its environment failed")?;
                 }
 
                 if let Some(container) = container {
