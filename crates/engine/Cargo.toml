@@ -15,6 +15,7 @@ test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
 [dependencies]
 anyhow = { workspace = true, features = ["backtrace"] }
 async-trait.workspace = true
+bytes.workspace = true
 enum-map.workspace = true
 futures.workspace = true
 hex.workspace = true
@@ -23,6 +24,7 @@ log.workspace = true
 once_cell.workspace = true
 parking_lot.workspace = true
 prometheus.workspace = true
+rand.workspace = true
 serde.workspace = true
 sled.workspace = true
 spacetimedb-commitlog.workspace = true
@@ -30,6 +32,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-datastore.workspace = true
 spacetimedb-durability.workspace = true
 spacetimedb-expr.workspace = true
+spacetimedb-file-store.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-metrics.workspace = true

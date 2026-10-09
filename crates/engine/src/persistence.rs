@@ -15,6 +15,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_runtime::Handle;
 
 use super::{
+    files::DatabaseFiles,
     relational_db::{self, Txdata},
     snapshot::{self, SnapshotDatabaseState, SnapshotWorker},
 };
@@ -109,6 +110,11 @@ pub struct Persistence {
     pub snapshots: Option<SnapshotWorker>,
     /// Runtime onto which durability-related tasks shall be spawned.
     pub runtime: Handle,
+    /// Where the database keeps the bytes of its files, if it supports File Storage.
+    ///
+    /// When set, the database wraps [`Self::durability`] in a [`crate::files::FileGatedDurability`],
+    /// so that a transaction is reported durable only once its files are persisted.
+    pub files: Option<Arc<DatabaseFiles>>,
 }
 
 impl Persistence {
@@ -133,7 +139,14 @@ impl Persistence {
             disk_size: Arc::new(disk_size),
             snapshots,
             runtime,
+            files: None,
         }
+    }
+
+    /// Enables File Storage, keeping file bytes in `files`.
+    pub fn with_files(mut self, files: Arc<DatabaseFiles>) -> Self {
+        self.files = Some(files);
+        self
     }
 
     /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
@@ -158,8 +171,9 @@ impl Persistence {
 
     /// Convenience to deconstruct an [Option<Self>] into parts.
     ///
-    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>, Some(runtime))`
-    /// if `this` is `Some`, and `(None, None, None, None)` if `this` is `None`.
+    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>, Some(runtime), Option<DatabaseFiles>)`
+    /// if `this` is `Some`, and `(None, None, None, None, None)` if `this` is `None`.
+    #[allow(clippy::type_complexity)]
     pub(super) fn unzip(
         this: Option<Self>,
     ) -> (
@@ -167,6 +181,7 @@ impl Persistence {
         Option<DiskSizeFn>,
         Option<SnapshotWorker>,
         Option<Handle>,
+        Option<Arc<DatabaseFiles>>,
     ) {
         this.map(
             |Self {
@@ -174,7 +189,8 @@ impl Persistence {
                  disk_size,
                  snapshots,
                  runtime,
-             }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
+                 files,
+             }| (Some(durability), Some(disk_size), snapshots, Some(runtime), files),
         )
         .unwrap_or_default()
     }
@@ -225,6 +241,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
     async fn persistence(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence> {
         let database_identity = database.database_identity;
         let replica_dir = self.data_dir.replica(replica_id);
+        let replica_dir_for_files = replica_dir.clone();
         let snapshot_dir = replica_dir.snapshots();
         let runtime = Handle::tokio_current();
 
@@ -249,11 +266,16 @@ impl PersistenceProvider for LocalPersistenceProvider {
             runtime.clone(),
         ));
 
+        let files_dir = replica_dir_for_files.files();
+        let store = asyncify(&runtime, move || spacetimedb_file_store::LocalFileStore::open(files_dir.0)).await?;
+        let files = DatabaseFiles::new(Arc::new(store), runtime.clone());
+
         Ok(Persistence {
             durability,
             disk_size,
             snapshots: Some(snapshot_worker),
             runtime,
+            files: Some(files),
         })
     }
 }

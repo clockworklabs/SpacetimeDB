@@ -1,5 +1,6 @@
 use crate::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::error::{DBError, RestoreSnapshotError};
+use crate::files::{DatabaseFiles, FileGatedDurability};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
 use crate::resource::{DatabaseMemoryType, MemoryObservation, MemoryObserver};
@@ -108,6 +109,8 @@ pub struct RelationalDB {
     durability: Option<Arc<Durability>>,
     durability_runtime: Option<Handle>,
     snapshot_worker: Option<SnapshotWorker>,
+    /// File Storage, if this database supports it.
+    files: Option<Arc<DatabaseFiles>>,
 
     row_count_fn: RowCountFn,
     /// Function to determine the durable size on disk.
@@ -161,13 +164,25 @@ impl RelationalDB {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
-        let (durability, disk_size_fn, snapshot_worker, durability_runtime) = Persistence::unzip(persistence);
+        let (durability, disk_size_fn, snapshot_worker, durability_runtime, files) = Persistence::unzip(persistence);
+        // Files need durability: a reducer's files are staged in the commitlog until persisted,
+        // and the gate holds back the durable offset until they are.
+        let files = files.filter(|_| durability.is_some());
+        let durability = match (durability, &files, &durability_runtime) {
+            (Some(durability), Some(files), Some(runtime)) => Some(Arc::new(FileGatedDurability::new(
+                durability,
+                files.clone(),
+                runtime.clone(),
+            )) as Arc<Durability>),
+            (durability, ..) => durability,
+        };
 
         Self {
             inner,
             durability,
             durability_runtime,
             snapshot_worker,
+            files,
 
             database_identity,
             owner_identity,
@@ -957,6 +972,11 @@ impl RelationalDB {
         self.observe_datastore_memory(datastore_memory_bytes);
 
         (tx_data, tx_metrics, tx)
+    }
+
+    /// File Storage for this database, or `None` if it doesn't support files.
+    pub fn files(&self) -> Option<&Arc<DatabaseFiles>> {
+        self.files.as_ref()
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -2058,6 +2078,7 @@ pub mod tests_utils {
 
         durable: Option<DurableState>,
         want_snapshot_repo: bool,
+        want_files: bool,
     }
 
     pub struct TempReplicaDir(ReplicaDir);
@@ -2097,6 +2118,7 @@ pub mod tests_utils {
                 db,
                 durable: None,
                 want_snapshot_repo: false,
+                want_files: false,
             })
         }
 
@@ -2110,7 +2132,7 @@ pub mod tests_utils {
             let rt = TokioRuntimeBuilder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true, false)?;
             let durable = DurableState {
                 durability,
                 rt,
@@ -2121,6 +2143,29 @@ pub mod tests_utils {
                 db: Arc::new(db),
                 durable: Some(durable),
                 want_snapshot_repo: true,
+                want_files: false,
+            })
+        }
+
+        /// Like [`Self::durable`], with File Storage keeping file bytes in the replica directory.
+        ///
+        /// [`Self::reopen`] keeps File Storage enabled.
+        pub fn durable_with_files() -> Result<Self, DBError> {
+            let dir = TempReplicaDir::new()?;
+            let rt = TokioRuntimeBuilder::new_multi_thread().enable_all().build()?;
+            let _rt = rt.enter();
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true, true)?;
+            let durable = DurableState {
+                durability,
+                rt,
+                replica_dir: dir.into(),
+            };
+
+            Ok(Self {
+                db: Arc::new(db),
+                durable: Some(durable),
+                want_snapshot_repo: true,
+                want_files: true,
             })
         }
 
@@ -2129,7 +2174,7 @@ pub mod tests_utils {
             let rt = TokioRuntimeBuilder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), false, false)?;
             let durable = DurableState {
                 durability,
                 rt,
@@ -2140,6 +2185,7 @@ pub mod tests_utils {
                 db: Arc::new(db),
                 durable: Some(durable),
                 want_snapshot_repo: false,
+                want_files: false,
             })
         }
 
@@ -2168,6 +2214,7 @@ pub mod tests_utils {
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime,
+                files: None,
             };
 
             let (db, _) = RelationalDB::open(
@@ -2199,6 +2246,7 @@ pub mod tests_utils {
                 db: Arc::new(db),
                 durable: None,
                 want_snapshot_repo: false,
+                want_files: false,
             })
         }
 
@@ -2220,7 +2268,12 @@ pub mod tests_utils {
                 drop(durability);
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
-                let (db, handle) = Self::durable_internal(&replica_dir, rt.handle().clone(), self.want_snapshot_repo)?;
+                let (db, handle) = Self::durable_internal(
+                    &replica_dir,
+                    rt.handle().clone(),
+                    self.want_snapshot_repo,
+                    self.want_files,
+                )?;
                 let durable = DurableState {
                     durability: handle,
                     rt,
@@ -2277,6 +2330,7 @@ pub mod tests_utils {
             root: &ReplicaDir,
             rt: TokioHandle,
             want_snapshot_repo: bool,
+            want_files: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let snapshots = want_snapshot_repo
                 .then(|| {
@@ -2288,11 +2342,16 @@ pub mod tests_utils {
             let runtime = Handle::tokio(rt.clone());
             let (local, disk_size_fn): (LocalDurability, DiskSizeFn) =
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
+            let files = want_files
+                .then(|| spacetimedb_file_store::LocalFileStore::open(root.files().0))
+                .transpose()?
+                .map(|store| DatabaseFiles::new(Arc::new(store), runtime.clone()));
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime,
+                files,
             };
             let db = Self::open_db(local.as_history(), Some(persistence), None, 0)?;
 
