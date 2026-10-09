@@ -27,7 +27,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 #[cfg(feature = "s3")]
 mod s3;
 #[cfg(feature = "s3")]
-pub use s3::{S3Config, S3FileStore};
+pub use s3::{S3Config, S3Credentials, S3FileStore};
 
 pub type ByteStream = Pin<Box<dyn Stream<Item = io::Result<Bytes>> + Send>>;
 

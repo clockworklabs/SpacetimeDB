@@ -62,9 +62,13 @@ pub struct S3FileStoreConfig {
     pub bucket: String,
     #[serde(default)]
     pub prefix: String,
-    /// Omit both to send unsigned requests, for a local server that accepts them.
+    /// Static credentials. Omit both to take credentials from the environment, as other AWS clients
+    /// do: `AWS_*` variables, a web identity token, or the instance's role.
     pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
+    /// Send unsigned requests, for a local server that accepts them.
+    #[serde(default)]
+    pub unsigned: bool,
 }
 
 fn default_region() -> String {
@@ -94,7 +98,14 @@ pub async fn open_database_files(
                 region: s3.region,
                 bucket: s3.bucket,
                 prefix: format!("{}{}/", s3.prefix, database_identity.to_hex()),
-                credentials: s3.access_key_id.zip(s3.secret_access_key),
+                credentials: match (s3.access_key_id, s3.secret_access_key) {
+                    (Some(access_key_id), Some(secret_access_key)) => spacetimedb_file_store::S3Credentials::Static {
+                        access_key_id,
+                        secret_access_key,
+                    },
+                    _ if s3.unsigned => spacetimedb_file_store::S3Credentials::Unsigned,
+                    _ => spacetimedb_file_store::S3Credentials::FromEnvironment,
+                },
             };
             let spools = files_dir.0.join("spools");
             Arc::new(

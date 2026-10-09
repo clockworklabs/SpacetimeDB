@@ -40,8 +40,22 @@ pub struct S3Config {
     pub bucket: String,
     /// Prepended to every key, such as the database family's name followed by `/`.
     pub prefix: String,
-    /// Credentials, or `None` for a server that accepts unsigned requests.
-    pub credentials: Option<(String, String)>,
+    pub credentials: S3Credentials,
+}
+
+/// How an [`S3FileStore`] signs its requests.
+#[derive(Clone, Debug)]
+pub enum S3Credentials {
+    /// An access key ID and secret access key.
+    Static {
+        access_key_id: String,
+        secret_access_key: String,
+    },
+    /// Whatever the environment provides, as other AWS clients find it: `AWS_*` variables,
+    /// a web identity token, or the instance's role.
+    FromEnvironment,
+    /// No signature, for a local server that accepts unsigned requests.
+    Unsigned,
 }
 
 pub struct S3FileStore {
@@ -60,14 +74,24 @@ fn to_io(err: object_store::Error) -> io::Error {
 impl S3FileStore {
     /// Opens the store, keeping spools in `spools`, and deletes spools left by a previous process.
     pub fn open(config: S3Config, spools: impl Into<PathBuf>) -> io::Result<Self> {
-        let mut builder = object_store::aws::AmazonS3Builder::new()
+        let builder = match config.credentials {
+            S3Credentials::FromEnvironment => object_store::aws::AmazonS3Builder::from_env(),
+            _ => object_store::aws::AmazonS3Builder::new(),
+        };
+        let mut builder = builder
             .with_endpoint(&config.endpoint)
             .with_region(&config.region)
             .with_bucket_name(&config.bucket)
             .with_allow_http(config.endpoint.starts_with("http://"));
         builder = match &config.credentials {
-            Some((key, secret)) => builder.with_access_key_id(key).with_secret_access_key(secret),
-            None => builder.with_skip_signature(true),
+            S3Credentials::Static {
+                access_key_id,
+                secret_access_key,
+            } => builder
+                .with_access_key_id(access_key_id)
+                .with_secret_access_key(secret_access_key),
+            S3Credentials::FromEnvironment => builder,
+            S3Credentials::Unsigned => builder.with_skip_signature(true),
         };
         let store = builder.build().map_err(io::Error::other)?;
         let spools = spools.into();

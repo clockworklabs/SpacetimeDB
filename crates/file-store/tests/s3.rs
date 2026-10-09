@@ -15,7 +15,7 @@
 
 use bytes::Bytes;
 use futures::TryStreamExt;
-use spacetimedb_file_store::{reclaim_unreferenced, FileStore, S3Config, S3FileStore};
+use spacetimedb_file_store::{reclaim_unreferenced, FileStore, S3Config, S3Credentials, S3FileStore};
 use spacetimedb_lib::file::content_hash;
 use spacetimedb_lib::Hash;
 use std::collections::HashSet;
@@ -30,9 +30,16 @@ fn store() -> Option<(S3FileStore, tempfile::TempDir)> {
         return None;
     };
     let bucket = std::env::var("SPACETIMEDB_TEST_S3_BUCKET").unwrap_or_else(|_| "stdb-files".into());
-    let credentials = std::env::var("SPACETIMEDB_TEST_S3_ACCESS_KEY")
-        .ok()
-        .zip(std::env::var("SPACETIMEDB_TEST_S3_SECRET_KEY").ok());
+    let credentials = match (
+        std::env::var("SPACETIMEDB_TEST_S3_ACCESS_KEY"),
+        std::env::var("SPACETIMEDB_TEST_S3_SECRET_KEY"),
+    ) {
+        (Ok(access_key_id), Ok(secret_access_key)) => S3Credentials::Static {
+            access_key_id,
+            secret_access_key,
+        },
+        _ => S3Credentials::Unsigned,
+    };
     let prefix = format!(
         "test-{}-{}/",
         std::process::id(),
