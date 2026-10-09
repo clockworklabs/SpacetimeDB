@@ -10,7 +10,7 @@ pub mod unrealcpp;
 mod util;
 
 pub use self::csharp::Csharp;
-pub use self::rust::Rust;
+pub use self::rust::{generate_rust_module_bindings, Rust};
 pub use self::typescript::TypeScript;
 pub use self::unrealcpp::UnrealCpp;
 pub use util::private_table_names;
