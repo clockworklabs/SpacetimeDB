@@ -14,6 +14,7 @@ use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
+use spacetimedb_lib::Hash as SpacetimeHash;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
@@ -962,11 +963,11 @@ impl Schema for TableSchema {
             constraints,
             sequences,
             schedule,
+            outbox,
             table_type,
             table_access,
             is_event,
             accessor_name,
-            outbox,
             ..
         } = def;
 
@@ -1446,7 +1447,7 @@ pub struct OutboxSchema {
     /// Local reducer to invoke with the remote result before acknowledging this stream.
     pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by the sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: SpacetimeHash,
 }
 
 impl OutboxSchema {

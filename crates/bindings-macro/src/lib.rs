@@ -159,6 +159,9 @@ mod sym {
     symbol!(repr);
     symbol!(sats);
     symbol!(scheduled);
+    symbol!(outbox);
+    symbol!(on_result);
+    symbol!(target);
     symbol!(unique);
     symbol!(update);
     symbol!(default);
@@ -229,7 +232,10 @@ fn derive_table_helper_attr() -> Attribute {
 ///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, default))]
+#[proc_macro_derive(
+    __TableHelper,
+    attributes(sats, unique, auto_inc, primary_key, target, index, default)
+)]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
 }

@@ -473,11 +473,13 @@ pub fn count<Tbl: Table>() -> u64 {
 pub trait TableInternal: Sized {
     const TABLE_NAME: &'static str;
     const TABLE_ACCESS: TableAccess = TableAccess::Private;
+    const COLUMN_NAMES: &'static [&'static str];
     const UNIQUE_COLUMNS: &'static [u16];
     const INDEXES: &'static [IndexDesc<'static>];
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
+    const OUTBOX: Option<OutboxDesc<'static>> = None;
     const IS_EVENT: bool = false;
 
     /// Returns the ID of this table.
@@ -502,6 +504,13 @@ pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
     Hash { columns: &'a [u16] },
     Direct { column: u16 },
+}
+
+pub struct OutboxDesc<'a> {
+    pub remote_reducer_name: &'a str,
+    pub remote_arg_names: &'a [&'a str],
+    pub target_column: u16,
+    pub signature_hash: Option<&'a str>,
 }
 
 pub struct ScheduleDesc<'a> {

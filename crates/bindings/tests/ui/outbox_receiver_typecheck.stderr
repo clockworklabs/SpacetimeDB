@@ -1,0 +1,7 @@
+error[E0308]: mismatched types
+  --> tests/ui/outbox_receiver_typecheck.rs:47:1
+   |
+47 | #[spacetimedb::table(accessor = outbound_ping, outbox(receiver::receive_ping))]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Identity`, found `u8`
+   |
+   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)

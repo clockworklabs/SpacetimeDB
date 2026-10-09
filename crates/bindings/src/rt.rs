@@ -170,6 +170,8 @@ pub trait FnInfo: ExplicitNames {
     /// Currently only views use this metadata.
     const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[];
 
+    const ON_RESULT_OUTBOX: Option<&'static str> = None;
+
     /// The function to invoke.
     const INVOKE: Self::Invoke;
 
@@ -182,9 +184,9 @@ pub trait FnInfo: ExplicitNames {
 
 /// Metadata for a reducer handle generated from a remote module schema.
 ///
-/// Unlike [`FnInfo`], this does not describe a locally exported callable and
-/// therefore has no invocation function. Module-side macros use it to typecheck
-/// calls into another database.
+/// Unlike FnInfo, this does not describe a locally exported callable and
+/// therefore has no invocation function. It is used by module-side macros to
+/// typecheck calls into another database.
 pub trait RemoteReducer {
     /// The reducer name in the remote module schema.
     const NAME: &'static str;
@@ -825,8 +827,57 @@ pub fn register_table<T: Table>() {
 
         table.finish();
 
+        if let Some(outbox) = T::OUTBOX {
+            let arg_columns = outbox_arg_columns(T::TABLE_NAME, T::COLUMN_NAMES, outbox.remote_arg_names);
+            module.inner.add_outbox(
+                T::TABLE_NAME,
+                outbox.remote_reducer_name,
+                outbox.target_column,
+                arg_columns,
+                None::<&str>,
+                outbox.signature_hash.map(str::to_owned),
+            );
+        }
+
         module.inner.add_explicit_names(T::explicit_names());
     })
+}
+
+fn outbox_arg_columns(
+    table_name: &str,
+    column_names: &[&str],
+    remote_arg_names: &[&str],
+) -> Vec<spacetimedb_primitives::ColId> {
+    remote_arg_names
+        .iter()
+        .map(|arg_name| {
+            let mut matches = column_names.iter().enumerate().filter_map(|(idx, column_name)| {
+                (*column_name == *arg_name).then_some(spacetimedb_primitives::ColId(idx as u16))
+            });
+            let col = matches.next().unwrap_or_else(|| {
+                panic!("outbox table `{table_name}` has no column matching remote reducer parameter `{arg_name}`")
+            });
+            assert!(
+                matches.next().is_none(),
+                "outbox table `{table_name}` has multiple columns matching remote reducer parameter `{arg_name}`"
+            );
+            col
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod idc_tests {
+    use super::outbox_arg_columns;
+    use spacetimedb_primitives::ColId;
+
+    #[test]
+    fn outbox_arg_columns_use_receiver_order_and_ignore_extra_columns() {
+        assert_eq!(
+            outbox_arg_columns("outbound_ping", &["id", "audit", "body", "target"], &["target", "body"]),
+            vec![ColId(3), ColId(2)]
+        );
+    }
 }
 
 impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
@@ -851,6 +902,9 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
             module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
         } else {
             module.inner.add_reducer(I::NAME, params);
+        }
+        if let Some(outbox_table) = I::ON_RESULT_OUTBOX {
+            module.on_result_reducers.push((outbox_table, I::NAME));
         }
         module.reducers.push(I::INVOKE);
 
@@ -1133,6 +1187,7 @@ pub struct ModuleBuilder {
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
+    on_result_reducers: Vec<(&'static str, &'static str)>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1190,6 +1245,10 @@ extern "C" fn __describe_module__(description: BytesSink) {
     let mut module = ModuleBuilder::default();
     for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
+    }
+
+    for (outbox_table, reducer) in module.on_result_reducers {
+        module.inner.set_outbox_on_result(outbox_table, reducer);
     }
 
     // Serialize the module to bsatn.
