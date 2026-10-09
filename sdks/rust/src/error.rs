@@ -8,6 +8,9 @@ pub enum Error {
     #[error("Connection is already disconnected or has terminated normally")]
     Disconnected,
 
+    #[error("Connection lost before the result was received; the operation may have executed")]
+    UnknownResult,
+
     #[error("Failed to connect: {source}")]
     FailedToConnect {
         #[source]
@@ -16,6 +19,9 @@ pub enum Error {
 
     #[error("Host returned error when processing subscription query: {error}")]
     SubscriptionError { error: String },
+
+    #[error("Token provider failed: {message}")]
+    TokenProvider { message: String },
 
     #[error("Subscription has already ended")]
     AlreadyEnded,
@@ -34,6 +40,14 @@ pub struct InternalError {
 }
 
 impl InternalError {
+    /// Whether the operation may have executed before the transport was lost.
+    pub fn is_unknown_result(&self) -> bool {
+        self.cause
+            .as_ref()
+            .and_then(|e| e.downcast_ref::<Error>())
+            .is_some_and(|e| matches!(e, Error::UnknownResult))
+    }
+
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -97,7 +111,9 @@ impl std::error::Error for InternalError {
         &self.message
     }
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        self.cause
+            .as_deref()
+            .map(|cause| cause as &(dyn std::error::Error + 'static))
     }
 }
 
