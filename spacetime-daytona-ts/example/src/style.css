@@ -1,0 +1,220 @@
+@import '@spacetimedb/example-ui/styles.css';
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--color-shade7);
+  color: var(--color-n1);
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+}
+main {
+  max-width: 1200px;
+  margin: auto;
+  padding: 28px;
+}
+header,
+footer,
+.section-heading,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 28px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.brand img {
+  width: 36px;
+  height: 36px;
+}
+.brand small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-n3);
+  margin-left: 12px;
+}
+#connection {
+  color: var(--color-n3);
+  font-size: 13px;
+}
+.workspace {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 22px;
+}
+section {
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-shade6);
+  min-width: 0;
+}
+h1,
+h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+.section-heading h1 {
+  margin: 0;
+}
+.muted,
+.empty,
+footer {
+  color: var(--color-n3);
+  font-size: 13px;
+}
+.empty {
+  padding: 22px 0;
+}
+button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--color-green);
+  color: var(--color-shade7);
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 3px;
+}
+button.danger {
+  background: transparent;
+  color: var(--color-red);
+  border-color: var(--color-border);
+}
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-n2);
+  margin-bottom: 8px;
+}
+textarea {
+  display: block;
+  resize: vertical;
+  width: 100%;
+  color: var(--color-n1);
+  background: var(--color-shade8);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 14px;
+  font:
+    14px/1.6 ui-monospace,
+    monospace;
+}
+.actions {
+  margin-top: 14px;
+}
+.history-heading {
+  margin-top: 36px;
+}
+.sandbox {
+  padding: 16px;
+  margin-top: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.sandbox p {
+  margin: 7px 0;
+  overflow-wrap: anywhere;
+}
+.sandbox strong {
+  font-size: 14px;
+}
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--color-blue);
+}
+.badge[data-state='Ready'],
+.badge[data-state='Succeeded'] {
+  color: var(--color-green);
+}
+.badge[data-state='Unknown'],
+.badge[data-state='Failed'] {
+  color: var(--color-yellow);
+}
+.table-wrap {
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+th {
+  color: var(--color-n3);
+  font-weight: 400;
+}
+td,
+th {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+td:first-child {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+}
+code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+#access {
+  margin-bottom: 22px;
+  border-color: var(--color-yellow-20);
+}
+#error {
+  padding: 14px;
+  color: var(--color-orange);
+  background: var(--color-shade5);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+footer {
+  margin-top: 24px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+@media (max-width: 800px) {
+  main {
+    padding: 16px;
+  }
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+  .brand small {
+    display: none;
+  }
+  section {
+    padding: 18px;
+  }
+}

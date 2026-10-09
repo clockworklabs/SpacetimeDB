@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpacetimeDB Daytona</title>
+    <link rel="icon" href="/assets/logo.svg" />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="https://spacetimedb.com"
+          ><img src="/assets/logo.svg" alt="SpacetimeDB" /><span
+            >Daytona <small>Sandbox runner</small></span
+          ></a
+        >
+        <span id="connection" role="status">Connecting</span>
+      </header>
+      <p id="error" role="alert" hidden></p>
+      <section id="access" hidden>
+        <h2>Authorize this browser</h2>
+        <p>
+          The database owner must grant access before you can create paid
+          resources.
+        </p>
+        <code id="grant"></code>
+      </section>
+      <div class="workspace">
+        <section>
+          <div class="section-heading">
+            <h1>Sandboxes</h1>
+            <button id="create" disabled>Create</button>
+          </div>
+          <p class="muted">
+            One sandbox. A 10-minute lifetime. Outbound network access is
+            blocked.
+          </p>
+          <div id="sandboxes">
+            <p class="empty">No sandbox yet. Create one to run a command.</p>
+          </div>
+        </section>
+        <section>
+          <h2>Run a command</h2>
+          <form id="run-form">
+            <label for="command">Shell command</label>
+            <textarea id="command" rows="3" maxlength="4096" spellcheck="false">
+exit 0</textarea
+            >
+            <div class="actions">
+              <span class="muted">Runs inside the selected sandbox.</span
+              ><button id="run" disabled>Run</button>
+            </div>
+          </form>
+          <h2 class="history-heading">Execution history</h2>
+          <p class="muted">
+            Status and exit codes update live. Full output is available in
+            Daytona.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Command</th>
+                  <th>Status</th>
+                  <th>Exit code</th>
+                </tr>
+              </thead>
+              <tbody id="history"></tbody>
+            </table>
+          </div>
+          <p id="empty-history" class="empty">No commands have run.</p>
+        </section>
+      </div>
+      <footer>
+        <span id="identity"></span><span>Powered by SpacetimeDB + Daytona</span>
+      </footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

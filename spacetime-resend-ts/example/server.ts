@@ -178,7 +178,7 @@ async function bootstrapResendConfig(): Promise<void> {
     return;
   }
 
-  await requireStdb().procedures['resend.setResendConfig']({
+  await requireStdb().procedures.resend.setResendConfig({
     apiKey: RESEND_API_KEY,
     webhookSigningSecret: RESEND_WEBHOOK_SECRET || undefined,
     defaultFrom: DEFAULT_FROM,

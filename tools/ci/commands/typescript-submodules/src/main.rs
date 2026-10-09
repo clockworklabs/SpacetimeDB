@@ -15,8 +15,9 @@ fn main() -> Result<()> {
         pnpm(["-r", "-F", "./spacetime-*-ts/**", "run", script]).run()?;
     }
 
-    // The recovery test starts and stops its own server on a free local port.
+    // Recovery tests start and stop isolated servers on free local ports.
     pnpm(["--dir", "spacetime-cron-ts", "run", "test:recovery"]).run()?;
+    pnpm(["--dir", "spacetime-daytona-ts", "run", "test:local"]).run()?;
     pnpm(["-r", "-F", "./spacetime-*-ts/**", "run", "build"]).run()?;
     Ok(())
 }
