@@ -591,7 +591,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     ) -> Result<(), ContainerError> {
         let database_id = self.container_database_id(database_identity)?;
         self.control_db
-            .set_container(database_id, spec)
+            .set_container(database_id, database_identity, spec)
             .map_err(anyhow::Error::from)?;
         Ok(())
     }
