@@ -472,8 +472,13 @@ impl InstanceEnv {
                 },
             )?;
 
-        if insert_flags.is_scheduler_table {
-            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        if insert_flags.has_post_write_work() {
+            if insert_flags.is_scheduler_table {
+                self.schedule_row(stdb, tx, table_id, row_ptr)?;
+            }
+            if insert_flags.is_outbox_table {
+                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+            }
         }
 
         // Note, we update the metric for bytes written after the insert.
@@ -554,8 +559,13 @@ impl InstanceEnv {
                 },
             )?;
 
-        if update_flags.is_scheduler_table {
-            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        if update_flags.has_post_write_work() {
+            if update_flags.is_scheduler_table {
+                self.schedule_row(stdb, tx, table_id, row_ptr)?;
+            }
+            if update_flags.is_outbox_table {
+                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+            }
         }
         tx.metrics.bytes_written += buffer.len();
         tx.metrics.rows_updated += 1;

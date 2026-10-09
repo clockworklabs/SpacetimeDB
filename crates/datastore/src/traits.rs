@@ -531,17 +531,22 @@ impl Program {
     }
 }
 
-/// Additional information about an insert operation.
-pub struct InsertFlags {
+/// Additional information about a row mutation.
+pub struct RowMutationFlags {
     /// Is the table a scheduler table?
     pub is_scheduler_table: bool,
+    /// Is the table an outbox table?
+    pub is_outbox_table: bool,
 }
 
-/// Additional information about an update operation.
-// TODO(centril): consider fusing this with `InsertFlags`.
-pub struct UpdateFlags {
-    /// Is the table a scheduler table?
-    pub is_scheduler_table: bool,
+pub type InsertFlags = RowMutationFlags;
+pub type UpdateFlags = RowMutationFlags;
+
+impl RowMutationFlags {
+    #[inline]
+    pub fn has_post_write_work(&self) -> bool {
+        self.is_scheduler_table || self.is_outbox_table
+    }
 }
 
 pub trait TxDatastore: DataRow + Tx {

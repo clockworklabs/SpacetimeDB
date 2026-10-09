@@ -30,9 +30,10 @@ use spacetimedb_schema::def::{
     BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
-    TableSchema,
+    ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema, ScheduleSchema, Schema,
+    SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
@@ -189,6 +190,10 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
         | ST_OUTBOUND_MSG_ID
         | ST_INBOUND_STREAM_ID
         | ST_INBOUND_MSG_ID => false,
+        ST_OUTBOX_ID => {
+            let row: StOutboxRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -211,9 +216,10 @@ pub enum SystemTable {
     st_table_accessor,
 
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
+    st_outbox = ST_OUTBOX_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 25] {
+pub fn system_tables() -> [TableSchema; 26] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -241,6 +247,7 @@ pub fn system_tables() -> [TableSchema; 25] {
         st_outbound_msg_schema(),
         st_inbound_stream_schema(),
         st_inbound_msg_schema(),
+        st_outbox_schema(),
     ]
 }
 
@@ -359,6 +366,7 @@ pub(crate) const ST_OUTBOUND_STREAM_IDX: usize = 21;
 pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 22;
 pub(crate) const ST_INBOUND_STREAM_IDX: usize = 23;
 pub(crate) const ST_INBOUND_MSG_IDX: usize = 24;
+pub(crate) const ST_OUTBOX_IDX: usize = 25;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -789,6 +797,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StOutboundMsgFields>(&result, ST_OUTBOUND_MSG_NAME);
     validate_system_table::<StInboundStreamFields>(&result, ST_INBOUND_STREAM_NAME);
     validate_system_table::<StInboundMsgFields>(&result, ST_INBOUND_MSG_NAME);
+    validate_system_table::<StOutboxFields>(&result, ST_OUTBOX_NAME);
 
     result
 }
@@ -843,6 +852,8 @@ lazy_static::lazy_static! {
         m.insert("st_outbound_msg_stream_id_seq_key", ConstraintId(29));
         m.insert("st_inbound_stream_sender_identity_stream_id_key", ConstraintId(30));
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_key", ConstraintId(31));
+        m.insert("st_outbound_msg_stream_id_msg_id_key", ConstraintId(32));
+        m.insert("st_outbox_table_id_key", ConstraintId(33));
         m
     };
 }
@@ -887,6 +898,8 @@ lazy_static::lazy_static! {
         m.insert("st_outbound_msg_stream_id_seq_idx_btree", IndexId(33));
         m.insert("st_inbound_stream_sender_identity_stream_id_idx_btree", IndexId(34));
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_idx_btree", IndexId(35));
+        m.insert("st_outbound_msg_stream_id_msg_id_idx_btree", IndexId(36));
+        m.insert("st_outbox_table_id_idx_btree", IndexId(37));
         m
     };
 }
@@ -1083,6 +1096,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_OUTBOUND_MSG_ID => Some(st_outbound_msg_schema()),
         ST_INBOUND_STREAM_ID => Some(st_inbound_stream_schema()),
         ST_INBOUND_MSG_ID => Some(st_inbound_msg_schema()),
+        ST_OUTBOX_ID => Some(st_outbox_schema()),
         _ => None,
     }
 }
