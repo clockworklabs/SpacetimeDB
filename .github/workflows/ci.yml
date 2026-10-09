@@ -1703,8 +1703,10 @@ jobs:
         with:
           run_install: true
 
-      - name: Build TypeScript SDK
-        run: pnpm --dir crates/bindings-typescript run build
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *set-cargo-target-dir
       - *download-build-artifacts
@@ -1712,17 +1714,5 @@ jobs:
 
       - *expose-spacetime-cli
 
-      - name: Check submodules
-        run: |
-          pnpm -r -F "./spacetime-*-ts/**" run lint
-          pnpm -r -F "./spacetime-*-ts/**" run typecheck
-          pnpm -r -F "./spacetime-*-ts/**" run test
-
-      # Starts an isolated server on a free local port with a temporary data
-      # directory. `spacetime start` runs the extracted spacetimedb-standalone
-      # beside spacetimedb-cli.
-      - name: Run cron crash-recovery test
-        run: pnpm --dir spacetime-cron-ts run test:recovery
-
-      - name: Build submodule packages and examples
-        run: pnpm -r -F "./spacetime-*-ts/**" run build
+      - name: Check TypeScript submodules
+        run: cargo ci typescript-submodules
