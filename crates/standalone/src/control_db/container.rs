@@ -5,8 +5,8 @@
 //! node there is no separate claim step: creating a container, replacing a running
 //! container's spec, starting it (even when it already runs), and resetting its
 //! database while it runs all take a new generation and clear the reported status.
-//! Generations are never reused, including across removal and re-creation, until
-//! the database is deleted.
+//! Generations are never reused for a database identity, including across removal
+//! and re-creation of the container or of the database.
 use super::environment::transaction_error;
 use super::*;
 use spacetimedb::auth::identity::ContainerClaim;
@@ -14,7 +14,8 @@ use spacetimedb_lib::container::{ContainerInfo, ContainerSpec, ContainerState};
 
 const CONTAINER_TREE: &str = "container";
 const STATUS_TREE: &str = "container_status";
-/// The last generation of a removed container.
+/// The last generation of a removed container, by database identity, so that it
+/// outlives the database.
 const GENERATION_TREE: &str = "container_generation";
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -80,7 +81,13 @@ impl ControlDb {
 
     /// Set, replace, or remove (`None`) the container of a database.
     /// A new container starts running.
-    pub fn set_container(&self, database_id: u64, spec: Option<ContainerSpec>) -> Result<()> {
+    pub fn set_container(
+        &self,
+        database_id: u64,
+        database_identity: &Identity,
+        spec: Option<ContainerSpec>,
+    ) -> Result<()> {
+        let identity = database_identity.to_be_byte_array();
         self.update_container(database_id, |containers, statuses, generations, key| {
             match (get::<Container>(containers, key)?, spec.clone()) {
                 (Some(mut container), Some(spec)) => {
@@ -90,7 +97,7 @@ impl ControlDb {
                     put(containers, key, &container)?;
                 }
                 (None, Some(spec)) => {
-                    let generation = get::<u64>(generations, key)?.unwrap_or(0) + 1;
+                    let generation = get::<u64>(generations, &identity)?.unwrap_or(0) + 1;
                     let container = Container {
                         spec,
                         running: true,
@@ -99,7 +106,7 @@ impl ControlDb {
                     put(containers, key, &container)?;
                 }
                 (Some(container), None) => {
-                    put(generations, key, &container.generation)?;
+                    put(generations, &identity, &container.generation)?;
                     containers.remove(key)?;
                 }
                 (None, None) => {}
@@ -135,16 +142,6 @@ impl ControlDb {
                 put(containers, key, &container)?;
                 statuses.remove(key)?;
             }
-            Ok(())
-        })
-    }
-
-    /// Delete all container state of a deleted database.
-    pub(super) fn delete_container(&self, database_id: u64) -> Result<()> {
-        self.update_container(database_id, |containers, statuses, generations, key| {
-            containers.remove(key)?;
-            statuses.remove(key)?;
-            generations.remove(key)?;
             Ok(())
         })
     }

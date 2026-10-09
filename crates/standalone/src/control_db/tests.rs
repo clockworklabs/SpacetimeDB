@@ -159,14 +159,15 @@ fn test_decode() -> ResultTest<()> {
 fn test_container_generations() -> anyhow::Result<()> {
     let tmp = TempDir::with_prefix("container")?;
     let cdb = ControlDb::at(tmp.path())?;
-    let id = cdb.insert_database(Database {
+    let database = Database {
         id: 0,
         database_identity: *ALICE,
         owner_identity: *BOB,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
         bootstrap_generation: 0,
-    })?;
+    };
+    let id = cdb.insert_database(database.clone())?;
     let spec = |image: &str| {
         Some(ContainerSpec {
             image: format!("{image}@sha256:{}", "a".repeat(64)),
@@ -187,7 +188,7 @@ fn test_container_generations() -> anyhow::Result<()> {
     };
 
     // Creating a container starts it.
-    cdb.set_container(id, spec("a"))?;
+    cdb.set_container(id, &ALICE, spec("a"))?;
     assert_eq!(state(), Some((1, true)));
     assert!(current(1) && !current(0) && !current(2));
 
@@ -197,7 +198,7 @@ fn test_container_generations() -> anyhow::Result<()> {
     assert!(!current(1));
 
     // Replacing a stopped container's spec doesn't start it.
-    cdb.set_container(id, spec("b"))?;
+    cdb.set_container(id, &ALICE, spec("b"))?;
     assert_eq!(state(), Some((1, false)));
 
     // Starting takes a new generation, even when already running.
@@ -207,25 +208,30 @@ fn test_container_generations() -> anyhow::Result<()> {
     assert!(current(3) && !current(2));
 
     // So do replacing a running container's spec and resetting its database.
-    cdb.set_container(id, spec("c"))?;
+    cdb.set_container(id, &ALICE, spec("c"))?;
     cdb.restart_container(id)?;
     assert_eq!(state(), Some((5, true)));
     assert!(current(5) && !current(4));
 
     // A removed container keeps its generation for the next one.
-    cdb.set_container(id, None)?;
+    cdb.set_container(id, &ALICE, None)?;
     assert_eq!(state(), None);
     assert!(!current(5));
     assert!(!cdb.set_container_running(id, true)?);
-    cdb.set_container(id, spec("a"))?;
+    cdb.set_container(id, &ALICE, spec("a"))?;
     assert_eq!(state(), Some((6, true)));
     assert!(current(6));
 
-    // Deleting the database deletes its container state.
+    // Deleting the database deletes its container, but keeps the generation
+    // for a database republished with the same identity.
     cdb.delete_database(id)?;
     assert!(!current(6));
-    for tree in ["container", "container_status", "container_generation"] {
+    for tree in ["container", "container_status"] {
         assert!(cdb.db.open_tree(tree)?.is_empty());
     }
+    let id = cdb.insert_database(database)?;
+    cdb.set_container(id, &ALICE, spec("a"))?;
+    assert_eq!(cdb.get_container(id)?.map(|c| c.generation), Some(7));
+    assert!(current(7) && !current(6));
     Ok(())
 }

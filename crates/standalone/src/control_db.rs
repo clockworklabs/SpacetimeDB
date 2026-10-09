@@ -406,8 +406,12 @@ impl ControlDb {
     }
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
+        let database = self.get_database_by_id(id)?;
         let deleted = self.delete_database_and_environment(id)?;
-        self.delete_container(id)?;
+        if let Some(database) = database {
+            // Keep the container's generation for a database republished with the same identity.
+            self.set_container(id, &database.database_identity, None)?;
+        }
         Ok(deleted)
     }
 
