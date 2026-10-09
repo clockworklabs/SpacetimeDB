@@ -40,6 +40,7 @@ These fields can appear at any level (root or child):
 | `num-replicas` | number | Yes | Number of database replicas |
 | `anonymous` | boolean | Yes | Use anonymous identity |
 | `organization` | string | Yes | Organization name or identity |
+| `container` | object | Yes | The container to run beside the database (see [Container configuration](#container-configuration)) |
 | `generate` | array | No | Generate targets (see [Generate configuration](#generate-configuration)) |
 | `children` | array | No | Child database entities (see [Children and inheritance](#children-and-inheritance)) |
 | `dev` | object | No | Dev server configuration, root-level only (see [`spacetime dev` configuration](#spacetime-dev-configuration)) |
@@ -79,6 +80,48 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
   ]
 }
 ```
+
+## Container configuration
+
+The `container` key attaches a container to the database. After publishing the module, `spacetime publish` builds the container's image if needed, attaches the container to the database, and starts it if it is stopped. If the database already has the same container, `spacetime publish` leaves it alone, so republishing without changes does not restart it, unless it had failed to start. Pass `--no-container` to skip this step. `spacetime dev` does not attach containers yet.
+
+The server must run containers. A local `spacetime start` does when Docker is running and it listens only on loopback addresses, or when started with `--enable-containers` (see [`containers`](/cli-reference/standalone-config#containers)).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `build` | string | Directory with the Dockerfile to build, relative to `spacetime.json` |
+| `image` | string | With `build`: the registry repository to push the image to, for servers on other machines. Without `build`: an image pinned to a digest, like `ghcr.io/me/agent@sha256:<hex>`, or for a server on this machine, a local image ID, like `sha256:<hex>` |
+| `env-keys` | array of strings | Keys of the database environment to set in the container |
+| `command` | array of strings | Replaces the image's entrypoint and command |
+| `restart` | string | When to restart the container's command after it exits: `on-failure` (default), `always`, or `never` |
+| `cpu-millicores` | number | CPU limit, in thousandths of a CPU (default 1000) |
+| `memory-bytes` | number or string | Memory limit, in bytes or as a size like `"512MiB"` or `"1GB"` (default 1 GiB) |
+| `scratch-bytes` | number or string | Limit on the container's writable layer, including `/tmp` (default 1 GiB) |
+| `pids-max` | number | Limit on Linux tasks, including threads (default 512) |
+| `platforms` | array of strings | Platforms to build for when pushing to `image` (default `["linux/amd64", "linux/arm64"]`) |
+
+Either `build` or a pinned `image` is required. How `spacetime publish` gets the image depends on the server:
+
+- **`build`, and the server is on this machine** (its URL is `localhost` or a loopback address): runs `docker build` and uses the local image by ID, with no registry. The server shares this machine's Docker daemon.
+- **`build`, and the server is on another machine**: requires `image` to name a registry repository. Runs `docker buildx build --platform <platforms> --push` and uses the pushed image by digest. Log in to the registry with `docker login` first. The server pulls the image without credentials, so the repository must be public.
+- **A pinned `image` without `build`**: uses that image as is.
+
+```json
+{
+  "database": "my-agent",
+  "module-path": "./spacetimedb",
+  "container": {
+    "build": "./agent",
+    "image": "ghcr.io/me/my-agent",
+    "env-keys": ["OPENAI_API_KEY"],
+    "restart": "on-failure"
+  }
+}
+```
+
+The container receives only the database environment keys listed in `env-keys`, and does not start if one of them has no value. `spacetime publish` uploads values for the keys the module declares from your shell, and values from the config's `env` map.
+
+Children inherit `container` as a whole. A child can replace it, or set it to `null` to attach none. Removing `container` from the config does not detach a container that a database already has; use `spacetime container remove` for that.
 
 ## Children and inheritance
 
