@@ -1,0 +1,19 @@
+{
+  "name": "spacetime-posthog-example-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "spacetime build",
+    "publish:local": "spacetime publish --server local --yes spacetime-posthog-example",
+    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-posthog-example"
+  },
+  "dependencies": {
+    "@spacetimedb/posthog": "workspace:*",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.9.3"
+  }
+}
