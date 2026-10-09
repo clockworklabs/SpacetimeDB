@@ -306,6 +306,9 @@ pub enum AlgebraicTypeUse {
     /// The special `Uuid` type.
     Uuid,
 
+    /// The special file reference type.
+    FileRef,
+
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
     Unit,
@@ -406,6 +409,8 @@ impl TypespaceForGenerateBuilder<'_> {
             Ok(AlgebraicTypeUse::TimeDuration)
         } else if ty.is_uuid() {
             Ok(AlgebraicTypeUse::Uuid)
+        } else if ty.is_file_ref() {
+            Ok(AlgebraicTypeUse::FileRef)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {

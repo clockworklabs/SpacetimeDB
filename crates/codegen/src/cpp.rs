@@ -121,6 +121,7 @@ impl<'opts> Cpp<'opts> {
             AlgebraicTypeUse::TimeDuration => write!(output, "__sdk::TimeDuration"),
             AlgebraicTypeUse::ScheduleAt => write!(output, "__sdk::ScheduleAt"),
             AlgebraicTypeUse::Uuid => write!(output, "__sdk::Uuid"),
+            AlgebraicTypeUse::FileRef => self.write_algebraic_type(output, module, &crate::util::FILE_REF_REPR),
             AlgebraicTypeUse::Unit => write!(output, "std::monostate"),
             AlgebraicTypeUse::Never => write!(output, "std::monostate"),
             AlgebraicTypeUse::Ref(type_ref) => {

@@ -23,6 +23,13 @@ pub enum Error {
     #[error("Unsubscribe already called on subscription")]
     AlreadyUnsubscribed,
 
+    #[error("File request failed (status {status:?}): {message}")]
+    FileRequest {
+        /// The HTTP status, if the server responded.
+        status: Option<u16>,
+        message: String,
+    },
+
     #[error(transparent)]
     Internal(#[from] InternalError),
 }

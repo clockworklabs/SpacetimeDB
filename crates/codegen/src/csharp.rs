@@ -1277,6 +1277,7 @@ fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Disp
         AlgebraicTypeUse::Timestamp => f.write_str("SpacetimeDB.Timestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
         AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
+        AlgebraicTypeUse::FileRef => write!(f, "{}", ty_fmt(module, &crate::util::FILE_REF_REPR)),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt(module, inner_ty)),
         AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
@@ -1318,6 +1319,7 @@ fn ty_fmt_with_ns<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace
         AlgebraicTypeUse::Timestamp => f.write_str("SpacetimeDB.Timestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
         AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
+        AlgebraicTypeUse::FileRef => write!(f, "{}", ty_fmt_with_ns(module, &crate::util::FILE_REF_REPR, namespace)),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt_with_ns(module, inner_ty, namespace)),
         AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
@@ -1380,7 +1382,8 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
-        | AlgebraicTypeUse::Uuid => None,
+        | AlgebraicTypeUse::Uuid
+        | AlgebraicTypeUse::FileRef => None,
         AlgebraicTypeUse::Never => unimplemented!("never types are not yet supported in C# output"),
     }
 }

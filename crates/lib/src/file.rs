@@ -11,6 +11,7 @@
 //!   Holding a `FileRef` is what lets a client download the file.
 
 use crate::{Hash, Identity, Timestamp};
+use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, SpacetimeType};
 use std::{fmt, str::FromStr};
 
@@ -42,8 +43,9 @@ impl fmt::Display for FileId {
 /// Anyone holding a `FileRef` can download the file's contents,
 /// so treat a `FileRef` the way you would treat the bytes themselves.
 ///
-/// Represented in SATS as a `U256`, with the `FileId` in the low 128 bits
-/// and the read secret in the high 128 bits.
+/// Represented in SATS as the special product `{ __file_ref__: U256 }`, so that generated client code
+/// can give it its own type, with the `FileId` in the low 128 bits and the read secret in the high
+/// 128 bits. Its BSATN is the same as the `U256`'s.
 /// Its text form, used in URLs, is the `FileId` in hex followed by the read secret in hex.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileRef {
@@ -51,9 +53,15 @@ pub struct FileRef {
     read_secret: u128,
 }
 
-impl_st!([] FileRef, AlgebraicType::U256);
-impl_serialize!([] FileRef, (self, ser) => self.to_u256().serialize(ser));
-impl_deserialize!([] FileRef, de => <u256>::deserialize(de).map(FileRef::from_u256));
+/// The product `FileRef` serializes as.
+#[derive(Serialize, Deserialize)]
+struct FileRefRepr {
+    __file_ref__: u256,
+}
+
+impl_st!([] FileRef, AlgebraicType::file_ref());
+impl_serialize!([] FileRef, (self, ser) => FileRefRepr { __file_ref__: self.to_u256() }.serialize(ser));
+impl_deserialize!([] FileRef, de => FileRefRepr::deserialize(de).map(|repr| FileRef::from_u256(repr.__file_ref__)));
 
 impl FileRef {
     pub const fn new(id: FileId, read_secret: u128) -> Self {
