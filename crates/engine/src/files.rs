@@ -1226,4 +1226,111 @@ mod tests {
         assert_eq!(size(b"deleted"), None);
         Ok(())
     }
+
+    /// A user table with one `u64` column.
+    fn u64_table() -> spacetimedb_schema::schema::TableSchema {
+        use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
+        use spacetimedb_sats::{raw_identifier::RawIdentifier, AlgebraicType, ProductType};
+        use spacetimedb_schema::schema::Schema as _;
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.build_table_with_new_type(
+            RawIdentifier::new("numbers"),
+            ProductType::from([("n", AlgebraicType::U64)]),
+            true,
+        );
+        let def: spacetimedb_schema::def::ModuleDef = builder.finish().try_into().expect("a valid table");
+        let table = def.table("numbers").expect("the table exists");
+        spacetimedb_schema::schema::TableSchema::from_module_def(
+            &def,
+            table,
+            (),
+            spacetimedb_primitives::TableId::SENTINEL,
+        )
+    }
+
+    /// Prints how long a durable database takes to confirm transactions without files,
+    /// with and without File Storage. Run with `--ignored --nocapture`.
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn measure_gate_overhead() -> anyhow::Result<()> {
+        const TXS: usize = 20_000;
+        for with_files in [false, true, false, true] {
+            let stdb = if with_files {
+                TestDB::durable_with_files()?
+            } else {
+                TestDB::durable()?
+            };
+            let rt = stdb.runtime().expect("durable").clone();
+            // Let the snapshot taken after opening finish, so it doesn't compete with the measurement.
+            wait_for_snapshot(&stdb, &rt, 1);
+            let schema = u64_table();
+            let table_id = stdb.with_auto_commit(Workload::ForTests, |tx| stdb.create_table(tx, schema))?;
+            let mut durable = stdb.durable_tx_offset().expect("durable");
+            let start = std::time::Instant::now();
+            let mut last = 0;
+            for i in 0..TXS {
+                let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+                stdb.insert(
+                    &mut tx,
+                    table_id,
+                    &spacetimedb_sats::bsatn::to_vec(&spacetimedb_sats::product![i as u64])?,
+                )?;
+                last = stdb.commit_tx(tx)?.expect("consumes an offset").0;
+            }
+            let committed = start.elapsed();
+            rt.block_on(durable.wait_for(last))?;
+            let confirmed = start.elapsed();
+            println!(
+                "files={with_files}: {TXS} txs committed in {committed:?}, all confirmed after {confirmed:?} ({:?}/tx)",
+                confirmed / TXS as u32
+            );
+        }
+        Ok(())
+    }
+
+    /// Prints how long a snapshot takes with many files, since the manifest's file list is built
+    /// by scanning `st_file` while the snapshot holds the datastore lock. Run with `--ignored --nocapture`.
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn measure_snapshot_with_many_files() -> anyhow::Result<()> {
+        for files in [0, 100_000, 1_000_000] {
+            let stdb = TestDB::durable()?;
+            let rt = stdb.runtime().expect("durable").clone();
+            wait_for_snapshot(&stdb, &rt, 1);
+            const BATCH: usize = 50_000;
+            for batch in 0..files / BATCH {
+                stdb.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+                    for i in 0..BATCH {
+                        let n = (batch * BATCH + i) as u64;
+                        let mut row = file_row(&n.to_le_bytes());
+                        // Half the files share contents, as copies would.
+                        row.content_hash = content_hash(&(n / 2).to_le_bytes());
+                        insert_file_row(tx, &row)?;
+                    }
+                    Ok(())
+                })?;
+            }
+            // The same work the snapshot does under its lock to build the manifest's file list.
+            let start = std::time::Instant::now();
+            let distinct = stdb.with_read_only(Workload::ForTests, |tx| -> Result<usize, DBError> {
+                let mut hashes = BTreeMap::new();
+                for row in tx.iter(ST_FILE_ID)? {
+                    let row = StFileRow::try_from(row)?;
+                    hashes.insert(row.content_hash, row.size);
+                }
+                Ok(hashes.len())
+            })?;
+            let scan = start.elapsed();
+            let repo = stdb.snapshot_repo().expect("snapshots are enabled");
+            let start = std::time::Instant::now();
+            stdb.take_snapshot(&*repo)?.expect("a snapshot is taken");
+            let snapshot = start.elapsed();
+            assert_eq!(repo.retained_file_hashes()?.len(), distinct);
+            println!(
+                "{files} files ({distinct} distinct hashes): listing them took {scan:?}; \
+                 the whole snapshot, including st_file's pages, took {snapshot:?}"
+            );
+        }
+        Ok(())
+    }
 }
