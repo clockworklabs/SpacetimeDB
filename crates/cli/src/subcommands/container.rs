@@ -200,11 +200,10 @@ pub(crate) async fn check_response(response: reqwest::Response) -> anyhow::Resul
     match status {
         StatusCode::NOT_IMPLEMENTED => bail!(
             "{status}: this server does not run containers. If it is a local `spacetime start`, restart it \
-             while Docker is running, listening only on loopback (`--listen-addr 127.0.0.1:3000`), \
-             or with `--enable-containers`."
+             while Docker is running, or with `--enable-containers`."
         ),
         StatusCode::NOT_FOUND if body.is_empty() => bail!("{status}: this server does not support containers."),
-        StatusCode::FORBIDDEN => bail!("{status}: your identity may not manage this database's container here. {body}"),
+        StatusCode::FORBIDDEN => bail!("{status}: you may not manage this database's container on this server. {body}"),
         _ => bail!("{status}: {body}"),
     }
 }

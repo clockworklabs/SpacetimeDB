@@ -71,6 +71,7 @@ pub struct StandaloneEnv {
 /// How this server runs containers, once they are enabled.
 struct Containers {
     docker_host: Option<String>,
+    local_clients_only: bool,
 }
 
 impl StandaloneEnv {
@@ -132,9 +133,18 @@ impl StandaloneEnv {
     /// Store the containers of databases in the control database, and answer the
     /// container API from it and from the Docker Engine at `docker_host`. Running the containers
     /// is up to the caller. Until this is called, the container API answers that containers are
-    /// unsupported.
-    pub fn enable_containers(&self, docker_host: Option<String>) {
-        let _ = self.containers.set(Containers { docker_host });
+    /// unsupported. With `local_clients_only`, see [`Self::containers_for_local_clients_only`].
+    pub fn enable_containers(&self, docker_host: Option<String>, local_clients_only: bool) {
+        let _ = self.containers.set(Containers {
+            docker_host,
+            local_clients_only,
+        });
+    }
+
+    /// Whether only clients on this machine may attach, start and upload containers, which the
+    /// caller enforces.
+    pub fn containers_for_local_clients_only(&self) -> bool {
+        self.containers.get().is_some_and(|c| c.local_clients_only)
     }
 
     fn containers(&self) -> Result<&Containers, ContainerError> {
