@@ -469,6 +469,15 @@ pub enum AutoMigrateError {
         new_target: ColId,
     },
 
+    #[error(
+        "Changing the primary key of outbox table {table} from {old_primary_key:?} to {new_primary_key:?} requires a manual migration"
+    )]
+    ChangeOutboxPrimaryKey {
+        table: Identifier,
+        old_primary_key: Option<ColId>,
+        new_primary_key: Option<ColId>,
+    },
+
     #[error("Adding outbox metadata to table {table} requires a manual migration")]
     AddOutbox { table: Identifier },
 
@@ -803,6 +812,12 @@ fn auto_migrate_table<'def>(
         .into()),
         (Some(_), None) => Err(AutoMigrateError::RemoveOutbox {
             table: old.name.clone(),
+        }
+        .into()),
+        (Some(_), Some(_)) if old.primary_key != new.primary_key => Err(AutoMigrateError::ChangeOutboxPrimaryKey {
+            table: old.name.clone(),
+            old_primary_key: old.primary_key,
+            new_primary_key: new.primary_key,
         }
         .into()),
         (Some(old_outbox), Some(new_outbox)) if old_outbox.target_column != new_outbox.target_column => {
@@ -1382,6 +1397,14 @@ mod tests {
         outbox: Option<(&str, Vec<ColId>, Option<&str>, &str)>,
         target_column: ColId,
     ) -> ModuleDef {
+        outbox_module_def_with_target_and_primary_key(outbox, target_column, ColId(0))
+    }
+
+    fn outbox_module_def_with_target_and_primary_key(
+        outbox: Option<(&str, Vec<ColId>, Option<&str>, &str)>,
+        target_column: ColId,
+        primary_key: ColId,
+    ) -> ModuleDef {
         create_module_def_v10(|builder| {
             builder
                 .build_table_with_new_type(
@@ -1390,13 +1413,14 @@ mod tests {
                         ("msg_id", AlgebraicType::U64),
                         ("target", AlgebraicType::identity()),
                         ("payload", AlgebraicType::String),
-                        ("extra", AlgebraicType::U32),
+                        ("extra", AlgebraicType::U64),
                         ("other_target", AlgebraicType::identity()),
                     ]),
                     true,
                 )
-                .with_auto_inc_primary_key(0)
-                .with_index_no_accessor_name(btree(0), "outbound_pings_msg_id_idx_btree")
+                .with_primary_key(primary_key)
+                .with_unique_constraint(primary_key)
+                .with_index_no_accessor_name(btree(primary_key), "outbound_pings_primary_key_idx_btree")
                 .finish();
 
             if let Some((remote_reducer, arg_columns, on_result_reducer, signature_hash)) = outbox {
@@ -2484,6 +2508,32 @@ mod tests {
                 old_target,
                 new_target,
             } => table == &table_name && old_target == &ColId(1) && new_target == &ColId(4)
+        );
+    }
+
+    #[test]
+    fn migrate_changed_outbox_primary_key_requires_manual_migration() {
+        let old_def = outbox_module_def_with_target_and_primary_key(
+            Some(("receive_ping", vec![ColId(2)], None, "hash-v1")),
+            ColId(1),
+            ColId(0),
+        );
+        let new_def = outbox_module_def_with_target_and_primary_key(
+            Some(("receive_ping", vec![ColId(2)], None, "hash-v1")),
+            ColId(1),
+            ColId(3),
+        );
+
+        let result = ponder_auto_migrate(&old_def, &new_def);
+        let table_name = expect_identifier("outbound_pings");
+
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeOutboxPrimaryKey {
+                table,
+                old_primary_key,
+                new_primary_key,
+            } => table == &table_name && old_primary_key == &Some(ColId(0)) && new_primary_key == &Some(ColId(3))
         );
     }
 
