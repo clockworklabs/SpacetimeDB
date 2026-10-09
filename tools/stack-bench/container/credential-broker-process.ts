@@ -183,7 +183,8 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
     if (docker) writeFileSync(heartbeatPath, '', { mode: 0o600 });
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = docker || networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
-    const config = validateBrokerConfig({ provider: selectedAuth.provider, providerRoute, accountId: selectedAuth.accountId,
+    const config = validateBrokerConfig({ provider: selectedAuth.provider, upstream: selectedAuth.upstream,
+      providerRoute, accountId: selectedAuth.accountId,
       mode: selectedAuth.mode, credential, sessionToken, readyPath,
       ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,

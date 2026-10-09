@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.js';
 import { sha256 } from '../evidence/provenance.js';
 import { readGrokLogin } from './grok-login.js';
+import { ANTHROPIC_UPSTREAM_IDS } from '../../container/credential-broker-accounting.js';
 
 const label = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
 export const executionCredentialsSchema = z.object({
@@ -16,12 +17,15 @@ export const assignmentSchema = z.object({
   id: label, version: label,
   provider: z.enum(['anthropic', 'openai', 'openrouter', 'xai']),
   mode: z.enum(['api-key', 'subscription-token']),
+  // A maker's own Anthropic-compatible endpoint, for its models run in Claude Code.
+  upstream: z.enum(ANTHROPIC_UPSTREAM_IDS).optional(),
 }).strict();
 export type CredentialAssignment = z.infer<typeof assignmentSchema>;
 const profileSchema = assignmentSchema.omit({ id: true }).extend({
   secretFile: z.string().refine(isAbsolute, 'secretFile must be absolute'),
 }).strict().refine(profile => profile.provider !== 'openrouter' || profile.mode === 'api-key',
-  'OpenRouter requires api-key mode');
+  'OpenRouter requires api-key mode').refine(profile => !profile.upstream
+  || (profile.provider === 'anthropic' && profile.mode === 'api-key'), 'only an Anthropic API key names an upstream');
 const PROFILE_FILE = 'STACK_BENCH_CREDENTIAL_PROFILES_FILE';
 const ASSIGNMENT = 'STACK_BENCH_CREDENTIAL_ASSIGNMENT';
 const FINGERPRINT = 'STACK_BENCH_CREDENTIAL_SECRET_SHA256';
@@ -37,7 +41,8 @@ export function listCredentialProfiles(env: NodeJS.ProcessEnv = process.env): Cr
   const path = env[PROFILE_FILE];
   if (!path) return [];
   const values = z.record(label, profileSchema).parse(JSON.parse(readFileSync(path, 'utf8')));
-  return Object.entries(values).map(([id, { version, provider, mode }]) => ({ id, version, provider, mode }));
+  return Object.entries(values).map(([id, { version, provider, mode, upstream }]) =>
+    ({ id, version, provider, mode, ...(upstream ? { upstream } : {}) }));
 }
 
 function readProfile(id: string, env: NodeJS.ProcessEnv) {
@@ -74,7 +79,7 @@ export function resolveExecutionCredentials(adapterId: string, attemptId: string
     throw new Error(`Credential profile ${id} provider does not match adapter ${adapterId}`);
   }
   const assignment: CredentialAssignment = { id, version: profile.version,
-    provider: profile.provider, mode: profile.mode };
+    provider: profile.provider, mode: profile.mode, ...(profile.upstream ? { upstream: profile.upstream } : {}) };
   for (const variable of authenticationVariables[profile.provider]) {
     delete env[variable];
     delete env[`${variable}_FILE`];
@@ -100,6 +105,7 @@ export function readPinnedExecutionCredential(env: NodeJS.ProcessEnv = process.e
   catch { throw new Error('Execution credential assignment is invalid'); }
   const { profile, secret, fingerprint } = readProfile(assignment.id, env);
   if (profile.provider !== assignment.provider || profile.mode !== assignment.mode
+    || profile.upstream !== assignment.upstream
     || profile.version !== assignment.version || fingerprint !== env[FINGERPRINT]) {
     throw new Error(`Credential profile ${assignment.id} changed after admission; explicitly select the new version before continuing`);
   }

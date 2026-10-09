@@ -1,7 +1,7 @@
 import type { IncomingMessage, OutgoingHttpHeaders } from 'node:http';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 import { createParser } from 'eventsource-parser';
-import { firstUnpricedReason } from './credential-broker-accounting.js';
+import { ANTHROPIC_UPSTREAMS, firstUnpricedReason } from './credential-broker-accounting.js';
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
 
@@ -344,7 +344,8 @@ function responsesRequestFeature(payload: JsonRecord): UnpricedReason | null {
     payload.prompt || payload.previous_response_id || payload.conversation ? 'stored-context' : null);
 }
 
-export function brokerHostname({ provider, mode }: Pick<BrokerConfig, 'provider' | 'mode'>): string {
+export function brokerHostname({ provider, mode, upstream }: Pick<BrokerConfig, 'provider' | 'mode' | 'upstream'>): string {
+  if (upstream) return ANTHROPIC_UPSTREAMS[upstream].hostname;
   if (!provider || provider === 'anthropic') return 'api.anthropic.com';
   if (provider === 'openrouter') return 'openrouter.ai';
   if (provider === 'xai') return mode === 'subscription-token' ? 'cli-chat-proxy.grok.com' : 'api.x.ai';
@@ -355,9 +356,17 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
   if (!config.provider || config.provider === 'anthropic') return {
     hostname: brokerHostname(config),
     allowedPaths: new Set(['/v1/messages', '/v1/messages/count_tokens']),
-    upstreamPath: path => path,
+    upstreamPath: path => (config.upstream ? ANTHROPIC_UPSTREAMS[config.upstream].pathPrefix : '') + path,
     billable: path => path === '/v1/messages',
-    headers: request => upstreamHeaders(request, config),
+    headers: request => {
+      const headers = upstreamHeaders(request, config);
+      // The makers' endpoints take the key as a bearer token, as their Claude Code guides set it.
+      if (config.upstream) {
+        delete headers['x-api-key'];
+        headers.authorization = `Bearer ${config.credential}`;
+      }
+      return headers;
+    },
     parseRequest: (body, path) => parseProviderRequest(body, path, config),
     requestPricing: anthropicRequestPricing,
     outputLimit: payload => payload.max_tokens as number,

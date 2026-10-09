@@ -38,8 +38,18 @@ type JsonRecord = Record<string, unknown>;
 export type BrokerMode = 'api-key' | 'subscription-token';
 export type PricingRates = ReturnType<typeof validateSharedPricingRates>;
 
+// Model makers that serve their own models behind an Anthropic Messages endpoint.
+export const ANTHROPIC_UPSTREAMS = {
+  zai: { hostname: 'api.z.ai', pathPrefix: '/api/anthropic' },
+  deepseek: { hostname: 'api.deepseek.com', pathPrefix: '/anthropic' },
+  moonshot: { hostname: 'api.moonshot.ai', pathPrefix: '/anthropic' },
+} as const;
+export type AnthropicUpstream = keyof typeof ANTHROPIC_UPSTREAMS;
+export const ANTHROPIC_UPSTREAM_IDS = Object.keys(ANTHROPIC_UPSTREAMS) as [AnthropicUpstream, ...AnthropicUpstream[]];
+
 export type BrokerConfig = {
   provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
+  upstream?: AnthropicUpstream;
   accountId?: string;
   providerRoute?: string;
   mode: BrokerMode;
@@ -132,6 +142,7 @@ const brokerConfigSchema = z.strictObject({
   provider: z.enum(['anthropic', 'openai', 'openrouter', 'xai']).optional(),
   accountId: z.string().min(1).optional(),
   providerRoute: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/).optional(),
+  upstream: z.enum(ANTHROPIC_UPSTREAM_IDS).optional(),
   mode: z.enum(['api-key', 'subscription-token']),
   credential: z.string().min(16),
   sessionToken: z.string().min(16),
@@ -149,6 +160,9 @@ const brokerConfigSchema = z.strictObject({
 }).superRefine((value, context) => {
   if (value.provider === 'openrouter' && (value.mode !== 'api-key' || !value.providerRoute || value.maxBudgetUsd == null)) {
     context.addIssue({ code: 'custom', message: 'OpenRouter requires API-key auth, providerRoute, and a spend budget' });
+  }
+  if (value.upstream !== undefined && ((value.provider ?? 'anthropic') !== 'anthropic' || value.mode !== 'api-key')) {
+    context.addIssue({ code: 'custom', path: ['upstream'], message: 'only an Anthropic API key names an upstream' });
   }
   if (value.provider !== 'openrouter' && value.providerRoute !== undefined) {
     context.addIssue({ code: 'custom', path: ['providerRoute'], message: 'only OpenRouter uses providerRoute' });

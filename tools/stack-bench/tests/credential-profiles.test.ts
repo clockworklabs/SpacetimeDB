@@ -117,3 +117,26 @@ test('a Grok sign-in profile stays pinned to its account while its tokens rotate
     assert.throws(() => readPinnedExecutionCredential(selected.env), /changed after admission/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('an upstream profile is an Anthropic API key, pinned with its endpoint', () => {
+  const root = mkdtempSync(join(tmpdir(), 'credential-profiles-'));
+  try {
+    const secretFile = join(root, 'secret');
+    const registry = join(root, 'profiles.json');
+    writeFileSync(secretFile, 'SYNTHETIC_SECRET_ZAI');
+    const profiles: Record<string, unknown> = {
+      zai: { provider: 'anthropic', mode: 'api-key', upstream: 'zai', secretFile, version: 'v1' },
+      bad: { provider: 'anthropic', mode: 'subscription-token', upstream: 'zai', secretFile, version: 'v1' },
+    };
+    writeFileSync(registry, JSON.stringify(profiles));
+    const source = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry };
+    const selected = resolveExecutionCredentials('claude-code', 'a', { default: 'zai' }, source);
+    assert.deepEqual(selected.assignment, { id: 'zai', version: 'v1', provider: 'anthropic', mode: 'api-key', upstream: 'zai' });
+    assert.deepEqual(resolveContainerAuth({ provider: 'anthropic', env: selected.env }),
+      { mode: 'api-key', credential: 'SYNTHETIC_SECRET_ZAI', upstream: 'zai' });
+    assert.throws(() => resolveExecutionCredentials('claude-code', 'a', { default: 'bad' }, source), /invalid/);
+    profiles.zai = { ...profiles.zai as object, upstream: 'deepseek' };
+    writeFileSync(registry, JSON.stringify(profiles));
+    assert.throws(() => readPinnedExecutionCredential(selected.env), /changed after admission/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

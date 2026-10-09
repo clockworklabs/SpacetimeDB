@@ -13,7 +13,7 @@ import { zstdCompressSync } from 'node:zlib';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
-import { brokerProtocol, imageTokenAdjustment } from '../container/broker-protocols.js';
+import { brokerHostname, brokerProtocol, imageTokenAdjustment } from '../container/broker-protocols.js';
 import { createCredentialBroker, heartbeatStale } from '../container/credential-broker.js';
 import { noUnpriced, readCredentialBrokerLedger, reconcileCredentialBrokerReceipt, writeCredentialBrokerLedger }
   from '../container/credential-broker-accounting.js';
@@ -74,7 +74,8 @@ interface BrokerReady {
 }
 
 type BrokerTestConfig = Partial<Pick<BrokerConfig,
-  'ledgerPath' | 'maxBudgetUsd' | 'pricingRates' | 'maxOutputTokens' | 'provider' | 'providerRoute' | 'accountId' | 'model'>> & {
+  'ledgerPath' | 'maxBudgetUsd' | 'pricingRates' | 'maxOutputTokens' | 'provider' | 'providerRoute' | 'accountId' | 'model'
+  | 'upstream'>> & {
     upstreamBody?: string | Buffer;
     upstreamStatus?: number;
     upstreamHeaders?: OutgoingHttpHeaders;
@@ -182,6 +183,21 @@ test('Anthropic requests preserve the selected capacity tier under a cap', async
       }, { maxBudgetUsd, pricingRates: PRICING_RATES,
         upstreamBody: JSON.stringify({ usage: { ...ONE_REQUEST_USAGE, service_tier: 'standard' } }) });
     }
+  }
+});
+
+// A maker's own Anthropic endpoint gets the same request under its path, keyed as its Claude Code guide sets it.
+test('Anthropic-compatible upstreams receive the request under their path with a bearer key', async () => {
+  for (const [upstream, prefix, hostname] of [['zai', '/api/anthropic', 'api.z.ai'],
+    ['deepseek', '/anthropic', 'api.deepseek.com'], ['moonshot', '/anthropic', 'api.moonshot.ai']] as const) {
+    await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {
+      assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ model: 'test-model', max_tokens: 1 }) })).status, 200);
+      assert.equal(seen[0]!.url, `${prefix}/v1/messages`);
+      assert.equal(seen[0]!.headers.authorization, `Bearer ${credential}`);
+      assert.equal(seen[0]!.headers['x-api-key'], undefined);
+    }, { upstream });
+    assert.equal(brokerHostname({ mode: 'api-key', upstream }), hostname);
   }
 });
 

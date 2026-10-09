@@ -3,12 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { PathLike } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { readGrokLogin } from '../src/agents/grok-login.js';
+import type { AnthropicUpstream } from './credential-broker-accounting.js';
 
 export const SUBSCRIPTION_TOKEN_ENVIRONMENT = 'CLAUDE_CODE_OAUTH_TOKEN';
 export const LEGACY_SUBSCRIPTION_TOKEN_TARGET = '/run/secrets/claude-code-oauth-token';
 
 export type ContainerAuth = {
   provider?: 'anthropic' | 'openai' | 'openrouter' | 'xai';
+  upstream?: AnthropicUpstream;
   accountId?: string;
   mode: 'api-key' | 'subscription-token';
   credential: string;
@@ -86,7 +88,8 @@ export function resolveContainerAuth({ provider = 'anthropic', apiKey = '', env 
   if (apiKey && (token || tokenFileValue)) {
     throw new Error('use only one of API-key and subscription-token authentication');
   }
-  if (apiKey) return { mode: 'api-key', credential: apiKey };
+  const upstream = pinned?.assignment.upstream;
+  if (apiKey) return { mode: 'api-key', credential: apiKey, ...(upstream ? { upstream } : {}) };
   if (token) return { mode: 'subscription-token', credential: token };
   if (tokenFileValue) {
     if (!isAbsolute(tokenFileValue)) {
