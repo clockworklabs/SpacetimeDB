@@ -516,8 +516,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         row: spacetimedb_datastore::system_tables::StFileRow,
         upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
     ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
-        self.common.insert_uploaded_file(row, upload, &mut self.instance)
+        let (res, trapped) = self
+            .common
+            .insert_uploaded_file(row, upload, uploader, &mut self.instance);
+        self.trapped = trapped;
+        res
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
@@ -886,33 +891,59 @@ impl InstanceCommon {
         })
     }
 
-    /// Commits the `st_file` row of an uploaded file, re-evaluating subscribed views first,
-    /// since a view may read files' metadata.
+    /// Commits the `st_file` row of a file `uploader` uploaded, and its idempotency record if it has one,
+    /// refreshing the views that read files.
+    ///
+    /// Returns whether a view trapped, as reducer calls do.
     pub(crate) fn insert_uploaded_file<I: WasmInstance>(
         &mut self,
         row: spacetimedb_datastore::system_tables::StFileRow,
         upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
         inst: &mut I,
-    ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
+    ) -> (anyhow::Result<crate::host::module_host::UploadedFileRecorded>, bool) {
+        use crate::host::module_host::UploadedFileRecorded;
         let replica_ctx = inst.replica_ctx().clone();
         let db = replica_ctx.relational_db();
+        let timestamp = Timestamp::now();
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (tx, _) = db.with_auto_rollback(tx, |tx| -> Result<(), crate::error::DBError> {
-            crate::db::files::insert_file_row(tx, &row)?;
-            if let Some(upload) = &upload {
-                crate::db::files::insert_upload_record(tx, upload)?;
+        let inserted = db.with_auto_rollback(
+            tx,
+            |tx| -> Result<Option<spacetimedb_lib::FileId>, crate::error::DBError> {
+                if let Some(upload) = &upload
+                    && let Some(file_id) = crate::db::files::record_upload(db, tx, upload, timestamp)?
+                {
+                    return Ok(Some(file_id));
+                }
+                crate::db::files::insert_file_row(tx, &row)?;
+                Ok(None)
+            },
+        );
+        let tx = match inserted {
+            Ok((tx, None)) => tx,
+            Ok((tx, Some(file_id))) => {
+                // Another attempt with the same key won the race; this one records nothing.
+                let (_, metrics, reducer) = db.rollback_mut_tx(tx);
+                db.report_mut_tx_metrics(reducer, metrics, None);
+                return (Ok(UploadedFileRecorded::KeyAlreadyCompleted { file_id }), false);
             }
-            Ok(())
-        })?;
-        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+            Err(e) => return (Err(e.into()), false),
+        };
+        // Refresh only the views whose reads this transaction touched, as reducer commits do.
+        let (out, _, trapped) = self.call_views_with_tx(tx, uploader, inst, timestamp);
         if trapped || out.outcome != ViewOutcome::Success {
             let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
             db.report_mut_tx_metrics(reducer, metrics, None);
-            anyhow::bail!("view evaluation failed while recording an uploaded file");
+            return (
+                Err(anyhow::anyhow!(
+                    "view evaluation failed while recording an uploaded file"
+                )),
+                trapped,
+            );
         }
         let event = ModuleEvent {
-            timestamp: Timestamp::now(),
-            caller_identity: self.info.owner_identity,
+            timestamp,
+            caller_identity: uploader,
             caller_connection_id: None,
             function_call: ModuleFunctionCall::update(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
@@ -925,10 +956,13 @@ impl InstanceCommon {
         let durable_offset = db.durable_tx_offset();
         let CommitAndBroadcastEventSuccess { tx_offset, .. } =
             commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
-        Ok(crate::host::module_host::UploadedFileRecorded {
-            tx_offset,
-            durable_offset,
-        })
+        (
+            Ok(UploadedFileRecorded::Inserted {
+                tx_offset,
+                durable_offset,
+            }),
+            false,
+        )
     }
 
     /// Re-evaluates all materialized view instances tracked in view lifecycle state.

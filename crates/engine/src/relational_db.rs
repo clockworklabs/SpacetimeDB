@@ -1107,6 +1107,18 @@ impl RelationalDB {
         res
     }
 
+    /// Like [`Self::with_read_only`], also returning the offset of the state `f` read.
+    pub fn with_read_only_at<F, T>(&self, workload: Workload, f: F) -> (TxOffset, T)
+    where
+        F: FnOnce(&mut Tx) -> T,
+    {
+        let mut tx = self.begin_tx(workload);
+        let res = f(&mut tx);
+        let (tx_offset, tx_metrics, reducer) = self.release_tx(tx);
+        self.report_read_tx_metrics(reducer, tx_metrics);
+        (tx_offset, res)
+    }
+
     /// Perform the transactional logic for the `tx` according to the `res`
     pub fn finish_tx<A, E>(&self, tx: MutTx, res: Result<A, E>) -> Result<A, E>
     where

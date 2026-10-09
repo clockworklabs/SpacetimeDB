@@ -59,9 +59,11 @@ pub struct DatabaseFiles {
     store: Arc<dyn FileStore>,
     runtime: Handle,
     uploads: Mutex<Uploads>,
-    /// Persists hold this shared and reclamation holds it exclusively while it checks and deletes one
-    /// object, so an object can't be deleted between being persisted again and being referenced.
-    persist_lock: tokio::sync::RwLock<()>,
+    /// Persists hold their hash's stripe shared and reclamation holds it exclusively while it checks
+    /// and deletes one object, so an object can't be deleted between being persisted again and being
+    /// referenced. Striping keeps one slow persist from stalling reclamation of unrelated objects,
+    /// and reclamation from stalling unrelated persists.
+    persist_locks: Box<[tokio::sync::RwLock<()>]>,
     /// Hashes of staged files that are now persisted, so their `st_file_staged` rows can go.
     staged_persisted: mpsc::UnboundedSender<Hash>,
     staged_persisted_rx: Mutex<Option<mpsc::UnboundedReceiver<Hash>>>,
@@ -78,6 +80,8 @@ pub struct DatabaseFiles {
 
 /// The most uploads a database accepts at once.
 pub const MAX_UPLOADS_IN_PROGRESS: usize = 256;
+
+const PERSIST_LOCK_STRIPES: usize = 64;
 
 /// Marks a keyed upload as in progress until dropped.
 pub struct KeyedUpload {
@@ -121,7 +125,9 @@ impl DatabaseFiles {
             store,
             runtime,
             uploads: Mutex::default(),
-            persist_lock: tokio::sync::RwLock::new(()),
+            persist_locks: (0..PERSIST_LOCK_STRIPES)
+                .map(|_| tokio::sync::RwLock::new(()))
+                .collect(),
             staged_persisted,
             staged_persisted_rx: Mutex::new(Some(rx)),
             startup_settled: watch::channel(false).0,
@@ -168,10 +174,14 @@ impl DatabaseFiles {
         &self.store
     }
 
+    fn persist_lock(&self, hash: &Hash) -> &tokio::sync::RwLock<()> {
+        &self.persist_locks[hash.data[0] as usize % self.persist_locks.len()]
+    }
+
     /// Stores a spooled upload, and returns once its bytes are durable.
     pub async fn persist(&self, spooled: Spooled) -> std::io::Result<()> {
         let hash = spooled.hash();
-        let _persisting = self.persist_lock.read().await;
+        let _persisting = self.persist_lock(&hash).read().await;
         self.store.persist(spooled).await?;
         self.note_persisted(hash);
         Ok(())
@@ -221,7 +231,7 @@ impl DatabaseFiles {
                 // Persisting is idempotent and refreshes the object's age even if it already exists,
                 // which protects it from a reclamation pass that started before this transaction committed.
                 let persisted = {
-                    let _persisting = this.persist_lock.read().await;
+                    let _persisting = this.persist_lock(&hash).read().await;
                     let persisted = this.store.persist_bytes(hash, bytes.clone()).await;
                     if persisted.is_ok() {
                         this.note_persisted(hash);
@@ -309,7 +319,7 @@ impl DatabaseFiles {
             }
             // Check and delete with persists excluded, so an object persisted again in the meantime
             // is either seen as young here or written afresh after the delete.
-            let _reclaiming = self.persist_lock.write().await;
+            let _reclaiming = self.persist_lock(&object.hash).write().await;
             self.uploads.lock().persisted.remove(&object.hash);
             if self.store.delete_if_older_than(&object.hash, cutoff).await? {
                 stats.deleted_objects += 1;
@@ -389,8 +399,12 @@ pub fn insert_file_row(tx: &mut MutTx, row: &StFileRow) -> Result<(), DBError> {
     Ok(())
 }
 
-/// The upload that `sender` completed with the idempotency key `key`, if it is still remembered.
-pub fn completed_upload(state: &impl StateView, sender: Identity, key: &str) -> Result<Option<StUploadRow>, DBError> {
+/// The record of the upload `sender` completed with `key`, whether or not it has expired.
+fn upload_record(
+    state: &impl StateView,
+    sender: Identity,
+    key: &str,
+) -> Result<Option<(RowPointer, StUploadRow)>, DBError> {
     let key = AlgebraicValue::product([IdentityViaU256(sender).into(), AlgebraicValue::String(key.into())]);
     let row = state
         .iter_by_col_eq(
@@ -399,15 +413,46 @@ pub fn completed_upload(state: &impl StateView, sender: Identity, key: &str) -> 
             &key,
         )?
         .next()
-        .map(StUploadRow::try_from)
+        .map(|row| Ok::<_, DBError>((row.pointer(), StUploadRow::try_from(row)?)))
         .transpose()?;
     Ok(row)
 }
 
-/// Remembers a completed upload by its idempotency key.
-pub fn insert_upload_record(tx: &mut MutTx, row: &StUploadRow) -> Result<(), DBError> {
+fn is_expired(row: &StUploadRow, now: Timestamp) -> bool {
+    now.checked_sub_duration(UPLOAD_KEY_RETENTION)
+        .is_some_and(|cutoff| row.completed_at.0 < cutoff)
+}
+
+/// The upload that `sender` completed with the idempotency key `key`, unless it has expired.
+pub fn completed_upload(
+    state: &impl StateView,
+    sender: Identity,
+    key: &str,
+    now: Timestamp,
+) -> Result<Option<StUploadRow>, DBError> {
+    Ok(upload_record(state, sender, key)?
+        .map(|(_, row)| row)
+        .filter(|row| !is_expired(row, now)))
+}
+
+/// Remembers a completed upload by its idempotency key, replacing an expired record of the same key.
+///
+/// If the key already names an upload that hasn't expired, returns that upload's file and records
+/// nothing: the caller lost a race with another attempt of the same upload.
+pub fn record_upload(
+    db: &RelationalDB,
+    tx: &mut MutTx,
+    row: &StUploadRow,
+    now: Timestamp,
+) -> Result<Option<FileId>, DBError> {
+    if let Some((pointer, existing)) = upload_record(tx, row.sender.0, &row.idempotency_key)? {
+        if !is_expired(&existing, now) {
+            return Ok(Some(existing.file_id));
+        }
+        db.delete(tx, ST_UPLOAD_ID, [pointer]);
+    }
     tx.insert_via_serialize_bsatn(ST_UPLOAD_ID, row)?;
-    Ok(())
+    Ok(None)
 }
 
 /// Forgets uploads completed more than `retention` before `now`. Returns how many it forgot.
@@ -836,22 +881,26 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
     let settler = runtime.clone();
     let weak = Arc::downgrade(&db);
     runtime.spawn(async move {
-        let Some(db) = weak.upgrade() else { return };
-        let staged = settler
-            .spawn_blocking(move || {
-                db.with_read_only(Workload::Internal, |tx| -> Result<Vec<StFileStagedRow>, DBError> {
-                    let rows = tx.iter(ST_FILE_STAGED_ID)?;
-                    Ok(rows.map(StFileStagedRow::try_from).collect::<Result<_, _>>()?)
+        // Without knowing what was staged, nothing can be confirmed safely, so keep trying.
+        let mut backoff = Duration::from_millis(50);
+        let staged = loop {
+            let Some(db) = weak.upgrade() else { return };
+            let staged = settler
+                .spawn_blocking(move || {
+                    db.with_read_only(Workload::Internal, |tx| -> Result<Vec<StFileStagedRow>, DBError> {
+                        let rows = tx.iter(ST_FILE_STAGED_ID)?;
+                        Ok(rows.map(StFileStagedRow::try_from).collect::<Result<_, _>>()?)
+                    })
                 })
-            })
-            .await;
-        let staged = match staged {
-            Ok(staged) => staged,
-            Err(e) => {
-                // Without knowing what was staged, nothing can be confirmed safely.
-                log::error!("[{identity}] failed to read staged files, so no transaction will be confirmed: {e}");
+                .await;
+            match staged {
+                Ok(staged) => break staged,
+                Err(e) => log::error!("[{identity}] failed to read staged files, retrying in {backoff:?}: {e}"),
+            }
+            if !files.sleep_unless_shut_down(backoff).await {
                 return;
             }
+            backoff = (backoff * 2).min(Duration::from_secs(5));
         };
         let hashes: Vec<Hash> = staged.iter().map(|row| row.content_hash).collect();
         for row in staged {
@@ -885,8 +934,14 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
     drop(db);
     let reclaimer = runtime.clone();
     runtime.spawn(async move {
+        let mut opened = true;
         loop {
-            reclaimer.sleep(RECLAIM_INTERVAL).await;
+            // Expire upload records as soon as the database opens, since a host that restarts often
+            // might otherwise never reach the first interval. Reclaim only on the interval.
+            let just_opened = std::mem::take(&mut opened);
+            if !just_opened {
+                reclaimer.sleep(RECLAIM_INTERVAL).await;
+            }
             let Some(db) = weak.upgrade() else { return };
             let expired = reclaimer
                 .spawn_blocking({
@@ -900,6 +955,9 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
                 .await;
             if let Err(e) = expired {
                 log::warn!("[{identity}] failed to expire upload records: {e}");
+            }
+            if just_opened {
+                continue;
             }
             match reclaim_files(&db, RECLAIM_GRACE, &reclaimer).await {
                 Ok(stats) if stats.deleted_objects > 0 => log::info!(
@@ -1408,7 +1466,7 @@ mod tests {
         let stdb = TestDB::in_memory()?;
         let alice = Identity::from_u256(1u32.into());
         let bob = Identity::from_u256(2u32.into());
-        let day = Duration::from_secs(24 * 60 * 60);
+        let day = UPLOAD_KEY_RETENTION;
         let now = Timestamp::now();
         let record = |sender, key: &str, file: u128, age: Duration| StUploadRow {
             sender: IdentityViaU256(sender),
@@ -1417,26 +1475,43 @@ mod tests {
             completed_at: TimestampViaI64(now.checked_sub_duration(age).unwrap()),
         };
         stdb.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
-            insert_upload_record(tx, &record(alice, "photo", 1, Duration::ZERO))?;
-            insert_upload_record(tx, &record(bob, "photo", 2, Duration::ZERO))?;
-            insert_upload_record(tx, &record(alice, "old", 3, 2 * day))?;
-            // The same sender can't complete the same key twice.
-            assert!(insert_upload_record(tx, &record(alice, "photo", 4, Duration::ZERO)).is_err());
+            assert_eq!(
+                record_upload(&stdb, tx, &record(alice, "photo", 1, Duration::ZERO), now)?,
+                None
+            );
+            assert_eq!(
+                record_upload(&stdb, tx, &record(bob, "photo", 2, Duration::ZERO), now)?,
+                None
+            );
+            assert_eq!(record_upload(&stdb, tx, &record(alice, "old", 3, 2 * day), now)?, None);
+            // A second attempt that loses the race learns which file the first one created.
+            assert_eq!(
+                record_upload(&stdb, tx, &record(alice, "photo", 4, Duration::ZERO), now)?,
+                Some(FileId(1))
+            );
             Ok(())
         })?;
         let found = |sender, key: &'static str| {
-            stdb.with_read_only(Workload::ForTests, |tx| completed_upload(tx, sender, key))
+            stdb.with_read_only(Workload::ForTests, |tx| completed_upload(tx, sender, key, now))
                 .map(|row| row.map(|row| row.file_id))
         };
-        // Keys are scoped to their sender.
+        // Keys are scoped to their sender, and expired records are ignored even before they're deleted.
         assert_eq!(found(alice, "photo")?, Some(FileId(1)));
         assert_eq!(found(bob, "photo")?, Some(FileId(2)));
         assert_eq!(found(bob, "old")?, None);
-
-        let expired = stdb.with_auto_commit(Workload::ForTests, |tx| expire_upload_records(&stdb, tx, now, day))?;
-        assert_eq!(expired, 1);
         assert_eq!(found(alice, "old")?, None);
-        assert_eq!(found(alice, "photo")?, Some(FileId(1)));
+
+        // An expired key can be used again, and expiry deletes what's left.
+        stdb.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+            assert_eq!(
+                record_upload(&stdb, tx, &record(alice, "old", 5, Duration::ZERO), now)?,
+                None
+            );
+            Ok(())
+        })?;
+        assert_eq!(found(alice, "old")?, Some(FileId(5)));
+        let expired = stdb.with_auto_commit(Workload::ForTests, |tx| expire_upload_records(&stdb, tx, now, day))?;
+        assert_eq!(expired, 0, "the expired record was replaced");
         Ok(())
     }
 

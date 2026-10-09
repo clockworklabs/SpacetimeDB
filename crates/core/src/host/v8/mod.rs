@@ -500,8 +500,9 @@ impl JsMainInstance {
         &self,
         row: spacetimedb_datastore::system_tables::StFileRow,
         upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
     ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
-        self.request(InsertUploadedFileRequest { row, upload }).await
+        self.request(InsertUploadedFileRequest { row, upload, uploader }).await
     }
 
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
@@ -658,6 +659,7 @@ js_main_request! {
     InsertUploadedFileRequest {
         row: spacetimedb_datastore::system_tables::StFileRow,
         upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
     } => "insert_uploaded_file", anyhow::Result<crate::host::module_host::UploadedFileRecorded>, InsertUploadedFile
 }
 
@@ -855,6 +857,7 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<anyhow::Result<crate::host::module_host::UploadedFileRecorded>>,
         row: spacetimedb_datastore::system_tables::StFileRow,
         upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
@@ -1461,12 +1464,14 @@ fn handle_main_worker_request(
                 (res, false)
             })
         }
-        JsMainWorkerRequest::InsertUploadedFile { reply_tx, row, upload } => {
-            handle_worker_request("insert_uploaded_file", reply_tx, || {
-                let res = instance_common.insert_uploaded_file(row, upload, inst);
-                (res, false)
-            })
-        }
+        JsMainWorkerRequest::InsertUploadedFile {
+            reply_tx,
+            row,
+            upload,
+            uploader,
+        } => handle_worker_request("insert_uploaded_file", reply_tx, || {
+            instance_common.insert_uploaded_file(row, upload, uploader, inst)
+        }),
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);

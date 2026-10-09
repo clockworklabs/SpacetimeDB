@@ -100,6 +100,7 @@ fn cors_layer() -> cors::CorsLayer {
             header::RANGE,
             header::IF_NONE_MATCH,
             header::HeaderName::from_static("idempotency-key"),
+            header::HeaderName::from_static("content-digest"),
             SpacetimeEnvironment::name().clone(),
             SpacetimeEnvironmentRemove::name().clone(),
         ])

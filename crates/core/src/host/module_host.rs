@@ -1598,16 +1598,22 @@ impl UpdateDatabaseResult {
     }
 }
 
-#[derive(Debug)]
-/// The commit of an uploaded file's `st_file` row.
-pub struct UploadedFileRecorded {
-    /// The transaction offset of the commit.
-    pub tx_offset: TransactionOffset,
-    /// The durable transaction offset of the database.
-    /// `None` if the database is in-memory only.
-    pub durable_offset: Option<DurableOffset>,
+/// What committing an uploaded file's record did.
+pub enum UploadedFileRecorded {
+    /// The record committed.
+    Inserted {
+        /// The transaction offset of the commit.
+        tx_offset: TransactionOffset,
+        /// The durable transaction offset of the database.
+        /// `None` if the database is in-memory only.
+        durable_offset: Option<DurableOffset>,
+    },
+    /// Another attempt with the same idempotency key completed first, creating this file.
+    /// Nothing was committed.
+    KeyAlreadyCompleted { file_id: spacetimedb_lib::FileId },
 }
 
+#[derive(Debug)]
 pub enum UpdateEnvironmentResult {
     NoUpdateNeeded,
     UpdatePerformed {
@@ -3370,19 +3376,20 @@ impl ModuleHost {
         )?
     }
 
-    /// Commits the `st_file` row of an uploaded file, and its idempotency record if it has one,
+    /// Commits the `st_file` row of a file `uploader` uploaded, and its idempotency record if it has one,
     /// re-evaluating the views that read files.
     pub async fn insert_uploaded_file(
         &self,
         row: spacetimedb_datastore::system_tables::StFileRow,
         upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
     ) -> Result<UploadedFileRecorded, anyhow::Error> {
         call_instance!(
             self,
             "<insert_uploaded_file>",
-            (row, upload),
-            |(row, upload), inst| inst.insert_uploaded_file(row, upload),
-            |(row, upload), inst| inst.insert_uploaded_file(row, upload).await,
+            (row, upload, uploader),
+            |(row, upload, uploader), inst| inst.insert_uploaded_file(row, upload, uploader),
+            |(row, upload, uploader), inst| inst.insert_uploaded_file(row, upload, uploader).await,
         )?
     }
 

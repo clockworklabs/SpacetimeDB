@@ -16,6 +16,7 @@ use http::{header, HeaderMap, HeaderValue, StatusCode};
 use serde::Deserialize;
 use spacetimedb::db::files::{self as engine_files, DatabaseFiles};
 use spacetimedb::db::relational_db::RelationalDB;
+use spacetimedb::host::module_host::UploadedFileRecorded;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::{IdentityViaU256, StFileRow, StUploadRow, TimestampViaI64};
@@ -46,8 +47,13 @@ fn parse_content_digest(headers: &HeaderMap) -> axum::response::Result<Option<[u
     };
     let malformed = || error(StatusCode::BAD_REQUEST, "the Content-Digest header is malformed");
     let value = value.to_str().map_err(|_| malformed())?;
-    for entry in value.split(',') {
-        let (algorithm, digest) = entry.trim().split_once('=').ok_or_else(malformed)?;
+    // A structured-field dictionary: `algorithm=:base64:` members, each perhaps with `;parameters`.
+    // Members we don't understand, including bare keys, are ignored.
+    for member in value.split(',') {
+        let member = member.split(';').next().unwrap_or_default().trim();
+        let Some((algorithm, digest)) = member.split_once('=') else {
+            continue;
+        };
         if !algorithm.trim().eq_ignore_ascii_case("sha-256") {
             continue;
         }
@@ -56,9 +62,13 @@ fn parse_content_digest(headers: &HeaderMap) -> axum::response::Result<Option<[u
             .strip_prefix(':')
             .and_then(|d| d.strip_suffix(':'))
             .ok_or_else(malformed)?;
-        let digest = base64::engine::general_purpose::STANDARD
-            .decode(digest)
-            .map_err(|_| malformed())?;
+        // RFC 8941 parsers should accept byte sequences with or without padding.
+        let engine = base64::engine::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::GeneralPurposeConfig::new()
+                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+        );
+        let digest = engine.decode(digest).map_err(|_| malformed())?;
         return digest.try_into().map(Some).map_err(|_| malformed());
     }
     Ok(None)
@@ -79,28 +89,52 @@ fn upload_response(status: StatusCode, file_ref: FileRef, size: u64, hash: space
     response
 }
 
-/// The saved response of the upload `sender` completed with `key`, if it's still remembered.
-async fn completed_upload_response(
+/// Builds the response for the file an upload created, once its record is durable.
+///
+/// Returns 410 if the file has since been purged, since a retry must not create another file.
+async fn uploaded_file_response(
+    db: &Arc<RelationalDB>,
+    file_id: spacetimedb_lib::FileId,
+    status: StatusCode,
+) -> axum::response::Result<Response> {
+    let (offset, row) = {
+        let db = db.clone();
+        tokio::task::spawn_blocking(move || {
+            db.with_read_only_at(Workload::Internal, |tx| engine_files::servable_file_row(tx, file_id))
+        })
+        .await
+        .map_err(log_and_500)?
+    };
+    let row = row.map_err(log_and_500)?;
+    // The record may have committed moments ago and not be durable yet. Don't hand out a reference
+    // that a crash could take back.
+    if let Some(mut durable) = db.durable_tx_offset() {
+        durable.wait_for(offset).await.map_err(log_and_500)?;
+    }
+    let row = row.ok_or_else(|| error(StatusCode::GONE, "the file this upload created has been purged"))?;
+    let mut response = upload_response(status, row.file_ref(), row.size, row.content_hash);
+    response
+        .headers_mut()
+        .insert(IDEMPOTENT_REPLAY_HEADER, HeaderValue::from_static("true"));
+    Ok(response)
+}
+
+/// The file the upload `sender` completed with `key` created, if the upload is still remembered.
+async fn completed_upload_file(
     db: &Arc<RelationalDB>,
     sender: Identity,
     key: String,
-    status: StatusCode,
-) -> axum::response::Result<Option<Response>> {
+) -> axum::response::Result<Option<spacetimedb_lib::FileId>> {
     let db = db.clone();
-    let found = tokio::task::spawn_blocking(move || {
-        db.with_read_only(Workload::Internal, |tx| -> anyhow::Result<Option<StFileRow>> {
-            let Some(upload) = engine_files::completed_upload(tx, sender, &key)? else {
-                return Ok(None);
-            };
-            // The file may have been deleted since, but its record stays until history no longer needs it,
-            // and a retry must still not create a second file.
-            Ok(engine_files::servable_file_row(tx, upload.file_id)?)
+    let upload = tokio::task::spawn_blocking(move || {
+        db.with_read_only(Workload::Internal, |tx| {
+            engine_files::completed_upload(tx, sender, &key, Timestamp::now())
         })
     })
     .await
     .map_err(log_and_500)?
     .map_err(log_and_500)?;
-    Ok(found.map(|row| upload_response(status, row.file_ref(), row.size, row.content_hash)))
+    Ok(upload.map(|upload| upload.file_id))
 }
 
 fn error(status: StatusCode, message: impl Into<String>) -> ErrorResponse {
@@ -198,30 +232,27 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
 
     let (db, files, module) = database_files(&ctx, &database).await?;
 
-    // A retry of a completed upload gets the same file back, without uploading again.
-    // A retry of an upload still in progress must wait for it to finish.
-    let _slot = files
-        .try_begin_upload()
-        .ok_or_else(|| error(StatusCode::PAYLOAD_TOO_LARGE, "too many uploads are in progress"))?;
+    // A retry of an upload still in progress must wait for it to finish, and a retry of a completed
+    // upload gets the same file back without uploading again. Reserve the key before checking for a
+    // completed upload, so the check can't race another attempt's commit.
     let _in_progress = match &keyed {
         Some((sender, key)) => {
-            if let Some(response) = completed_upload_response(&db, *sender, key.clone(), StatusCode::CREATED).await? {
-                let mut response = response;
-                response
-                    .headers_mut()
-                    .insert(IDEMPOTENT_REPLAY_HEADER, HeaderValue::from_static("true"));
-                return Ok(response);
-            }
             let Some(guard) = files.begin_keyed_upload(*sender, key) else {
                 return Err(error(
                     StatusCode::CONFLICT,
                     "an upload with this Idempotency-Key is still in progress",
                 ));
             };
+            if let Some(file_id) = completed_upload_file(&db, *sender, key.clone()).await? {
+                return uploaded_file_response(&db, file_id, StatusCode::CREATED).await;
+            }
             Some(guard)
         }
         None => None,
     };
+    let _slot = files
+        .try_begin_upload()
+        .ok_or_else(|| error(StatusCode::PAYLOAD_TOO_LARGE, "too many uploads are in progress"))?;
 
     // Decide before reading the body. The file's ID is fixed now, so `allow_upload` can record it.
     let file_ref = engine_files::mint_file_ref();
@@ -310,14 +341,33 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         content_type,
         deleted_at_offset: None,
     };
-    // Through the module, so that views that read files' metadata are re-evaluated.
-    let recorded = module.insert_uploaded_file(row, upload).await.map_err(log_and_500)?;
-    let offset = recorded
-        .tx_offset
+    // Through the module, so that views that read files' metadata are re-evaluated. Look the module up
+    // again, since the database may have been published while the bytes were arriving.
+    let module = match find_database_module(&ctx, &database).await {
+        Ok(current) => current,
+        Err(_) => module,
+    };
+    match module
+        .insert_uploaded_file(row, upload, caller)
         .await
-        .map_err(|_| log_and_500("the file's record was not committed"))?;
-    if let Some(mut durable) = recorded.durable_offset {
-        durable.wait_for(offset).await.map_err(log_and_500)?;
+        .map_err(log_and_500)?
+    {
+        UploadedFileRecorded::Inserted {
+            tx_offset,
+            durable_offset,
+        } => {
+            let offset = tx_offset
+                .await
+                .map_err(|_| log_and_500("the file's record was not committed"))?;
+            if let Some(mut durable) = durable_offset {
+                durable.wait_for(offset).await.map_err(log_and_500)?;
+            }
+        }
+        // Another attempt with the same key completed first. Its file is the answer, and these bytes
+        // will be reclaimed.
+        UploadedFileRecorded::KeyAlreadyCompleted { file_id } => {
+            return uploaded_file_response(&db, file_id, StatusCode::CREATED).await;
+        }
     }
 
     Ok(upload_response(StatusCode::CREATED, file_ref, size, hash))
@@ -345,14 +395,15 @@ pub async fn completed_upload<S: ControlStateDelegate + NodeDelegate>(
         ));
     };
     let (db, _files, _module) = database_files(&ctx, &database).await?;
-    completed_upload_response(&db, sender, key, StatusCode::OK)
-        .await?
-        .ok_or_else(|| {
-            error(
-                StatusCode::NOT_FOUND,
-                "no upload with this key completed in the last day",
-            )
-        })
+    let file_id = completed_upload_file(&db, sender, key).await?.ok_or_else(|| {
+        error(
+            StatusCode::NOT_FOUND,
+            "no upload with this key completed in the last day",
+        )
+    })?;
+    let mut response = uploaded_file_response(&db, file_id, StatusCode::OK).await?;
+    response.headers_mut().remove(IDEMPOTENT_REPLAY_HEADER);
+    Ok(response)
 }
 
 #[derive(Deserialize)]
@@ -607,6 +658,11 @@ mod tests {
         assert!(digest(&format!("sha-256=:{hello}:")).unwrap().is_some());
         assert!(digest(&format!("sha-512=:AAAA:, sha-256=:{hello}:")).unwrap().is_some());
         assert_eq!(digest("sha-512=:AAAA:"), Ok(None));
+        assert!(digest(&format!("sha-256=:{}:", hello.trim_end_matches('=')))
+            .unwrap()
+            .is_some());
+        assert!(digest(&format!("sha-256=:{hello}:;foo=1")).unwrap().is_some());
+        assert_eq!(digest("unencoded, sha-512=:AAAA:"), Ok(None));
         assert!(digest("sha-256=nocolons").is_err());
         assert!(digest("sha-256=:AAAA:").is_err(), "too short for SHA-256");
     }
