@@ -146,6 +146,10 @@ impl std::fmt::Debug for RelationalDB {
 
 impl Drop for RelationalDB {
     fn drop(&mut self) {
+        // Stop background file uploads; whatever is still staged is persisted when the database next opens.
+        if let Some(files) = &self.files {
+            files.shut_down();
+        }
         // Attempt to flush the outstanding transactions.
         if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
             spawn_durability_close(durability, &runtime, self.database_identity);

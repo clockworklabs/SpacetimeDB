@@ -36,6 +36,34 @@ const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
 /// Set on an upload response that repeats an earlier upload's, because the retry used its key.
 const IDEMPOTENT_REPLAY_HEADER: &str = "spacetime-idempotent-replay";
 
+/// Parses the SHA-256 digest from a `Content-Digest` header (RFC 9530), if it has one.
+///
+/// Other algorithms are ignored, as the RFC allows. A malformed header is an error.
+fn parse_content_digest(headers: &HeaderMap) -> axum::response::Result<Option<[u8; 32]>> {
+    use base64::Engine as _;
+    let Some(value) = headers.get("content-digest") else {
+        return Ok(None);
+    };
+    let malformed = || error(StatusCode::BAD_REQUEST, "the Content-Digest header is malformed");
+    let value = value.to_str().map_err(|_| malformed())?;
+    for entry in value.split(',') {
+        let (algorithm, digest) = entry.trim().split_once('=').ok_or_else(malformed)?;
+        if !algorithm.trim().eq_ignore_ascii_case("sha-256") {
+            continue;
+        }
+        let digest = digest
+            .trim()
+            .strip_prefix(':')
+            .and_then(|d| d.strip_suffix(':'))
+            .ok_or_else(malformed)?;
+        let digest = base64::engine::general_purpose::STANDARD
+            .decode(digest)
+            .map_err(|_| malformed())?;
+        return digest.try_into().map(Some).map_err(|_| malformed());
+    }
+    Ok(None)
+}
+
 /// The response to a completed upload.
 fn upload_response(status: StatusCode, file_ref: FileRef, size: u64, hash: spacetimedb_lib::Hash) -> Response {
     let body = serde_json::json!({
@@ -166,10 +194,15 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         (None, _) => None,
     };
 
+    let expected_sha256 = parse_content_digest(&headers)?;
+
     let (db, files, module) = database_files(&ctx, &database).await?;
 
     // A retry of a completed upload gets the same file back, without uploading again.
     // A retry of an upload still in progress must wait for it to finish.
+    let _slot = files
+        .try_begin_upload()
+        .ok_or_else(|| error(StatusCode::PAYLOAD_TOO_LARGE, "too many uploads are in progress"))?;
     let _in_progress = match &keyed {
         Some((sender, key)) => {
             if let Some(response) = completed_upload_response(&db, *sender, key.clone(), StatusCode::CREATED).await? {
@@ -217,6 +250,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     }
 
     // Receive and hash the body, then persist it.
+    let mut sha256 = expected_sha256.map(|_| <sha2::Sha256 as sha2::Digest>::new());
     let spooled = tokio::time::timeout(UPLOAD_TIMEOUT, async {
         let mut spool = files.store().spool().await.map_err(log_and_500)?;
         let mut stream = body.into_data_stream();
@@ -231,6 +265,9 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
                     "the body is longer than its Content-Length",
                 ));
             }
+            if let Some(sha256) = &mut sha256 {
+                sha2::Digest::update(sha256, &chunk);
+            }
             spool.write(&chunk).await.map_err(log_and_500)?;
         }
         if spool.size() != declared_size {
@@ -243,6 +280,15 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     })
     .await
     .map_err(|_| error(StatusCode::REQUEST_TIMEOUT, "the upload took too long"))??;
+    if let (Some(expected), Some(sha256)) = (expected_sha256, sha256) {
+        let actual: [u8; 32] = sha2::Digest::finalize(sha256).into();
+        if actual != expected {
+            return Err(error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "the body doesn't match its Content-Digest",
+            ));
+        }
+    }
     let hash = spooled.hash();
     let size = spooled.size();
     files.persist(spooled).await.map_err(log_and_500)?;
@@ -546,6 +592,23 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(header::RANGE, HeaderValue::from_str(value).unwrap());
         parse_range(&headers, len)
+    }
+
+    #[test]
+    fn parses_content_digests() {
+        let digest = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert("content-digest", HeaderValue::from_str(value).unwrap());
+            parse_content_digest(&headers).map_err(|_| ())
+        };
+        // SHA-256 of "hello".
+        let hello = "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=";
+        assert_eq!(parse_content_digest(&HeaderMap::new()).ok(), Some(None));
+        assert!(digest(&format!("sha-256=:{hello}:")).unwrap().is_some());
+        assert!(digest(&format!("sha-512=:AAAA:, sha-256=:{hello}:")).unwrap().is_some());
+        assert_eq!(digest("sha-512=:AAAA:"), Ok(None));
+        assert!(digest("sha-256=nocolons").is_err());
+        assert!(digest("sha-256=:AAAA:").is_err(), "too short for SHA-256");
     }
 
     #[test]

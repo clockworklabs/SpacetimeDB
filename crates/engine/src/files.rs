@@ -70,7 +70,14 @@ pub struct DatabaseFiles {
     startup_settled: watch::Sender<bool>,
     /// The `(sender, idempotency key)` of each keyed upload in progress.
     keyed_uploads: Mutex<HashSet<(Identity, String)>>,
+    /// Limits how many uploads may be in progress at once.
+    upload_slots: Arc<tokio::sync::Semaphore>,
+    /// Becomes `true` when the database closes, which stops background uploads and waits.
+    shut_down: watch::Sender<bool>,
 }
+
+/// The most uploads a database accepts at once.
+pub const MAX_UPLOADS_IN_PROGRESS: usize = 256;
 
 /// Marks a keyed upload as in progress until dropped.
 pub struct KeyedUpload {
@@ -119,7 +126,32 @@ impl DatabaseFiles {
             staged_persisted_rx: Mutex::new(Some(rx)),
             startup_settled: watch::channel(false).0,
             keyed_uploads: Mutex::default(),
+            upload_slots: Arc::new(tokio::sync::Semaphore::new(MAX_UPLOADS_IN_PROGRESS)),
+            shut_down: watch::channel(false).0,
         })
+    }
+
+    /// Reserves one of the [`MAX_UPLOADS_IN_PROGRESS`] upload slots, or returns `None` if they are all
+    /// taken. The slot is released when the permit is dropped.
+    pub fn try_begin_upload(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.upload_slots.clone().try_acquire_owned().ok()
+    }
+
+    /// Stops background uploads and waits, because the database is closing.
+    ///
+    /// Staged files whose uploads stop are persisted again when the database next opens.
+    pub fn shut_down(&self) {
+        self.shut_down.send_replace(true);
+    }
+
+    /// Sleeps for `duration`, and returns `false` if the database closed in the meantime.
+    async fn sleep_unless_shut_down(&self, duration: Duration) -> bool {
+        let mut shut_down = self.shut_down.subscribe();
+        tokio::select! {
+            () = self.runtime.sleep(duration) => {}
+            _ = shut_down.wait_for(|shut_down| *shut_down) => return false,
+        }
+        !*self.shut_down.borrow()
     }
 
     /// Marks the upload `key` from `sender` as in progress, or returns `None` if it already is,
@@ -183,6 +215,9 @@ impl DatabaseFiles {
             let this = guard.files.clone();
             let mut backoff = Duration::from_millis(50);
             loop {
+                if *this.shut_down.borrow() {
+                    return;
+                }
                 // Persisting is idempotent and refreshes the object's age even if it already exists,
                 // which protects it from a reclamation pass that started before this transaction committed.
                 let persisted = {
@@ -197,7 +232,9 @@ impl DatabaseFiles {
                     Ok(()) => break,
                     Err(e) => log::warn!("failed to persist staged file {hash}, retrying in {backoff:?}: {e}"),
                 }
-                this.runtime.sleep(backoff).await;
+                if !this.sleep_unless_shut_down(backoff).await {
+                    return;
+                }
                 backoff = (backoff * 2).min(Duration::from_secs(5));
             }
             drop(guard);
@@ -206,38 +243,49 @@ impl DatabaseFiles {
         });
     }
 
-    /// Resolves once `hash` is persisted in the store.
+    /// Resolves to `true` once `hash` is persisted in the store, or to `false` if the database
+    /// closes first.
     ///
     /// A hash that no upload is persisting and that the store doesn't have is an invariant violation:
     /// some committed transaction references bytes that were never persisted. This logs it and keeps
     /// checking, so the transaction stays hidden from confirmed reads rather than being exposed.
-    pub async fn wait_persisted(self: Arc<Self>, hash: Hash) {
+    pub async fn wait_persisted(self: Arc<Self>, hash: Hash) -> bool {
         let mut backoff = Duration::from_millis(50);
+        let mut shut_down = self.shut_down.subscribe();
         loop {
+            if *shut_down.borrow() {
+                return false;
+            }
             let in_flight = {
                 let uploads = self.uploads.lock();
                 if uploads.persisted.contains(&hash) {
-                    return;
+                    return true;
                 }
                 uploads.in_flight.get(&hash).cloned()
             };
-            if let Some(mut done) = in_flight
-                && done.wait_for(|done| *done).await.is_ok()
-            {
-                continue;
+            if let Some(mut done) = in_flight {
+                let finished = tokio::select! {
+                    finished = done.wait_for(|done| *done) => finished.is_ok(),
+                    _ = shut_down.wait_for(|shut_down| *shut_down) => return false,
+                };
+                if finished {
+                    continue;
+                }
             }
             // No upload is under way, or it ended without persisting: ask the store.
             match self.store.size(&hash).await {
                 Ok(Some(_)) => {
                     self.note_persisted(hash);
-                    return;
+                    return true;
                 }
                 Ok(None) => {
                     log::error!("a committed transaction references file {hash}, which is not in the file store")
                 }
                 Err(e) => log::warn!("failed to check the file store for {hash}: {e}"),
             }
-            self.runtime.sleep(backoff).await;
+            if !self.sleep_unless_shut_down(backoff).await {
+                return false;
+            }
             backoff = (backoff * 2).min(Duration::from_secs(5));
         }
     }
@@ -602,8 +650,9 @@ impl Gate {
             let gate = self.clone();
             let files = files.clone();
             runtime.spawn(async move {
-                files.wait_persisted(hash).await;
-                gate.file_persisted(offset);
+                if files.wait_persisted(hash).await {
+                    gate.file_persisted(offset);
+                }
             });
         }
     }
@@ -809,7 +858,9 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
             files.persist_staged(row.content_hash, Bytes::from(row.bytes.into_vec()));
         }
         for hash in hashes {
-            files.clone().wait_persisted(hash).await;
+            if !files.clone().wait_persisted(hash).await {
+                return;
+            }
         }
         files.settle_startup();
     });
@@ -1123,6 +1174,34 @@ mod tests {
         store.released.add_permits(1);
         settle().await;
         assert_eq!(confirmed.last_seen(), Some(0));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutting_down_stops_uploads_without_confirming_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Handle::tokio_current();
+        let store = Arc::new(HeldStore {
+            inner: LocalFileStore::open(dir.path()).unwrap(),
+            released: Semaphore::new(0),
+        });
+        let files = DatabaseFiles::new(store.clone(), runtime.clone());
+        files.settle_startup();
+        let inner = ManualDurability::new();
+        let gated = FileGatedDurability::new(inner.clone(), files.clone(), runtime);
+        let confirmed = gated.durable_tx_offset();
+
+        gated.append_tx(tx(0, &[b"never"], &[b"never"]));
+        inner.make_durable(0);
+        let waiting = tokio::spawn(files.clone().wait_persisted(content_hash(b"never")));
+        settle().await;
+        files.shut_down();
+        let persisted = tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .expect("shutting down ends the wait")
+            .unwrap();
+        assert!(!persisted);
+        settle().await;
+        assert_eq!(confirmed.last_seen(), None, "a stopped upload confirms nothing");
     }
 
     #[tokio::test(flavor = "multi_thread")]

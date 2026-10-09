@@ -321,6 +321,7 @@ serde_json = { version = "1.0.128", features = ["raw_value"] }
 serde_path_to_error = "0.1.9"
 serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"
+sha2 = "0.10"
 sha3 = "0.10.0"
 slab = "0.4.7"
 sled = "0.34.7"

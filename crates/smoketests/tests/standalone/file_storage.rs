@@ -141,6 +141,16 @@ impl<'a> Files<'a> {
         request.send().unwrap()
     }
 
+    fn upload_digested(&self, body: &[u8], digest: &str) -> reqwest::blocking::Response {
+        self.client
+            .post(self.url(""))
+            .bearer_auth(self.test.read_token().unwrap())
+            .header("Content-Digest", digest)
+            .body(body.to_vec())
+            .send()
+            .unwrap()
+    }
+
     fn completed_upload(&self, key: &str, authorized: bool) -> reqwest::blocking::Response {
         let mut request = self.client.get(self.url(&format!("/uploads/{key}")));
         if authorized {
@@ -256,6 +266,14 @@ fn test_file_storage() {
     assert_eq!(
         files.upload_keyed(b"keyed", "anonymous", false).status(),
         StatusCode::UNAUTHORIZED
+    );
+
+    // A Content-Digest is verified before the file is stored.
+    let digest = "sha-256=:YvK0py0bXVbMrC7qZpmJw64HutwnwwIpEPWp+pwhmrI=:";
+    assert_eq!(files.upload_digested(b"digested", digest).status(), StatusCode::CREATED);
+    assert_eq!(
+        files.upload_digested(b"tampered", digest).status(),
+        StatusCode::UNPROCESSABLE_ENTITY
     );
 
     // A module can resolve an uploaded file's ID, which allow_upload recorded, to its reference.
