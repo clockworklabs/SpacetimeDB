@@ -8,7 +8,7 @@ use super::{
     page::Page,
     var_len::VarLenRef,
 };
-use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore};
+use crate::{bflatn_from::vlr_blob_bytes, tiered::BlobReadSet};
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
@@ -32,7 +32,7 @@ use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Dese
 pub unsafe fn hash_row_in_page(
     hasher: &mut impl Hasher,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     fixed_offset: PageOffset,
     ty: &RowTypeLayout,
 ) {
@@ -42,7 +42,7 @@ pub unsafe fn hash_row_in_page(
     // - Per 1. and 2., `fixed_bytes` points at a row in `page` valid for `ty`.
     // - Per 3., for any `vlr: VarLenRef` stored in `fixed_bytes`,
     //   `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
-    unsafe { hash_product(hasher, fixed_bytes, page, blob_store, &mut 0, ty.product()) };
+    unsafe { hash_product(hasher, fixed_bytes, page, blobs, &mut 0, ty.product()) };
 }
 
 /// Hashes every product field in `value = &bytes[range_move(0..ty.size(), *curr_offset)]`
@@ -56,7 +56,7 @@ unsafe fn hash_product(
     hasher: &mut impl Hasher,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: &mut usize,
     ty: ProductTypeLayoutView<'_>,
 ) {
@@ -69,7 +69,7 @@ unsafe fn hash_product(
         // are valid `elem_ty.ty`s.
         // By 2., and the above, it follows that sub-`value`s won't have dangling `VarLenRef`s.
         unsafe {
-            hash_value(hasher, bytes, page, blob_store, curr_offset, &elem_ty.ty);
+            hash_value(hasher, bytes, page, blobs, curr_offset, &elem_ty.ty);
         }
     }
 }
@@ -85,7 +85,7 @@ unsafe fn hash_value(
     hasher: &mut impl Hasher,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: &mut usize,
     ty: &AlgebraicTypeLayout,
 ) {
@@ -109,12 +109,12 @@ unsafe fn hash_value(
             // we know `data_value = &bytes[range_move(0..data_ty.size(), data_offset))`
             // is valid at `data_ty`.
             // By 2., and the above, we also know that `data_value` won't have dangling `VarLenRef`s.
-            unsafe { hash_value(hasher, bytes, page, blob_store, &mut data_offset, data_ty) };
+            unsafe { hash_value(hasher, bytes, page, blobs, &mut data_offset, data_ty) };
             *curr_offset += ty.size();
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { hash_product(hasher, bytes, page, blob_store, curr_offset, ty.view()) }
+            unsafe { hash_product(hasher, bytes, page, blobs, curr_offset, ty.view()) }
         }
 
         // The primitive types:
@@ -152,7 +152,7 @@ unsafe fn hash_value(
             // Moreover, `vlr.first_granule` was promised by the caller
             // to either be `NULL` or point to a valid granule in `page`.
             unsafe {
-                run_vlo_bytes(page, bytes, blob_store, curr_offset, |bytes| {
+                run_vlo_bytes(page, bytes, blobs, curr_offset, |bytes| {
                     // SAFETY: For `::String`, the blob will always be valid UTF-8.
                     let string = str::from_utf8_unchecked(bytes);
                     string.hash(hasher)
@@ -168,7 +168,7 @@ unsafe fn hash_value(
             // Moreover, `vlr.first_granule` was promised by the caller
             // to either be `NULL` or point to a valid granule in `page`.
             unsafe {
-                run_vlo_bytes(page, bytes, blob_store, curr_offset, |mut bsatn| {
+                run_vlo_bytes(page, bytes, blobs, curr_offset, |mut bsatn| {
                     let de = Deserializer::new(&mut bsatn);
                     spacetimedb_sats::hash_bsatn_array(hasher, ty, de).unwrap();
                 });
@@ -187,7 +187,7 @@ unsafe fn hash_value(
 pub(crate) unsafe fn run_vlo_bytes<R>(
     page: &Page,
     bytes: &Bytes,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: &mut usize,
     run: impl FnOnce(&[u8]) -> R,
 ) -> R {
@@ -198,7 +198,7 @@ pub(crate) unsafe fn run_vlo_bytes<R>(
 
     if vlr.is_large_blob() {
         // SAFETY: As `vlr` is a blob, `vlr.first_granule` always points to a valid granule.
-        let bytes = unsafe { vlr_blob_bytes(page, blob_store, vlr) };
+        let bytes = unsafe { vlr_blob_bytes(page, blobs, vlr) };
         run(bytes)
     } else {
         // SAFETY: `vlr.first_granule` is either NULL or points to a valid granule.
@@ -228,7 +228,7 @@ pub unsafe fn read_from_bytes<T: Copy>(bytes: &Bytes, curr_offset: &mut usize) -
 
 #[cfg(test)]
 mod tests {
-    use crate::blob_store::HashMapBlobStore;
+    use crate::tiered::BlobSet;
     use core::hash::BuildHasher;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::generate_typed_row;
@@ -239,7 +239,7 @@ mod tests {
         fn pv_row_ref_hash_same_std_random_state((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
-            let blob_store = &mut HashMapBlobStore::default();
+            let blob_store = &mut BlobSet::new_for_test();
             let (_, row) = table.insert(blob_store, &val).unwrap();
 
             // Check hashing algos.
@@ -250,7 +250,7 @@ mod tests {
         #[test]
         fn pv_row_ref_hash_same_ahash((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
-            let blob_store = &mut HashMapBlobStore::default();
+            let blob_store = &mut BlobSet::new_for_test();
             let mut table = crate::table::test::table(ty);
             let (_, row) = table.insert(blob_store, &val).unwrap();
 

@@ -38,7 +38,7 @@ use self::unique_direct_index::{ToFromUsize, UniqueDirectIndex, UniqueDirectInde
 use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::tiered::PageError;
+use crate::table::TableError;
 use crate::{read_column::ReadColumn, static_assert_size};
 use core::cmp::Ordering;
 use core::ops::{Bound, Deref, RangeBounds};
@@ -2590,8 +2590,8 @@ impl TableIndex {
     /// being the same as passed in on `self`'s construction.
     pub unsafe fn build_from_rows<'table>(
         &mut self,
-        rows: impl IntoIterator<Item = Result<RowRef<'table>, PageError>>,
-    ) -> Result<Result<(), RowPointer>, PageError> {
+        rows: impl IntoIterator<Item = Result<RowRef<'table>, TableError>>,
+    ) -> Result<Result<(), RowPointer>, TableError> {
         for row_ref in rows {
             let row_ref = row_ref?;
             // SAFETY: Forward caller proof obligation.
@@ -2772,8 +2772,9 @@ impl TableIndex {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::table::test::table;
     use crate::table::Table;
-    use crate::{blob_store::HashMapBlobStore, table::test::table};
+    use crate::tiered::BlobSet;
     use core::cmp::Ordering;
     use core::ops::Bound::*;
     use core::slice;
@@ -2821,8 +2822,8 @@ mod test {
         }
     }
 
-    fn setup(ty: ProductType) -> (Table, HashMapBlobStore) {
-        (table(ty), HashMapBlobStore::default())
+    fn setup(ty: ProductType) -> (Table, BlobSet) {
+        (table(ty), BlobSet::new_for_test())
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {

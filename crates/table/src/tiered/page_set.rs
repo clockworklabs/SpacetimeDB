@@ -9,16 +9,23 @@ use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    blob_store::BlobStore,
     indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
     table::{BlobNumBytes, PreparedInsert, Table},
     tiered::{
         page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlotHandle, ReservedPage},
-        PageError,
+        BlobError, BlobReadSet, BlobSet, PageError,
     },
     var_len::VarLenMembers,
 };
+
+#[derive(Debug, thiserror::Error)]
+pub enum DeleteRowError {
+    #[error(transparent)]
+    Page(#[from] PageError),
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+}
 
 /// The set of pages of a [Table].
 #[derive(Debug)]
@@ -185,8 +192,8 @@ impl PageSet {
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         row_ptr: RowPointer,
-        blob_store: &mut dyn BlobStore,
-    ) -> Result<BlobNumBytes, PageError> {
+        blobs: &mut BlobSet,
+    ) -> Result<BlobNumBytes, DeleteRowError> {
         let page_index = row_ptr.page_index();
         let (blob_bytes_deleted, is_empty, available_granules) =
             self.with_page_mut(page_index, fixed_row_size, |page| {
@@ -197,14 +204,14 @@ impl PageSet {
                 // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
                 //   The size is also conistent with `var_len_visitor`.
                 let blob_bytes_deleted =
-                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) };
+                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blobs) }?;
 
-                (
+                Ok::<_, BlobError>((
                     blob_bytes_deleted,
                     page.num_rows() == 0,
                     page.available_var_len_granules(),
-                )
-            })?;
+                ))
+            })??;
 
         if is_empty {
             self.slots[page_index.idx()].free();
@@ -510,7 +517,7 @@ impl PreparedCommit {
     ///
     /// The table's [PageSet] must be the same as the one the [PreparedCommit]
     /// was created from.
-    pub fn apply(mut self, table: &mut Table, blob_store: &mut dyn BlobStore) -> AppliedCommit {
+    pub fn apply(mut self, table: &mut Table, blobs: &BlobReadSet) -> AppliedCommit {
         let mut pinned = self.pinned;
 
         fn collect_arc_slice<T, U>(iter: impl ExactSizeIterator<Item = T>, mut f: impl FnMut(T) -> U) -> Arc<[U]> {
@@ -528,7 +535,7 @@ impl PreparedCommit {
 
         let deletes = collect_arc_slice(self.deletes.into_iter(), |row_ptr| {
             table
-                .delete(blob_store, row_ptr, |row| row.to_product_value())
+                .delete(blobs, row_ptr, |row| row.to_product_value())
                 .expect("no page faults")
                 .expect("`Table::delete` never returns `None`")
         });
@@ -540,7 +547,7 @@ impl PreparedCommit {
             if !schema.is_event {
                 let reservation = self.reserved.remove(&page_index).map(|page| (page_index, page));
                 let row_ref = table
-                    .insert_prepared(blob_store, &row, reservation)
+                    .insert_prepared(blobs, &row, reservation)
                     .map(|(_, row_ref)| row_ref)
                     .expect("failed to insert during transaction commit");
                 let (page, _) = row_ref.page_and_offset();

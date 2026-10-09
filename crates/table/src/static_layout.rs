@@ -424,7 +424,7 @@ impl LayoutBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
+    use crate::tiered::BlobSet;
     use proptest::prelude::*;
     use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
@@ -641,7 +641,7 @@ mod test {
 
         #[test]
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let mut blob_store = BlobSet::new_for_test();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
                 // `ty` has a var-len member or a sum with different payload lengths,
@@ -669,7 +669,7 @@ mod test {
 
         #[test]
         fn known_bflatn_same_as_pv_from((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let mut blob_store = BlobSet::new_for_test();
             let mut table = crate::table::test::table(ty);
             let Some(static_layout) = table.static_layout().cloned() else {
                 // `ty` has a var-len member or a sum with different payload lengths,

@@ -1,19 +1,29 @@
-use std::sync::Arc;
+use std::{mem, sync::Arc};
+
+use spacetimedb_data_structures::small_map::SmallHashMap;
+use spacetimedb_memory_usage::MemoryUsage;
+use spacetimedb_sats::layout::RowTypeLayout;
 
 use crate::{
     blob_store::BlobHash,
+    indexes::PageOffset,
+    page::Page,
+    row_type_visitor::VarLenVisitorProgram,
     tiered::{
         blob_manager::{BlobHandle, BlobManager},
         error::BlobError,
-        map::ObjectMap,
+        map::{ObjectKey, ObjectMap},
     },
+    var_len::VarLenMembers,
 };
 
+#[derive(Debug)]
 pub struct BlobSet {
     manager: Arc<BlobManager>,
     entries: ObjectMap<BlobUseEntry>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct BlobUseEntry {
     uses: usize,
     size: u64,
@@ -25,7 +35,7 @@ impl BlobUseEntry {
     }
 
     fn dec_uses(&mut self) {
-        self.uses -= 1;
+        self.uses = self.uses.saturating_sub(1);
     }
 }
 
@@ -43,12 +53,10 @@ impl BlobSet {
             .entry(hash.into())
             .and_modify(BlobUseEntry::inc_uses)
             .or_try_insert_with(|| {
-                self.manager
-                    .install_or_get_resident(hash, bytes, 0)
-                    .map(|_| BlobUseEntry {
-                        uses: 1,
-                        size: bytes.len() as u64,
-                    })
+                self.manager.get_or_install(hash, bytes, 0).map(|_| BlobUseEntry {
+                    uses: 1,
+                    size: bytes.len() as u64,
+                })
             })
             .map(|_| hash)
     }
@@ -74,7 +82,7 @@ impl BlobSet {
             return Err(BlobError::MissingBlob(hash));
         }
 
-        self.manager.get(hash)
+        self.manager.get_or_fault(hash)
     }
 
     /*
@@ -91,4 +99,77 @@ impl BlobSet {
         todo!()
     }
     */
+
+    pub fn physical_bytes_used_by_blobs(&self) -> u64 {
+        self.entries
+            .iter()
+            .map(|(_, entry)| entry.size + mem::size_of::<ObjectKey>() as u64)
+            .sum()
+    }
+
+    pub fn bytes_used_by_blobs(&self) -> u64 {
+        self.entries
+            .iter()
+            .map(|(_, entry)| entry.size * entry.uses as u64)
+            .sum()
+    }
+
+    pub fn num_blobs(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[cfg(test)]
+impl BlobSet {
+    pub fn usage_counter(&self) -> spacetimedb_data_structures::map::HashMap<BlobHash, usize> {
+        self.entries
+            .iter()
+            .map(|(hash, entry)| (BlobHash::from(*hash), entry.uses))
+            .collect()
+    }
+
+    pub fn entries(&self) -> &ObjectMap<BlobUseEntry> {
+        &self.entries
+    }
+}
+
+impl MemoryUsage for BlobSet {
+    fn heap_usage(&self) -> usize {
+        todo!()
+    }
+}
+
+/// A set of resident blobs for a specific row.
+#[derive(Default)]
+pub struct BlobReadSet {
+    inner: SmallHashMap<BlobHash, BlobHandle, 4, 16>,
+}
+
+impl BlobReadSet {
+    pub fn new(
+        visitor: &VarLenVisitorProgram,
+        page: &Page,
+        blobs: &BlobSet,
+        layout: &RowTypeLayout,
+        offset: PageOffset,
+    ) -> Result<Self, BlobError> {
+        let row_data = page.get_row_data(offset, layout.size());
+        let mut inner = SmallHashMap::default();
+        for vlr in unsafe { visitor.visit_var_len(row_data) }.filter(|vlr| vlr.is_large_blob()) {
+            let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }.next().unwrap();
+            let blob_hash = granule.blob_hash();
+            let blob = blobs.read(blob_hash)?;
+            inner.insert(blob_hash, blob);
+        }
+
+        Ok(Self { inner })
+    }
+
+    pub fn get(&self, hash: &BlobHash) -> Option<&BlobHandle> {
+        self.inner.get(hash)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&BlobHash, &BlobHandle)> {
+        self.inner.iter()
+    }
 }

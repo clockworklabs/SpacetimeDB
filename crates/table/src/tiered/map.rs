@@ -45,6 +45,12 @@ impl From<BlobHash> for ObjectKey {
     }
 }
 
+impl From<ObjectKey> for BlobHash {
+    fn from(key: ObjectKey) -> Self {
+        BlobHash { data: key.0 }
+    }
+}
+
 impl From<blake3::Hash> for ObjectKey {
     fn from(hash: blake3::Hash) -> Self {
         Self(*hash.as_bytes())
@@ -74,7 +80,7 @@ impl Hasher for IdentityHasher {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ObjectMap<V> {
     inner: HashMap<ObjectKey, V, BuildHasherDefault<IdentityHasher>>,
 }
@@ -94,6 +100,18 @@ impl<V> ObjectMap<V> {
 
     pub fn insert(&mut self, k: ObjectKey, v: V) -> Option<V> {
         self.inner.insert(k, v)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&ObjectKey, &V)> {
+        self.inner.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 }
 
@@ -127,13 +145,17 @@ impl<'a, V> Entry<'a, V> {
         Err(f())
     }
 
-    pub fn or_try_insert_with<E>(self, f: impl FnOnce() -> Result<V, E>) -> Result<Self, E> {
+    pub fn or_insert_with(self, f: impl FnOnce() -> V) -> &'a mut V {
         match self {
-            Self::Vacant(entry) => {
-                let v = f()?;
-                Ok(Self::Occupied(entry.insert_entry(v)))
-            }
-            Self::Occupied(entry) => Ok(Self::Occupied(entry)),
+            Self::Vacant(entry) => entry.insert(f()),
+            Self::Occupied(entry) => entry.into_mut(),
+        }
+    }
+
+    pub fn or_try_insert_with<E>(self, f: impl FnOnce() -> Result<V, E>) -> Result<&'a mut V, E> {
+        match self {
+            Self::Vacant(entry) => f().map(|v| entry.insert(v)),
+            Self::Occupied(entry) => Ok(entry.into_mut()),
         }
     }
 }

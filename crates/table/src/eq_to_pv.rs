@@ -5,11 +5,11 @@
 
 use crate::{
     bflatn_from::{read_tag, vlr_blob_bytes},
-    blob_store::BlobStore,
     eq::BytesPage,
     indexes::PageOffset,
     page::Page,
     row_hash::{read_from_bytes, run_vlo_bytes},
+    tiered::BlobReadSet,
     var_len::{VarLenGranule, VarLenRef},
 };
 use core::str;
@@ -32,7 +32,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 /// 2. for any `vlr: VarLenRef` in the fixed parts of row `lhs`,
 ///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 pub unsafe fn eq_row_in_page_to_pv(
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     page: &Page,
     fixed_offset: PageOffset,
     rhs: &ProductValue,
@@ -41,7 +41,7 @@ pub unsafe fn eq_row_in_page_to_pv(
     // Context for the whole comparison.
     let mut ctx = EqCtx {
         lhs: BytesPage::new(page, fixed_offset, ty),
-        blob_store,
+        blobs,
         curr_offset: 0,
     };
     // Test for equality!
@@ -61,7 +61,7 @@ struct EqCtx<'page> {
     /// The view into the fixed part of row `lhs` in its page.
     lhs: BytesPage<'page>,
     /// The blob store that `lhs.page` uses for its large blob VLOs.
-    blob_store: &'page dyn BlobStore,
+    blobs: &'page BlobReadSet,
     /// The current offset at which some sub-object of `lhs` exists.
     curr_offset: usize,
 }
@@ -168,7 +168,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
                 run_vlo_bytes(
                     ctx.lhs.page,
                     ctx.lhs.bytes,
-                    ctx.blob_store,
+                    ctx.blobs,
                     &mut ctx.curr_offset,
                     |mut bsatn| {
                         let lhs = Deserializer::new(&mut bsatn);
@@ -196,7 +196,7 @@ unsafe fn eq_str(ctx: &mut EqCtx<'_>, rhs: &str) -> bool {
 
     if vlr.is_large_blob() {
         // SAFETY: As `vlr` is a blob, `vlr.first_granule` always points to a valid granule.
-        let bytes = unsafe { vlr_blob_bytes(ctx.lhs.page, ctx.blob_store, vlr) };
+        let bytes = unsafe { vlr_blob_bytes(ctx.lhs.page, ctx.blobs, vlr) };
         // SAFETY: For `ty = String`, the blob will always be valid UTF-8.
         rhs == unsafe { str::from_utf8_unchecked(bytes) }
     } else {
@@ -226,9 +226,10 @@ unsafe fn eq_at<T: Copy + Eq>(ctx: &mut EqCtx<'_>, rhs: &T) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::blob_store::HashMapBlobStore;
     use proptest::prelude::*;
     use spacetimedb_sats::proptest::generate_typed_row;
+
+    use crate::tiered::BlobSet;
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
@@ -236,8 +237,8 @@ mod tests {
         fn pv_row_ref_eq((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.
             let mut table = crate::table::test::table(ty);
-            let blob_store = &mut HashMapBlobStore::default();
-            let (_, row) = table.insert(blob_store, &val).unwrap();
+            let blobs = &mut BlobSet::new_for_test();
+            let (_, row) = table.insert(blobs, &val).unwrap();
 
             // Check eq algo.
             prop_assert_eq!(row, val);

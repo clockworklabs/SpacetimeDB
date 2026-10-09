@@ -6,7 +6,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
-use spacetimedb_table::tiered::PageError;
+use spacetimedb_table::tiered::{BlobSet, PageError};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -72,7 +72,7 @@ pub(super) struct TxState {
     /// - Maintain the set of newly-referenced blob hashes in the `TxState`,
     ///   and free each of them during rollback.
     /// - Traverse all rows in the `insert_tables` and free each of their blobs during rollback.
-    pub(super) blob_store: HashMapBlobStore,
+    pub(super) blob_store: BlobSet,
 
     /// All of the immediately applied schema changes to the committed state during this transaction.
     ///
@@ -268,7 +268,7 @@ impl TxState {
         get_delete_table_mut(&mut self.delete_tables, table_id, commit_table)
     }
 
-    pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
+    pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut BlobSet)> {
         let table = self.insert_tables.get_mut(&table_id)?;
         let blob_store = &mut self.blob_store;
         Some((table, blob_store))
@@ -298,7 +298,7 @@ impl TxState {
     ///
     /// The insert and delete tables must exist.
     pub unsafe fn assume_present_get_mut_table(&mut self, table_id: TableId) -> TxTableForInsertion<'_> {
-        let tx_blob_store: &mut dyn BlobStore = &mut self.blob_store;
+        let tx_blob_store = &mut self.blob_store;
         let tx_table = self.insert_tables.get_mut(&table_id);
         // SAFETY: we successfully got a `tx_table` before and haven't removed it since.
         let tx_table = unsafe { tx_table.unwrap_unchecked() };
@@ -386,7 +386,7 @@ impl<'a> Iterator for TxTables<'a> {
     }
 }
 
-pub(super) type TxTableForInsertion<'a> = (&'a mut Table, &'a mut dyn BlobStore, &'a mut DeleteTable);
+pub(super) type TxTableForInsertion<'a> = (&'a mut Table, &'a mut BlobSet, &'a mut DeleteTable);
 
 fn get_delete_table_mut<'a>(
     delete_tables: &'a mut BTreeMap<TableId, DeleteTable>,

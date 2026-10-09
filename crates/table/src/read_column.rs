@@ -378,8 +378,8 @@ unsafe impl ReadColumn for SumTag {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
     use crate::table::test::table;
+    use crate::tiered::BlobSet;
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
     use spacetimedb_sats::{product, proptest::generate_typed_row};
 
@@ -393,7 +393,7 @@ mod test {
         /// inserting the row, then doing `AlgebraicValue::read_column` on each column of the row
         /// returns the expected value.
         fn read_column_same_value((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let mut blob_store = BlobSet::new_for_test();
             let mut table = table(ty);
 
             let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
@@ -409,7 +409,7 @@ mod test {
         /// which does not match the actual column type
         /// returns an appropriate error.
         fn read_column_wrong_type((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let mut blob_store = BlobSet::new_for_test();
             let mut table = table(ty.clone());
 
             let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
@@ -439,7 +439,7 @@ mod test {
         /// i.e. with an out-of-bounds index,
         /// returns an appropriate error.
         fn read_column_out_of_bounds((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let mut blob_store = BlobSet::new_for_test();
             let mut table = table(ty.clone());
 
             let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
@@ -496,7 +496,7 @@ mod test {
         ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
             #[test]
             fn $name() {
-                let mut blob_store = HashMapBlobStore::default();
+                let mut blob_store = BlobSet::new_for_test();
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
                 let val: $rust_type = $val;
@@ -557,7 +557,7 @@ mod test {
     fn read_sum_tag_from_sum_with_payload() {
         let algebraic_type = AlgebraicType::sum([("a", AlgebraicType::U8), ("b", AlgebraicType::U16)]);
 
-        let mut blob_store = HashMapBlobStore::default();
+        let mut blob_store = BlobSet::new_for_test();
         let mut table = table(ProductType::from([algebraic_type]));
 
         let val = SumValue::new(1, 42u16);

@@ -53,7 +53,7 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
     table::{RowRef, Table, TableAndIndex},
-    tiered::{ByteBudget, PageEvictionPolicy, PageManager, PreparedCommit, TieredStorage},
+    tiered::{BlobSet, ByteBudget, PageEvictionPolicy, PageManager, PreparedCommit, TieredStorage},
 };
 use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
@@ -72,7 +72,7 @@ use std::{collections::BTreeMap, iter};
 pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: IntMap<TableId, Table>,
-    pub(crate) blob_store: HashMapBlobStore,
+    pub(crate) blob_store: BlobSet,
     /// Provides fast lookup for index id -> an index.
     pub(super) index_id_map: IndexIdMap,
     pub(super) page_manager: Arc<PageManager>,
@@ -871,13 +871,13 @@ impl CommittedState {
         let table = self
             .get_table(table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-        Ok((table, &self.blob_store as &dyn BlobStore, &self.index_id_map))
+        Ok((table, &self.blob_store, &self.index_id_map))
     }
 
     pub(super) fn get_table_and_blob_store_mut(
         &mut self,
         table_id: TableId,
-    ) -> Result<(&mut Table, &mut dyn BlobStore, &mut IndexIdMap)> {
+    ) -> Result<(&mut Table, &mut BlobSet, &mut IndexIdMap)> {
         // NOTE(centril): `TableError` is a fairly large type.
         // Not making this lazy made `TableError::drop` show up in perf.
         // TODO(centril): Box all the errors.
@@ -886,11 +886,7 @@ impl CommittedState {
             .tables
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-        Ok((
-            table,
-            &mut self.blob_store as &mut dyn BlobStore,
-            &mut self.index_id_map,
-        ))
+        Ok((table, &mut self.blob_store, &mut self.index_id_map))
     }
 
     fn make_table(&self, schema: Arc<TableSchema>) -> Table {
@@ -910,7 +906,7 @@ impl CommittedState {
         &'this mut self,
         table_id: TableId,
         schema: &Arc<TableSchema>,
-    ) -> (&'this mut Table, &'this mut dyn BlobStore) {
+    ) -> (&'this mut Table, &'this mut BlobSet) {
         let page_manager = self.page_manager.clone();
         let table = self.tables.entry(table_id).or_insert_with(|| {
             Table::new(
@@ -925,7 +921,7 @@ impl CommittedState {
     }
 
     /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
-    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
+    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &BlobSet) {
         (
             self.tables
                 .iter_mut()
@@ -969,7 +965,7 @@ impl CommittedState {
     }
 }
 
-pub(super) type CommitTableForInsertion<'a> = (&'a Table, &'a dyn BlobStore, &'a IndexIdMap);
+pub(super) type CommitTableForInsertion<'a> = (&'a Table, &'a BlobSet, &'a IndexIdMap);
 
 #[derive(Default)]
 pub(super) struct PreparedMerge {

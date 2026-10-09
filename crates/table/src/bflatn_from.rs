@@ -2,8 +2,9 @@
 //! which serializes `value = page.get_row_data(fixed_offset, fixed_row_size)` typed at `ty`
 //! and associated var len objects in `value` into the serializer `ser`.
 
+use crate::tiered::BlobReadSet;
+
 use super::{
-    blob_store::BlobStore,
     indexes::{Bytes, PageOffset},
     page::Page,
     row_hash,
@@ -34,7 +35,7 @@ use spacetimedb_sats::{
 pub unsafe fn serialize_row_from_page<S: Serializer>(
     ser: S,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     fixed_offset: PageOffset,
     ty: &RowTypeLayout,
 ) -> Result<S::Ok, S::Error> {
@@ -43,7 +44,7 @@ pub unsafe fn serialize_row_from_page<S: Serializer>(
     // - Per 1. and 2., `fixed_bytes` points at a row in `page` valid for `ty`.
     // - Per 3., for any `vlr: VarLenRef` stored in `fixed_bytes`,
     //   `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
-    unsafe { serialize_product(ser, fixed_bytes, page, blob_store, &Cell::new(0), ty.product()) }
+    unsafe { serialize_product(ser, fixed_bytes, page, blobs, &Cell::new(0), ty.product()) }
 }
 
 /// Serializes the columns `cols` of the row in `page`
@@ -60,7 +61,7 @@ pub unsafe fn serialize_row_from_page<S: Serializer>(
 pub unsafe fn serialize_columns_from_page<S: Serializer>(
     ser: S,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     fixed_offset: PageOffset,
     ty: &RowTypeLayout,
     cols: &ColList,
@@ -80,7 +81,7 @@ pub unsafe fn serialize_columns_from_page<S: Serializer>(
         //     `sub_val = &bytes[range_move(0..elem_ty.ty.size(), offset)]`
         //     is valid at `elem_ty.ty`, as `elem_ty`.
         // 2. forward caller requirement.
-        unsafe { serialize_product_field(&mut ser, bytes, page, blob_store, offset, elem_ty) }?;
+        unsafe { serialize_product_field(&mut ser, bytes, page, blobs, offset, elem_ty) }?;
     }
 
     ser.end()
@@ -108,7 +109,7 @@ unsafe fn serialize_product<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: CurrOffset<'_>,
     ty: ProductTypeLayoutView<'_>,
 ) -> Result<S::Ok, S::Error> {
@@ -123,7 +124,7 @@ unsafe fn serialize_product<S: Serializer>(
         //     `sub_val = &bytes[range_move(0..elem_ty.ty.size(), offset)]`
         //     is valid at `elem_ty.ty`, as `elem_ty`.
         // 2. forward caller requirement.
-        unsafe { serialize_product_field(&mut ser, bytes, page, blob_store, offset, elem_ty) }?;
+        unsafe { serialize_product_field(&mut ser, bytes, page, blobs, offset, elem_ty) }?;
     }
 
     ser.end()
@@ -140,7 +141,7 @@ unsafe fn serialize_product_field<S: SerializeNamedProduct>(
     ser: &mut S,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     offset: usize,
     elem_ty: &ProductTypeElementLayout,
 ) -> Result<(), S::Error> {
@@ -151,7 +152,7 @@ unsafe fn serialize_product_field<S: SerializeNamedProduct>(
     let value = Value {
         bytes,
         page,
-        blob_store,
+        blobs,
         curr_offset: &Cell::new(offset),
         ty: &elem_ty.ty,
     };
@@ -169,7 +170,7 @@ unsafe fn serialize_sum<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: CurrOffset<'_>,
     ty: &SumTypeLayout,
 ) -> Result<S::Ok, S::Error> {
@@ -185,7 +186,7 @@ unsafe fn serialize_sum<S: Serializer>(
     let data_value = Value {
         bytes,
         page,
-        blob_store,
+        blobs,
         curr_offset: data_offset,
         ty: data_ty,
     };
@@ -213,13 +214,13 @@ pub fn read_tag<'ty>(bytes: &Bytes, ty: &'ty SumTypeLayout, curr_offset: usize) 
 struct Value<'a> {
     bytes: &'a Bytes,
     page: &'a Page,
-    blob_store: &'a dyn BlobStore,
+    blobs: &'a BlobReadSet,
     curr_offset: CurrOffset<'a>,
     ty: &'a AlgebraicTypeLayout,
 }
 
 impl_serialize!(['a] Value<'a>, (self, ser) => {
-    unsafe { serialize_value(ser, self.bytes, self.page, self.blob_store, self.curr_offset, self.ty) }
+    unsafe { serialize_value(ser, self.bytes, self.page, self.blobs, self.curr_offset, self.ty) }
 });
 
 /// Serialize `value = &bytes[range_move(0..ty.size(), *curr_offset)]` into a `ser`,
@@ -235,7 +236,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: CurrOffset<'_>,
     ty: &AlgebraicTypeLayout,
 ) -> Result<S::Ok, S::Error> {
@@ -248,11 +249,11 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
     match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_sum(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_sum(ser, bytes, page, blobs, curr_offset, ty) }
         }
         AlgebraicTypeLayout::Product(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_product(ser, bytes, page, blob_store, curr_offset, ty.view()) }
+            unsafe { serialize_product(ser, bytes, page, blobs, curr_offset, ty.view()) }
         }
         // The primitive types:
         //
@@ -303,11 +304,11 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         // The var-len cases.
         &AlgebraicTypeLayout::String => {
             // SAFETY: `value` was valid at `::String` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_string(ser, bytes, page, blob_store, curr_offset) }
+            unsafe { serialize_string(ser, bytes, page, blobs, curr_offset) }
         }
         AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
-            unsafe { serialize_array(ser, bytes, page, blob_store, curr_offset, ty) }
+            unsafe { serialize_array(ser, bytes, page, blobs, curr_offset, ty) }
         }
     }
 }
@@ -324,7 +325,7 @@ unsafe fn serialize_string<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: CurrOffset<'_>,
 ) -> Result<S::Ok, S::Error> {
     // SAFETY: `value` was valid at and aligned for `::String`
@@ -334,7 +335,7 @@ unsafe fn serialize_string<S: Serializer>(
 
     if vlr.is_large_blob() {
         // SAFETY: As `vlr` a blob, `vlr.first_granule` always points to a valid granule.
-        let blob = unsafe { vlr_blob_bytes(page, blob_store, vlr) };
+        let blob = unsafe { vlr_blob_bytes(page, blobs, vlr) };
         // SAFETY: For `::String`, the blob will always be valid UTF-8.
         let str = unsafe { str::from_utf8_unchecked(blob) };
         ser.serialize_str(str)
@@ -353,7 +354,7 @@ unsafe fn serialize_array<S: Serializer>(
     ser: S,
     bytes: &Bytes,
     page: &Page,
-    blob_store: &dyn BlobStore,
+    blobs: &BlobReadSet,
     curr_offset: CurrOffset<'_>,
     ty: &ArrayType,
 ) -> Result<S::Ok, S::Error> {
@@ -364,7 +365,7 @@ unsafe fn serialize_array<S: Serializer>(
 
     if vlr.is_large_blob() {
         // SAFETY: As `vlr` is a blob, `vlr.first_granule` always points to a valid granule.
-        let blob = unsafe { vlr_blob_bytes(page, blob_store, vlr) };
+        let blob = unsafe { vlr_blob_bytes(page, blobs, vlr) };
         // SAFETY: The BSATN in `blob` is encoded from an `AlgebraicValue`.
         unsafe { ser.serialize_bsatn(ty, blob) }
     } else {
@@ -384,7 +385,7 @@ unsafe fn serialize_array<S: Serializer>(
 /// - `vlr.first_granule` must point to a valid granule in `page`.
 #[cold]
 #[inline(never)]
-pub(crate) unsafe fn vlr_blob_bytes<'b>(page: &Page, blob_store: &'b dyn BlobStore, vlr: VarLenRef) -> &'b [u8] {
+pub(crate) unsafe fn vlr_blob_bytes<'b>(page: &Page, blobs: &'b BlobReadSet, vlr: VarLenRef) -> &'b [u8] {
     // Read the blob hash.
     // SAFETY: `vlr.first_granule` points to a valid granule.
     let mut var_iter = unsafe { page.iter_var_len_object(vlr.first_granule) };
@@ -395,7 +396,7 @@ pub(crate) unsafe fn vlr_blob_bytes<'b>(page: &Page, blob_store: &'b dyn BlobSto
     let hash = granule.blob_hash();
 
     // Find the blob.
-    blob_store.retrieve_blob(&hash).unwrap()
+    blobs.get(&hash).unwrap()
 }
 
 /// Read a `T` from `bytes` at the `curr_offset` and advance by `size` bytes.

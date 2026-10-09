@@ -4,11 +4,11 @@
 
 use crate::{
     indexes::PageIndex,
-    tiered::{PageError, PageSet, ReservedPage},
+    table::TableError,
+    tiered::{BlobError, BlobSet, PageError, PageSet, ReservedPage},
 };
 
 use super::{
-    blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
     page::{GranuleOffsetIter, Page, VarView},
     table::BlobNumBytes,
@@ -34,9 +34,13 @@ pub enum Error {
     #[error("Expected a value of type {0:?}, but found {1:?}")]
     WrongType(AlgebraicType, AlgebraicValue),
     #[error(transparent)]
-    PageError(#[from] super::page::Error),
+    Page(#[from] super::page::Error),
     #[error(transparent)]
-    PagesError(#[from] PageError),
+    Pages(#[from] PageError),
+    #[error(transparent)]
+    Blobs(#[from] BlobError),
+    #[error(transparent)]
+    Table(#[from] TableError),
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -53,13 +57,13 @@ pub enum Error {
 pub unsafe fn write_row_to_pages_bsatn(
     pages: &mut PageSet,
     visitor: &impl VarLenMembers,
-    blob_store: &mut dyn BlobStore,
+    blobs: &mut BlobSet,
     ty: &RowTypeLayout,
     mut bytes: &[u8],
     squashed_offset: SquashedOffset,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
-    unsafe { write_row_to_pages(pages, None, visitor, blob_store, ty, &val, squashed_offset) }
+    unsafe { write_row_to_pages(pages, None, visitor, blobs, ty, &val, squashed_offset) }
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -77,7 +81,7 @@ pub unsafe fn write_row_to_pages(
     pages: &mut PageSet,
     reservation: Option<(PageIndex, ReservedPage)>,
     visitor: &impl VarLenMembers,
-    blob_store: &mut dyn BlobStore,
+    blobs: &mut BlobSet,
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
@@ -97,7 +101,7 @@ pub unsafe fn write_row_to_pages(
         // - Caller promised that `visitor` is prepared to visit for `ty`
         //   and in the same order as a `VarLenVisitorProgram` for `ty` would.
         // - `visitor` came from `pages` which we can trust to visit in the right order.
-        unsafe { write_row_to_page(page, blob_store, visitor, ty, val) }
+        unsafe { write_row_to_page(page, blobs, visitor, ty, val) }
     })? {
         (page, Ok((offset, blob_inserted))) => {
             Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
@@ -123,7 +127,7 @@ pub unsafe fn write_row_to_pages(
 /// - `page` must use a var-len visitor which visits the same var-len members in the same order.
 pub unsafe fn write_row_to_page(
     page: &mut Page,
-    blob_store: &mut dyn BlobStore,
+    blobs: &mut BlobSet,
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
@@ -160,7 +164,7 @@ pub unsafe fn write_row_to_page(
     } else {
         // Haven't stored large blobs or init those granules with blob hashes yet,
         // so do it now.
-        serialized.write_large_blobs(blob_store)
+        serialized.write_large_blobs(blobs)?
     };
 
     Ok((fixed_offset, blob_store_inserted_bytes))
@@ -213,7 +217,7 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
     #[cold]
     #[inline(never)]
-    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+    fn write_large_blobs(mut self, blobs: &mut BlobSet) -> Result<BlobNumBytes, BlobError> {
         let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
@@ -221,10 +225,10 @@ impl BflatnSerializedRowBuffer<'_> {
             // However, as it was added to `self.large_blob_insertions`,
             // we have not yet written the hash to that granule.
             unsafe {
-                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
+                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blobs, &value, vlr)?;
             }
         }
-        blob_store_inserted_bytes
+        Ok(blob_store_inserted_bytes)
     }
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
@@ -556,8 +560,8 @@ fn bsatn_len(val: &AlgebraicValue) -> usize {
 pub mod test {
     use super::*;
     use crate::{
-        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, page::tests::hash_unmodified_save_get,
-        row_type_visitor::row_type_visitor,
+        bflatn_from::serialize_row_from_page, page::tests::hash_unmodified_save_get,
+        row_type_visitor::row_type_visitor, tiered::BlobReadSet,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
@@ -570,16 +574,23 @@ pub mod test {
             let ty: RowTypeLayout = ty.into();
             let mut page = Page::new(ty.size());
             let visitor = row_type_visitor(&ty);
-            let blob_store = &mut HashMapBlobStore::default();
+            let blobs = &mut BlobSet::new_for_test();
 
             let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
-            let (offset, _) = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blobs, &visitor, &ty, &val).unwrap() };
 
             let hash_pre_ser = hash_unmodified_save_get(&mut page);
             assert_ne!(hash_pre_ins, hash_pre_ser);
 
-            let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, blob_store, offset, &ty) }
+            let blobs = BlobReadSet::new(
+                &visitor,
+                &page,
+                &blobs,
+                &ty,
+                offset
+            ).unwrap();
+            let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, &blobs, offset, &ty) }
                 .unwrap().into_product().unwrap();
 
             prop_assert_eq!(val, read_val);

@@ -8,6 +8,7 @@ use crate::{
     tiered::{error::BlobError, map::ObjectMap, BudgetPermit, ByteBudget, TieredStorage},
 };
 
+#[derive(Debug)]
 pub struct BlobManager {
     frames: Arc<BlobFrameRegistry>,
     store: Arc<TieredStorage>,
@@ -23,27 +24,32 @@ impl BlobManager {
         }
     }
 
-    pub(super) fn install_or_get_resident(
+    pub(super) fn get_or_install(
         &self,
         hash: BlobHash,
         bytes: &[u8],
-        access_epoch: u64,
+        _access_epoch: u64,
     ) -> Result<BlobHandle, BlobError> {
-        todo!();
+        self.frames
+            .get_or_try_register(hash, || {
+                self.memory
+                    .acquire(bytes.len() as u64)
+                    .map(|permit| (permit, bytes.into()))
+            })
+            .map_err(Into::into)
+            .map(|frame| frame.into_handle())
     }
 
-    pub fn get(&self, hash: BlobHash) -> Result<BlobHandle, BlobError> {
-        if let Some(resident) = self.frames.get(hash) {
-            return Ok(resident.into_handle());
-        }
+    pub fn get_or_fault(&self, hash: BlobHash) -> Result<BlobHandle, BlobError> {
+        self.frames
+            .get_or_try_register(hash, || {
+                let size = self.store.stat(hash.into())?.size;
+                let permit = self.memory.acquire(size)?;
+                let bytes = self.store.read(hash.into())?;
 
-        let object_key = hash.into();
-        let meta = self.store.stat(object_key)?;
-        let permit = self.memory.acquire(meta.size)?;
-        let bytes = self.store.read(hash.into())?;
-        let frame = self.frames.register(permit, hash, bytes);
-
-        Ok(frame.into_handle())
+                Ok((permit, bytes))
+            })
+            .map(|frame| frame.into_handle())
     }
 
     /*
@@ -53,7 +59,7 @@ impl BlobManager {
     */
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct BlobFrameRegistry {
     entries: Mutex<ObjectMap<Arc<BlobFrame>>>,
 }
@@ -63,15 +69,20 @@ impl BlobFrameRegistry {
         self.entries.lock().unwrap().get(&hash.into()).cloned()
     }
 
-    fn register(&self, permit: BudgetPermit, hash: BlobHash, bytes: Box<[u8]>) -> Arc<BlobFrame> {
-        let frame = Arc::new(BlobFrame { hash, bytes, permit });
-        let prev = self.entries.lock().unwrap().insert(hash.into(), frame.clone());
-        assert!(prev.is_none());
-
-        frame
+    fn get_or_try_register<E>(
+        &self,
+        hash: BlobHash,
+        f: impl FnOnce() -> Result<(BudgetPermit, Box<[u8]>), E>,
+    ) -> Result<Arc<BlobFrame>, E> {
+        let mut entries = self.entries.lock().unwrap();
+        entries
+            .entry(hash.into())
+            .or_try_insert_with(|| f().map(|(permit, bytes)| BlobFrame { hash, bytes, permit }.into()))
+            .cloned()
     }
 }
 
+#[derive(Debug)]
 pub struct BlobFrame {
     hash: BlobHash,
     bytes: Box<[u8]>,
@@ -91,6 +102,22 @@ impl BlobFrame {
 #[derive(Clone)]
 pub struct BlobHandle {
     frame: Arc<BlobFrame>,
+}
+
+#[cfg(test)]
+impl BlobHandle {
+    pub fn new_for_test(hash: BlobHash, bytes: &[u8], permit: BudgetPermit) -> Self {
+        debug_assert_eq!(hash, BlobHash::hash_from_bytes(bytes));
+
+        Self {
+            frame: BlobFrame {
+                hash,
+                bytes: bytes.into(),
+                permit,
+            }
+            .into(),
+        }
+    }
 }
 
 impl Deref for BlobHandle {
