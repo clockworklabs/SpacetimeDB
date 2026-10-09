@@ -476,10 +476,65 @@ impl spacetimedb_durability::Durability for FileGatedDurability {
     }
 }
 
-/// Runs the background work a database's files need: re-persisting files that were staged
-/// before a restart, and deleting `st_file_staged` rows once their bytes are persisted.
+/// How often the maintenance task reclaims unreferenced file bytes.
+pub const RECLAIM_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+/// The hashes reclamation must keep for `db`: those that live `st_file` rows name,
+/// and those that retained snapshots list.
 ///
-/// Call once per database, after it is open.
+/// Known gap: a file inserted and deleted between two snapshots is in neither set,
+/// but reverting to a point between them restores its row. Closing that gap needs either
+/// tombstones for deleted files, kept as long as the log that contains their rows,
+/// or a scan of the retained log for `st_file` inserts.
+pub fn reclamation_roots(db: &RelationalDB) -> Result<HashSet<Hash>, DBError> {
+    let mut roots = db.with_read_only(Workload::Internal, |tx| -> Result<HashSet<Hash>, DBError> {
+        tx.iter(ST_FILE_ID)?
+            .map(|row| Ok(StFileRow::try_from(row)?.content_hash))
+            .collect()
+    })?;
+    if let Some(repo) = db.snapshot_repo() {
+        roots.extend(repo.retained_file_hashes().map_err(|e| DBError::Other(e.into()))?);
+    }
+    Ok(roots)
+}
+
+/// Deletes the file bytes that `db` can no longer need. See [`reclamation_roots`].
+pub async fn reclaim_files(db: &Arc<RelationalDB>, grace: Duration, runtime: &Handle) -> anyhow::Result<ReclaimStats> {
+    let files = db
+        .files()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("this database doesn't support File Storage"))?;
+    let roots = runtime
+        .spawn_blocking({
+            let db = db.clone();
+            move || reclamation_roots(&db)
+        })
+        .await?;
+    Ok(files.reclaim(roots, grace).await?)
+}
+
+/// Deletes the `st_file_staged` rows of `hashes`, whose bytes are now persisted.
+fn delete_staged(db: &RelationalDB, hashes: Vec<Hash>) -> Result<(), DBError> {
+    db.with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
+        for hash in hashes {
+            let pointer = tx
+                .iter_by_col_eq(ST_FILE_STAGED_ID, StFileStagedFields::ContentHash, &hash.to_u256().into())?
+                .next()
+                .map(|row| row.pointer());
+            if let Some(pointer) = pointer {
+                db.delete(tx, ST_FILE_STAGED_ID, [pointer]);
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Runs the background work a database's files need: re-persisting files that were staged
+/// before a restart, deleting `st_file_staged` rows once their bytes are persisted,
+/// and reclaiming unreferenced bytes every [`RECLAIM_INTERVAL`].
+///
+/// Call once per database, after it is open. The tasks hold the database weakly,
+/// and stop once it is dropped.
 pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
     let Some(files) = db.files().cloned() else {
         return;
@@ -501,35 +556,39 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
         }
         Err(e) => log::error!("[{}] failed to read staged files: {e}", db.database_identity()),
     }
+    drop(files);
 
+    let weak = Arc::downgrade(&db);
     let blocking = runtime.clone();
+    // Ends when the database's `DatabaseFiles`, which holds the sender, is dropped.
     runtime.spawn(async move {
         let mut batch = Vec::new();
         while persisted.recv_many(&mut batch, 256).await > 0 {
             let hashes = std::mem::take(&mut batch);
-            let db = db.clone();
-            let result = blocking
-                .spawn_blocking(move || {
-                    db.with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
-                        for hash in hashes {
-                            let pointer = tx
-                                .iter_by_col_eq(
-                                    ST_FILE_STAGED_ID,
-                                    StFileStagedFields::ContentHash,
-                                    &hash.to_u256().into(),
-                                )?
-                                .next()
-                                .map(|row| row.pointer());
-                            if let Some(pointer) = pointer {
-                                db.delete(tx, ST_FILE_STAGED_ID, [pointer]);
-                            }
-                        }
-                        Ok(())
-                    })
-                })
-                .await;
+            let Some(db) = weak.upgrade() else { return };
+            let result = blocking.spawn_blocking(move || delete_staged(&db, hashes)).await;
             if let Err(e) = result {
                 log::error!("failed to delete persisted staged files: {e}");
+            }
+        }
+    });
+
+    let weak = Arc::downgrade(&db);
+    let identity = db.database_identity();
+    drop(db);
+    let reclaimer = runtime.clone();
+    runtime.spawn(async move {
+        loop {
+            reclaimer.sleep(RECLAIM_INTERVAL).await;
+            let Some(db) = weak.upgrade() else { return };
+            match reclaim_files(&db, RECLAIM_GRACE, &reclaimer).await {
+                Ok(stats) if stats.deleted_objects > 0 => log::info!(
+                    "[{identity}] reclaimed {} unreferenced files ({} bytes)",
+                    stats.deleted_objects,
+                    stats.deleted_bytes
+                ),
+                Ok(_) => {}
+                Err(e) => log::warn!("[{identity}] failed to reclaim files: {e:#}"),
             }
         }
     });
@@ -665,6 +724,23 @@ mod tests {
         })
     }
 
+    /// Waits for the snapshot worker to finish a snapshot at or after `offset`.
+    ///
+    /// The worker snapshots on its own after the transaction at offset 1, which opening the
+    /// database commits. Tests wait for that snapshot before taking their own, so the two don't race.
+    fn wait_for_snapshot(stdb: &TestDB, rt: &tokio::runtime::Handle, offset: TxOffset) {
+        let mut snapshots = stdb.subscribe_to_snapshots().expect("snapshots are enabled");
+        rt.block_on(async {
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                snapshots.wait_for(|latest| latest.is_some_and(|latest| latest >= offset)),
+            )
+            .await
+            .expect("the worker should snapshot")
+            .expect("the worker is running");
+        });
+    }
+
     async fn settle() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
@@ -782,6 +858,7 @@ mod tests {
         let runtime = Handle::tokio(rt.clone());
         spawn_file_maintenance(stdb.db.clone(), runtime);
         let files = stdb.files().expect("files are enabled").clone();
+        wait_for_snapshot(&stdb, &rt, 1);
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let file_ref = create_file(&mut tx, b"hello, files", Some("text/plain".into()), Timestamp::now())?;
@@ -813,11 +890,8 @@ mod tests {
             .is_none());
 
         // A snapshot lists the file, so reclamation keeps it while the snapshot is retained.
-        let repo = crate::relational_db::open_snapshot_repo(
-            stdb.path().expect("durable").snapshots(),
-            spacetimedb_lib::Identity::ZERO,
-            0,
-        )?;
+        let repo = stdb.snapshot_repo().expect("snapshots are enabled");
+        assert!(!repo.retained_file_hashes()?.contains(&hash));
         stdb.take_snapshot(&*repo)?.expect("a snapshot is taken");
         assert!(repo.retained_file_hashes()?.contains(&hash));
         Ok(())
@@ -845,6 +919,52 @@ mod tests {
         // Deleting with the wrong secret does nothing.
         let forged = FileRef::new(copy.id(), copy.read_secret() ^ 1);
         assert!(!stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, forged))?);
+        Ok(())
+    }
+
+    #[test]
+    fn reclamation_keeps_live_and_snapshotted_files() -> anyhow::Result<()> {
+        let stdb = TestDB::durable_with_files()?;
+        let rt = stdb.runtime().expect("durable").clone();
+        let runtime = Handle::tokio(rt.clone());
+        let files = stdb.files().expect("files are enabled").clone();
+        let commit_and_confirm = |f: &dyn Fn(&mut MutTx) -> Result<(), DBError>| -> anyhow::Result<TxOffset> {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            f(&mut tx)?;
+            let (offset, ..) = stdb.commit_tx(tx)?.expect("consumes an offset");
+            rt.block_on(async { stdb.durable_tx_offset().expect("durable").wait_for(offset).await })?;
+            Ok(offset)
+        };
+        let now = Timestamp::now();
+        let created = std::cell::RefCell::new(Vec::new());
+        wait_for_snapshot(&stdb, &rt, 1);
+
+        // `live` stays; `snapshotted` is deleted after a snapshot captures it;
+        // `garbage` is deleted before any snapshot does.
+        commit_and_confirm(&|tx| {
+            created.borrow_mut().push(create_file(tx, b"live", None, now)?);
+            created.borrow_mut().push(create_file(tx, b"snapshotted", None, now)?);
+            Ok(())
+        })?;
+        stdb.take_snapshot(&*stdb.snapshot_repo().expect("snapshots are enabled"))?
+            .expect("a snapshot is taken");
+        commit_and_confirm(&|tx| {
+            created.borrow_mut().push(create_file(tx, b"garbage", None, now)?);
+            Ok(())
+        })?;
+        let [_live, snapshotted, garbage] = created.borrow()[..] else { unreachable!() };
+        commit_and_confirm(&|tx| {
+            assert!(delete_file(&stdb, tx, snapshotted)?);
+            assert!(delete_file(&stdb, tx, garbage)?);
+            Ok(())
+        })?;
+
+        let stats = rt.block_on(reclaim_files(&stdb, Duration::ZERO, &runtime))?;
+        assert_eq!(stats.deleted_objects, 1);
+        let size = |contents: &[u8]| rt.block_on(files.store().size(&content_hash(contents))).unwrap();
+        assert_eq!(size(b"live"), Some(4));
+        assert_eq!(size(b"snapshotted"), Some(11), "a retained snapshot still references it");
+        assert_eq!(size(b"garbage"), None);
         Ok(())
     }
 }

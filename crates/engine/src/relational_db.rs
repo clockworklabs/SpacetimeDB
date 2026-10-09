@@ -979,6 +979,11 @@ impl RelationalDB {
         self.files.as_ref()
     }
 
+    /// The repository this database's snapshots are written to, if it takes snapshots.
+    pub fn snapshot_repo(&self) -> Option<Arc<DynSnapshotRepo>> {
+        self.snapshot_worker.as_ref().map(|worker| worker.snapshot_repo())
+    }
+
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
     /// in-memory instance.
     pub fn durable_tx_offset(&self) -> Option<DurableOffset> {

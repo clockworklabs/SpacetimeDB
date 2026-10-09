@@ -370,6 +370,9 @@ pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), Nod
         NodesError::IndexCannotSeekRange => errno::WRONG_INDEX_ALGO,
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => errno::SCHEDULE_AT_DELAY_TOO_LONG,
         NodesError::HttpError(message) => return Ok((errno::HTTP_ERROR, Some(message))),
+        NodesError::NoSuchFile => errno::NO_SUCH_FILE,
+        NodesError::FileTooLarge { .. } => errno::FILE_TOO_LARGE,
+        NodesError::FilesUnavailable => errno::FILES_UNAVAILABLE,
         NodesError::Internal(ref internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {
@@ -445,6 +448,11 @@ macro_rules! abi_funcs {
 
             "spacetime_10.5"::datastore_clear,
             "spacetime_10.6"::env_get,
+            "spacetime_10.7"::file_create,
+            "spacetime_10.7"::file_copy,
+            "spacetime_10.7"::file_delete,
+            "spacetime_10.7"::file_metadata,
+            "spacetime_10.7"::file_reference,
         }
 
         $link_async! {

@@ -1,4 +1,4 @@
-use crate::{ConnectionId, Identity, Timestamp, Uuid};
+use crate::{ConnectionId, FileId, FileRef, Identity, Timestamp, Uuid};
 use core::ops;
 use spacetimedb_sats::bsatn;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
@@ -110,6 +110,8 @@ impl_filterable_value! {
     Timestamp: Copy,
     ConnectionId: Copy,
     Hash: Copy,
+    FileId: Copy,
+    FileRef: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
     // as they have trivial portable equality and ordering,

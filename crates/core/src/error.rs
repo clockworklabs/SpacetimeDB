@@ -74,6 +74,12 @@ pub enum NodesError {
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
+    #[error("no file matches the provided reference")]
+    NoSuchFile,
+    #[error("a file created in a transaction may be at most {max} bytes, but this one is {size}")]
+    FileTooLarge { size: usize, max: usize },
+    #[error("this database doesn't support File Storage")]
+    FilesUnavailable,
 }
 
 impl From<DBError> for NodesError {

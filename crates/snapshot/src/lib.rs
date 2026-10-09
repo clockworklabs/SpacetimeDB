@@ -1606,6 +1606,9 @@ pub trait SnapshotRepo: Send + Sync {
     /// Reconstruct the snapshot at `tx_offset` using the supplied page pool.
     fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError>;
 
+    /// The hashes of the files that any snapshot in this repository references.
+    fn retained_file_hashes(&self) -> Result<std::collections::HashSet<spacetimedb_lib::Hash>, SnapshotError>;
+
     /// Return the latest snapshot at or before `upper_bound`, if one exists.
     fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError>;
 
@@ -1651,6 +1654,10 @@ impl SnapshotRepo for SnapshotRepository {
 
     fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
         SnapshotRepository::read_snapshot(self, tx_offset, page_pool)
+    }
+
+    fn retained_file_hashes(&self) -> Result<std::collections::HashSet<spacetimedb_lib::Hash>, SnapshotError> {
+        SnapshotRepository::retained_file_hashes(self)
     }
 
     fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {

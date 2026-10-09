@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
+pub mod files;
 pub mod http;
 pub mod log_stopwatch;
 mod logger;
@@ -50,6 +51,7 @@ pub use spacetimedb_lib::ConnectionId;
 use crate::http::HandlerContext;
 use crate::http::HttpClient;
 pub use spacetimedb_lib::FilterableValue;
+pub use files::{FileError, FileId, FileMetadata, FileRef, UploadRequest};
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
