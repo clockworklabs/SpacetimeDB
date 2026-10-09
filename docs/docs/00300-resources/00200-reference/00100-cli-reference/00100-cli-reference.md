@@ -148,6 +148,7 @@ Publishing preserves unspecified environment values. Put an env map in spacetime
 * `--env-only` — Update environment values without building or uploading a module.
 * `--unset-env <KEY>` — Delete an environment value. Repeat for multiple keys.
 * `--replace-env` — Replace all environment values, deleting every unspecified key.
+* `--no-container` — Do not build or attach the container configured in spacetime.json.
 
 
 

@@ -1,6 +1,7 @@
 //! Manage the container attached to a database.
 use anyhow::{bail, Context};
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
+use reqwest::StatusCode;
 use spacetimedb_lib::container::{
     ContainerInfo, ContainerPort, ContainerResources, ContainerSpec, ContainerState, RestartPolicy,
 };
@@ -126,7 +127,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
     let host_url = config.get_host_url(server)?;
     let auth_header = get_auth_header(&mut config, false, server, true).await?;
     let client = reqwest::Client::new();
-    let url = format!("{host_url}/v1/database/{identity}/container");
+    let url = container_url(&host_url, identity);
 
     let request = match subcommand {
         "set" => {
@@ -170,12 +171,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
         "remove" => client.delete(&url),
         _ => unreachable!("unknown container subcommand `{subcommand}`"),
     };
-    let response = add_auth_header_opt(request, &auth_header).send().await?;
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        bail!("{status}: {body}");
-    }
+    let response = check_response(add_auth_header_opt(request, &auth_header).send().await?).await?;
 
     match subcommand {
         "status" => print_info(&response.json::<ContainerInfo>().await?),
@@ -188,15 +184,45 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_info(info: &ContainerInfo) {
-    let state = match &info.state {
+/// The URL of the container API of a database.
+pub(crate) fn container_url(host_url: &str, database_identity: impl std::fmt::Display) -> String {
+    format!("{host_url}/v1/database/{database_identity}/container")
+}
+
+/// Pass a successful container API response through, and turn a failed one into an error
+/// that says what to do about it.
+pub(crate) async fn check_response(response: reqwest::Response) -> anyhow::Result<reqwest::Response> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let body = response.text().await.unwrap_or_default();
+    match status {
+        StatusCode::NOT_IMPLEMENTED => bail!(
+            "{status}: this server does not run containers. If it is a local `spacetime start`, restart it \
+             while Docker is running, listening only on loopback (`--listen-addr 127.0.0.1:3000`), \
+             or with `--enable-containers`."
+        ),
+        StatusCode::NOT_FOUND if body.is_empty() => bail!("{status}: this server does not support containers."),
+        StatusCode::FORBIDDEN => bail!("{status}: your identity may not manage this database's container here. {body}"),
+        _ => bail!("{status}: {body}"),
+    }
+}
+
+/// A short description of a container's last reported state.
+pub(crate) fn describe_state(state: &Option<ContainerState>) -> String {
+    match state {
         None => "pending".to_string(),
         Some(ContainerState::Starting) => "starting".to_string(),
         Some(ContainerState::Running) => "running".to_string(),
         Some(ContainerState::Exited(code)) => format!("exited with code {code}"),
         Some(ContainerState::OutOfMemory) => "killed for exceeding its memory limit".to_string(),
         Some(ContainerState::Failed(error)) => format!("failed: {error}"),
-    };
+    }
+}
+
+fn print_info(info: &ContainerInfo) {
+    let state = describe_state(&info.state);
     println!("image:      {}", info.spec.image);
     println!("desired:    {}", if info.running { "running" } else { "stopped" });
     println!("generation: {}", info.generation);
