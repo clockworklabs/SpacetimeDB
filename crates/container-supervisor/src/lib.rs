@@ -182,32 +182,24 @@ struct Attempts {
 }
 
 /// Supervise the containers assigned to `node`, isolating them with `network` if given.
+/// Without `network`, containers can reach private addresses and the host's services, which the
+/// caller should point out.
 pub fn spawn<N: ContainerControl + 'static>(
     node: Arc<N>,
     options: ContainerOptions,
     network: Option<Box<dyn NetworkIsolation>>,
 ) -> anyhow::Result<()> {
-    let docker = match &options.docker_host {
-        Some(host) => Docker::connect_with_host(host),
-        None => Docker::connect_with_defaults(),
-    };
-    let docker_host = options
-        .docker_host
-        .as_deref()
-        .unwrap_or("DOCKER_HOST or the default socket");
-    let docker = docker.with_context(|| format!("unable to connect to Docker at {docker_host}"))?;
+    let docker = connect(options.docker_host.as_deref())?;
+    let docker_host = docker_host_name(options.docker_host.as_deref());
     let id = supervisor_id(&options.state_dir)?;
     // The state directory holds every running generation's token.
     #[cfg(unix)]
     std::fs::set_permissions(&options.state_dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))
         .with_context(|| format!("unable to restrict {}", options.state_dir.display()))?;
-    match &network {
-        Some(network) => network
+    if let Some(network) = &network {
+        network
             .install()
-            .context("unable to isolate containers on the network")?,
-        None => warn!(
-            "containers are not isolated on the network: they can reach private addresses and this host's services"
-        ),
+            .context("unable to isolate containers on the network")?;
     }
     info!(docker_host, runtime = ?options.runtime, supervisor = %id, "container hosting enabled");
     tokio::spawn(async move {
@@ -240,6 +232,29 @@ pub fn spawn<N: ContainerControl + 'static>(
         }
     });
     Ok(())
+}
+
+/// Check that the Docker Engine answers within `timeout`. See [`ContainerOptions::docker_host`].
+pub async fn ping(docker_host: Option<&str>, timeout: Duration) -> anyhow::Result<()> {
+    let docker = connect(docker_host)?;
+    tokio::time::timeout(timeout, docker.ping())
+        .await
+        .map_err(|_| anyhow::anyhow!("timed out after {timeout:?}"))
+        .and_then(|answer| Ok(answer?))
+        .with_context(|| format!("Docker did not answer at {}", docker_host_name(docker_host)))?;
+    Ok(())
+}
+
+fn connect(docker_host: Option<&str>) -> anyhow::Result<Docker> {
+    let docker = match docker_host {
+        Some(host) => Docker::connect_with_host(host),
+        None => Docker::connect_with_defaults(),
+    };
+    docker.with_context(|| format!("unable to connect to Docker at {}", docker_host_name(docker_host)))
+}
+
+fn docker_host_name(docker_host: Option<&str>) -> &str {
+    docker_host.unwrap_or("DOCKER_HOST or the default socket")
 }
 
 /// Read the selected keys from a module's database environment.
