@@ -352,6 +352,199 @@ importers:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
 
+  spacetime-agents-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-agents-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-agents-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/agents':
+        specifier: workspace:*
+        version: link:../..
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:../../../spacetime-auth-ts
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:../../../spacetime-files-ts
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-agents-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/agents':
+        specifier: workspace:*
+        version: link:..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-auth-ts:
+    dependencies:
+      '@noble/curves':
+        specifier: ^2.2.0
+        version: 2.4.0
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.4.0
+      '@spacetimedb/crypto':
+        specifier: workspace:^
+        version: link:../spacetime-crypto-ts
+      '@spacetimedb/rate-limit':
+        specifier: workspace:^
+        version: link:../spacetime-rate-limit-ts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-auth-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-auth-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-auth-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:..
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:../../spacetime-rate-limit-ts
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   spacetime-cron-ts:
     dependencies:
       cron-parser:
@@ -482,6 +675,81 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
+
+  spacetime-files-ts:
+    dependencies:
+      '@spacetimedb/crypto':
+        specifier: workspace:^
+        version: link:../spacetime-crypto-ts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-files-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:..
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-files-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   spacetime-rate-limit-ts:
     devDependencies:
@@ -4722,6 +4990,10 @@ packages:
 
   '@napi-rs/wasm-runtime@1.1.1':
     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
+
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
 
   '@noble/hashes@2.4.0':
     resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
@@ -19946,6 +20218,10 @@ snapshots:
       '@emnapi/runtime': 1.8.1
       '@tybys/wasm-util': 0.10.1
     optional: true
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
 
   '@noble/hashes@2.4.0': {}
 
