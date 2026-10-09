@@ -215,7 +215,7 @@ interface ChildOutcome {
 async function main(argv: string[]): Promise<void> {
   const command = argv[2];
   if (command === 'setup' || command === 'set-secret') {
-    stateVolumeCommand(command, argv.slice(3));
+    await stateVolumeCommand(command, argv.slice(3));
     return;
   }
   const resolved = resolveControllerCommand(argv.slice(2));

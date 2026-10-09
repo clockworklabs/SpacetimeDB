@@ -80,13 +80,15 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
   ].join('\n');
 }
 
+const SECRET_NAMES = ['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key',
+  'codex_auth', 'xai_api_key', 'grok_auth', 'zai_api_key', 'deepseek_api_key', 'moonshot_api_key', 'gemini_api_key'];
+function checkSecretName(name: string | undefined): void {
+  if (!SECRET_NAMES.includes(name ?? '')) throw new Error(`secret name must be ${SECRET_NAMES.join(', ')}`);
+}
+
 export function writeStateSecret(name: string | undefined, input: string,
   root = '/state'): void {
-  if (!['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key', 'codex_auth',
-    'xai_api_key', 'grok_auth', 'zai_api_key', 'deepseek_api_key', 'moonshot_api_key', 'gemini_api_key'].includes(name ?? '')) {
-    throw new Error('secret name must be claude_subscription_token, anthropic_api_key, openai_api_key, openrouter_api_key, '
-      + 'codex_auth, xai_api_key, grok_auth, zai_api_key, deepseek_api_key, moonshot_api_key, gemini_api_key');
-  }
+  checkSecretName(name);
   let value = input.trim();
   if (name === 'codex_auth' || name === 'grok_auth') {
     try { value = JSON.stringify(JSON.parse(value)); }
@@ -102,12 +104,37 @@ export function writeStateSecret(name: string | undefined, input: string,
   chmodSync(join(root, 'secrets', name!), 0o600);
 }
 
-export function stateVolumeCommand(command: string, args: string[]): void {
+// At a terminal, ask for the one line and do not echo it; piped input is read whole.
+function readSecretInput(name: string): Promise<string> {
+  if (!process.stdin.isTTY) return Promise.resolve(readFileSync(0, 'utf8'));
+  process.stderr.write(`Paste the ${name} value and press Enter (it is not shown): `);
+  process.stdin.setRawMode(true);
+  return new Promise((resolve, reject) => {
+    let value = '';
+    const finish = (settle: () => void) => {
+      process.stdin.setRawMode(false);
+      process.stdin.off('data', read).pause();
+      process.stderr.write('\n');
+      settle();
+    };
+    const read = (chunk: Buffer) => {
+      for (const character of chunk.toString('utf8')) {
+        if (character === '\r' || character === '\n') return finish(() => resolve(value));
+        if (character === '\u0003') return finish(() => reject(new Error('set-secret cancelled')));
+        value = character === '\u007f' || character === '\b' ? value.slice(0, -1) : value + character;
+      }
+    };
+    process.stdin.on('data', read).resume();
+  });
+}
+
+export async function stateVolumeCommand(command: string, args: string[]): Promise<void> {
   if (command === 'setup') {
     if (args.length) throw new Error('setup accepts no arguments; configure image references through the environment');
     process.stdout.write(prepareStateVolume());
   } else {
-    if (args.length !== 1) throw new Error('set-secret requires exactly one secret name');
-    writeStateSecret(args[0], readFileSync(0, 'utf8'));
+    if (args.length !== 1) throw new Error('set-secret requires exactly one secret name, such as set-secret gemini_api_key');
+    checkSecretName(args[0]);
+    writeStateSecret(args[0], await readSecretInput(args[0]!));
   }
 }
