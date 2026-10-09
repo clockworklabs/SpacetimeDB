@@ -28,8 +28,8 @@ use async_trait::async_trait;
 use bollard::{
     models::{ContainerCreateBody, HostConfig},
     query_parameters::{
-        CreateContainerOptions, CreateImageOptions, ListContainersOptions, ListNetworksOptions, RemoveContainerOptions,
-        StopContainerOptions,
+        CreateContainerOptions, CreateImageOptions, ImportImageOptions, ListContainersOptions, ListNetworksOptions,
+        RemoveContainerOptions, StopContainerOptions,
     },
     Docker,
 };
@@ -540,7 +540,7 @@ impl<N: ContainerControl> Supervisor<N> {
             assigned.database_identity.to_hex().to_string(),
         );
         env.insert("SPACETIMEDB_TOKEN_FILE".into(), format!("{CREDENTIALS_MOUNT}/token"));
-        self.ensure_image(&spec.image).await?;
+        self.ensure_image(&module, &spec.image).await?;
         self.check_image(&spec.image).await?;
         let credentials = self.credentials_dir(database_id, assigned.generation);
 
@@ -628,15 +628,43 @@ impl<N: ContainerControl> Supervisor<N> {
             .context("the database's leader replica is not running")
     }
 
-    async fn ensure_image(&self, image: &str) -> anyhow::Result<()> {
+    /// Make sure Docker has `image`: load a local image ID that the database stores, and pull
+    /// anything else.
+    async fn ensure_image(&self, module: &spacetimedb::host::ModuleHost, image: &str) -> anyhow::Result<()> {
         let inspected = self.docker.inspect_image(image).await;
         if inspected.is_ok() {
             return Ok(());
         }
         if is_local_image_id(image) {
-            return inspected.map(drop).with_context(|| {
-                format!("image {image} is not in this server's Docker daemon, and local image IDs are never pulled")
-            });
+            let db = module.relational_db().clone();
+            let id = image.to_owned();
+            let stored = spacetimedb::util::asyncify(move || {
+                db.with_read_only(Workload::Internal, |tx| spacetimedb::db::container_image::get(tx, &id))
+            })
+            .await
+            .context("unable to read the images stored in the database")?;
+            let Some(stored) = stored else {
+                return inspected.map(drop).with_context(|| {
+                    format!(
+                        "image {image} is in neither the database nor this server's Docker daemon; publish again \
+                         to upload it. Local image IDs are never pulled"
+                    )
+                });
+            };
+            info!("loading image {image} from the database");
+            self.docker
+                .import_image(ImportImageOptions::default(), bollard::body_full(stored.into()), None)
+                .try_collect::<Vec<_>>()
+                .await
+                .with_context(|| format!("unable to load image {image} into Docker"))?;
+            // A loaded image's ID depends on the daemon's image store, classic or containerd.
+            self.docker.inspect_image(image).await.with_context(|| {
+                format!(
+                    "Docker loaded image {image} under another ID, probably because its image store (classic or \
+                     containerd) differs from the one that built the image; push the image to a registry instead"
+                )
+            })?;
+            return Ok(());
         }
         info!("pulling image {image}");
         self.docker
