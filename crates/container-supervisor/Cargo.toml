@@ -17,9 +17,9 @@ async-trait.workspace = true
 bollard.workspace = true
 chrono = { workspace = true, features = ["std"] }
 futures.workspace = true
+log.workspace = true
 openssl.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 
 [lints]
 workspace = true

@@ -8497,13 +8497,13 @@ dependencies = [
  "bollard",
  "chrono",
  "futures",
+ "log",
  "openssl",
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-datastore",
  "spacetimedb-lib",
  "tokio",
- "tracing",
 ]
 
 [[package]]
