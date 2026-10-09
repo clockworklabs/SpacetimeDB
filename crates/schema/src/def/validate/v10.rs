@@ -1164,6 +1164,13 @@ fn attach_schedules_to_tables(
             .into());
         }
 
+        if table.is_event {
+            return Err(ValidationError::ScheduledEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
         table.schedule = Some(schedule);
     }
 
@@ -1189,6 +1196,12 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
         }
         if table.is_event {
             return Err(ValidationError::OutboxEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+        if table.schedule.is_some() {
+            return Err(ValidationError::OutboxScheduledTable {
                 table: table.name.clone(),
             }
             .into());

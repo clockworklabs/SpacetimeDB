@@ -150,6 +150,8 @@ pub enum ValidationError {
     DuplicateOutbox { table: Identifier },
     #[error("outbox table {table} must not be an event table")]
     OutboxEventTable { table: Identifier },
+    #[error("outbox table {table} must not be a scheduled table")]
+    OutboxScheduledTable { table: Identifier },
     #[error("outbox table {table} must have a primary key")]
     OutboxMissingPrimaryKey { table: Identifier },
     #[error("outbox table {table} primary key must be u64, found {found}")]
@@ -182,6 +184,8 @@ pub enum ValidationError {
     DuplicateLifeCycle { lifecycle: Lifecycle },
     #[error("table {table} is assigned in multiple schedules")]
     DuplicateSchedule { table: Identifier },
+    #[error("scheduled table {table} must not be an event table")]
+    ScheduledEventTable { table: Identifier },
     #[error("table {} corresponding to schedule {} not found", table_name, schedule_name)]
     MissingScheduleTable {
         table_name: RawIdentifier,
