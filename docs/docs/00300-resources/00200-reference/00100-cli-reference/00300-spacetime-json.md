@@ -83,7 +83,7 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 
 ## Container configuration
 
-The `container` key attaches a container to the database. After publishing the module, `spacetime publish` builds the container's image if needed, attaches the container to the database, and starts it if it is stopped. If the database already has the same container, `spacetime publish` leaves it alone, so republishing without changes does not restart it, unless it had failed to start. Pass `--no-container` to skip this step. `spacetime dev` does not attach containers yet.
+The `container` key attaches a container to the database. See [Container Hosting](/databases/container-hosting) for a guide. After publishing the module, `spacetime publish` builds the container's image if needed, attaches the container to the database, and starts it if it is stopped. If the database already has the same container, `spacetime publish` leaves it alone, so republishing without changes does not restart it, unless it had failed to start. Pass `--no-container` to skip this step. `spacetime dev` does not attach containers yet.
 
 The server must run containers. A `spacetime start` does when Docker is running, but by default only for clients on its own machine; to publish to it from another machine, start it with `--enable-containers` (see [`containers`](/cli-reference/standalone-config#containers)).
 

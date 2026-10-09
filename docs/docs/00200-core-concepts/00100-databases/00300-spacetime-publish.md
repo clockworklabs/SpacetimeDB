@@ -110,6 +110,10 @@ Modules can declare environment variables for configuration and secrets. Each pu
 
 See [Environment Variables](./00700-environment-variables.md) for declarations, reading values in module code, publishing examples, and private tables for secrets that need to change without republishing.
 
+### Containers
+
+If `spacetime.json` configures a container for the database, `spacetime publish` also builds its image and attaches it to the database after publishing the module. Pass `--no-container` to skip this step. See [Container Hosting](./00800-container-hosting.md).
+
 ## Next Steps
 
 After publishing:
