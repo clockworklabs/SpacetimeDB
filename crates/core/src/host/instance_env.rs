@@ -1696,11 +1696,14 @@ mod test {
 
     #[test]
     fn module_cannot_access_environment_by_guessed_table_and_index_ids() -> Result<()> {
-        use spacetimedb_datastore::system_tables::ST_ENV_ID;
+        use spacetimedb_datastore::system_tables::{ST_CONTAINER_IMAGE_ID, ST_ENV_ID};
         let db = relational_db()?;
         let (env, _runtime) = instance_env(db.clone())?;
         let mut slot = env.tx.clone();
-        let protected = [(ST_ENV_ID, "st_env", to_vec("TOKEN")?)];
+        let protected = [
+            (ST_ENV_ID, "st_env", to_vec("TOKEN")?),
+            (ST_CONTAINER_IMAGE_ID, "st_container_image", to_vec("sha256:0")?),
+        ];
         let tx = begin_mut_tx(&db);
         let (tx, result) = slot.set(tx, || -> Result<()> {
             for (table, name, point) in &protected {

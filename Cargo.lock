@@ -8445,6 +8445,7 @@ dependencies = [
  "spacetimedb-subscription",
  "spacetimedb-table",
  "strum",
+ "tar",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
