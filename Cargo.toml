@@ -18,6 +18,7 @@ members = [
   "crates/execution",
   "crates/expr",
   "crates/guard",
+  "crates/file-store",
   "crates/fs-utils",
   "crates/index-scan-gate",
   "crates/lib",
@@ -173,6 +174,7 @@ spacetimedb-durability = { path = "crates/durability", version = "=2.12.0" }
 spacetimedb-engine = { path = "crates/engine", version = "=2.12.0" }
 spacetimedb-execution = { path = "crates/execution", version = "=2.12.0" }
 spacetimedb-expr = { path = "crates/expr", version = "=2.12.0" }
+spacetimedb-file-store = { path = "crates/file-store", version = "=2.12.0" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.12.0" }
 spacetimedb-guard = { path = "crates/guard", version = "=2.12.0" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.12.0" }
