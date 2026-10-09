@@ -278,7 +278,7 @@ impl ControlDb {
     }
 }
 
-fn transaction_error(error: TransactionError<Error>) -> Error {
+pub(super) fn transaction_error(error: TransactionError<Error>) -> Error {
     match error {
         TransactionError::Abort(error) => error,
         TransactionError::Storage(error) => error.into(),

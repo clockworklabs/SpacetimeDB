@@ -1,3 +1,4 @@
+mod container;
 mod environment;
 
 use anyhow::Context;
@@ -405,7 +406,9 @@ impl ControlDb {
     }
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
-        self.delete_database_and_environment(id)
+        let deleted = self.delete_database_and_environment(id)?;
+        self.delete_container(id)?;
+        Ok(deleted)
     }
 
     pub fn get_replicas(&self) -> Result<Vec<Replica>> {

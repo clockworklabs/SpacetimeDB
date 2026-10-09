@@ -40,6 +40,7 @@ use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -64,6 +65,7 @@ pub struct StandaloneEnv {
     _pid_file: PidFile,
     auth_provider: auth::DefaultJwtAuthProvider,
     websocket_options: WebSocketOptions,
+    containers_enabled: AtomicBool,
 }
 
 impl StandaloneEnv {
@@ -118,7 +120,28 @@ impl StandaloneEnv {
             _pid_file,
             auth_provider: auth_env,
             websocket_options: config.websocket,
+            containers_enabled: AtomicBool::new(false),
         }))
+    }
+
+    /// Store the containers of databases in the control database, and answer the
+    /// container API from it. Running the containers is up to the caller.
+    /// Until this is called, the container API answers that containers are unsupported.
+    pub fn enable_containers(&self) {
+        self.containers_enabled.store(true, Ordering::Relaxed);
+    }
+
+    /// The id of a database whose container is requested.
+    fn container_database_id(&self, database_identity: &Identity) -> Result<u64, ContainerError> {
+        if !self.containers_enabled.load(Ordering::Relaxed) {
+            return Err(ContainerError::Unsupported);
+        }
+        let database = self
+            .control_db
+            .get_database_by_identity(database_identity)
+            .map_err(anyhow::Error::from)?
+            .ok_or_else(|| ContainerError::NotFound(format!("database {database_identity} not found")))?;
+        Ok(database.id)
     }
 
     pub fn data_dir(&self) -> &Arc<ServerDataDir> {
@@ -203,8 +226,14 @@ impl NodeDelegate for StandaloneEnv {
         self.data_dir().replica(replica_id).module_logs()
     }
 
-    async fn is_current_container(&self, _claim: &ContainerClaim) -> bool {
-        false
+    async fn is_current_container(&self, claim: &ContainerClaim) -> bool {
+        if !self.containers_enabled.load(Ordering::Relaxed) {
+            return false;
+        }
+        self.control_db.is_current_container(claim).unwrap_or_else(|e| {
+            log::error!("failed to read the container of database {}: {e:#}", claim.database);
+            false
+        })
     }
 }
 
@@ -279,8 +308,12 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(self.control_db.is_database_locked(database_identity)?)
     }
 
-    async fn get_container(&self, _database_identity: &Identity) -> Result<Option<ContainerInfo>, ContainerError> {
-        Err(ContainerError::Unsupported)
+    async fn get_container(&self, database_identity: &Identity) -> Result<Option<ContainerInfo>, ContainerError> {
+        let database_id = self.container_database_id(database_identity)?;
+        Ok(self
+            .control_db
+            .get_container(database_id)
+            .map_err(anyhow::Error::from)?)
     }
 }
 
@@ -448,6 +481,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .await?;
         let stored = self.program_store.put(&program.bytes).await?;
         anyhow::ensure!(stored == program.hash, "stored reset program changed");
+        self.control_db.restart_container(database.id)?;
         let previous_replicas = self.control_db.get_replicas_by_database(database.id)?;
         for replica in &previous_replicas {
             self.on_delete_replica(replica.id).await?;
@@ -552,19 +586,31 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     async fn set_container(
         &self,
         _caller: &Identity,
-        _database_identity: &Identity,
-        _spec: Option<ContainerSpec>,
+        database_identity: &Identity,
+        spec: Option<ContainerSpec>,
     ) -> Result<(), ContainerError> {
-        Err(ContainerError::Unsupported)
+        let database_id = self.container_database_id(database_identity)?;
+        self.control_db
+            .set_container(database_id, spec)
+            .map_err(anyhow::Error::from)?;
+        Ok(())
     }
 
     async fn set_container_running(
         &self,
         _caller: &Identity,
-        _database_identity: &Identity,
-        _running: bool,
+        database_identity: &Identity,
+        running: bool,
     ) -> Result<(), ContainerError> {
-        Err(ContainerError::Unsupported)
+        let database_id = self.container_database_id(database_identity)?;
+        let found = self
+            .control_db
+            .set_container_running(database_id, running)
+            .map_err(anyhow::Error::from)?;
+        if !found {
+            return Err(ContainerError::NotFound("database has no container".into()));
+        }
+        Ok(())
     }
 }
 
