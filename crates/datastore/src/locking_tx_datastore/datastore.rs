@@ -1146,7 +1146,7 @@ pub(crate) mod tests {
     use crate::system_tables::{
         ST_ENV_ID, ST_ENV_NAME, ST_FILE_ID, ST_FILE_NAME, ST_FILE_STAGED_ID, ST_FILE_STAGED_NAME, ST_INBOUND_MSG_ID,
         ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME,
-        ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME,
+        ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME, ST_UPLOAD_ID, ST_UPLOAD_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1615,6 +1615,7 @@ pub(crate) mod tests {
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_FILE_ID.into(), name: ST_FILE_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
             TableRow { id: ST_FILE_STAGED_ID.into(), name: ST_FILE_STAGED_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_UPLOAD_ID.into(), name: ST_UPLOAD_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
 
         ]));
         #[rustfmt::skip]
@@ -1747,6 +1748,10 @@ pub(crate) mod tests {
             ColRow { table: ST_FILE_ID.into(), pos: 6, name: "deleted_at_offset", ty: AlgebraicType::option(AlgebraicType::U64) },
             ColRow { table: ST_FILE_STAGED_ID.into(), pos: 0, name: "content_hash", ty: AlgebraicType::U256 },
             ColRow { table: ST_FILE_STAGED_ID.into(), pos: 1, name: "bytes", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 0, name: "sender", ty: AlgebraicType::U256 },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 1, name: "idempotency_key", ty: AlgebraicType::String },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 2, name: "file_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 3, name: "completed_at", ty: AlgebraicType::I64 },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1788,6 +1793,7 @@ pub(crate) mod tests {
             IndexRow { id: 36, table: ST_FILE_ID.into(), col: col_list![0], name: "st_file_file_id_idx_btree", },
             IndexRow { id: 37, table: ST_FILE_ID.into(), col: col_list![2], name: "st_file_content_hash_idx_btree", },
             IndexRow { id: 38, table: ST_FILE_STAGED_ID.into(), col: col_list![0], name: "st_file_staged_content_hash_idx_btree", },
+            IndexRow { id: 39, table: ST_UPLOAD_ID.into(), col: col_list![0, 1], name: "st_upload_sender_idempotency_key_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1842,6 +1848,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ConstraintRow { constraint_id: 32, table_id: ST_FILE_ID.into(), unique_columns: col_list![0], constraint_name: "st_file_file_id_key", },
             ConstraintRow { constraint_id: 33, table_id: ST_FILE_STAGED_ID.into(), unique_columns: col_list![0], constraint_name: "st_file_staged_content_hash_key", },
+            ConstraintRow { constraint_id: 34, table_id: ST_UPLOAD_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_upload_sender_idempotency_key_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2315,6 +2322,7 @@ pub(crate) mod tests {
             IndexRow { id: 36, table: ST_FILE_ID.into(), col: col_list![0], name: "st_file_file_id_idx_btree", },
             IndexRow { id: 37, table: ST_FILE_ID.into(), col: col_list![2], name: "st_file_content_hash_idx_btree", },
             IndexRow { id: 38, table: ST_FILE_STAGED_ID.into(), col: col_list![0], name: "st_file_staged_content_hash_idx_btree", },
+            IndexRow { id: 39, table: ST_UPLOAD_ID.into(), col: col_list![0, 1], name: "st_upload_sender_idempotency_key_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },

@@ -153,6 +153,7 @@ fn run_inner<I: WasmInstance>(
                 stmt.table_id(),
                 spacetimedb_datastore::system_tables::ST_FILE_ID
                     | spacetimedb_datastore::system_tables::ST_FILE_STAGED_ID
+                    | spacetimedb_datastore::system_tables::ST_UPLOAD_ID
             ) {
                 return Err(anyhow!("Files can only be changed through File Storage").into());
             }

@@ -515,8 +515,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     pub fn insert_uploaded_file(
         &mut self,
         row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
     ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
-        self.common.insert_uploaded_file(row, &mut self.instance)
+        self.common.insert_uploaded_file(row, upload, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
@@ -890,12 +891,19 @@ impl InstanceCommon {
     pub(crate) fn insert_uploaded_file<I: WasmInstance>(
         &mut self,
         row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
         inst: &mut I,
     ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
         let replica_ctx = inst.replica_ctx().clone();
         let db = replica_ctx.relational_db();
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (tx, _) = db.with_auto_rollback(tx, |tx| crate::db::files::insert_file_row(tx, &row))?;
+        let (tx, _) = db.with_auto_rollback(tx, |tx| -> Result<(), crate::error::DBError> {
+            crate::db::files::insert_file_row(tx, &row)?;
+            if let Some(upload) = &upload {
+                crate::db::files::insert_upload_record(tx, upload)?;
+            }
+            Ok(())
+        })?;
         let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
         if trapped || out.outcome != ViewOutcome::Success {
             let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);

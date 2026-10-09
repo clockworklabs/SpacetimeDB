@@ -46,7 +46,8 @@ pub fn attach_uploads(ctx: &ReducerContext) {
     for upload in ctx.db.upload_log().iter() {
         if let Some(file) = ctx.files().reference(upload.file) {
             if ctx.db.attachment().iter().all(|a| a.file != file) {
-                ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name: "upload".into() });
+                let name = format!("upload-{}", upload.size);
+                ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name });
             }
         }
     }
@@ -123,6 +124,27 @@ impl<'a> Files<'a> {
         let mut request = self.client.get(self.url(&format!("/{file_ref}")));
         if let Some(range) = range {
             request = request.header(reqwest::header::RANGE, range);
+        }
+        request.send().unwrap()
+    }
+
+    fn upload_keyed(&self, body: &[u8], key: &str, authorized: bool) -> reqwest::blocking::Response {
+        let mut request = self
+            .client
+            .post(self.url(""))
+            .header(reqwest::header::CONTENT_TYPE, "text/plain")
+            .header("Idempotency-Key", key)
+            .body(body.to_vec());
+        if authorized {
+            request = request.bearer_auth(self.test.read_token().unwrap());
+        }
+        request.send().unwrap()
+    }
+
+    fn completed_upload(&self, key: &str, authorized: bool) -> reqwest::blocking::Response {
+        let mut request = self.client.get(self.url(&format!("/uploads/{key}")));
+        if authorized {
+            request = request.bearer_auth(self.test.read_token().unwrap());
         }
         request.send().unwrap()
     }
@@ -204,9 +226,41 @@ fn test_file_storage() {
     assert_eq!(metadata["size"], 12);
     assert_eq!(metadata["content_type"], "text/plain");
 
+    // Retrying an upload with its Idempotency-Key returns the same file, without asking
+    // allow_upload again or creating another file.
+    let first = files.upload_keyed(b"keyed", "retry-me", true);
+    assert_eq!(first.status(), StatusCode::CREATED);
+    assert!(first.headers().get("spacetime-idempotent-replay").is_none());
+    let keyed: serde_json::Value = first.json().unwrap();
+    let retry = files.upload_keyed(b"keyed", "retry-me", true);
+    assert_eq!(retry.status(), StatusCode::CREATED);
+    assert_eq!(retry.headers()["spacetime-idempotent-replay"], "true");
+    let retried: serde_json::Value = retry.json().unwrap();
+    assert_eq!(retried["file_ref"], keyed["file_ref"]);
+    let logged = test.sql("SELECT size FROM upload_log WHERE size = 5").unwrap();
+    assert_eq!(logged.matches(" 5").count(), 1, "allow_upload ran once: {logged}");
+    // A client that lost the response can look it up.
+    let lookup = files.completed_upload("retry-me", true);
+    assert_eq!(lookup.status(), StatusCode::OK);
+    let looked_up: serde_json::Value = lookup.json().unwrap();
+    assert_eq!(looked_up["file_ref"], keyed["file_ref"]);
+    assert_eq!(
+        files.completed_upload("retry-me", false).status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        files.completed_upload("never-used", true).status(),
+        StatusCode::NOT_FOUND
+    );
+    // Keys are scoped to their sender, so they need an identity.
+    assert_eq!(
+        files.upload_keyed(b"keyed", "anonymous", false).status(),
+        StatusCode::UNAUTHORIZED
+    );
+
     // A module can resolve an uploaded file's ID, which allow_upload recorded, to its reference.
     test.call("attach_uploads", &[]).unwrap();
-    assert_eq!(attachment_key(&test, "upload"), uploaded);
+    assert_eq!(attachment_key(&test, "upload-12"), uploaded);
 
     // Clients can't call allow_upload themselves.
     assert!(test.call("allow_upload", &[]).is_err());

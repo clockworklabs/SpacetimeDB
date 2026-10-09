@@ -190,7 +190,8 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
         | ST_INBOUND_STREAM_ID
         | ST_INBOUND_MSG_ID
         | ST_FILE_ID
-        | ST_FILE_STAGED_ID => false,
+        | ST_FILE_STAGED_ID
+        | ST_UPLOAD_ID => false,
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -215,7 +216,7 @@ pub enum SystemTable {
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 27] {
+pub fn system_tables() -> [TableSchema; 28] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -245,6 +246,7 @@ pub fn system_tables() -> [TableSchema; 27] {
         st_inbound_msg_schema(),
         st_file_schema(),
         st_file_staged_schema(),
+        st_upload_schema(),
     ]
 }
 
@@ -365,6 +367,7 @@ pub(crate) const ST_INBOUND_STREAM_IDX: usize = 23;
 pub(crate) const ST_INBOUND_MSG_IDX: usize = 24;
 pub(crate) const ST_FILE_IDX: usize = 25;
 pub(crate) const ST_FILE_STAGED_IDX: usize = 26;
+pub(crate) const ST_UPLOAD_IDX: usize = 27;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -800,6 +803,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StInboundMsgFields>(&result, ST_INBOUND_MSG_NAME);
     validate_system_table::<StFileFields>(&result, ST_FILE_NAME);
     validate_system_table::<StFileStagedFields>(&result, ST_FILE_STAGED_NAME);
+    validate_system_table::<StUploadFields>(&result, ST_UPLOAD_NAME);
 
     result
 }
@@ -856,6 +860,7 @@ lazy_static::lazy_static! {
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_key", ConstraintId(31));
         m.insert("st_file_file_id_key", ConstraintId(32));
         m.insert("st_file_staged_content_hash_key", ConstraintId(33));
+        m.insert("st_upload_sender_idempotency_key_key", ConstraintId(34));
         m
     };
 }
@@ -903,6 +908,7 @@ lazy_static::lazy_static! {
         m.insert("st_file_file_id_idx_btree", IndexId(36));
         m.insert("st_file_content_hash_idx_btree", IndexId(37));
         m.insert("st_file_staged_content_hash_idx_btree", IndexId(38));
+        m.insert("st_upload_sender_idempotency_key_idx_btree", IndexId(39));
         m
     };
 }
@@ -1101,6 +1107,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_INBOUND_MSG_ID => Some(st_inbound_msg_schema()),
         ST_FILE_ID => Some(st_file_schema()),
         ST_FILE_STAGED_ID => Some(st_file_staged_schema()),
+        ST_UPLOAD_ID => Some(st_upload_schema()),
         _ => None,
     }
 }

@@ -1703,6 +1703,8 @@ pub struct DatabaseRoutes<S> {
     pub file_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/files/:file_ref/metadata
     pub file_metadata_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/files/uploads/:key
+    pub file_upload_get: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1740,6 +1742,7 @@ where
             files_post: post(super::files::upload::<S>),
             file_get: get(super::files::download::<S>),
             file_metadata_get: get(super::files::metadata::<S>),
+            file_upload_get: get(super::files::completed_upload::<S>),
         }
     }
 }
@@ -1819,6 +1822,7 @@ where
             .route("/:name_or_identity/files", self.files_post)
             .route("/:name_or_identity/files/:file_ref", self.file_get)
             .route("/:name_or_identity/files/:file_ref/metadata", self.file_metadata_get)
+            .route("/:name_or_identity/files/uploads/:key", self.file_upload_get)
             .route_layer(resolving_egress_metrics_middleware);
 
         axum::Router::new()

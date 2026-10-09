@@ -499,8 +499,9 @@ impl JsMainInstance {
     pub async fn insert_uploaded_file(
         &self,
         row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
     ) -> anyhow::Result<crate::host::module_host::UploadedFileRecorded> {
-        self.request(InsertUploadedFileRequest { row }).await
+        self.request(InsertUploadedFileRequest { row, upload }).await
     }
 
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
@@ -656,6 +657,7 @@ js_main_request! {
 js_main_request! {
     InsertUploadedFileRequest {
         row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
     } => "insert_uploaded_file", anyhow::Result<crate::host::module_host::UploadedFileRecorded>, InsertUploadedFile
 }
 
@@ -852,6 +854,7 @@ enum JsMainWorkerRequest {
     InsertUploadedFile {
         reply_tx: JsReplyTx<anyhow::Result<crate::host::module_host::UploadedFileRecorded>>,
         row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
@@ -1458,9 +1461,9 @@ fn handle_main_worker_request(
                 (res, false)
             })
         }
-        JsMainWorkerRequest::InsertUploadedFile { reply_tx, row } => {
+        JsMainWorkerRequest::InsertUploadedFile { reply_tx, row, upload } => {
             handle_worker_request("insert_uploaded_file", reply_tx, || {
-                let res = instance_common.insert_uploaded_file(row, inst);
+                let res = instance_common.insert_uploaded_file(row, upload, inst);
                 (res, false)
             })
         }

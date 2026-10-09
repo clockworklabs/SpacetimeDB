@@ -3370,17 +3370,19 @@ impl ModuleHost {
         )?
     }
 
-    /// Commits the `st_file` row of an uploaded file, re-evaluating the views that read files.
+    /// Commits the `st_file` row of an uploaded file, and its idempotency record if it has one,
+    /// re-evaluating the views that read files.
     pub async fn insert_uploaded_file(
         &self,
         row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
     ) -> Result<UploadedFileRecorded, anyhow::Error> {
         call_instance!(
             self,
             "<insert_uploaded_file>",
-            row,
-            |row, inst| inst.insert_uploaded_file(row),
-            |row, inst| inst.insert_uploaded_file(row).await,
+            (row, upload),
+            |(row, upload), inst| inst.insert_uploaded_file(row, upload),
+            |(row, upload), inst| inst.insert_uploaded_file(row, upload).await,
         )?
     }
 

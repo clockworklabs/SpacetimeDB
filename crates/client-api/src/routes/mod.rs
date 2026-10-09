@@ -97,8 +97,18 @@ fn cors_layer() -> cors::CorsLayer {
             header::AUTHORIZATION,
             header::ACCEPT,
             header::CONTENT_TYPE,
+            header::RANGE,
+            header::IF_NONE_MATCH,
+            header::HeaderName::from_static("idempotency-key"),
             SpacetimeEnvironment::name().clone(),
             SpacetimeEnvironmentRemove::name().clone(),
+        ])
+        // Uploads answer with the new file's reference in a header, and downloads with ranges.
+        .expose_headers([
+            header::HeaderName::from_static("spacetime-file-ref"),
+            header::HeaderName::from_static("spacetime-idempotent-replay"),
+            header::CONTENT_RANGE,
+            header::ETAG,
         ])
         .allow_methods(cors::Any)
         .allow_origin(cors::Any)

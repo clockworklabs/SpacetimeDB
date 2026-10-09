@@ -19,11 +19,12 @@ use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::system_tables::{
-    StFileFields, StFileRow, StFileStagedFields, StFileStagedRow, TimestampViaI64, ST_FILE_ID, ST_FILE_STAGED_ID,
+    IdentityViaU256, StFileFields, StFileRow, StFileStagedFields, StFileStagedRow, StUploadFields, StUploadRow,
+    TimestampViaI64, ST_FILE_ID, ST_FILE_STAGED_ID, ST_UPLOAD_ID,
 };
 use spacetimedb_durability::{Close, DurableOffset, PreparedTx, TxOffset};
 pub use spacetimedb_file_store::{ByteStream, FileStore, LocalFileStore, ReclaimStats, Spool, Spooled};
-use spacetimedb_lib::{FileId, FileRef, Hash, Timestamp};
+use spacetimedb_lib::{FileId, FileRef, Hash, Identity, Timestamp};
 use spacetimedb_runtime::sync::{mpsc, watch};
 use spacetimedb_runtime::Handle;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -41,6 +42,18 @@ pub const MAX_CREATED_FILE_BYTES: usize = 16 * 1024 * 1024;
 /// between persisting a file and committing the `st_file` row that references it.
 pub const RECLAIM_GRACE: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// The longest `Idempotency-Key` an upload may carry.
+pub const MAX_IDEMPOTENCY_KEY_LEN: usize = 255;
+
+/// How long a completed upload is remembered by its idempotency key.
+pub const UPLOAD_KEY_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Whether `key` can name an upload: nonempty, at most [`MAX_IDEMPOTENCY_KEY_LEN`] bytes,
+/// and only visible ASCII.
+pub fn is_valid_idempotency_key(key: &str) -> bool {
+    !key.is_empty() && key.len() <= MAX_IDEMPOTENCY_KEY_LEN && key.bytes().all(|b| b.is_ascii_graphic())
+}
+
 /// File Storage state for one database.
 pub struct DatabaseFiles {
     store: Arc<dyn FileStore>,
@@ -55,6 +68,20 @@ pub struct DatabaseFiles {
     /// Becomes `true` once files staged before the database opened are persisted again.
     /// Until then, [`FileGatedDurability`] reports nothing durable.
     startup_settled: watch::Sender<bool>,
+    /// The `(sender, idempotency key)` of each keyed upload in progress.
+    keyed_uploads: Mutex<HashSet<(Identity, String)>>,
+}
+
+/// Marks a keyed upload as in progress until dropped.
+pub struct KeyedUpload {
+    files: Arc<DatabaseFiles>,
+    key: (Identity, String),
+}
+
+impl Drop for KeyedUpload {
+    fn drop(&mut self) {
+        self.files.keyed_uploads.lock().remove(&self.key);
+    }
 }
 
 #[derive(Default)]
@@ -91,6 +118,17 @@ impl DatabaseFiles {
             staged_persisted,
             staged_persisted_rx: Mutex::new(Some(rx)),
             startup_settled: watch::channel(false).0,
+            keyed_uploads: Mutex::default(),
+        })
+    }
+
+    /// Marks the upload `key` from `sender` as in progress, or returns `None` if it already is,
+    /// in which case the caller should refuse the retry until the first attempt finishes.
+    pub fn begin_keyed_upload(self: &Arc<Self>, sender: Identity, key: &str) -> Option<KeyedUpload> {
+        let key = (sender, key.to_owned());
+        self.keyed_uploads.lock().insert(key.clone()).then(|| KeyedUpload {
+            files: self.clone(),
+            key,
         })
     }
 
@@ -253,6 +291,13 @@ fn any_file_row(state: &impl StateView, id: FileId) -> Result<Option<(RowPointer
         .transpose()
 }
 
+/// Looks up the file `id` names, including a deleted file whose record hasn't been purged.
+///
+/// This doesn't check a read secret, so only the host may use it, for files it already knows about.
+pub fn servable_file_row(state: &impl StateView, id: FileId) -> Result<Option<StFileRow>, DatastoreError> {
+    Ok(any_file_row(state, id)?.map(|(_, row)| row))
+}
+
 /// Looks up the live file `id` names.
 pub fn live_file_row(state: &impl StateView, id: FileId) -> Result<Option<StFileRow>, DatastoreError> {
     Ok(any_file_row(state, id)?.map(|(_, row)| row).filter(StFileRow::is_live))
@@ -294,6 +339,45 @@ pub fn staged_bytes(state: &impl StateView, hash: Hash) -> Result<Option<Box<[u8
 pub fn insert_file_row(tx: &mut MutTx, row: &StFileRow) -> Result<(), DBError> {
     tx.insert_via_serialize_bsatn(ST_FILE_ID, row)?;
     Ok(())
+}
+
+/// The upload that `sender` completed with the idempotency key `key`, if it is still remembered.
+pub fn completed_upload(state: &impl StateView, sender: Identity, key: &str) -> Result<Option<StUploadRow>, DBError> {
+    let key = AlgebraicValue::product([IdentityViaU256(sender).into(), AlgebraicValue::String(key.into())]);
+    let row = state
+        .iter_by_col_eq(
+            ST_UPLOAD_ID,
+            spacetimedb_primitives::col_list![StUploadFields::Sender, StUploadFields::IdempotencyKey],
+            &key,
+        )?
+        .next()
+        .map(StUploadRow::try_from)
+        .transpose()?;
+    Ok(row)
+}
+
+/// Remembers a completed upload by its idempotency key.
+pub fn insert_upload_record(tx: &mut MutTx, row: &StUploadRow) -> Result<(), DBError> {
+    tx.insert_via_serialize_bsatn(ST_UPLOAD_ID, row)?;
+    Ok(())
+}
+
+/// Forgets uploads completed more than `retention` before `now`. Returns how many it forgot.
+pub fn expire_upload_records(
+    db: &RelationalDB,
+    tx: &mut MutTx,
+    now: Timestamp,
+    retention: Duration,
+) -> Result<u32, DBError> {
+    let cutoff = now.checked_sub_duration(retention).unwrap_or(Timestamp::UNIX_EPOCH);
+    let mut expired = Vec::new();
+    for row in tx.iter(ST_UPLOAD_ID)? {
+        let pointer = row.pointer();
+        if StUploadRow::try_from(row)?.completed_at.0 < cutoff {
+            expired.push(pointer);
+        }
+    }
+    Ok(db.delete(tx, ST_UPLOAD_ID, expired))
 }
 
 /// Creates a file from `bytes` within `tx`, staging the bytes until they are persisted.
@@ -753,6 +837,19 @@ pub fn spawn_file_maintenance(db: Arc<RelationalDB>, runtime: Handle) {
         loop {
             reclaimer.sleep(RECLAIM_INTERVAL).await;
             let Some(db) = weak.upgrade() else { return };
+            let expired = reclaimer
+                .spawn_blocking({
+                    let db = db.clone();
+                    move || {
+                        db.with_auto_commit(Workload::Internal, |tx| {
+                            expire_upload_records(&db, tx, Timestamp::now(), UPLOAD_KEY_RETENTION)
+                        })
+                    }
+                })
+                .await;
+            if let Err(e) = expired {
+                log::warn!("[{identity}] failed to expire upload records: {e}");
+            }
             match reclaim_files(&db, RECLAIM_GRACE, &reclaimer).await {
                 Ok(stats) if stats.deleted_objects > 0 => log::info!(
                     "[{identity}] reclaimed {} unreferenced files ({} bytes)",
@@ -1227,6 +1324,43 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn completed_uploads_are_found_by_sender_and_key_until_they_expire() -> anyhow::Result<()> {
+        let stdb = TestDB::in_memory()?;
+        let alice = Identity::from_u256(1u32.into());
+        let bob = Identity::from_u256(2u32.into());
+        let day = Duration::from_secs(24 * 60 * 60);
+        let now = Timestamp::now();
+        let record = |sender, key: &str, file: u128, age: Duration| StUploadRow {
+            sender: IdentityViaU256(sender),
+            idempotency_key: key.into(),
+            file_id: FileId(file),
+            completed_at: TimestampViaI64(now.checked_sub_duration(age).unwrap()),
+        };
+        stdb.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
+            insert_upload_record(tx, &record(alice, "photo", 1, Duration::ZERO))?;
+            insert_upload_record(tx, &record(bob, "photo", 2, Duration::ZERO))?;
+            insert_upload_record(tx, &record(alice, "old", 3, 2 * day))?;
+            // The same sender can't complete the same key twice.
+            assert!(insert_upload_record(tx, &record(alice, "photo", 4, Duration::ZERO)).is_err());
+            Ok(())
+        })?;
+        let found = |sender, key: &'static str| {
+            stdb.with_read_only(Workload::ForTests, |tx| completed_upload(tx, sender, key))
+                .map(|row| row.map(|row| row.file_id))
+        };
+        // Keys are scoped to their sender.
+        assert_eq!(found(alice, "photo")?, Some(FileId(1)));
+        assert_eq!(found(bob, "photo")?, Some(FileId(2)));
+        assert_eq!(found(bob, "old")?, None);
+
+        let expired = stdb.with_auto_commit(Workload::ForTests, |tx| expire_upload_records(&stdb, tx, now, day))?;
+        assert_eq!(expired, 1);
+        assert_eq!(found(alice, "old")?, None);
+        assert_eq!(found(alice, "photo")?, Some(FileId(1)));
+        Ok(())
+    }
+
     /// A user table with one `u64` column.
     fn u64_table() -> spacetimedb_schema::schema::TableSchema {
         use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
@@ -1252,6 +1386,7 @@ mod tests {
     /// with and without File Storage. Run with `--ignored --nocapture`.
     #[test]
     #[ignore = "a measurement, not a check"]
+    #[allow(clippy::disallowed_macros, reason = "measurements print their results")]
     fn measure_gate_overhead() -> anyhow::Result<()> {
         const TXS: usize = 20_000;
         for with_files in [false, true, false, true] {
@@ -1292,6 +1427,7 @@ mod tests {
     /// by scanning `st_file` while the snapshot holds the datastore lock. Run with `--ignored --nocapture`.
     #[test]
     #[ignore = "a measurement, not a check"]
+    #[allow(clippy::disallowed_macros, reason = "measurements print their results")]
     fn measure_snapshot_with_many_files() -> anyhow::Result<()> {
         for files in [0, 100_000, 1_000_000] {
             let stdb = TestDB::durable()?;

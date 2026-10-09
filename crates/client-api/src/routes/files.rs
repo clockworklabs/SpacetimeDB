@@ -18,7 +18,7 @@ use spacetimedb::db::files::{self as engine_files, DatabaseFiles};
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::system_tables::{StFileRow, TimestampViaI64};
+use spacetimedb_datastore::system_tables::{IdentityViaU256, StFileRow, StUploadRow, TimestampViaI64};
 use spacetimedb_lib::{FileRef, Identity, Timestamp, UploadRequest};
 use std::ops::Range;
 use std::sync::Arc;
@@ -29,6 +29,51 @@ const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The header that carries a new file's reference in an upload response.
 const FILE_REF_HEADER: &str = "spacetime-file-ref";
+
+/// The header that names an upload across retries.
+const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
+
+/// Set on an upload response that repeats an earlier upload's, because the retry used its key.
+const IDEMPOTENT_REPLAY_HEADER: &str = "spacetime-idempotent-replay";
+
+/// The response to a completed upload.
+fn upload_response(status: StatusCode, file_ref: FileRef, size: u64, hash: spacetimedb_lib::Hash) -> Response {
+    let body = serde_json::json!({
+        "file_ref": file_ref.to_string(),
+        "size": size,
+        "content_hash": hash.to_hex().to_string(),
+    });
+    let mut response = (status, axum::Json(body)).into_response();
+    response.headers_mut().insert(
+        FILE_REF_HEADER,
+        HeaderValue::from_str(&file_ref.to_string()).expect("hex is a valid header value"),
+    );
+    response
+}
+
+/// The saved response of the upload `sender` completed with `key`, if it's still remembered.
+async fn completed_upload_response(
+    db: &Arc<RelationalDB>,
+    sender: Identity,
+    key: String,
+    status: StatusCode,
+) -> axum::response::Result<Option<Response>> {
+    let db = db.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        db.with_read_only(Workload::Internal, |tx| -> anyhow::Result<Option<StFileRow>> {
+            let Some(upload) = engine_files::completed_upload(tx, sender, &key)? else {
+                return Ok(None);
+            };
+            // The file may have been deleted since, but its record stays until history no longer needs it,
+            // and a retry must still not create a second file.
+            Ok(engine_files::servable_file_row(tx, upload.file_id)?)
+        })
+    })
+    .await
+    .map_err(log_and_500)?
+    .map_err(log_and_500)?;
+    Ok(found.map(|row| upload_response(status, row.file_ref(), row.size, row.content_hash)))
+}
 
 fn error(status: StatusCode, message: impl Into<String>) -> ErrorResponse {
     (status, message.into()).into()
@@ -97,8 +142,53 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
             "an upload needs an Authorization header or a ?token=",
         ));
     }
+    let idempotency_key = match headers.get(IDEMPOTENCY_KEY_HEADER) {
+        None => None,
+        Some(value) => match value.to_str() {
+            Ok(key) if engine_files::is_valid_idempotency_key(key) => Some(key.to_owned()),
+            _ => {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "an Idempotency-Key is 1 to 255 visible ASCII characters",
+                ))
+            }
+        },
+    };
+    // Keys are scoped to their sender, so keyed uploads need an identity.
+    let keyed = match (idempotency_key, sender) {
+        (Some(key), Some(sender)) => Some((sender, key)),
+        (Some(_), None) => {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                "an Idempotency-Key needs an Authorization header",
+            ))
+        }
+        (None, _) => None,
+    };
 
-    let (_db, files, module) = database_files(&ctx, &database).await?;
+    let (db, files, module) = database_files(&ctx, &database).await?;
+
+    // A retry of a completed upload gets the same file back, without uploading again.
+    // A retry of an upload still in progress must wait for it to finish.
+    let _in_progress = match &keyed {
+        Some((sender, key)) => {
+            if let Some(response) = completed_upload_response(&db, *sender, key.clone(), StatusCode::CREATED).await? {
+                let mut response = response;
+                response
+                    .headers_mut()
+                    .insert(IDEMPOTENT_REPLAY_HEADER, HeaderValue::from_static("true"));
+                return Ok(response);
+            }
+            let Some(guard) = files.begin_keyed_upload(*sender, key) else {
+                return Err(error(
+                    StatusCode::CONFLICT,
+                    "an upload with this Idempotency-Key is still in progress",
+                ));
+            };
+            Some(guard)
+        }
+        None => None,
+    };
 
     // Decide before reading the body. The file's ID is fixed now, so `allow_upload` can record it.
     let file_ref = engine_files::mint_file_ref();
@@ -158,17 +248,24 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     files.persist(spooled).await.map_err(log_and_500)?;
 
     // Record the file, and wait until the record is durable.
+    let completed_at = Timestamp::now();
+    let upload = keyed.map(|(sender, idempotency_key)| StUploadRow {
+        sender: IdentityViaU256(sender),
+        idempotency_key,
+        file_id: file_ref.id(),
+        completed_at: TimestampViaI64(completed_at),
+    });
     let row = StFileRow {
         file_id: file_ref.id(),
         read_secret: file_ref.read_secret(),
         content_hash: hash,
         size,
-        created_at: TimestampViaI64(Timestamp::now()),
+        created_at: TimestampViaI64(completed_at),
         content_type,
         deleted_at_offset: None,
     };
     // Through the module, so that views that read files' metadata are re-evaluated.
-    let recorded = module.insert_uploaded_file(row).await.map_err(log_and_500)?;
+    let recorded = module.insert_uploaded_file(row, upload).await.map_err(log_and_500)?;
     let offset = recorded
         .tx_offset
         .await
@@ -177,17 +274,39 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         durable.wait_for(offset).await.map_err(log_and_500)?;
     }
 
-    let body = serde_json::json!({
-        "file_ref": file_ref.to_string(),
-        "size": size,
-        "content_hash": hash.to_hex().to_string(),
-    });
-    let mut response = (StatusCode::CREATED, axum::Json(body)).into_response();
-    response.headers_mut().insert(
-        FILE_REF_HEADER,
-        HeaderValue::from_str(&file_ref.to_string()).expect("hex is a valid header value"),
-    );
-    Ok(response)
+    Ok(upload_response(StatusCode::CREATED, file_ref, size, hash))
+}
+
+#[derive(Deserialize)]
+pub struct UploadKeyParams {
+    key: String,
+}
+
+/// `GET /v1/database/:name_or_identity/files/uploads/:key`
+///
+/// Returns the saved response of an upload the caller completed with this `Idempotency-Key`,
+/// for a client that lost the original response, or 404 if none is remembered.
+pub async fn completed_upload<S: ControlStateDelegate + NodeDelegate>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    auth: SpacetimeAuthHeader,
+    Path(UploadKeyParams { key }): Path<UploadKeyParams>,
+) -> axum::response::Result<Response> {
+    let Some(sender) = auth.get().map(|auth| auth.claims.identity) else {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "looking up an upload needs an Authorization header",
+        ));
+    };
+    let (db, _files, _module) = database_files(&ctx, &database).await?;
+    completed_upload_response(&db, sender, key, StatusCode::OK)
+        .await?
+        .ok_or_else(|| {
+            error(
+                StatusCode::NOT_FOUND,
+                "no upload with this key completed in the last day",
+            )
+        })
 }
 
 #[derive(Deserialize)]

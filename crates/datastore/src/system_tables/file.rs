@@ -20,6 +20,8 @@ pub const ST_FILE_ID: TableId = TableId(26);
 pub const ST_FILE_NAME: &str = "st_file";
 pub const ST_FILE_STAGED_ID: TableId = TableId(27);
 pub const ST_FILE_STAGED_NAME: &str = "st_file_staged";
+pub const ST_UPLOAD_ID: TableId = TableId(28);
+pub const ST_UPLOAD_NAME: &str = "st_upload";
 
 st_fields_enum!(enum StFileFields {
     "file_id", FileId = 0,
@@ -108,6 +110,39 @@ impl From<StFileStagedRow> for ProductValue {
     }
 }
 
+st_fields_enum!(enum StUploadFields {
+    "sender", Sender = 0,
+    "idempotency_key", IdempotencyKey = 1,
+    "file_id", FileId = 2,
+    "completed_at", CompletedAt = 3,
+});
+
+/// A row of `st_upload`: an upload that completed with an `Idempotency-Key`, so that retrying it
+/// returns the same file instead of creating another. Rows expire after a day.
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StUploadRow {
+    /// The uploader. Keys are scoped to their sender.
+    pub sender: IdentityViaU256,
+    pub idempotency_key: String,
+    /// The file the upload created.
+    pub file_id: FileId,
+    pub completed_at: TimestampViaI64,
+}
+
+impl TryFrom<RowRef<'_>> for StUploadRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StUploadRow> for ProductValue {
+    fn from(row: StUploadRow) -> Self {
+        to_product_value(&row)
+    }
+}
+
 pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
     let ty = builder.add_type::<StFileRow>();
     builder
@@ -127,6 +162,15 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
         .with_primary_key(StFileStagedFields::ContentHash)
         .with_unique_constraint(StFileStagedFields::ContentHash)
         .with_index_no_accessor_name(btree(StFileStagedFields::ContentHash));
+
+    let ty = builder.add_type::<StUploadRow>();
+    let key = col_list![StUploadFields::Sender, StUploadFields::IdempotencyKey];
+    builder
+        .build_table(ST_UPLOAD_NAME, *ty.as_ref().expect("system row must be a product"))
+        .with_type(TableType::System)
+        .with_access(v9::TableAccess::Private)
+        .with_unique_constraint(key.clone())
+        .with_index_no_accessor_name(btree(key));
 }
 
 pub(crate) fn st_file_schema() -> TableSchema {
@@ -137,12 +181,16 @@ pub(crate) fn st_file_staged_schema() -> TableSchema {
     st_schema(ST_FILE_STAGED_NAME, ST_FILE_STAGED_ID)
 }
 
+pub(crate) fn st_upload_schema() -> TableSchema {
+    st_schema(ST_UPLOAD_NAME, ST_UPLOAD_ID)
+}
+
 /// The file tables are reachable from module code only through the file syscalls.
 pub(super) fn is_file_table(table: TableId) -> bool {
-    matches!(table, ST_FILE_ID | ST_FILE_STAGED_ID)
+    matches!(table, ST_FILE_ID | ST_FILE_STAGED_ID | ST_UPLOAD_ID)
 }
 
 /// The indexes of [`is_file_table`] tables, as assigned in `INDEX_IDS`.
 pub(super) fn is_file_index(index: IndexId) -> bool {
-    matches!(index, IndexId(36..=38))
+    matches!(index, IndexId(36..=39))
 }
