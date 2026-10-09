@@ -9184,6 +9184,7 @@ dependencies = [
  "socket2 0.5.10",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
+ "spacetimedb-container-supervisor",
  "spacetimedb-core",
  "spacetimedb-datastore",
  "spacetimedb-lib",
