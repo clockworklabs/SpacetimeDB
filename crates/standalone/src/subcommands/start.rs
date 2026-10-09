@@ -2,7 +2,7 @@ use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSock
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
@@ -20,6 +20,7 @@ use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_client_api::routes::TaskDumpRegistry;
+use spacetimedb_container_supervisor::ContainerOptions;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -92,6 +93,44 @@ pub fn cli() -> clap::Command {
                 .long("non-interactive")
                 .action(SetTrue)
                 .help("Run in non-interactive mode (fail immediately if port is in use)"),
+        )
+        .arg(
+            Arg::new("enable_containers")
+                .long("enable-containers")
+                .action(SetTrue)
+                .help(
+                    "Run the containers attached to databases with Docker. Containers are not isolated from \
+                     this machine's network, and the owner of any database can attach one, \
+                     so enable this only on a trusted machine.",
+                ),
+        )
+        .arg(
+            Arg::new("container_docker_host")
+                .long("container-docker-host")
+                .value_name("URL")
+                .requires("enable_containers")
+                .help(
+                    "The Docker Engine for containers, e.g. unix:///var/run/docker.sock. \
+                     Defaults to DOCKER_HOST, or else the platform's default socket.",
+                ),
+        )
+        .arg(
+            Arg::new("container_api_url")
+                .long("container-api-url")
+                .value_name("URL")
+                .requires("enable_containers")
+                .help(
+                    "The URL containers use to reach this server. \
+                     Defaults to http://host.docker.internal:<listen port>. With Docker Engine on Linux, \
+                     that is the Docker bridge's gateway, so the server must not listen only on loopback.",
+                ),
+        )
+        .arg(
+            Arg::new("container_runtime")
+                .long("container-runtime")
+                .value_name("RUNTIME")
+                .requires("enable_containers")
+                .help("The OCI runtime for containers, e.g. runc. Defaults to the Docker daemon's default runtime."),
         )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
@@ -264,6 +303,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    if args.get_flag("enable_containers") {
+        start_containers(args, &ctx, tcp.local_addr()?)?;
+    }
 
     if let Some(pg_port) = pg_port {
         let server_addr = listen_addr.split(':').next().unwrap();
@@ -294,6 +336,32 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Run the containers attached to databases, for `--enable-containers`.
+fn start_containers(args: &ArgMatches, ctx: &Arc<StandaloneEnv>, listen_addr: SocketAddr) -> anyhow::Result<()> {
+    let api_url = args
+        .get_one::<String>("container_api_url")
+        .cloned()
+        .unwrap_or_else(|| format!("http://host.docker.internal:{}", listen_addr.port()));
+    let options = ContainerOptions {
+        docker_host: args.get_one::<String>("container_docker_host").cloned(),
+        runtime: args.get_one::<String>("container_runtime").cloned(),
+        // Quotas need overlay2 on XFS with project quotas, which few development machines have.
+        scratch_quota: false,
+        scratch_capacity: None,
+        api_url,
+        state_dir: ctx.data_dir().0.join("containers"),
+        name_with_supervisor_id: true,
+    };
+    if !listen_addr.ip().is_loopback() {
+        log::warn!(
+            "containers are enabled and SpacetimeDB listens on {listen_addr}: \
+             any client that can reach it can create a database and run images on this machine"
+        );
+    }
+    ctx.enable_containers();
+    spacetimedb_container_supervisor::spawn(ctx.clone(), options, None)
 }
 
 /// Check if a port is available on the requested host for both IPv4 and IPv6.

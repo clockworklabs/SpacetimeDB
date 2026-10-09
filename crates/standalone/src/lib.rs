@@ -1,3 +1,4 @@
+mod containers;
 mod control_db;
 pub mod subcommands;
 pub mod util;
