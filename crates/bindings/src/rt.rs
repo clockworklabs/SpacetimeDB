@@ -170,6 +170,7 @@ pub trait FnInfo: ExplicitNames {
     /// Currently only views use this metadata.
     const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[];
 
+    /// The source name of the outbox table whose results this reducer handles.
     const ON_RESULT_OUTBOX: Option<&'static str> = None;
 
     /// The function to invoke.
@@ -190,9 +191,6 @@ pub trait FnInfo: ExplicitNames {
 pub trait RemoteReducer {
     /// The reducer name in the remote module schema.
     const NAME: &'static str;
-
-    /// Reducer argument names, excluding the reducer context.
-    const ARG_NAMES: &'static [&'static str];
 
     /// Hash of the reducer signature as seen by the generated receiver bindings.
     const SIGNATURE_HASH: &'static str;
@@ -520,11 +518,16 @@ where
     core::mem::forget(_x);
 }
 
+/// Resolve an outbox accessor to its registered table source name.
+pub const fn on_result_outbox<T: crate::Table>(_table: fn(&crate::Local) -> T) -> &'static str {
+    T::TABLE_NAME
+}
+
 /// Assert that an `on_result` reducer accepts the outbox row and delivery result.
-pub fn on_result_typecheck<'de, Row, F, Ret>(_f: F, _row: fn(Row))
+pub fn on_result_typecheck<T, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
 where
-    Row: SpacetimeType + Serialize + Deserialize<'de>,
-    F: Fn(&ReducerContext, Row, Result<(), String>) -> Ret,
+    T: crate::Table,
+    F: Fn(&ReducerContext, T::Row, Result<(), String>) -> Ret,
     Ret: IntoReducerResult,
 {
 }
@@ -847,12 +850,11 @@ pub fn register_table<T: Table>() {
         table.finish();
 
         if let Some(outbox) = T::OUTBOX {
-            let arg_columns = outbox_arg_columns(T::TABLE_NAME, T::COLUMN_NAMES, outbox.remote_arg_names);
             module.inner.add_outbox(
                 T::TABLE_NAME,
                 outbox.remote_reducer_name,
                 outbox.target_column,
-                arg_columns,
+                outbox.arg_columns.iter().copied().map(Into::into),
                 None::<&str>,
                 spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
                     .expect("generated outbox signature hash must be valid hex"),
@@ -861,43 +863,6 @@ pub fn register_table<T: Table>() {
 
         module.inner.add_explicit_names(T::explicit_names());
     })
-}
-
-fn outbox_arg_columns(
-    table_name: &str,
-    column_names: &[&str],
-    remote_arg_names: &[&str],
-) -> Vec<spacetimedb_primitives::ColId> {
-    remote_arg_names
-        .iter()
-        .map(|arg_name| {
-            let mut matches = column_names.iter().enumerate().filter_map(|(idx, column_name)| {
-                (*column_name == *arg_name).then_some(spacetimedb_primitives::ColId(idx as u16))
-            });
-            let col = matches.next().unwrap_or_else(|| {
-                panic!("outbox table `{table_name}` has no column matching remote reducer parameter `{arg_name}`")
-            });
-            assert!(
-                matches.next().is_none(),
-                "outbox table `{table_name}` has multiple columns matching remote reducer parameter `{arg_name}`"
-            );
-            col
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod idc_tests {
-    use super::outbox_arg_columns;
-    use spacetimedb_primitives::ColId;
-
-    #[test]
-    fn outbox_arg_columns_use_receiver_order_and_ignore_extra_columns() {
-        assert_eq!(
-            outbox_arg_columns("outbound_ping", &["id", "audit", "body", "target"], &["target", "body"]),
-            vec![ColId(3), ColId(2)]
-        );
-    }
 }
 
 impl From<IndexAlgo<'_>> for RawIndexAlgorithm {

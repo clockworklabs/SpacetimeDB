@@ -61,7 +61,8 @@ fn test_codegen_rust_module_bindings() {
     assert!(root.contains("pub struct add;"));
     assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
     assert!(root.contains("const NAME: &'static str = \"add\";"));
-    assert!(root.contains("const ARG_NAMES: &'static [&'static str] = &[\"name\", \"age\"];"));
+    assert!(!root.contains("ARG_NAMES"));
+    assert!(root.contains("__spacetimedb_typecheck_outbox_add_name"));
     assert!(root.contains(
         "const SIGNATURE_HASH: &'static str = \"26d5229326c3d7b333fe52bafde649dba62ece7f3c1951edfd9982c82ffbf853\";"
     ));
@@ -72,6 +73,32 @@ fn test_codegen_rust_module_bindings() {
     assert!(!root.contains("DbConnection"));
 
     insta::assert_snapshot!(root);
+}
+
+#[test]
+fn test_codegen_rust_outbox_fixture() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(CaseConversionPolicy::None);
+    builder.add_reducer(
+        "receivePing",
+        ProductType::from([("Target", AlgebraicType::identity()), ("Body", AlgebraicType::String)]),
+    );
+    builder.add_reducer("noop", ProductType::unit());
+    let mut names = ExplicitNames::default();
+    names.insert_function("receivePing", "wire_ping");
+    builder.add_explicit_names(names);
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_rust_module_bindings(&module);
+    let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
+
+    // The bindings UI tests compile this generated fixture and check its column mappings.
+    assert_eq!(
+        root.trim_end(),
+        include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
+    );
 }
 
 #[test]

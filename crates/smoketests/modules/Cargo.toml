@@ -116,6 +116,8 @@ members = [
     "logs-level-filter",
 
     # Misc tests
+    "idc-receiver",
+    "idc-sender",
     "namespaces",
     "new-user-flow",
     "module-nested-op",

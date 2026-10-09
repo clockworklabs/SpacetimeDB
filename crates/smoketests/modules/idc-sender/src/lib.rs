@@ -11,7 +11,7 @@ pub struct OutboundPing {
     #[target]
     target: game_world::Identity,
     #[param(name = body)]
-    payload: String,
+    bodypo: String,
 }
 
 #[spacetimedb::reducer]
@@ -19,6 +19,25 @@ pub fn enqueue_ping(ctx: &spacetimedb::ReducerContext, target: spacetimedb::Iden
     ctx.db.outbound_ping().insert(OutboundPing {
         id: 0,
         target: game_world::Identity(target),
-        payload: body,
+        bodypo: body,
+    });
+}
+
+#[spacetimedb::table(accessor = ping_result)]
+pub struct PingResult {
+    #[primary_key]
+    id: u64,
+    body: String,
+    succeeded: bool,
+    error: Option<String>,
+}
+
+#[spacetimedb::reducer(on_result(self::outbound_ping))]
+pub fn on_ping_result(ctx: &spacetimedb::ReducerContext, row: OutboundPing, result: Result<(), String>) {
+    ctx.db.ping_result().insert(PingResult {
+        id: row.id,
+        body: row.bodypo,
+        succeeded: result.is_ok(),
+        error: result.err(),
     });
 }

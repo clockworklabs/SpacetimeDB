@@ -2569,8 +2569,7 @@ mod tests {
         });
     }
 
-    #[test]
-    fn outbox_on_result_reducer_is_attached() {
+    fn outbox_with_on_result() -> RawModuleDefV10Builder {
         let mut builder = RawModuleDefV10Builder::new();
         builder
             .build_table_with_new_type(
@@ -2594,8 +2593,12 @@ mod tests {
             Some("on_ping_result"),
             hash_bytes(b"receive_ping"),
         );
+        builder
+    }
 
-        let def: ModuleDef = builder.finish().try_into().unwrap();
+    #[test]
+    fn outbox_on_result_reducer_is_attached() {
+        let def: ModuleDef = outbox_with_on_result().finish().try_into().unwrap();
         let table = &def.tables[&expect_identifier("ping_outbox")];
         let outbox = table.outbox.as_ref().unwrap();
 
@@ -2606,6 +2609,42 @@ mod tests {
             def.reducers[&expect_identifier("on_ping_result")].visibility,
             FunctionVisibility::Private
         );
+    }
+
+    #[test]
+    fn outbox_on_result_uses_canonical_submodule_namespace_and_round_trips() {
+        let mut child = outbox_with_on_result();
+        let mut names = ExplicitNames::default();
+        names.insert_table("PingOutbox", "WireOutbox");
+        names.insert_function("on_ping_result", "ResultDone");
+        child.add_explicit_names(names);
+
+        let mut middle = RawModuleDefV10Builder::new();
+        middle.add_submodule("innerMount", child.finish());
+        let mut names = ExplicitNames::default();
+        names.insert_namespace("innerMount", "InnerWire");
+        middle.add_explicit_names(names);
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("outerLib", middle.finish());
+        let mut def: ModuleDef = root.finish().try_into().unwrap();
+
+        for _ in 0..3 {
+            let child = &def.submodules()["outer_lib"].submodules()["InnerWire"];
+            let table = &child.tables[&expect_identifier("WireOutbox")];
+            let outbox = table.outbox.as_ref().unwrap();
+            let callback = outbox.on_result_reducer.as_ref().unwrap();
+            assert_eq!(&**callback, "outer_lib.InnerWire.ResultDone");
+            assert_eq!(
+                def.reducer_by_name(callback).unwrap().1.visibility,
+                FunctionVisibility::Private
+            );
+            assert_eq!(outbox.remote_reducer, ReducerName::for_test("receive_ping"));
+            assert_eq!(&*table.accessor_name, "PingOutbox");
+
+            let raw: RawModuleDefV10 = def.into();
+            def = raw.try_into().expect("mounted outbox callback should round-trip");
+        }
     }
 
     #[test]

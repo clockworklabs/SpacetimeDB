@@ -324,6 +324,13 @@ impl ModuleDef {
             if let Some(schedule) = &mut table.schedule {
                 schedule.namespace = path.clone();
             }
+            if let Some(callback) = table
+                .outbox
+                .as_mut()
+                .and_then(|outbox| outbox.on_result_reducer.as_mut())
+            {
+                *callback = ReducerName::new(path.join(callback.local().clone()));
+            }
         }
         for view in self.views.values_mut() {
             view.namespace = path.clone();
@@ -1162,7 +1169,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
                         remote_reducer: outbox.remote_reducer.into(),
                         target_column: outbox.target_column,
                         arg_columns: outbox.arg_columns,
-                        on_result_reducer: outbox.on_result_reducer.map(Into::into),
+                        on_result_reducer: outbox
+                            .on_result_reducer
+                            .map(|name| reducers[name.local()].accessor_name.clone().into()),
                         signature_hash: outbox.signature_hash,
                     });
                 }

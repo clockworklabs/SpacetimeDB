@@ -473,7 +473,6 @@ pub fn count<Tbl: Table>() -> u64 {
 pub trait TableInternal: Sized {
     const TABLE_NAME: &'static str;
     const TABLE_ACCESS: TableAccess = TableAccess::Private;
-    const COLUMN_NAMES: &'static [&'static str];
     const UNIQUE_COLUMNS: &'static [u16];
     const INDEXES: &'static [IndexDesc<'static>];
     const PRIMARY_KEY: Option<u16> = None;
@@ -508,7 +507,8 @@ pub enum IndexAlgo<'a> {
 
 pub struct OutboxDesc<'a> {
     pub remote_reducer_name: &'a str,
-    pub remote_arg_names: &'a [&'a str],
+    /// Outbox column positions in remote reducer parameter order.
+    pub arg_columns: &'a [u16],
     pub target_column: u16,
     pub signature_hash: &'a str,
 }

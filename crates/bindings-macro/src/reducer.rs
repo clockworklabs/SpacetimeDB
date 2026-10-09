@@ -109,13 +109,16 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
 
     let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
     let on_result_outbox = args.on_result.as_ref().map(|path| {
+        let accessor = &path.segments.last().unwrap().ident;
         quote!(
-            const ON_RESULT_OUTBOX: Option<&'static str> = Some(stringify!(#path));
+            const ON_RESULT_OUTBOX: Option<&'static str> =
+                Some(spacetimedb::rt::on_result_outbox(#path::#accessor));
         )
     });
     let on_result_typecheck = args.on_result.as_ref().map(|path| {
+        let accessor = &path.segments.last().unwrap().ident;
         quote! {
-            spacetimedb::rt::on_result_typecheck(#func_name, #path);
+            spacetimedb::rt::on_result_typecheck(#func_name, #path::#accessor);
         }
     });
 

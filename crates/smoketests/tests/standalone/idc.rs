@@ -154,4 +154,29 @@ fn idc_outbox_delivers_between_two_rust_modules() {
         );
         std::thread::sleep(Duration::from_millis(100));
     }
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let rows = run_cli(
+            &test,
+            [
+                "sql",
+                "--no-config",
+                "--server",
+                &test.server_url,
+                &sender_identity,
+                "SELECT body FROM ping_result WHERE succeeded = true",
+            ]
+            .as_slice(),
+            temp_dir.path(),
+        );
+        if rows.contains("hello-idc") {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "IDC result callback did not record success in sender rows:\n{rows}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }

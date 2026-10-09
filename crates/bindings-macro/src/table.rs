@@ -767,7 +767,7 @@ struct Column<'a> {
     vis: &'a syn::Visibility,
     ident: &'a syn::Ident,
     ty: &'a syn::Type,
-    canonical_name: String,
+    param_name: String,
     default_value: Option<syn::Expr>,
 }
 
@@ -977,7 +977,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             ident: field_ident,
             vis: field.vis,
             ty: field.ty,
-            canonical_name: param_name.as_ref().unwrap_or(field_ident).unraw().to_string(),
+            param_name: param_name.as_ref().unwrap_or(field_ident).unraw().to_string(),
             default_value,
         };
 
@@ -1226,6 +1226,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     }
 
+    let mut outbox_arg_columns = None;
     let outbox_typecheck = args
         .outbox
         .iter()
@@ -1238,26 +1239,47 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 ));
             };
             let target_ty = target_column.ty;
-            let mut receiver_identity = receiver_reducer.clone();
-            receiver_identity.segments.pop();
-            if receiver_identity.segments.is_empty() {
+            let mut receiver_module = receiver_reducer.clone();
+            receiver_module.segments.pop();
+            receiver_module.segments.pop_punct();
+            if receiver_module.segments.is_empty() {
                 return Err(syn::Error::new_spanned(
                     receiver_reducer,
                     "outbox receiver reducer must be qualified, e.g. `outbox(receiver::reducer)`",
                 ));
             }
+            let mut receiver_identity = receiver_module.clone();
             receiver_identity.segments.push(parse_quote!(Identity));
+            let mut receiver_outbox_typecheck = receiver_module.clone();
+            let reducer_ident = receiver_reducer
+                .segments
+                .last()
+                .expect("receiver reducer path checked above")
+                .ident
+                .unraw();
+            receiver_outbox_typecheck
+                .segments
+                .push(parse_quote!(__spacetimedb_typecheck_outbox));
+            let reducer_name = receiver_outbox_typecheck
+                .segments
+                .last_mut()
+                .expect("receiver reducer path checked above");
+            reducer_name.ident = format_ident!("__spacetimedb_typecheck_outbox_{}", reducer_ident);
+            let outbox_columns = columns.iter().map(|col| {
+                let ident = col.ident;
+                let ty = col.ty;
+                let param = Ident::new(&col.param_name, ident.span());
+                let index = col.index;
+                quote!((#index, #ident: #ty as #param),)
+            });
+            outbox_arg_columns = Some(quote! {
+                #receiver_outbox_typecheck!(#receiver_module, { #(#outbox_columns)* })
+            });
             let primary_key_typecheck = primary_key_column.as_ref().map(|col| {
                 let ty = col.ty;
                 quote!(spacetimedb::rt::assert_outbox_table_primary_key::<#ty>();)
             });
             Ok(quote! {
-                const fn __outbox_receiver_typecheck<R: spacetimedb::rt::RemoteReducer>() {
-                    let _ = R::NAME;
-                    let _ = R::ARG_NAMES;
-                    let _ = R::SIGNATURE_HASH;
-                }
-                __outbox_receiver_typecheck::<#receiver_reducer>();
                 let _ = |x: #target_ty| { let _: #receiver_identity = x; };
                 #primary_key_typecheck
             })
@@ -1271,7 +1293,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             quote! {
                 const OUTBOX: Option<spacetimedb::table::OutboxDesc<'static>> = Some(spacetimedb::table::OutboxDesc {
                     remote_reducer_name: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::NAME,
-                    remote_arg_names: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::ARG_NAMES,
+                    arg_columns: #outbox_arg_columns,
                     target_column: #target_col,
                     signature_hash: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH,
                 });
@@ -1292,11 +1314,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
-    let column_names = columns
-        .iter()
-        .map(|col| col.canonical_name.as_str())
-        .collect::<Vec<_>>();
-
     let tabletype_impl = quote! {
         use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
@@ -1312,7 +1329,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             // the default value if not specified is Private
             #(const TABLE_ACCESS: spacetimedb::table::TableAccess = #table_access;)*
             #(#is_event)*
-            const COLUMN_NAMES: &'static [&'static str] = &[#(#column_names),*];
             const UNIQUE_COLUMNS: &'static [u16] = &[#(#unique_col_ids),*];
             const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#index_descs),*];
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
@@ -1321,6 +1337,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #outbox_desc
 
             #table_id_from_name_func
+
             fn __backend(&self) -> &spacetimedb::table::TableHandleBackend {
                 &self.__backend
             }

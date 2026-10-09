@@ -1,49 +1,5 @@
-mod receiver {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-    pub struct Identity(pub spacetimedb::Identity);
-
-    impl spacetimedb::SpacetimeType for Identity {
-        fn make_type<S: spacetimedb::spacetimedb_lib::sats::typespace::TypespaceBuilder>(
-            typespace: &mut S,
-        ) -> spacetimedb::spacetimedb_lib::AlgebraicType {
-            <spacetimedb::Identity as spacetimedb::SpacetimeType>::make_type(typespace)
-        }
-    }
-
-    impl spacetimedb::Serialize for Identity {
-        fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(
-            &self,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error> {
-            <spacetimedb::Identity as spacetimedb::Serialize>::serialize(&self.0, serializer)
-        }
-    }
-
-    impl<'de> spacetimedb::Deserialize<'de> for Identity {
-        fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(
-            deserializer: D,
-        ) -> Result<Self, D::Error> {
-            <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
-        }
-    }
-
-    #[derive(spacetimedb::Serialize, spacetimedb::Deserialize)]
-    pub struct ReceivePingArgs {
-        pub target: spacetimedb::Identity,
-        pub body: String,
-    }
-
-    #[allow(non_camel_case_types)]
-    pub struct receive_ping;
-
-    impl spacetimedb::rt::RemoteReducer for receive_ping {
-        const NAME: &'static str = "receive_ping";
-        const ARG_NAMES: &'static [&'static str] = &["target", "body"];
-        const SIGNATURE_HASH: &'static str = "test-signature";
-        type Args = ReceivePingArgs;
-    }
-}
-
+#[path = "../fixtures/idc_receiver/lib.rs"]
+mod receiver;
 #[spacetimedb::table(accessor = outbound_ping, outbox(receiver::receive_ping))]
 pub struct OutboundPing {
     #[primary_key]
@@ -52,6 +8,49 @@ pub struct OutboundPing {
     body: String,
     #[target]
     target: u8,
+}
+
+#[spacetimedb::table(accessor = wrong_body, outbox(receiver::receive_ping))]
+pub struct WrongBody {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    body: u64,
+    #[target]
+    target: receiver::Identity,
+}
+
+#[spacetimedb::table(accessor = missing_body, outbox(receiver::receive_ping))]
+pub struct MissingBody {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[target]
+    target: receiver::Identity,
+    payload: String,
+}
+
+#[spacetimedb::table(accessor = duplicate_body, outbox(receiver::receive_ping))]
+pub struct DuplicateBody {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[target]
+    target: receiver::Identity,
+    body: String,
+    #[param(name = body)]
+    payload: String,
+}
+
+#[spacetimedb::table(accessor = canonical_param_name, outbox(receiver::receive_ping))]
+pub struct CanonicalParamName {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[target]
+    target: receiver::Identity,
+    #[param(name = Body)]
+    payload: String,
 }
 
 fn main() {}
