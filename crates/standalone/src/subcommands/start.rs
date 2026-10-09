@@ -104,7 +104,7 @@ pub fn cli() -> clap::Command {
                 .help(
                     "Run the containers attached to databases with Docker, for clients on any machine. \
                      Overrides `[containers] enabled` in config.toml, which by default runs them if Docker \
-                     answers, but lets only clients on this machine attach or start them. Containers \
+                     answers, but lets only clients on this machine attach, start or upload them. Containers \
                      are not isolated from this machine's network, and the owner of any database can attach \
                      one, so enable this only on a trusted machine.",
                 ),
@@ -296,8 +296,12 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     db_routes.db_reset = db_routes.db_reset.layer(DefaultBodyLimit::disable());
     let local_only = axum::middleware::from_fn_with_state(ctx.clone(), local_container_clients_only);
+    // The platform too, so that `spacetime publish` from another machine fails before building.
+    db_routes.container_platform_get = db_routes.container_platform_get.route_layer(local_only.clone());
+    db_routes.container_image_head = db_routes.container_image_head.route_layer(local_only.clone());
     db_routes.container_put = db_routes.container_put.route_layer(local_only.clone());
-    db_routes.container_start = db_routes.container_start.route_layer(local_only);
+    db_routes.container_start = db_routes.container_start.route_layer(local_only.clone());
+    db_routes.container_image_put = db_routes.container_image_put.route_layer(local_only);
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
@@ -389,7 +393,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Unless containers were enabled explicitly, refuse to attach or start containers for
+/// Unless containers were enabled explicitly, refuse to attach, start or upload containers for
 /// clients on other machines, or for web pages, whose requests browsers mark with `Origin`; see
 /// [`start_containers`].
 async fn local_container_clients_only(
@@ -401,7 +405,7 @@ async fn local_container_clients_only(
     let local = peer.ip().to_canonical().is_loopback() && !request.headers().contains_key(http::header::ORIGIN);
     if ctx.containers_for_local_clients_only() && !local {
         let message = "This server runs containers only for clients on its own machine, other than web pages, \
-                       since containers were not enabled explicitly. To let other clients attach or start \
+                       since containers were not enabled explicitly. To let other clients attach, start or upload \
                        containers, restart it with --enable-containers, or with `enabled = true` in the \
                        [containers] section of config.toml. Containers are not isolated from the server's network.";
         return (http::StatusCode::FORBIDDEN, message).into_response();
@@ -413,7 +417,7 @@ async fn local_container_clients_only(
 /// whether they run and why.
 ///
 /// By default (`enabled = "auto"`), containers run if a Docker daemon answers, but only clients
-/// on this machine may attach or start them. Anyone who can reach the server can create a
+/// on this machine may attach, start or upload them. Anyone who can reach the server can create a
 /// database, and containers are not isolated from this machine's network, so clients on other
 /// machines may do so only if containers are explicitly enabled. On Linux, Docker Engine connects
 /// containers to the host through the Docker bridge, which cannot reach loopback, so "auto" leaves
@@ -462,7 +466,7 @@ async fn start_containers(
             Ok(()) if loopback => format!("Containers are enabled, since Docker answers; {not_isolated}"),
             Ok(()) => format!(
                 "Containers are enabled, since Docker answers, for clients on this machine: clients on other \
-                 machines cannot attach or start containers unless you pass --enable-containers; \
+                 machines cannot attach, start or upload containers unless you pass --enable-containers; \
                  {not_isolated}"
             ),
             Err(e) => {
@@ -473,7 +477,7 @@ async fn start_containers(
     };
 
     let options = ContainerOptions {
-        docker_host,
+        docker_host: docker_host.clone(),
         runtime: args.get_one::<String>("container_runtime").cloned().or(config.runtime),
         // Quotas need overlay2 on XFS with project quotas, which few development machines have.
         scratch_quota: false,
@@ -492,7 +496,7 @@ async fn start_containers(
         Err(e) => return Err(e),
     }
     // Unless they were enabled explicitly; enforced by `local_container_clients_only`.
-    ctx.enable_containers(enabled.is_none());
+    ctx.enable_containers(docker_host, enabled.is_none());
     log::warn!("{enabled_message}");
     Ok(())
 }

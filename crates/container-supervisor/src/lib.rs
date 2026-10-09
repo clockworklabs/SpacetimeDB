@@ -249,6 +249,25 @@ pub async fn ping(docker_host: Option<&str>, timeout: Duration) -> anyhow::Resul
     Ok(())
 }
 
+/// The platform of the Docker Engine, like `linux/arm64`. See [`ContainerOptions::docker_host`].
+pub async fn platform(docker_host: Option<&str>) -> anyhow::Result<String> {
+    let version = connect(docker_host)?.negotiate_version().await?.version().await?;
+    match (version.os, version.arch) {
+        (Some(os), Some(arch)) => Ok(format!("{os}/{arch}")),
+        _ => bail!("Docker did not report its platform"),
+    }
+}
+
+/// Whether the Docker Engine has the image `image`. See [`ContainerOptions::docker_host`].
+pub async fn has_image(docker_host: Option<&str>, image: &str) -> anyhow::Result<bool> {
+    let docker = connect(docker_host)?.negotiate_version().await?;
+    match docker.inspect_image(image).await {
+        Ok(_) => Ok(true),
+        Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn connect(docker_host: Option<&str>) -> anyhow::Result<Docker> {
     let docker = match docker_host {
         Some(host) => Docker::connect_with_host(host),
