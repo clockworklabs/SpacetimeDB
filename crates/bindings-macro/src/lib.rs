@@ -161,6 +161,7 @@ mod sym {
     symbol!(scheduled);
     symbol!(outbox);
     symbol!(on_result);
+    symbol!(param);
     symbol!(target);
     symbol!(unique);
     symbol!(update);
@@ -234,7 +235,7 @@ fn derive_table_helper_attr() -> Attribute {
 #[doc(hidden)]
 #[proc_macro_derive(
     __TableHelper,
-    attributes(sats, unique, auto_inc, primary_key, target, index, default)
+    attributes(sats, unique, auto_inc, primary_key, target, index, default, param)
 )]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)

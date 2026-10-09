@@ -15,6 +15,7 @@ mod standalone {
     mod default_module_clippy;
     mod detect_wasm_bindgen;
     mod http_egress;
+    mod idc;
     mod pg_wire;
     mod restart;
     mod servers;

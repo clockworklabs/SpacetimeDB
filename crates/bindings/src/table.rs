@@ -510,7 +510,7 @@ pub struct OutboxDesc<'a> {
     pub remote_reducer_name: &'a str,
     pub remote_arg_names: &'a [&'a str],
     pub target_column: u16,
-    pub signature_hash: Option<&'a str>,
+    pub signature_hash: &'a str,
 }
 
 pub struct ScheduleDesc<'a> {

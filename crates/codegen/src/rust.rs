@@ -29,7 +29,7 @@ pub struct Rust;
 
 pub fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
     itertools::chain!(
-        iter_types(module).flat_map(|typ| Rust.generate_type_files(module, typ)),
+        iter_module_binding_types(module).flat_map(|typ| Rust.generate_type_files(module, typ)),
         [generate_module_bindings_root_file(module)],
     )
     .collect()
@@ -1216,12 +1216,37 @@ fn define_struct_for_product(
     out.newline();
 }
 
+fn define_module_binding_struct_for_product(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+    vis: &str,
+) {
+    print_struct_derives(out);
+    write!(out, "{vis} struct {name} ");
+    out.delimited_block(
+        "{",
+        |out| {
+            for (ident, ty) in elements {
+                write!(out, "pub {}: ", ident.deref().to_case(Case::Snake));
+                write_module_binding_type(module, out, ty).unwrap();
+                writeln!(out, ",");
+            }
+        },
+        "}",
+    );
+    out.newline();
+}
+
 fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
     print_auto_generated_file_comment(out);
     writeln!(out, "{ALLOW_LINTS}");
+    out.newline();
+    writeln!(out, "use spacetimedb::spacetimedb_lib as __lib;");
     out.newline();
     print_module_binding_module_decls(module, out);
     out.newline();
@@ -1243,18 +1268,41 @@ fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
 }
 
 fn print_module_binding_module_decls(module: &ModuleDef, out: &mut Indenter) {
-    for ty in iter_types(module) {
+    for ty in iter_module_binding_types(module) {
         let mod_name = type_module_name(&ty.accessor_name);
         writeln!(out, "pub mod {mod_name};");
     }
 }
 
 fn print_module_binding_reexports(module: &ModuleDef, out: &mut Indenter) {
-    for ty in iter_types(module) {
+    for ty in iter_module_binding_types(module) {
         let mod_name = type_module_name(&ty.accessor_name);
         let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};");
     }
+}
+
+fn iter_module_binding_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> + '_ {
+    let mut reducer_type_refs = module_binding_reducer_type_refs(module);
+    reducer_type_refs.extend(
+        module
+            .tables()
+            .filter(|table| table.schedule.is_some())
+            .map(|table| table.product_type_ref),
+    );
+    let table_type_refs = module
+        .tables()
+        .map(|table| table.product_type_ref)
+        .collect::<BTreeSet<_>>();
+    iter_types(module).filter(move |typ| !table_type_refs.contains(&typ.ty) || reducer_type_refs.contains(&typ.ty))
+}
+
+fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
+    let mut type_refs = BTreeSet::new();
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        gen_imports(&mut type_refs, &reducer.params_for_generate.elements);
+    }
+    type_refs
 }
 
 fn print_module_binding_identity(out: &mut Indenter) {
@@ -1308,7 +1356,7 @@ fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, r
     let handle_name = reducer_function_name(reducer);
     let reducer_name = rust_string_literal(reducer.name.deref());
     let args_type = function_args_type_name(&reducer.accessor_name);
-    define_struct_for_product(module, out, &args_type, &reducer.params_for_generate.elements, "pub");
+    define_module_binding_struct_for_product(module, out, &args_type, &reducer.params_for_generate.elements, "pub");
     out.newline();
     let arg_names = reducer
         .params_for_generate

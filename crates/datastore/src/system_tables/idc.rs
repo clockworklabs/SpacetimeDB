@@ -234,7 +234,7 @@ pub struct StOutboxRow {
     /// Local reducer to invoke with the remote result.
     pub on_result_reducer: Option<NamespacedIdentifier>,
     /// Receiver reducer signature hash as seen by sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: spacetimedb_lib::Hash,
 }
 
 impl TryFrom<RowRef<'_>> for StOutboxRow {

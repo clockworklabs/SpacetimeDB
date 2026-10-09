@@ -1,0 +1,55 @@
+error: outbox tables must have a `#[primary_key] #[auto_inc]` column of type `u64`
+  --> tests/ui/outbox_table_shape.rs:46:52
+   |
+46 | #[spacetimedb::table(accessor = missing_pk, outbox(receiver::receive_ping))]
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^
+
+error: outbox tables must have a `#[primary_key] #[auto_inc]` column of type `u64`
+  --> tests/ui/outbox_table_shape.rs:56:5
+   |
+56 |     id: u64,
+   |     ^^
+
+error: outbox tables cannot also be scheduled tables
+  --> tests/ui/outbox_table_shape.rs:72:55
+   |
+72 | #[spacetimedb::table(accessor = scheduled_and_outbox, scheduled(scheduled), outbox(receiver::receive_ping))]
+   |                                                       ^^^^^^^^^
+
+error[E0277]: outbox table primary key must be a `u64`
+  --> tests/ui/outbox_table_shape.rs:66:9
+   |
+66 |     id: u32,
+   |         ^^^ should be `u64`, not `u32`
+   |
+   = help: the trait `spacetimedb::rt::OutboxTablePrimaryKey` is not implemented for `u32`
+help: the trait `spacetimedb::rt::OutboxTablePrimaryKey` is implemented for `u64`
+  --> src/rt.rs
+   |
+   | impl OutboxTablePrimaryKey for u64 {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `spacetimedb::rt::assert_outbox_table_primary_key`
+  --> src/rt.rs
+   |
+   | pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `assert_outbox_table_primary_key`
+
+error[E0593]: function is expected to take 3 arguments, but it takes 2 arguments
+  --> tests/ui/outbox_table_shape.rs:94:8
+   |
+93 | #[spacetimedb::reducer(on_result(callback_outbox))]
+   | --------------------------------------------------- required by a bound introduced by this call
+94 | pub fn bad_on_result(_ctx: &spacetimedb::ReducerContext, _row: CallbackOutbox) {}
+   | -------^^^^^^^^^^^^^----------------------------------------------------------
+   | |      |
+   | |      expected function that takes 3 arguments
+   | takes 2 arguments
+   |
+note: required by a bound in `spacetimedb::rt::on_result_typecheck`
+  --> src/rt.rs
+   |
+   | pub fn on_result_typecheck<'de, Row, F, Ret>(_f: F, _row: fn(Row))
+   |        ------------------- required by a bound in this function
+...
+   |     F: Fn(&ReducerContext, Row, Result<(), String>) -> Ret,
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `on_result_typecheck`

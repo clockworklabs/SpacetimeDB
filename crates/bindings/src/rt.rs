@@ -520,6 +520,15 @@ where
     core::mem::forget(_x);
 }
 
+/// Assert that an `on_result` reducer accepts the outbox row and delivery result.
+pub fn on_result_typecheck<'de, Row, F, Ret>(_f: F, _row: fn(Row))
+where
+    Row: SpacetimeType + Serialize + Deserialize<'de>,
+    F: Fn(&ReducerContext, Row, Result<(), String>) -> Ret,
+    Ret: IntoReducerResult,
+{
+}
+
 /// Tacit marker argument to [`ExportFunctionForScheduledTable`] for reducers.
 pub struct FnKindReducer {
     _never: Infallible,
@@ -598,6 +607,9 @@ impl<T: SpacetimeType> TableColumn for T {}
 /// Assert that the primary_key column of a scheduled table is a u64.
 pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
 
+/// Assert that the primary_key column of an outbox table is a u64.
+pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
+
 mod sealed {
     pub trait Sealed {}
 }
@@ -608,6 +620,13 @@ mod sealed {
 pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
 impl sealed::Sealed for u64 {}
 impl ScheduledTablePrimaryKey for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait OutboxTablePrimaryKey: sealed::Sealed {}
+impl OutboxTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -835,7 +854,8 @@ pub fn register_table<T: Table>() {
                 outbox.target_column,
                 arg_columns,
                 None::<&str>,
-                outbox.signature_hash.map(str::to_owned),
+                spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
+                    .expect("generated outbox signature hash must be valid hex"),
             );
         }
 

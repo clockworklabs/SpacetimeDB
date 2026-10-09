@@ -767,6 +767,7 @@ struct Column<'a> {
     vis: &'a syn::Visibility,
     ident: &'a syn::Ident,
     ty: &'a syn::Type,
+    canonical_name: String,
     default_value: Option<syn::Expr>,
 }
 
@@ -799,6 +800,7 @@ enum ColumnAttr {
     Target(Span),
     Index(IndexArg),
     Default(syn::Expr, Span),
+    ParamName(Ident),
 }
 
 impl ColumnAttr {
@@ -821,12 +823,28 @@ impl ColumnAttr {
         } else if ident == sym::target {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Target(ident.span()))
+        } else if ident == sym::param {
+            Some(ColumnAttr::ParamName(parse_param_attr(attr)?))
         } else if ident == sym::default {
             Some(parse_default_attr(attr, ident)?)
         } else {
             None
         })
     }
+}
+
+fn parse_param_attr(attr: &syn::Attribute) -> syn::Result<Ident> {
+    let mut name = None;
+    attr.parse_nested_meta(|meta| {
+        match_meta!(match meta {
+            sym::name => {
+                check_duplicate(&name, &meta)?;
+                name = Some(meta.value()?.parse()?);
+            }
+        });
+        Ok(())
+    })?;
+    name.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "expected `#[param(name = parameter_name)]`"))
 }
 
 fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
@@ -911,6 +929,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let mut primary_key = None;
         let mut target = None;
         let mut default_value = None;
+        let mut param_name = None;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
                 continue;
@@ -937,6 +956,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     check_duplicate(&default_value, span)?;
                     default_value = Some(expr);
                 }
+                ColumnAttr::ParamName(name) => {
+                    check_duplicate(&param_name, name.span())?;
+                    param_name = Some(name);
+                }
             }
         }
 
@@ -954,6 +977,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             ident: field_ident,
             vis: field.vis,
             ty: field.ty,
+            canonical_name: param_name.as_ref().unwrap_or(field_ident).unraw().to_string(),
             default_value,
         };
 
@@ -1178,6 +1202,30 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .unzip();
     let schedule = schedule.into_iter();
 
+    if let Some(outbox) = &args.outbox {
+        if let Some(scheduled) = &args.scheduled {
+            return Err(syn::Error::new(
+                scheduled.span,
+                "outbox tables cannot also be scheduled tables",
+            ));
+        }
+        let primary_key_column = primary_key_column.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(
+                &outbox.receiver_reducer,
+                "outbox tables must have a `#[primary_key] #[auto_inc]` column of type `u64`",
+            )
+        })?;
+        if !sequenced_columns
+            .iter()
+            .any(|col| col.index == primary_key_column.index)
+        {
+            return Err(syn::Error::new_spanned(
+                primary_key_column.ident,
+                "outbox tables must have a `#[primary_key] #[auto_inc]` column of type `u64`",
+            ));
+        }
+    }
+
     let outbox_typecheck = args
         .outbox
         .iter()
@@ -1199,6 +1247,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 ));
             }
             receiver_identity.segments.push(parse_quote!(Identity));
+            let primary_key_typecheck = primary_key_column.as_ref().map(|col| {
+                let ty = col.ty;
+                quote!(spacetimedb::rt::assert_outbox_table_primary_key::<#ty>();)
+            });
             Ok(quote! {
                 const fn __outbox_receiver_typecheck<R: spacetimedb::rt::RemoteReducer>() {
                     let _ = R::NAME;
@@ -1207,6 +1259,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 }
                 __outbox_receiver_typecheck::<#receiver_reducer>();
                 let _ = |x: #target_ty| { let _: #receiver_identity = x; };
+                #primary_key_typecheck
             })
         })
         .collect::<syn::Result<Vec<_>>>()?;
@@ -1220,7 +1273,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     remote_reducer_name: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::NAME,
                     remote_arg_names: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::ARG_NAMES,
                     target_column: #target_col,
-                    signature_hash: Some(<#receiver_reducer as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH),
+                    signature_hash: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH,
                 });
             }
         }
@@ -1239,7 +1292,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
-    let column_names = columns.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
+    let column_names = columns
+        .iter()
+        .map(|col| col.canonical_name.as_str())
+        .collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
         use spacetimedb::Serialize;

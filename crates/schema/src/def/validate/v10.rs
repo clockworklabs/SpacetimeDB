@@ -1811,7 +1811,7 @@ mod tests {
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            spacetimedb_lib::hash_bytes(b"test-signature"),
         );
 
         let result: Result<ModuleDef> = builder.finish().try_into();

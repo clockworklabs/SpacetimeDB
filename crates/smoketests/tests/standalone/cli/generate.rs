@@ -159,7 +159,7 @@ fn cli_generate_rust_module_bindings() {
 
     let root = std::fs::read_to_string(output_dir.join("lib.rs")).expect("generated lib.rs should exist");
     assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
-    assert!(root.contains("impl spacetimedb::rt::FnInfo for add"));
+    assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
     assert!(root.contains("const NAME: &'static str = \"add\";"));
     assert!(!root.contains("DbConnection"));
     assert!(!output_dir.join("add_reducer.rs").exists());
@@ -218,7 +218,7 @@ fn cli_generate_receiver_bindings_from_dependency_compile_in_sender() {
     let generated = sender_dir.join("src/remote_bindings/game_world/mod.rs");
     let root = std::fs::read_to_string(&generated).expect("generated receiver binding should exist");
     assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
-    assert!(root.contains("impl spacetimedb::rt::FnInfo for receive_ping"));
+    assert!(root.contains("impl spacetimedb::rt::RemoteReducer for receive_ping"));
     assert!(root.contains("receive_ping"));
 
     let output = cli_cmd()

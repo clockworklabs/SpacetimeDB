@@ -10,7 +10,8 @@ pub struct OutboundPing {
     id: u64,
     #[target]
     target: game_world::Identity,
-    body: String,
+    #[param(name = body)]
+    payload: String,
 }
 
 #[spacetimedb::reducer]
@@ -18,6 +19,6 @@ pub fn enqueue_ping(ctx: &spacetimedb::ReducerContext, target: spacetimedb::Iden
     ctx.db.outbound_ping().insert(OutboundPing {
         id: 0,
         target: game_world::Identity(target),
-        body,
+        payload: body,
     });
 }

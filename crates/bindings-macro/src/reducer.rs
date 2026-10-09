@@ -113,6 +113,11 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             const ON_RESULT_OUTBOX: Option<&'static str> = Some(stringify!(#path));
         )
     });
+    let on_result_typecheck = args.on_result.as_ref().map(|path| {
+        quote! {
+            spacetimedb::rt::on_result_typecheck(#func_name, #path);
+        }
+    });
 
     let typed_args = extract_typed_args(original_function)?;
 
@@ -168,6 +173,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
                 #(let _ = <#first_arg_ty as spacetimedb::rt::ReducerContextArg>::_ITEM;)*
                 #(let _ = <#rest_arg_tys as spacetimedb::rt::ReducerArg>::_ITEM;)*
                 #(let _ = <#ret_ty as spacetimedb::rt::IntoReducerResult>::into_result;)*
+                #on_result_typecheck
             }
         };
         impl #func_name {
