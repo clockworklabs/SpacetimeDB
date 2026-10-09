@@ -55,7 +55,7 @@ async fn connect_then_named(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"));
     build_and_run(conn).await
 }
 
@@ -70,7 +70,7 @@ async fn exec_sender_scoped_pk_view(db_name: &str) {
     let _sender_a = connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.sender_left_view().on_update(move |_, old_row, new_row| {
                     assert_eq!(old_row.id, 1);
                     assert_eq!(old_row.filter, 10);
@@ -85,7 +85,7 @@ async fn exec_sender_scoped_pk_view(db_name: &str) {
                 ctx.reducers()
                     .update_left_then(1, 11, reducer_callback_assert_committed("update_left"))
                     .unwrap();
-            })
+            }))
             .add_query(|q| q.from.sender_left_view().build())
             .subscribe();
     })
@@ -94,7 +94,7 @@ async fn exec_sender_scoped_pk_view(db_name: &str) {
     let _sender_b = connect_then_named(db_name, &test_counter, "sender_b_on_connect", move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.sender_left_view().on_update(move |_, old_row, new_row| {
                     assert_eq!(old_row.id, 2);
                     assert_eq!(old_row.filter, 20);
@@ -109,7 +109,7 @@ async fn exec_sender_scoped_pk_view(db_name: &str) {
                 ctx.reducers()
                     .update_left_then(2, 21, reducer_callback_assert_committed("update_left"))
                     .unwrap();
-            })
+            }))
             .add_query(|q| q.from.sender_left_view().build())
             .subscribe();
     })
@@ -160,7 +160,7 @@ async fn exec_view_pk_left_semijoin(db_name: &str) {
         let mut joined_insert = Some(joined_insert);
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.sender_left_view().on_insert(move |ctx, row| {
                     assert_eq!(ctx.db.sender_left_view().count(), 1);
                     assert_eq!(row.id, 10);
@@ -169,7 +169,7 @@ async fn exec_view_pk_left_semijoin(db_name: &str) {
                 });
 
                 insert_semijoin_source_rows(ctx);
-            })
+            }))
             .add_query(|q| {
                 q.from
                     .sender_right_view()
@@ -188,7 +188,7 @@ async fn exec_view_pk_right_semijoin(db_name: &str) {
         let mut joined_insert = Some(joined_insert);
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.sender_right_view().on_insert(move |ctx, row| {
                     assert_eq!(ctx.db.sender_right_view().count(), 1);
                     assert_eq!(row.id, 10);
@@ -197,7 +197,7 @@ async fn exec_view_pk_right_semijoin(db_name: &str) {
                 });
 
                 insert_semijoin_source_rows(ctx);
-            })
+            }))
             .add_query(|q| {
                 q.from
                     .sender_left_view()
