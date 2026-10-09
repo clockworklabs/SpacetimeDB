@@ -24,6 +24,8 @@ On Linux and macOS, this directory is by default `~/.local/share/spacetime/data`
 
 - [`websocket`](#websocket)
 
+- [`containers`](#containers)
+
 ### `certificate-authority`
 
 ```toml
@@ -148,5 +150,33 @@ Values are strings of any format the [`humantime`] crate can parse.
 
 Maximum number of client messages the server will queue up in case it is not able to process them quickly enough. When the queue length exceeds this value, the server will start disconnecting clients.
 Note that the limit is per client, not across all clients of a particular database.
+
+### `containers`
+
+```toml
+[containers]
+enabled = "auto"
+docker-host = "unix:///var/run/docker.sock"
+api-url = "http://host.docker.internal:3000"
+runtime = "runc"
+```
+
+The `containers` table controls whether the server runs the containers attached to databases (see [`spacetime container`](/cli-reference#spacetime-container)) with Docker. Each key can be overridden by a flag to `spacetime start`, given in parentheses below. Changing these settings requires restarting the server.
+
+#### `containers.enabled`
+
+`true`, `false`, or `"auto"` (the default). With `"auto"`, the server runs containers only if it listens only on loopback addresses, such as `127.0.0.1`, and a Docker daemon answers when it starts. Since anyone who can reach the server can create a database, and containers are not isolated from the machine's network, a server that other machines can reach runs containers only if `enabled = true`. On a machine shared with other users, loopback does not keep them out either. On Linux, `"auto"` also requires `api-url`, since containers reach the host through the Docker bridge rather than loopback. (`--enable-containers`, `--disable-containers`)
+
+#### `containers.docker-host`
+
+The Docker Engine to use. Defaults to `DOCKER_HOST`, or else the platform's default socket. (`--container-docker-host`)
+
+#### `containers.api-url`
+
+The URL containers use to reach the server. Defaults to `http://host.docker.internal:<listen port>`. With Docker Engine on Linux, that is the Docker bridge's gateway, so the server must listen where the bridge can reach it. (`--container-api-url`)
+
+#### `containers.runtime`
+
+The OCI runtime for containers. Defaults to the Docker daemon's default runtime. (`--container-runtime`)
 
 [`humantime`]: https://crates.io/crates/humantime
