@@ -228,6 +228,7 @@ Ready to level up? Dive into these advanced capabilities:
 - **[Procedures](./00200-functions/00400-procedures.md)** - Make HTTP requests and interact with external services
 - **[Views](./00200-functions/00500-views.md)** - Create computed, subscribable queries
 - **[Schedule Tables](./00300-tables/00500-schedule-tables.md)** - Schedule reducers to run at specific times
+- **[Container Hosting](./00100-databases/00800-container-hosting.md)** - Run a program in a container alongside your database
 - **[Incremental Migrations](./00100-databases/00500-migrations/00300-incremental-migrations.md)** - Handle complex schema changes
 - **[SQL Queries](../00300-resources/00200-reference/00400-sql-reference.md)** - Query your database with SQL
 
