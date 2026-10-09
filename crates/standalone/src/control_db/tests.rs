@@ -207,9 +207,11 @@ fn test_container_generations() -> anyhow::Result<()> {
     assert_eq!(state(), Some((3, true)));
     assert!(current(3) && !current(2));
 
-    // So do replacing a running container's spec and resetting its database.
+    // So do replacing a running container's spec and resetting its database,
+    // which stops the container and starts it again once the new replica runs.
     cdb.set_container(id, &ALICE, spec("c"))?;
-    cdb.restart_container(id)?;
+    cdb.set_container_running(id, false)?;
+    cdb.set_container_running(id, true)?;
     assert_eq!(state(), Some((5, true)));
     assert!(current(5) && !current(4));
 

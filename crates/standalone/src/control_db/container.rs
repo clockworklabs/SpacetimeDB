@@ -132,20 +132,6 @@ impl ControlDb {
         })
     }
 
-    /// Restart the container of a reset database under a new generation, if it is running.
-    pub fn restart_container(&self, database_id: u64) -> Result<()> {
-        self.update_container(database_id, |containers, statuses, _, key| {
-            if let Some(mut container) = get::<Container>(containers, key)?
-                && container.running
-            {
-                container.generation += 1;
-                put(containers, key, &container)?;
-                statuses.remove(key)?;
-            }
-            Ok(())
-        })
-    }
-
     /// Atomically update the container records of a database, then flush them.
     fn update_container<T>(
         &self,
