@@ -850,6 +850,7 @@ mod tests {
         tx_offset: 1_000_001,
         blobs: vec![],
         tables: vec![],
+        file_hashes: vec![],
     };
 
     /// [`BlobProvider`] that serves only zeroes.
