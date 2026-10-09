@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
 use ci_common::pnpm;
-use clap::Parser;
+use clap::{Parser, Subcommand, ValueEnum};
 use duct::cmd;
 
 /// Runs tests
@@ -10,15 +10,58 @@ use duct::cmd;
 /// This does not include Unreal tests.
 /// This expects to run in a clean git state.
 #[derive(Parser)]
-struct Cli {}
+struct Cli {
+    #[command(subcommand)]
+    command: Option<TestCommand>,
+}
+
+#[derive(Subcommand)]
+enum TestCommand {
+    /// Run the Rust workspace and feature tests.
+    Rust,
+    /// Regenerate the C# module definition and check that it is committed.
+    CsharpCodegen,
+    /// Run the C# bindings tests.
+    Csharp,
+    /// Run a C++ compile-test suite.
+    Cpp {
+        #[arg(long, value_enum)]
+        suite: CppSuite,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum CppSuite {
+    HttpHandlers,
+    Indexes,
+}
+
+impl CppSuite {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::HttpHandlers => "http-handlers",
+            Self::Indexes => "indexes",
+        }
+    }
+}
 
 fn main() -> Result<()> {
-    Cli::parse();
-    let use_prebuilt_runtime = std::env::var_os("SPACETIME_BIN").is_some();
-    if use_prebuilt_runtime {
-        ci_common::require_runtime()?;
+    match Cli::parse().command {
+        Some(TestCommand::Rust) => rust_tests(),
+        Some(TestCommand::CsharpCodegen) => csharp_codegen(),
+        Some(TestCommand::Csharp) => csharp_tests(),
+        Some(TestCommand::Cpp { suite }) => cpp_tests(suite),
+        None => {
+            rust_tests()?;
+            csharp_codegen()?;
+            csharp_tests()?;
+            cpp_tests(CppSuite::HttpHandlers)?;
+            cpp_tests(CppSuite::Indexes)
+        }
     }
+}
 
+fn rust_tests() -> Result<()> {
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
     // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
@@ -57,54 +100,7 @@ fn main() -> Result<()> {
         "--test-threads=2",
     )
     .run()?;
-    // The SDK test harness uses the same child-process server guard as smoketests,
-    // which expects release CLI/standalone binaries to already exist.
-    if !use_prebuilt_runtime {
-        cmd!(
-            "cargo",
-            "build",
-            "--release",
-            "-p",
-            "spacetimedb-cli",
-            "-p",
-            "spacetimedb-standalone",
-            "--features",
-            "spacetimedb-standalone/allow_loopback_http_for_tests",
-        )
-        .run()?;
-    }
-    // SDK procedure tests intentionally make localhost HTTP requests.
-    cmd!(
-        "cargo",
-        "test",
-        "-p",
-        "spacetimedb-sdk",
-        "--features",
-        "allow_loopback_http_for_tests",
-        "--",
-        "--test-threads=2",
-        "--skip",
-        "unreal",
-        "--skip",
-        "csharp",
-    )
-    .run()?;
-    // Run the same SDK suite against wasm/browser test clients.
-    cmd!(
-        "cargo",
-        "test",
-        "-p",
-        "spacetimedb-sdk",
-        "--features",
-        "allow_loopback_http_for_tests,browser",
-        "--",
-        "--test-threads=2",
-        "--skip",
-        "unreal",
-        "--skip",
-        "csharp",
-    )
-    .run()?;
+    // SDK tests have their own dedicated, sharded command: `cargo ci sdk-tests`.
     // TODO: This should check for a diff at the start. If there is one, we should alert the user
     // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
     // if they want those checks.
@@ -122,6 +118,10 @@ fn main() -> Result<()> {
     )
     .run()?;
     cmd!("bash", "tools/check-diff.sh").run()?;
+    Ok(())
+}
+
+fn csharp_codegen() -> Result<()> {
     cmd!(
         "cargo",
         "run",
@@ -132,21 +132,22 @@ fn main() -> Result<()> {
     )
     .run()?;
     cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
+    Ok(())
+}
+
+fn csharp_tests() -> Result<()> {
     cmd!("dotnet", "test", "-warnaserror")
         .dir("crates/bindings-csharp")
         .run()?;
+    Ok(())
+}
+
+fn cpp_tests(suite: CppSuite) -> Result<()> {
     cmd!(
         "bash",
         "crates/bindings-cpp/tests/compile/run-compile-tests.sh",
         "--suite",
-        "http-handlers",
-    )
-    .run()?;
-    cmd!(
-        "bash",
-        "crates/bindings-cpp/tests/compile/run-compile-tests.sh",
-        "--suite",
-        "indexes",
+        suite.as_str(),
     )
     .run()?;
 

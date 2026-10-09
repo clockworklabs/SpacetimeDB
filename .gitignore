@@ -275,3 +275,7 @@ nul
 
 # Any local file
 *.local
+
+# Generated when testing or publishing the TypeScript module test utilities.
+/crates/bindings-typescript/src/server/test-utils/portable-datastore-wasm/
+/crates/bindings-typescript/src/server/test-utils/.portable-datastore-wasm-*/

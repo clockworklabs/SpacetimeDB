@@ -133,6 +133,10 @@ mod tests {
 
     #[test]
     #[serial]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+    )]
     fn test_basic_invariants_spacetime_module_csharp() -> ResultBench<()> {
         test_basic_invariants::<SpacetimeModule<Csharp>>()
     }

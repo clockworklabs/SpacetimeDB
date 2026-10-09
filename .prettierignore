@@ -9,3 +9,4 @@ coverage
 **/public/app.css
 **/public/app.css.map
 **/src/module_bindings/**
+crates/bindings-typescript/src/server/test-utils/portable-datastore-wasm

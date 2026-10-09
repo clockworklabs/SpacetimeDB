@@ -5,8 +5,12 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+#[cfg(feature = "metrics")]
+use crate::db_metrics::DB_METRICS;
+#[cfg(feature = "metrics")]
+use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
+use crate::traits::TxOffset;
 use crate::{
-    db_metrics::DB_METRICS,
     error::TableError,
     execution_context::ExecutionContext,
     locking_tx_datastore::{
@@ -16,11 +20,10 @@ use crate::{
     },
     system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
-        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
-        ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX,
-        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
-        ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_IDX,
+        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_INDEX_ID, ST_INDEX_IDX,
+        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
+        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+        ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
 };
@@ -28,17 +31,18 @@ use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
-        ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX,
+        ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_IDX,
+        ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_OUTBOUND_MSG_ID,
+        ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_IDX, ST_OUTBOX_ID, ST_OUTBOX_IDX,
         ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX,
         ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use rand::SeedableRng;
+use rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro128PlusPlus;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
-use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
@@ -227,11 +231,11 @@ impl CommittedState {
             datastore_page_bytes: 0,
             ephemeral_tables: <_>::default(),
             sequence_advance_simulate_reallocation_rng: {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "portable"))]
                 {
                     Xoshiro128PlusPlus::seed_from_u64(0)
                 }
-                #[cfg(not(test))]
+                #[cfg(not(any(test, feature = "portable")))]
                 {
                     Xoshiro128PlusPlus::from_rng(&mut rand::rng())
                 }
@@ -275,8 +279,12 @@ impl CommittedState {
     /// Extremely delicate function to bootstrap the system tables.
     /// Don't update this unless you know what you're doing.
     pub(super) fn bootstrap_system_tables(&mut self, database_identity: Identity) -> Result<()> {
+        #[cfg(not(feature = "metrics"))]
+        let _ = database_identity;
+
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
+        #[cfg(feature = "metrics")]
         let with_label_values = |table_id: TableId, table_name: &str| {
             DB_METRICS
                 .rdb_num_table_rows
@@ -293,6 +301,7 @@ impl CommittedState {
         for schema in ref_schemas {
             let table_id = schema.table_id;
             // Metric for this system table.
+            #[cfg(feature = "metrics")]
             with_label_values(table_id, &schema.table_name).set(0);
 
             let row = StTableRow {
@@ -321,6 +330,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_COLUMNS.
             st_columns.insert(pool, blob_store, &row)?;
             // Increment row count for st_columns.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_COLUMN_ID, ST_COLUMN_NAME).inc();
         }
 
@@ -340,6 +350,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
             st_constraints.insert(pool, blob_store, &row)?;
             // Increment row count for st_constraints.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME).inc();
         }
 
@@ -353,6 +364,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_INDEXES.
             st_indexes.insert(pool, blob_store, &row)?;
             // Increment row count for st_indexes.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_INDEX_ID, ST_INDEX_NAME).inc();
         }
 
@@ -383,6 +395,11 @@ impl CommittedState {
         self.create_table(ST_INDEX_ACCESSOR_ID, schemas[ST_INDEX_ACCESSOR_IDX].clone());
         self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
         self.create_table(ST_ENV_ID, schemas[ST_ENV_IDX].clone());
+        self.create_table(ST_OUTBOUND_STREAM_ID, schemas[ST_OUTBOUND_STREAM_IDX].clone());
+        self.create_table(ST_OUTBOUND_MSG_ID, schemas[ST_OUTBOUND_MSG_IDX].clone());
+        self.create_table(ST_INBOUND_STREAM_ID, schemas[ST_INBOUND_STREAM_IDX].clone());
+        self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
+        self.create_table(ST_OUTBOX_ID, schemas[ST_OUTBOX_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -408,6 +425,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_SEQUENCES.
             st_sequences.insert(pool, blob_store, &row)?;
             // Increment row count for st_sequences
+            #[cfg(feature = "metrics")]
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
@@ -858,6 +876,11 @@ impl CommittedState {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.primary_key = old_pk.and_then(|cl| cl.as_singleton()));
             }
+            // A table's outbox metadata changed. Change back to the old one.
+            TableAlterOutbox(table_id, old_outbox) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.set_outbox(old_outbox);
+            }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,
             // so it's safe to not rewrite the rows and merely change the type back.
@@ -989,6 +1012,7 @@ impl CommittedState {
     }
 
     /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
+    #[cfg(feature = "durability")]
     pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
         (
             self.tables
@@ -999,6 +1023,7 @@ impl CommittedState {
         )
     }
 
+    #[cfg(feature = "metrics")]
     pub fn report_data_size(&self, database_identity: Identity) {
         use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 

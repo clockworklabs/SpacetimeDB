@@ -35,6 +35,7 @@ fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a Names
         | AutoMigrateStep::ChangeIndexSourceName((ns, _))
         | AutoMigrateStep::ChangeTableAccessorName((ns, _))
         | AutoMigrateStep::ChangeColumnAccessorName((ns, _), _)
+        | AutoMigrateStep::ChangeOutbox((ns, _))
         | AutoMigrateStep::AddIndex((ns, _))
         | AutoMigrateStep::AddConstraint((ns, _))
         | AutoMigrateStep::AddSequence((ns, _)) => Some(ns),
@@ -104,6 +105,10 @@ macro_rules! declare_tests {
                 $(
                     #[test]
                     #[serial]
+                    #[cfg_attr(
+                        target_os = "macos",
+                        ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+                    )]
                     fn $name() {
                         super::assert_identical_modules($path, "C#", "cs");
                     }
@@ -131,6 +136,10 @@ declare_tests! {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn ensure_same_schema_rust_csharp_benchmarks() {
     assert_identical_modules("benchmarks", "C#", "cs");
 }
