@@ -83,9 +83,9 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
 export function writeStateSecret(name: string | undefined, input: string,
   root = '/state'): void {
   if (!['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key', 'codex_auth',
-    'xai_api_key', 'grok_auth'].includes(name ?? '')) {
+    'xai_api_key', 'grok_auth', 'zai_api_key', 'deepseek_api_key', 'moonshot_api_key'].includes(name ?? '')) {
     throw new Error('secret name must be claude_subscription_token, anthropic_api_key, openai_api_key, openrouter_api_key, '
-      + 'codex_auth, xai_api_key, grok_auth');
+      + 'codex_auth, xai_api_key, grok_auth, zai_api_key, deepseek_api_key, moonshot_api_key');
   }
   let value = input.trim();
   if (name === 'codex_auth' || name === 'grok_auth') {
