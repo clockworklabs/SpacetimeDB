@@ -10,7 +10,7 @@
 //! - A [`FileRef`] is a [`FileId`] plus the file's read secret.
 //!   Holding a `FileRef` is what lets a client download the file.
 
-use crate::{Hash, Timestamp};
+use crate::{Hash, Identity, Timestamp};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, SpacetimeType};
 use std::{fmt, str::FromStr};
 
@@ -140,6 +140,28 @@ pub struct FileMetadata {
     pub created_at: Timestamp,
     /// The content type the uploader or module declared. Nothing verifies it.
     pub content_type: Option<String>,
+}
+
+/// The name of the reducer that decides whether to accept an upload.
+///
+/// A module enables uploads by defining a reducer with this name that takes one [`UploadRequest`].
+/// Without one, the host refuses every upload. Clients can't call it directly.
+pub const ALLOW_UPLOAD_REDUCER: &str = "allow_upload";
+
+/// What `allow_upload` learns about an upload before any bytes are accepted.
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = crate)]
+pub struct UploadRequest {
+    /// The ID the file will have once the upload completes.
+    pub file_id: FileId,
+    /// The uploader, or `None` for uploads authorized only by a `?token=`.
+    pub sender: Option<Identity>,
+    /// The size the uploader declared. The upload fails if the body is a different size.
+    pub size: u64,
+    /// The content type the uploader declared. Nothing verifies it.
+    pub content_type: Option<String>,
+    /// The `?token=` from the upload URL, if any.
+    pub token: Option<String>,
 }
 
 #[cfg(test)]

@@ -2398,6 +2398,10 @@ impl ModuleHost {
         if let Some(lifecycle) = reducer_def.lifecycle {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
+        // Only the host calls `allow_upload`, with an `UploadRequest` it constructed itself.
+        if &*reducer_def.name == spacetimedb_lib::file::ALLOW_UPLOAD_REDUCER {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
 
         if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
             return Err(ReducerCallError::NoSuchReducer);
@@ -2476,6 +2480,37 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    /// Asks the module's `allow_upload` reducer whether to accept an upload.
+    ///
+    /// Returns `Ok(None)` if the module defines no such reducer, which means uploads are disabled.
+    /// The reducer runs like any other, so its writes commit even if the upload later fails.
+    pub async fn call_allow_upload(
+        &self,
+        caller_identity: Identity,
+        request: &spacetimedb_lib::UploadRequest,
+    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
+        let Some((reducer_id, reducer_def, owning_def)) = self
+            .info
+            .module_def
+            .reducer_by_name_with_module(spacetimedb_lib::file::ALLOW_UPLOAD_REDUCER)
+        else {
+            return Ok(None);
+        };
+        let args = spacetimedb_lib::bsatn::to_vec(request).expect("an upload request always serializes");
+        let params = Self::call_reducer_params(
+            owning_def,
+            caller_identity,
+            None,
+            None,
+            None,
+            None,
+            reducer_id,
+            reducer_def,
+            FunctionArgs::Bsatn(args.into()),
+        )?;
+        self.call_reducer_with_params(&reducer_def.name, params).await.map(Some)
     }
 
     pub async fn call_reducer(

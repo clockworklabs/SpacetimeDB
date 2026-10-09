@@ -8,6 +8,7 @@ use crate::{Authorization, ControlStateDelegate, NodeDelegate};
 
 pub mod database;
 pub mod energy;
+pub mod files;
 pub mod health;
 pub mod identity;
 mod internal;

@@ -1697,6 +1697,12 @@ pub struct DatabaseRoutes<S> {
     pub http_route_root_slash: MethodRouter<S>,
     /// ANY: /database/:name_or_identity/route/*path
     pub http_route: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/files
+    pub files_post: MethodRouter<S>,
+    /// GET, HEAD: /database/:name_or_identity/files/:file_ref
+    pub file_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/files/:file_ref/metadata
+    pub file_metadata_get: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1731,6 +1737,9 @@ where
             http_route_root: any(handle_http_route_root::<S>),
             http_route_root_slash: any(handle_http_route_root_slash::<S>),
             http_route: any(handle_http_route::<S>),
+            files_post: post(super::files::upload::<S>),
+            file_get: get(super::files::download::<S>),
+            file_metadata_get: get(super::files::metadata::<S>),
         }
     }
 }
@@ -1803,12 +1812,20 @@ where
             .route("/:name_or_identity/route", self.http_route_root)
             .route("/:name_or_identity/route/", self.http_route_root_slash)
             .route("/:name_or_identity/route/*path", self.http_route)
+            .route_layer(resolving_egress_metrics_middleware.clone());
+        // File routes authorize themselves: downloads by the `FileRef` in the URL,
+        // and uploads by an optional `Authorization` header or `?token=`.
+        let files_router = axum::Router::<S>::new()
+            .route("/:name_or_identity/files", self.files_post)
+            .route("/:name_or_identity/files/:file_ref", self.file_get)
+            .route("/:name_or_identity/files/:file_ref/metadata", self.file_metadata_get)
             .route_layer(resolving_egress_metrics_middleware);
 
         axum::Router::new()
             .merge(authed_root_router)
             .merge(authed_named_router)
             .merge(http_route_router)
+            .merge(files_router)
     }
 }
 

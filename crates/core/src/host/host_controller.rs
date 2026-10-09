@@ -1333,6 +1333,7 @@ impl Host {
         let mut bootstrap_completion = Some(BootstrapCompletion::durable(bootstrap_generation));
 
         let relational_db = Arc::new(db);
+        spacetimedb_engine::files::spawn_file_maintenance(relational_db.clone(), runtime.clone());
         let (program, launched) = match HostType::from(program.kind) {
             HostType::Js => {
                 ModuleLauncher {

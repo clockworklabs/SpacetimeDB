@@ -22,7 +22,7 @@ use spacetimedb_datastore::system_tables::{
     StFileFields, StFileRow, StFileStagedFields, StFileStagedRow, TimestampViaI64, ST_FILE_ID, ST_FILE_STAGED_ID,
 };
 use spacetimedb_durability::{Close, DurableOffset, PreparedTx, TxOffset};
-use spacetimedb_file_store::{FileStore, ReclaimStats};
+pub use spacetimedb_file_store::{ByteStream, FileStore, LocalFileStore, ReclaimStats, Spool, Spooled};
 use spacetimedb_lib::{FileId, FileRef, Hash, Timestamp};
 use spacetimedb_runtime::sync::{mpsc, watch};
 use spacetimedb_runtime::Handle;

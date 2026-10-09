@@ -149,6 +149,12 @@ fn run_inner<I: WasmInstance>(
             if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
                 return Err(anyhow!("Database environment variables can only be changed by publishing").into());
             }
+            if matches!(
+                stmt.table_id(),
+                spacetimedb_datastore::system_tables::ST_FILE_ID | spacetimedb_datastore::system_tables::ST_FILE_STAGED_ID
+            ) {
+                return Err(anyhow!("Files can only be changed through File Storage").into());
+            }
 
             // Evaluate the mutation
             let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
@@ -301,6 +307,37 @@ pub(crate) mod tests {
                 .rows,
             vec![product![value]]
         );
+    }
+
+    #[test]
+    fn file_tables_are_private_and_read_only_including_for_owner() {
+        let db = TestDB::in_memory().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let owner = AuthCtx::for_current(Identity::ZERO);
+        let outsider = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            crate::db::files::create_file(tx, b"bytes", None, spacetimedb_lib::Timestamp::UNIX_EPOCH)
+        })
+        .unwrap();
+        let execute = |statement: &str, auth: AuthCtx| {
+            runtime.block_on(run(db.clone(), statement.to_string(), auth, None, None, &mut vec![]))
+        };
+        // Rows hold read secrets, so only the owner may read them.
+        assert_eq!(execute("SELECT * FROM st_file", owner.clone()).unwrap().rows.len(), 1);
+        assert!(execute("SELECT * FROM st_file", outsider.clone()).is_err());
+        assert!(execute("SELECT * FROM st_file_staged", outsider).is_err());
+        // Not even the owner may change them, since the host tracks which hashes are live.
+        for statement in [
+            "DELETE FROM st_file",
+            "UPDATE st_file SET size = 0",
+            "DELETE FROM st_file_staged",
+        ] {
+            assert!(
+                execute(statement, owner.clone()).is_err(),
+                "unexpectedly accepted {statement}"
+            );
+        }
+        assert_eq!(execute("SELECT * FROM st_file", owner).unwrap().rows.len(), 1);
     }
 
     /// Short-cut for simplify test execution
