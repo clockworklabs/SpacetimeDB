@@ -71,6 +71,43 @@ fn default_region() -> String {
     "us-east-1".into()
 }
 
+/// Opens the store for the files of the database `database_identity`, as `config` says:
+/// in `files_dir`, or in the configured bucket under `{prefix}{database identity}/`.
+///
+/// Uploads to a bucket are spooled and hashed in `files_dir` first.
+pub async fn open_database_files(
+    config: &FileStoreConfig,
+    files_dir: spacetimedb_paths::server::FileStoreDir,
+    database_identity: Identity,
+    runtime: &Handle,
+) -> anyhow::Result<Arc<DatabaseFiles>> {
+    let store: Arc<dyn spacetimedb_file_store::FileStore> = match config.s3.clone() {
+        None => Arc::new(
+            asyncify(runtime, move || {
+                spacetimedb_file_store::LocalFileStore::open(files_dir.0)
+            })
+            .await?,
+        ),
+        Some(s3) => {
+            let config = spacetimedb_file_store::S3Config {
+                endpoint: s3.endpoint,
+                region: s3.region,
+                bucket: s3.bucket,
+                prefix: format!("{}{}/", s3.prefix, database_identity.to_hex()),
+                credentials: s3.access_key_id.zip(s3.secret_access_key),
+            };
+            let spools = files_dir.0.join("spools");
+            Arc::new(
+                asyncify(runtime, move || {
+                    spacetimedb_file_store::S3FileStore::open(config, spools)
+                })
+                .await?,
+            )
+        }
+    };
+    Ok(DatabaseFiles::new(store, runtime.clone()))
+}
+
 impl DurabilityConfig {
     fn into_options(self) -> spacetimedb_durability::local::Options {
         let mut opts = spacetimedb_durability::local::Options::default();
@@ -302,33 +339,13 @@ impl PersistenceProvider for LocalPersistenceProvider {
             runtime.clone(),
         ));
 
-        let files_dir = replica_dir_for_files.files();
-        let store: Arc<dyn spacetimedb_file_store::FileStore> = match self.file_store.s3.clone() {
-            None => Arc::new(
-                asyncify(&runtime, move || {
-                    spacetimedb_file_store::LocalFileStore::open(files_dir.0)
-                })
-                .await?,
-            ),
-            Some(s3) => {
-                let config = spacetimedb_file_store::S3Config {
-                    endpoint: s3.endpoint,
-                    region: s3.region,
-                    bucket: s3.bucket,
-                    prefix: format!("{}{}/", s3.prefix, database_identity.to_hex()),
-                    credentials: s3.access_key_id.zip(s3.secret_access_key),
-                };
-                // Uploads are spooled and hashed locally before they go to the bucket.
-                let spools = files_dir.0.join("spools");
-                Arc::new(
-                    asyncify(&runtime, move || {
-                        spacetimedb_file_store::S3FileStore::open(config, spools)
-                    })
-                    .await?,
-                )
-            }
-        };
-        let files = DatabaseFiles::new(store, runtime.clone());
+        let files = open_database_files(
+            &self.file_store,
+            replica_dir_for_files.files(),
+            database_identity,
+            &runtime,
+        )
+        .await?;
 
         Ok(Persistence {
             durability,
