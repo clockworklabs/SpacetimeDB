@@ -6,16 +6,14 @@ pub struct PingLog {
     #[auto_inc]
     id: u64,
     sender: spacetimedb::Identity,
-    target: spacetimedb::Identity,
     body: String,
 }
 
 #[spacetimedb::reducer]
-pub fn receive_ping(ctx: &spacetimedb::ReducerContext, target: spacetimedb::Identity, body: String) {
+pub fn receive_ping(ctx: &spacetimedb::ReducerContext, body: String) {
     ctx.db.ping_log().insert(PingLog {
         id: 0,
         sender: ctx.sender(),
-        target,
         body,
     });
 }
