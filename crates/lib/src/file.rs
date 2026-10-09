@@ -155,13 +155,11 @@ pub struct FileMetadata {
     pub content_type: Option<String>,
 }
 
-/// The name of the reducer that decides whether to accept an upload.
+/// What the `#[reducer(allow_upload)]` lifecycle reducer learns about an upload before any bytes
+/// are accepted.
 ///
-/// A module enables uploads by defining a reducer with this name that takes one [`UploadRequest`].
+/// A module enables uploads by defining that reducer, taking one `UploadRequest`.
 /// Without one, the host refuses every upload. Clients can't call it directly.
-pub const ALLOW_UPLOAD_REDUCER: &str = "allow_upload";
-
-/// What `allow_upload` learns about an upload before any bytes are accepted.
 #[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct UploadRequest {

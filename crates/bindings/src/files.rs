@@ -5,10 +5,10 @@
 //! is visible to more people than the file should be.
 //!
 //! Clients usually upload files over HTTP, outside of any reducer, and the module's `allow_upload`
-//! reducer decides which uploads to accept:
+//! lifecycle reducer decides which uploads to accept:
 //!
 //! ```ignore
-//! #[spacetimedb::reducer]
+//! #[spacetimedb::reducer(allow_upload)]
 //! fn allow_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
 //!     upload.sender.ok_or("sign in to upload")?;
 //!     Ok(())
@@ -21,7 +21,7 @@ use crate::rt::read_bytes_source_into;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ViewContext};
 use core::fmt;
 
-pub use spacetimedb_lib::file::{content_hash, ALLOW_UPLOAD_REDUCER};
+pub use spacetimedb_lib::file::content_hash;
 pub use spacetimedb_lib::{FileId, FileMetadata, FileRef, UploadRequest};
 
 /// Why a file operation failed.

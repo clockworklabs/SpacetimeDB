@@ -57,12 +57,14 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 page_pool_max_size: None,
             },
             durability: DurabilityConfig::default(),
+            file_store: Default::default(),
             websocket: WebSocketOptions::default(),
             module_http: ModuleHttpConfig::default(),
             wasm: WasmConfig::default(),
             v8: V8Config::default(),
         };
-        let mut env = Some(StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?);
+        let mut env =
+            Some(StandaloneEnv::init(config.clone(), &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?);
         let run = std::panic::AssertUnwindSafe(async {
             let initial = Values::from([
                 ("REQUIRED".into(), "initial-required".into()),

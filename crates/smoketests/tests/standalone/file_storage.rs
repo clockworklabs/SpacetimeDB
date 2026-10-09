@@ -27,8 +27,8 @@ pub struct Attachment {
     name: String,
 }
 
-#[spacetimedb::reducer]
-pub fn allow_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
+#[spacetimedb::reducer(allow_upload)]
+pub fn check_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
     upload.sender.ok_or("sign in to upload")?;
     if upload.size > 1024 * 1024 {
         return Err("too large".into());
@@ -280,8 +280,8 @@ fn test_file_storage() {
     test.call("attach_uploads", &[]).unwrap();
     assert_eq!(attachment_key(&test, "upload-12"), uploaded);
 
-    // Clients can't call allow_upload themselves.
-    assert!(test.call("allow_upload", &[]).is_err());
+    // Clients can't call the allow_upload lifecycle reducer themselves.
+    assert!(test.call("check_upload", &[]).is_err());
 
     // A reducer creates a file. Confirmed reads see it only once its bytes are persisted,
     // so it is downloadable as soon as the confirmed query returns it.
@@ -353,8 +353,8 @@ pub struct UploadedFile {
     content_type: Option<String>,
 }
 
-#[spacetimedb::reducer]
-pub fn allow_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
+#[spacetimedb::reducer(allow_upload)]
+pub fn check_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
     ctx.db.upload_log().insert(UploadLog { file: upload.file_id, kind: 0 });
     Ok(())
 }
