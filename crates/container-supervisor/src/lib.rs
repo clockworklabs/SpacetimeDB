@@ -40,7 +40,8 @@ use spacetimedb_client_api::auth::{JwtAuthProvider as _, TokenClaims};
 use spacetimedb_client_api::NodeDelegate;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_lib::container::{is_local_image_id, ContainerSpec, ContainerState, RestartPolicy};
-use tracing::{info, warn};
+// `log` rather than `tracing`, whose events release builds of `spacetime start` compile out.
+use log::{info, warn};
 
 const LABEL_SUPERVISOR: &str = "spacetimedb.supervisor";
 const LABEL_NODE: &str = "spacetimedb.node_id";
@@ -201,7 +202,10 @@ pub fn spawn<N: ContainerControl + 'static>(
             .install()
             .context("unable to isolate containers on the network")?;
     }
-    info!(docker_host, runtime = ?options.runtime, supervisor = %id, "container hosting enabled");
+    info!(
+        "container hosting enabled docker_host={docker_host} runtime={:?} supervisor={id}",
+        options.runtime
+    );
     tokio::spawn(async move {
         // Use the daemon's API version when it is older than the client's.
         let docker = loop {
@@ -324,7 +328,7 @@ impl<N: ContainerControl> Supervisor<N> {
 
         for database_id in claims {
             if let Err(e) = self.node.claim(database_id).await {
-                warn!(database_id, "unable to claim container: {e:#}");
+                warn!("unable to claim container database_id={database_id}: {e:#}");
             }
         }
 
@@ -335,9 +339,8 @@ impl<N: ContainerControl> Supervisor<N> {
                 .is_some_and(|a| a.generation == observed.generation);
             if !wanted {
                 info!(
-                    database_id = observed.database_id,
-                    generation = observed.generation,
-                    "removing unassigned container"
+                    "removing unassigned container database_id={} generation={}",
+                    observed.database_id, observed.generation
                 );
                 self.remove(&observed.id).await?;
             } else if observed.running {
@@ -379,7 +382,10 @@ impl<N: ContainerControl> Supervisor<N> {
                 if restarts {
                     self.backoff(observed.database_id, observed.generation);
                 } else {
-                    info!(database_id = key.0, generation = key.1, code, "container finished");
+                    info!(
+                        "container finished database_id={} generation={} code={code}",
+                        key.0, key.1
+                    );
                     self.finished.insert(key);
                 }
             }
@@ -437,9 +443,8 @@ impl<N: ContainerControl> Supervisor<N> {
             }
             if let Err(e) = started {
                 warn!(
-                    database_id,
-                    generation = assigned.generation,
-                    "unable to start container: {e:#}"
+                    "unable to start container database_id={database_id} generation={}: {e:#}",
+                    assigned.generation
                 );
                 self.report(
                     database_id,
@@ -585,7 +590,10 @@ impl<N: ContainerControl> Supervisor<N> {
             self.remove(&created.id).await?;
             return Err(e).with_context(|| format!("unable to start container {name}"));
         }
-        info!(database_id, generation = assigned.generation, "started container");
+        info!(
+            "started container database_id={database_id} generation={}",
+            assigned.generation
+        );
         Ok(())
     }
 
@@ -611,7 +619,7 @@ impl<N: ContainerControl> Supervisor<N> {
                 format!("image {image} is not in this server's Docker daemon, and local image IDs are never pulled")
             });
         }
-        info!(image, "pulling image");
+        info!("pulling image {image}");
         self.docker
             .create_image(
                 Some(CreateImageOptions {
@@ -808,7 +816,11 @@ impl<N: ContainerControl> Supervisor<N> {
     /// control database places containers where they fit.
     async fn report_capacity(&mut self) {
         let result = async {
-            let info = self.docker.info().await.context("unable to read Docker's system info")?;
+            let info = self
+                .docker
+                .info()
+                .await
+                .context("unable to read Docker's system info")?;
             let cpus = info.ncpu.context("Docker did not report its CPU count")?;
             let memory = info.mem_total.context("Docker did not report its memory")?;
             let capacity = (
@@ -820,7 +832,10 @@ impl<N: ContainerControl> Supervisor<N> {
                 return Ok(());
             }
             self.node.report_capacity(capacity.0, capacity.1, capacity.2).await?;
-            info!(cpu_millicores = capacity.0, memory_bytes = capacity.1, scratch_bytes = ?capacity.2, "reported container capacity");
+            info!(
+                "reported container capacity cpu_millicores={} memory_bytes={} scratch_bytes={:?}",
+                capacity.0, capacity.1, capacity.2
+            );
             self.reported_capacity = Some(capacity);
             anyhow::Ok(())
         }
@@ -851,7 +866,9 @@ impl<N: ContainerControl> Supervisor<N> {
             Ok(()) => {
                 self.reported.insert(database_id, (generation, state));
             }
-            Err(e) => warn!(database_id, generation, "unable to report container state: {e:#}"),
+            Err(e) => {
+                warn!("unable to report container state database_id={database_id} generation={generation}: {e:#}")
+            }
         }
     }
 }
