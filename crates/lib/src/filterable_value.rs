@@ -50,7 +50,7 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
     label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash`, `FileId`, `FileRef` and no-payload enums which derive `SpacetimeType`,"
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
