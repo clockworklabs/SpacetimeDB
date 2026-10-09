@@ -3,12 +3,15 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context};
+use futures::StreamExt as _;
+use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use path_clean::PathClean;
-use reqwest::{StatusCode, Url};
+use reqwest::{header, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
 use spacetimedb_lib::container::{
-    is_local_image_id, ContainerInfo, ContainerResources, ContainerSpec, ContainerState, RestartPolicy,
+    is_local_image_id, ContainerInfo, ContainerPlatform, ContainerResources, ContainerSpec, ContainerState,
+    RestartPolicy,
 };
 use spacetimedb_lib::environment::EnvironmentSchema;
 use spacetimedb_lib::Identity;
@@ -92,7 +95,8 @@ fn parse_size(s: &str) -> Option<u64> {
 /// Where the container's image comes from.
 #[derive(Debug, PartialEq)]
 enum Image {
-    /// Build the Dockerfile in `dir`. For a remote server, push the build to `repository`.
+    /// Build the Dockerfile in `dir`. For a remote server, push the build to `repository`, if
+    /// set, and otherwise upload it to the database.
     Build {
         dir: PathBuf,
         repository: Option<String>,
@@ -164,7 +168,7 @@ impl Container {
             restart: config.restart.map(Into::into).unwrap_or_default(),
         };
         // Check everything but a built image, which is known only after building. The server
-        // decides whether it accepts local image IDs.
+        // checks that it has a local image.
         let placeholder = format!("sha256:{}", "0".repeat(64));
         ContainerSpec {
             image: if spec.image.is_empty() {
@@ -179,25 +183,11 @@ impl Container {
         Ok(Some(Self { image, spec }))
     }
 
-    /// Check, before publishing the module, that the image can be built for the server at `host_url`.
-    pub(super) fn check(&self, host_url: &str) -> anyhow::Result<()> {
+    /// Check, before publishing the module, that the image can be built.
+    pub(super) fn check(&self) -> anyhow::Result<()> {
         match &self.image {
-            Image::Build { repository, .. } => {
-                ensure!(
-                    repository.is_some() || is_loopback(host_url),
-                    "the server {host_url} is not on this machine, so it can only run images from a registry. \
-                     Set `container.image` in spacetime.json to a registry repository to push the build to, \
-                     like `ghcr.io/<you>/<name>`, or publish with --no-container."
-                );
-                check_docker()
-            }
-            Image::Pinned(image) => {
-                ensure!(
-                    !is_local_image_id(image) || is_loopback(host_url),
-                    "`container.image` {image} is a local image ID, which only a server on this machine can run"
-                );
-                Ok(())
-            }
+            Image::Build { .. } => check_docker(),
+            Image::Pinned(_) => Ok(()),
         }
     }
 
@@ -230,16 +220,27 @@ impl Container {
         if let Some(info) = &current {
             self.spec.ports = info.spec.ports.clone();
         }
-        if let Image::Build {
-            dir,
-            repository,
-            platforms,
-        } = &self.image
-        {
-            self.spec.image = match repository {
-                Some(repository) if !is_loopback(host_url) => build_and_push(dir, repository, platforms)?,
-                _ => build_local(dir, database)?,
-            };
+        match &self.image {
+            Image::Build {
+                dir,
+                repository: Some(repository),
+                platforms,
+            } if !is_loopback(host_url) => self.spec.image = build_and_push(dir, repository, platforms)?,
+            // Without a registry, the server keeps the image in the database. A server on this
+            // machine shares this machine's Docker daemon, so it already has the image.
+            Image::Build { dir, .. } => match get_platform(client, &url, auth_header, host_url).await? {
+                Some(platform) => {
+                    self.spec.image = build_local(dir, database, Some(&platform.platform))?;
+                    upload(client, &url, auth_header, &self.spec.image, platform.max_image_bytes).await?;
+                }
+                None => self.spec.image = build_local(dir, database, None)?,
+            },
+            Image::Pinned(image) if is_local_image_id(image) => {
+                if let Some(platform) = get_platform(client, &url, auth_header, host_url).await? {
+                    upload(client, &url, auth_header, image, platform.max_image_bytes).await?;
+                }
+            }
+            Image::Pinned(_) => {}
         }
 
         let Changes { set, start } = changes(current.as_ref(), &self.spec);
@@ -304,7 +305,7 @@ fn is_pinned(image: &str) -> bool {
 }
 
 /// Whether the server at `host_url` runs on this machine, so it shares this machine's Docker
-/// daemon and can run images built here without a registry.
+/// daemon and needs no image pushed or uploaded.
 fn is_loopback(host_url: &str) -> bool {
     let Some(host) = Url::parse(host_url)
         .ok()
@@ -324,11 +325,11 @@ fn check_docker() -> anyhow::Result<()> {
         .run();
     match output {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            bail!("building the container image needs Docker, but the `docker` command was not found. Install Docker, or publish with --no-container.")
+            bail!("the container image needs Docker, but the `docker` command was not found. Install Docker, or publish with --no-container.")
         }
         Err(e) => Err(e).context("unable to run `docker`"),
         Ok(output) if !output.status.success() => bail!(
-            "building the container image needs Docker, but the Docker daemon did not answer. Start Docker, or publish with --no-container.\n{}",
+            "the container image needs Docker, but the Docker daemon did not answer. Start Docker, or publish with --no-container.\n{}",
             String::from_utf8_lossy(&output.stderr).trim()
         ),
         Ok(_) => Ok(()),
@@ -339,12 +340,24 @@ fn check_docker() -> anyhow::Result<()> {
 /// image would give it a new ID or digest, and restart its container on every publish.
 const NO_ATTESTATIONS: &str = "BUILDX_NO_DEFAULT_ATTESTATIONS";
 
-/// Build the image with this machine's Docker daemon, which the server shares, and return its ID.
-fn build_local(dir: &Path, database: &str) -> anyhow::Result<String> {
+/// Build the image with this machine's Docker daemon, for `platform` if given, and return its ID.
+fn build_local(dir: &Path, database: &str, platform: Option<&str>) -> anyhow::Result<String> {
     let tag = format!("spacetimedb-local/{database}:latest");
-    println!("Building container image {tag} from {}", dir.display());
+    let for_platform = platform.map(|platform| format!(" for {platform}")).unwrap_or_default();
+    println!("Building container image {tag}{for_platform} from {}", dir.display());
     let id_file = tempfile::NamedTempFile::new()?;
-    duct::cmd!("docker", "build", "--iidfile", id_file.path(), "--tag", &tag, dir)
+    let mut args: Vec<std::ffi::OsString> = vec!["build".into()];
+    if let Some(platform) = platform {
+        args.extend(["--platform".into(), platform.into()]);
+    }
+    args.extend([
+        "--iidfile".into(),
+        id_file.path().into(),
+        "--tag".into(),
+        tag.clone().into(),
+        dir.into(),
+    ]);
+    duct::cmd("docker", args)
         .env(NO_ATTESTATIONS, "1")
         .run()
         .context("`docker build` failed")?;
@@ -395,6 +408,95 @@ fn name_and_tag(repository: &str) -> (&str, String) {
         Some((name, tag)) if !tag.contains('/') => (name, repository.to_string()),
         _ => (repository, format!("{repository}:latest")),
     }
+}
+
+/// The platform the database's container runs on, which the server stores images for, or `None`
+/// for a server on this machine that predates storing images, which needs no upload.
+async fn get_platform(
+    client: &reqwest::Client,
+    url: &str,
+    auth_header: &AuthHeader,
+    host_url: &str,
+) -> anyhow::Result<Option<ContainerPlatform>> {
+    let response = add_auth_header_opt(client.get(format!("{url}/platform")), auth_header)
+        .send()
+        .await?;
+    // A server without this route answers an empty 404.
+    if response.status() == StatusCode::NOT_FOUND && response.content_length() == Some(0) {
+        if is_loopback(host_url) {
+            return Ok(None);
+        }
+        bail!(
+            "this server cannot store container images, so it can only run images from a registry. Set \
+             `container.image` in spacetime.json to a registry repository to push the build to, like \
+             `ghcr.io/<you>/<name>`, or publish with --no-container."
+        );
+    }
+    Ok(Some(check_response(response).await?.json().await?))
+}
+
+/// Upload the image `image_id` from this machine's Docker daemon to the database, unless the
+/// database or the server's Docker daemon already has it.
+async fn upload(
+    client: &reqwest::Client,
+    url: &str,
+    auth_header: &AuthHeader,
+    image_id: &str,
+    max_bytes: u64,
+) -> anyhow::Result<()> {
+    let url = format!("{url}/image/{image_id}");
+    let response = add_auth_header_opt(client.head(&url), auth_header).send().await?;
+    if response.status() != StatusCode::NOT_FOUND {
+        check_response(response).await?;
+        return Ok(());
+    }
+    check_docker()?;
+    let image = save(image_id)?;
+    let size = image.len() as u64;
+    ensure!(
+        size <= max_bytes,
+        "the container image is {} compressed, more than the {} the server stores in a database. Make it \
+         smaller, or set `container.image` in spacetime.json to a registry repository to push it to.",
+        HumanBytes(size),
+        HumanBytes(max_bytes)
+    );
+    println!(
+        "Uploading container image {image_id} ({}) to the database",
+        HumanBytes(size)
+    );
+    let progress = ProgressBar::new(size).with_style(
+        ProgressStyle::with_template("{bar:40} {bytes}/{total_bytes} {bytes_per_sec}").expect("valid template"),
+    );
+    let image = bytes::Bytes::from(image);
+    let chunks = (0..image.len())
+        .step_by(1 << 20)
+        .map(|start| image.slice(start..image.len().min(start + (1 << 20))))
+        .collect::<Vec<_>>();
+    let counter = progress.clone();
+    let body = futures::stream::iter(chunks).map(move |chunk| {
+        counter.inc(chunk.len() as u64);
+        Ok::<_, std::io::Error>(chunk)
+    });
+    let request = client
+        .put(&url)
+        .header(header::CONTENT_TYPE, "application/gzip")
+        .header(header::CONTENT_LENGTH, size)
+        .body(reqwest::Body::wrap_stream(body));
+    let response = add_auth_header_opt(request, auth_header).send().await;
+    progress.finish_and_clear();
+    check_response(response?).await?;
+    Ok(())
+}
+
+/// `docker save` the image `image_id`, gzipped.
+fn save(image_id: &str) -> anyhow::Result<Vec<u8>> {
+    println!("Saving container image {image_id}");
+    let mut saved = duct::cmd!("docker", "save", image_id)
+        .reader()
+        .context("unable to run `docker save`")?;
+    let mut gzipped = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::copy(&mut saved, &mut gzipped).context("`docker save` failed")?;
+    Ok(gzipped.finish()?)
 }
 
 /// The database's container, or `None` if it has none.

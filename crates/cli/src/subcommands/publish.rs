@@ -639,7 +639,7 @@ async fn execute_publish_configs<'a>(
             )?
         };
         if let Some(container) = &container {
-            container.check(&database_host)?;
+            container.check()?;
         }
         let build_options = command_config
             .get_one::<String>("build_options")?
