@@ -1,3 +1,5 @@
+[English](README.md) | [العربية](README.ar.md)
+
 <p align="center">
     <a href="https://spacetimedb.com#gh-dark-mode-only" target="_blank">
 	<img width="320" src="./images/dark/logo.svg" alt="SpacetimeDB Logo">
