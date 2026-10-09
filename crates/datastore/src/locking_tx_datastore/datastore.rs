@@ -1756,6 +1756,7 @@ pub(crate) mod tests {
             IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
             IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
             IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
         ]));
@@ -1808,6 +1809,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 27, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_stream_stream_id_key", },
             ConstraintRow { constraint_id: 28, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col_list![1, 2], constraint_name: "st_outbound_stream_outbox_table_id_target_identity_key", },
             ConstraintRow { constraint_id: 29, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_outbound_msg_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
             ConstraintRow { constraint_id: 30, table_id: ST_INBOUND_STREAM_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_inbound_stream_sender_identity_stream_id_key", },
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ]));
@@ -2278,6 +2280,7 @@ pub(crate) mod tests {
             IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
             IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
             IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
@@ -3095,6 +3098,7 @@ pub(crate) mod tests {
                 (row_ref.pointer(), insert_flags)
             };
             assert!(insert_flags.is_outbox_table);
+            tx.record_outbox_insert(table_id, row_ptr)?;
             tx.record_outbox_insert(table_id, row_ptr)?;
         }
 

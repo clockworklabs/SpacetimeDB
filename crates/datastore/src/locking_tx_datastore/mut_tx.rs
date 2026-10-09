@@ -22,13 +22,13 @@ use crate::{
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
-        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgRow, StOutboundStreamFields,
-        StOutboundStreamRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow,
-        StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
-        SystemTable, INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, ST_CLIENT_ID,
-        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
-        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields, StOutboundMsgRow,
+        StOutboundStreamFields, StOutboundStreamRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
+        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
+        StTableFields, StTableRow, SystemTable, INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ,
+        ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID,
+        ST_INDEX_ID, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
+        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -3383,22 +3383,38 @@ impl MutTxId {
         .transpose()
     }
 
+    /// Return whether this outbox row is already queued for delivery.
+    fn st_outbound_msg_exists(&self, stream_id: u64, msg_id: u64) -> Result<bool> {
+        let msg_key = AlgebraicValue::Product(product![stream_id, msg_id]);
+        Ok(self
+            .iter_by_col_eq(
+                ST_OUTBOUND_MSG_ID,
+                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
+                &msg_key,
+            )?
+            .next()
+            .is_some())
+    }
+
     /// Reserve the next sequence number for this outbox table and receiver.
     ///
-    /// Creates the new stream for the first message.
+    /// `stream` is the existing stream row for this `(outbox_table_id, target_identity)`.
+    /// Pass `None` when reserving the first sequence number for a new stream.
+    ///
+    /// Creates the stream row for the first message.
     fn advance_st_outbound_stream(
         &mut self,
         outbox_table_id: TableId,
         target_identity: IdentityViaU256,
+        stream: Option<StOutboundStreamRow>,
     ) -> Result<(u64, u64)> {
-        let (stream_id, seq, ack_prefix) =
-            if let Some(row) = self.st_outbound_stream_row(outbox_table_id, target_identity)? {
-                self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &row.clone().into())?;
-                (row.stream_id, row.next_seq, row.ack_prefix)
-            } else {
-                // `stream_id = 0` asks the auto-inc column to allocate the durable stream id.
-                (0, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, INITIAL_OUTBOUND_STREAM_ACK_PREFIX)
-            };
+        let (stream_id, seq, ack_prefix) = if let Some(row) = stream {
+            self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &row.clone().into())?;
+            (row.stream_id, row.next_seq, row.ack_prefix)
+        } else {
+            // `stream_id = 0` asks the auto-inc column to allocate the durable stream id.
+            (0, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, INITIAL_OUTBOUND_STREAM_ACK_PREFIX)
+        };
 
         let inserted = self.insert_via_serialize_bsatn(
             ST_OUTBOUND_STREAM_ID,
@@ -3439,7 +3455,16 @@ impl MutTxId {
     #[inline(never)]
     pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<()> {
         let (msg_id, target_identity) = self.read_outbox_msg_id_and_target_identity(outbox_table_id, row_ptr)?;
-        let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity)?;
+        let stream = self.st_outbound_stream_row(outbox_table_id, target_identity)?;
+
+        // Check before advancing the stream so idempotent calls do not burn sequence numbers
+        // or duplicate sends.
+        if let Some(stream) = &stream
+            && self.st_outbound_msg_exists(stream.stream_id, msg_id)?
+        {
+            return Ok(());
+        }
+        let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity, stream)?;
         self.insert_st_outbound_msg(stream_id, msg_id, seq)
     }
 

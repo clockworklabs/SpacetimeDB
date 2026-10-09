@@ -226,9 +226,13 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
         .with_index_no_accessor_name(btree(outbound_stream_cols));
 
     let outbound_msg_type = builder.add_type::<StOutboundMsgRow>();
-    let outbound_msg_cols = [
+    let outbound_msg_stream_seq_cols = [
         StOutboundMsgFields::StreamId.col_id(),
         StOutboundMsgFields::Seq.col_id(),
+    ];
+    let outbound_msg_stream_msg_cols = [
+        StOutboundMsgFields::StreamId.col_id(),
+        StOutboundMsgFields::MsgId.col_id(),
     ];
     builder
         .build_table(
@@ -237,8 +241,10 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
         )
         .with_type(TableType::System)
         .with_access(v9::TableAccess::Private)
-        .with_unique_constraint(outbound_msg_cols)
-        .with_index_no_accessor_name(btree(outbound_msg_cols));
+        .with_unique_constraint(outbound_msg_stream_seq_cols)
+        .with_unique_constraint(outbound_msg_stream_msg_cols)
+        .with_index_no_accessor_name(btree(outbound_msg_stream_seq_cols))
+        .with_index_no_accessor_name(btree(outbound_msg_stream_msg_cols));
 
     let inbound_stream_type = builder.add_type::<StInboundStreamRow>();
     let inbound_stream_cols = [

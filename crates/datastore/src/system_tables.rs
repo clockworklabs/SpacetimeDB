@@ -843,6 +843,7 @@ lazy_static::lazy_static! {
         m.insert("st_outbound_msg_stream_id_seq_key", ConstraintId(29));
         m.insert("st_inbound_stream_sender_identity_stream_id_key", ConstraintId(30));
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_key", ConstraintId(31));
+        m.insert("st_outbound_msg_stream_id_msg_id_key", ConstraintId(32));
         m
     };
 }
@@ -887,6 +888,7 @@ lazy_static::lazy_static! {
         m.insert("st_outbound_msg_stream_id_seq_idx_btree", IndexId(33));
         m.insert("st_inbound_stream_sender_identity_stream_id_idx_btree", IndexId(34));
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_idx_btree", IndexId(35));
+        m.insert("st_outbound_msg_stream_id_msg_id_idx_btree", IndexId(36));
         m
     };
 }
