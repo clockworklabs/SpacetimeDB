@@ -219,12 +219,14 @@ fn test_file_storage() {
         b"a note from a reducer"
     );
 
-    // Deleting the note leaves the copy.
+    // Deleting the note ends its record for modules and metadata, and leaves the copy. Its bytes
+    // stay downloadable while history retains them, since reverting to before the deletion restores it.
     test.call("delete_named", &["\"note\""]).unwrap();
     test.sql_confirmed("SELECT * FROM attachment").unwrap();
     assert_eq!(files.metadata(&note).status(), StatusCode::NOT_FOUND);
-    assert_eq!(files.download(&note, None).status(), StatusCode::NOT_FOUND);
+    assert_eq!(files.download(&note, None).status(), StatusCode::OK);
     assert_eq!(files.download(&copy, None).status(), StatusCode::OK);
+    assert!(test.call("delete_named", &["\"note\""]).is_err(), "the note is already deleted");
 
     // The files' records are private.
     let private = test.sql("SELECT * FROM st_file");
@@ -242,7 +244,8 @@ fn test_file_storage() {
         files.download(&copy, None).bytes().unwrap().as_ref(),
         b"a note from a reducer"
     );
-    assert_eq!(files.download(&note, None).status(), StatusCode::NOT_FOUND);
+    assert_eq!(files.metadata(&note).status(), StatusCode::NOT_FOUND);
+    assert_eq!(files.download(&note, None).status(), StatusCode::OK);
     // The staged bytes of the reducer's file were cleaned up once persisted.
     let staged = test.sql("SELECT content_hash FROM st_file_staged").unwrap();
     assert!(!Regex::new("[0-9]{10,}").unwrap().is_match(&staged), "{staged}");

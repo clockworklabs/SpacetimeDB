@@ -4,6 +4,11 @@
 //! Module code reaches it only through the host's file syscalls, because its rows hold read secrets
 //! and because the host must not lose track of which content hashes are live.
 //!
+//! Deleting a file marks its row with the offset of the deleting transaction rather than removing it.
+//! A marked row is no longer a file to modules, but it keeps the bytes alive, and every snapshot lists
+//! them, for as long as history from before the deletion can be reverted to. Once that history is gone,
+//! the host purges the row, and reclamation can then delete the bytes.
+//!
 //! `st_file_staged` holds the bytes of files that a reducer created and the host has not yet persisted
 //! to the file store. Keeping them in a table puts them in the commitlog with the transaction that
 //! created them, so a crash before the upload finishes loses nothing. The host deletes the row once
@@ -23,6 +28,7 @@ st_fields_enum!(enum StFileFields {
     "size", Size = 3,
     "created_at", CreatedAt = 4,
     "content_type", ContentType = 5,
+    "deleted_at_offset", DeletedAtOffset = 6,
 });
 
 /// A row of `st_file`: one stored file.
@@ -38,9 +44,16 @@ pub struct StFileRow {
     pub created_at: TimestampViaI64,
     /// Declared by the uploader or module, and never verified.
     pub content_type: Option<String>,
+    /// The offset of the transaction that deleted this file, or `None` while it is live.
+    pub deleted_at_offset: Option<u64>,
 }
 
 impl StFileRow {
+    /// Whether the file hasn't been deleted.
+    pub fn is_live(&self) -> bool {
+        self.deleted_at_offset.is_none()
+    }
+
     pub fn file_ref(&self) -> spacetimedb_lib::FileRef {
         spacetimedb_lib::FileRef::new(self.file_id, self.read_secret)
     }

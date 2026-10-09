@@ -708,7 +708,7 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
         // A view that reads a file's metadata must be re-evaluated when files change.
         tx.record_table_scan(&self.func_type, ST_FILE_ID);
-        let row = crate::db::files::file_row_for_ref(&*tx, file_ref).map_err(DBError::from)?;
+        let row = crate::db::files::live_file_row_for_ref(&*tx, file_ref).map_err(DBError::from)?;
         Ok(row.map(|row| row.metadata()))
     }
 
@@ -717,7 +717,7 @@ impl InstanceEnv {
         use spacetimedb_datastore::system_tables::ST_FILE_ID;
         let tx = &mut *self.get_tx()?;
         tx.record_table_scan(&self.func_type, ST_FILE_ID);
-        let row = crate::db::files::file_row(&*tx, id).map_err(DBError::from)?;
+        let row = crate::db::files::live_file_row(&*tx, id).map_err(DBError::from)?;
         row.map(|row| row.file_ref()).ok_or(NodesError::NoSuchFile)
     }
 

@@ -27,6 +27,7 @@ use spacetimedb_lib::{FileId, FileRef, Hash, Timestamp};
 use spacetimedb_runtime::sync::{mpsc, watch};
 use spacetimedb_runtime::Handle;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_table::indexes::RowPointer;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -175,18 +176,39 @@ pub fn mint_file_ref() -> FileRef {
     FileRef::new(FileId(rand::random()), rand::random())
 }
 
-/// Looks up the `st_file` row for `id`.
-pub fn file_row(state: &impl StateView, id: FileId) -> Result<Option<StFileRow>, DatastoreError> {
+/// Looks up the `st_file` row for `id`, whether or not the file has been deleted.
+fn any_file_row(state: &impl StateView, id: FileId) -> Result<Option<(RowPointer, StFileRow)>, DatastoreError> {
     state
         .iter_by_col_eq(ST_FILE_ID, StFileFields::FileId, &AlgebraicValue::U128(id.0.into()))?
         .next()
-        .map(StFileRow::try_from)
+        .map(|row| Ok((row.pointer(), StFileRow::try_from(row)?)))
         .transpose()
 }
 
-/// Looks up the `st_file` row that `file_ref` names, if its read secret matches.
-pub fn file_row_for_ref(state: &impl StateView, file_ref: FileRef) -> Result<Option<StFileRow>, DatastoreError> {
-    Ok(file_row(state, file_ref.id())?.filter(|row| row.read_secret == file_ref.read_secret()))
+/// Looks up the live file `id` names.
+pub fn live_file_row(state: &impl StateView, id: FileId) -> Result<Option<StFileRow>, DatastoreError> {
+    Ok(any_file_row(state, id)?
+        .map(|(_, row)| row)
+        .filter(StFileRow::is_live))
+}
+
+/// Looks up the live file `file_ref` names, if its read secret matches.
+pub fn live_file_row_for_ref(state: &impl StateView, file_ref: FileRef) -> Result<Option<StFileRow>, DatastoreError> {
+    Ok(servable_file_row_for_ref(state, file_ref)?.filter(StFileRow::is_live))
+}
+
+/// Looks up the file `file_ref` names, if its read secret matches, including a deleted file whose
+/// record hasn't been purged yet.
+///
+/// Downloads use this, so deleting a file doesn't revoke downloads while history still retains it,
+/// as the proposal specifies. To make deletion revoke downloads, use [`live_file_row_for_ref`] instead.
+pub fn servable_file_row_for_ref(
+    state: &impl StateView,
+    file_ref: FileRef,
+) -> Result<Option<StFileRow>, DatastoreError> {
+    Ok(any_file_row(state, file_ref.id())?
+        .map(|(_, row)| row)
+        .filter(|row| row.read_secret == file_ref.read_secret()))
 }
 
 /// The bytes of a staged file, if they haven't been persisted and cleaned up yet.
@@ -231,6 +253,7 @@ pub fn create_file(
             size: bytes.len() as u64,
             created_at: TimestampViaI64(created_at),
             content_type,
+            deleted_at_offset: None,
         },
     )?;
     Ok(file_ref)
@@ -239,7 +262,7 @@ pub fn create_file(
 /// Creates a new file that shares `source`'s bytes and content type, or returns `None` if `source`
 /// doesn't name a live file.
 pub fn copy_file(tx: &mut MutTx, source: FileRef, created_at: Timestamp) -> Result<Option<FileRef>, DBError> {
-    let Some(source) = file_row_for_ref(tx, source)? else {
+    let Some(source) = live_file_row_for_ref(tx, source)? else {
         return Ok(None);
     };
     let file_ref = mint_file_ref();
@@ -255,15 +278,41 @@ pub fn copy_file(tx: &mut MutTx, source: FileRef, created_at: Timestamp) -> Resu
     Ok(Some(file_ref))
 }
 
-/// Deletes the `st_file` row that `file_ref` names. Returns whether there was one.
+/// Deletes the live file `file_ref` names. Returns whether there was one.
 ///
-/// The bytes stay in the store until reclamation finds that nothing retained references them.
+/// The row stays, marked with this transaction's offset, so the bytes stay retained for as long as
+/// history from before the deletion can be reverted to. See [`purge_deleted_files`].
 pub fn delete_file(db: &RelationalDB, tx: &mut MutTx, file_ref: FileRef) -> Result<bool, DBError> {
-    let pointer = tx
-        .iter_by_col_eq(ST_FILE_ID, StFileFields::FileId, &AlgebraicValue::U128(file_ref.id().0.into()))?
-        .find(|row| StFileRow::try_from(*row).is_ok_and(|row| row.read_secret == file_ref.read_secret()))
-        .map(|row| row.pointer());
-    Ok(pointer.is_some_and(|pointer| db.delete(tx, ST_FILE_ID, [pointer]) == 1))
+    let Some((pointer, row)) = any_file_row(tx, file_ref.id())? else {
+        return Ok(false);
+    };
+    if !row.is_live() || row.read_secret != file_ref.read_secret() {
+        return Ok(false);
+    }
+    let deleted_at_offset = Some(tx.next_tx_offset());
+    db.delete(tx, ST_FILE_ID, [pointer]);
+    insert_file_row(tx, &StFileRow { deleted_at_offset, ..row })?;
+    Ok(true)
+}
+
+/// Removes the records of files deleted before `horizon`, the oldest transaction offset that a revert
+/// can still reach. Returns how many it removed.
+///
+/// Every state from `horizon` on has these files deleted, so nothing can restore them. Once no retained
+/// snapshot lists their hashes either, reclamation deletes their bytes.
+///
+/// A standalone host keeps its whole commitlog, which can be replayed from the start, so it never
+/// purges. A host that truncates or archives history would call this with the start of what it keeps.
+pub fn purge_deleted_files(db: &RelationalDB, tx: &mut MutTx, horizon: u64) -> Result<u32, DBError> {
+    let mut purged = Vec::new();
+    for row in tx.iter(ST_FILE_ID)? {
+        let pointer = row.pointer();
+        let row = StFileRow::try_from(row)?;
+        if row.deleted_at_offset.is_some_and(|offset| offset < horizon) {
+            purged.push(pointer);
+        }
+    }
+    Ok(db.delete(tx, ST_FILE_ID, purged))
 }
 
 /// The file hashes and staged bytes that a transaction inserts.
@@ -479,13 +528,11 @@ impl spacetimedb_durability::Durability for FileGatedDurability {
 /// How often the maintenance task reclaims unreferenced file bytes.
 pub const RECLAIM_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
-/// The hashes reclamation must keep for `db`: those that live `st_file` rows name,
-/// and those that retained snapshots list.
+/// The hashes reclamation must keep for `db`: those that `st_file` rows name, including deleted files
+/// that haven't been purged, and those that retained snapshots list.
 ///
-/// Known gap: a file inserted and deleted between two snapshots is in neither set,
-/// but reverting to a point between them restores its row. Closing that gap needs either
-/// tombstones for deleted files, kept as long as the log that contains their rows,
-/// or a scan of the retained log for `st_file` inserts.
+/// Because deletion only marks a row, a file inserted and deleted between two snapshots stays a root
+/// until it is purged, so reverting to a point between the snapshots never needs reclaimed bytes.
 pub fn reclamation_roots(db: &RelationalDB) -> Result<HashSet<Hash>, DBError> {
     let mut roots = db.with_read_only(Workload::Internal, |tx| -> Result<HashSet<Hash>, DBError> {
         tx.iter(ST_FILE_ID)?
@@ -681,6 +728,7 @@ mod tests {
             size: contents.len() as u64,
             created_at: TimestampViaI64(Timestamp::UNIX_EPOCH),
             content_type: None,
+            deleted_at_offset: None,
         }
     }
 
@@ -880,13 +928,13 @@ mod tests {
         }
 
         // The row is found by its reference, and only with the right secret.
-        let row = stdb.with_read_only(Workload::ForTests, |tx| file_row_for_ref(tx, file_ref))?;
+        let row = stdb.with_read_only(Workload::ForTests, |tx| live_file_row_for_ref(tx, file_ref))?;
         let row = row.expect("the file exists");
         assert_eq!(row.content_hash, hash);
         assert_eq!(row.content_type.as_deref(), Some("text/plain"));
         let forged = FileRef::new(file_ref.id(), file_ref.read_secret() ^ 1);
         assert!(stdb
-            .with_read_only(Workload::ForTests, |tx| file_row_for_ref(tx, forged))?
+            .with_read_only(Workload::ForTests, |tx| servable_file_row_for_ref(tx, forged))?
             .is_none());
 
         // A snapshot lists the file, so reclamation keeps it while the snapshot is retained.
@@ -910,11 +958,23 @@ mod tests {
 
         let deleted = stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original))?;
         assert!(deleted);
-        let rows = stdb.with_read_only(Workload::ForTests, |tx| -> Result<_, DBError> {
-            Ok((file_row_for_ref(tx, original)?, file_row_for_ref(tx, copy)?))
+        let (live, servable, copy_row) = stdb.with_read_only(Workload::ForTests, |tx| -> Result<_, DBError> {
+            Ok((
+                live_file_row_for_ref(tx, original)?,
+                servable_file_row_for_ref(tx, original)?,
+                live_file_row_for_ref(tx, copy)?,
+            ))
         })?;
-        assert!(rows.0.is_none());
-        assert_eq!(rows.1.expect("the copy survives").content_hash, content_hash(b"shared"));
+        // The original is gone to modules, but its record stays until it's purged, so it still downloads.
+        assert!(live.is_none());
+        assert!(servable.expect("the record stays").deleted_at_offset.is_some());
+        assert_eq!(copy_row.expect("the copy survives").content_hash, content_hash(b"shared"));
+        // Deleting it again finds nothing live.
+        assert!(!stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original))?);
+        // Nor can a deleted file be copied.
+        assert!(stdb
+            .with_auto_commit(Workload::ForTests, |tx| copy_file(tx, original, now))?
+            .is_none());
 
         // Deleting with the wrong secret does nothing.
         let forged = FileRef::new(copy.id(), copy.read_secret() ^ 1);
@@ -923,7 +983,7 @@ mod tests {
     }
 
     #[test]
-    fn reclamation_keeps_live_and_snapshotted_files() -> anyhow::Result<()> {
+    fn deleted_files_stay_until_purged_and_snapshots_keep_their_bytes() -> anyhow::Result<()> {
         let stdb = TestDB::durable_with_files()?;
         let rt = stdb.runtime().expect("durable").clone();
         let runtime = Handle::tokio(rt.clone());
@@ -935,12 +995,13 @@ mod tests {
             rt.block_on(async { stdb.durable_tx_offset().expect("durable").wait_for(offset).await })?;
             Ok(offset)
         };
+        let size = |contents: &[u8]| rt.block_on(files.store().size(&content_hash(contents))).unwrap();
         let now = Timestamp::now();
         let created = std::cell::RefCell::new(Vec::new());
         wait_for_snapshot(&stdb, &rt, 1);
 
-        // `live` stays; `snapshotted` is deleted after a snapshot captures it;
-        // `garbage` is deleted before any snapshot does.
+        // `live` stays. `snapshotted` is deleted after a snapshot captures it.
+        // `deleted` is created and deleted between snapshots. `orphan` is an upload nothing recorded.
         commit_and_confirm(&|tx| {
             created.borrow_mut().push(create_file(tx, b"live", None, now)?);
             created.borrow_mut().push(create_file(tx, b"snapshotted", None, now)?);
@@ -949,22 +1010,34 @@ mod tests {
         stdb.take_snapshot(&*stdb.snapshot_repo().expect("snapshots are enabled"))?
             .expect("a snapshot is taken");
         commit_and_confirm(&|tx| {
-            created.borrow_mut().push(create_file(tx, b"garbage", None, now)?);
+            created.borrow_mut().push(create_file(tx, b"deleted", None, now)?);
             Ok(())
         })?;
-        let [_live, snapshotted, garbage] = created.borrow()[..] else { unreachable!() };
-        commit_and_confirm(&|tx| {
+        let [_live, snapshotted, deleted] = created.borrow()[..] else { unreachable!() };
+        let deleted_at = commit_and_confirm(&|tx| {
             assert!(delete_file(&stdb, tx, snapshotted)?);
-            assert!(delete_file(&stdb, tx, garbage)?);
+            assert!(delete_file(&stdb, tx, deleted)?);
             Ok(())
         })?;
+        rt.block_on(files.store().persist_bytes(content_hash(b"orphan"), Bytes::from_static(b"orphan")))?;
 
+        // Deleted files are still roots, because reverting to before their deletion restores them.
         let stats = rt.block_on(reclaim_files(&stdb, Duration::ZERO, &runtime))?;
         assert_eq!(stats.deleted_objects, 1);
-        let size = |contents: &[u8]| rt.block_on(files.store().size(&content_hash(contents))).unwrap();
+        assert_eq!(size(b"orphan"), None);
+        assert_eq!(size(b"deleted"), Some(7));
+
+        // History from before the deletion is gone, so the records go too.
+        commit_and_confirm(&|tx| {
+            assert_eq!(purge_deleted_files(&stdb, tx, deleted_at)?, 0, "not before the horizon");
+            assert_eq!(purge_deleted_files(&stdb, tx, deleted_at + 1)?, 2);
+            Ok(())
+        })?;
+        let stats = rt.block_on(reclaim_files(&stdb, Duration::ZERO, &runtime))?;
+        assert_eq!(stats.deleted_objects, 1);
         assert_eq!(size(b"live"), Some(4));
-        assert_eq!(size(b"snapshotted"), Some(11), "a retained snapshot still references it");
-        assert_eq!(size(b"garbage"), None);
+        assert_eq!(size(b"snapshotted"), Some(11), "a retained snapshot still lists it");
+        assert_eq!(size(b"deleted"), None);
         Ok(())
     }
 }

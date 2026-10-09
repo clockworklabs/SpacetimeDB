@@ -1744,6 +1744,7 @@ pub(crate) mod tests {
             ColRow { table: ST_FILE_ID.into(), pos: 3, name: "size", ty: AlgebraicType::U64 },
             ColRow { table: ST_FILE_ID.into(), pos: 4, name: "created_at", ty: AlgebraicType::I64 },
             ColRow { table: ST_FILE_ID.into(), pos: 5, name: "content_type", ty: AlgebraicType::option(AlgebraicType::String) },
+            ColRow { table: ST_FILE_ID.into(), pos: 6, name: "deleted_at_offset", ty: AlgebraicType::option(AlgebraicType::U64) },
             ColRow { table: ST_FILE_STAGED_ID.into(), pos: 0, name: "content_hash", ty: AlgebraicType::U256 },
             ColRow { table: ST_FILE_STAGED_ID.into(), pos: 1, name: "bytes", ty: AlgebraicType::bytes() },
         ]));

@@ -162,6 +162,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         size,
         created_at: TimestampViaI64(Timestamp::now()),
         content_type,
+        deleted_at_offset: None,
     };
     let offset = tokio::task::spawn_blocking({
         let db = db.clone();
@@ -211,13 +212,25 @@ pub struct ServeParams {
     content_type: Option<String>,
 }
 
-/// Looks up the live `st_file` row a reference names. A malformed or forged reference finds nothing.
-async fn find_file(db: &Arc<RelationalDB>, file_ref: &str) -> axum::response::Result<StFileRow> {
+/// Which files a lookup may find.
+#[derive(Clone, Copy)]
+enum Lookup {
+    /// Only files that haven't been deleted.
+    Live,
+    /// Also deleted files whose records history still retains.
+    Servable,
+}
+
+/// Looks up the `st_file` row a reference names. A malformed or forged reference finds nothing.
+async fn find_file(db: &Arc<RelationalDB>, file_ref: &str, lookup: Lookup) -> axum::response::Result<StFileRow> {
     let not_found = || error(StatusCode::NOT_FOUND, "no such file");
     let file_ref: FileRef = file_ref.parse().map_err(|_| not_found())?;
     let db = db.clone();
     tokio::task::spawn_blocking(move || {
-        db.with_read_only(Workload::Internal, |tx| engine_files::file_row_for_ref(tx, file_ref))
+        db.with_read_only(Workload::Internal, |tx| match lookup {
+            Lookup::Live => engine_files::live_file_row_for_ref(tx, file_ref),
+            Lookup::Servable => engine_files::servable_file_row_for_ref(tx, file_ref),
+        })
     })
     .await
     .map_err(log_and_500)?
@@ -276,7 +289,8 @@ async fn download_inner<S: ControlStateDelegate + NodeDelegate>(
     headers: HeaderMap,
 ) -> axum::response::Result<Response> {
     let (db, files, _module) = database_files(&ctx, &database).await?;
-    let row = find_file(&db, &file_ref).await?;
+    // Deleting a file doesn't revoke downloads while history retains it.
+    let row = find_file(&db, &file_ref, Lookup::Servable).await?;
     let etag = format!("\"{}\"", row.content_hash.to_hex());
 
     let mut builder = Response::builder()
@@ -377,7 +391,7 @@ pub async fn metadata<S: ControlStateDelegate + NodeDelegate>(
     Path(FileParams { file_ref }): Path<FileParams>,
 ) -> axum::response::Result<Response> {
     let (db, _files, _module) = database_files(&ctx, &database).await?;
-    let row = find_file(&db, &file_ref).await?;
+    let row = find_file(&db, &file_ref, Lookup::Live).await?;
     let metadata = row.metadata();
     Ok(axum::Json(serde_json::json!({
         "file_ref": metadata.file_ref.to_string(),
