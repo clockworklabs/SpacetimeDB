@@ -478,6 +478,7 @@ pub trait TableInternal: Sized {
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
+    const OUTBOX: Option<OutboxDesc<'static>> = None;
     const IS_EVENT: bool = false;
 
     /// Returns the ID of this table.
@@ -502,6 +503,14 @@ pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
     Hash { columns: &'a [u16] },
     Direct { column: u16 },
+}
+
+pub struct OutboxDesc<'a> {
+    pub remote_reducer_name: &'a str,
+    /// Outbox column positions in remote reducer parameter order.
+    pub arg_columns: &'a [u16],
+    pub target_column: u16,
+    pub signature_hash: &'a str,
 }
 
 pub struct ScheduleDesc<'a> {

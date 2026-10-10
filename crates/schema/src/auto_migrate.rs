@@ -1424,13 +1424,16 @@ mod tests {
                 .finish();
 
             if let Some((remote_reducer, arg_columns, on_result_reducer, signature_hash)) = outbox {
+                if let Some(on_result_reducer) = on_result_reducer {
+                    builder.add_reducer(on_result_reducer.to_owned(), ProductType::unit());
+                }
                 builder.add_outbox(
                     "outbound_pings",
                     remote_reducer.to_owned(),
                     target_column,
                     arg_columns,
                     on_result_reducer.map(str::to_owned),
-                    signature_hash.to_owned(),
+                    hash_bytes(signature_hash.as_bytes()),
                 );
             }
         })

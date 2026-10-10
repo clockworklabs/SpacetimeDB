@@ -6,6 +6,7 @@
 //! It allows easier future extensibility to add new kinds of definitions.
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
+use crate::Hash;
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -338,6 +339,19 @@ pub struct RawTableDefV10 {
     pub is_event: bool,
 }
 
+/// Outbox metadata for a table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawOutboxDefV10 {
+    pub table_source_name: RawIdentifier,
+    pub remote_reducer: RawIdentifier,
+    pub target_column: ColId,
+    pub arg_columns: Vec<ColId>,
+    pub on_result_reducer: Option<RawIdentifier>,
+    pub signature_hash: Hash,
+}
+
 /// Marks a particular table column as having a particular default value.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -349,25 +363,6 @@ pub struct RawColumnDefaultValueV10 {
     /// A BSATN-encoded [`AlgebraicValue`] valid at the column's type.
     /// (We cannot use `AlgebraicValue` directly as it isn't `SpacetimeType`.)
     pub value: Box<[u8]>,
-}
-
-/// Marks a table as an IDC outbox table.
-#[derive(Debug, Clone, SpacetimeType)]
-#[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawOutboxDefV10 {
-    /// The `source_name` of the outbox table.
-    pub table_name: RawIdentifier,
-    /// The reducer to call on the target database.
-    pub remote_reducer: RawIdentifier,
-    /// Column containing the receiver database identity.
-    pub target_column: ColId,
-    /// Columns to encode as reducer arguments, in receiver parameter order.
-    pub arg_columns: Vec<ColId>,
-    /// Optional local reducer called with the delivery result.
-    pub on_result_reducer: Option<RawIdentifier>,
-    /// Hash of the receiver reducer signature as seen by sender bindings.
-    pub signature_hash: String,
 }
 
 /// A reducer definition.
@@ -699,6 +694,14 @@ impl RawModuleDefV10 {
         })
     }
 
+    /// Get the outboxes section, if present.
+    pub fn outboxes(&self) -> Option<&Vec<RawOutboxDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Outboxes(outboxes) => Some(outboxes),
+            _ => None,
+        })
+    }
+
     /// Get the lifecycle reducers section, if present.
     pub fn lifecycle_reducers(&self) -> Option<&Vec<RawLifeCycleReducerDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -715,14 +718,6 @@ impl RawModuleDefV10 {
                 _ => None,
             })
             .expect("Tables section must exist for tests")
-    }
-
-    /// Get the outboxes section, if present.
-    pub fn outboxes(&self) -> Option<&Vec<RawOutboxDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Outboxes(outboxes) => Some(outboxes),
-            _ => None,
-        })
     }
 
     // Get the row-level security section, if present.
@@ -1038,6 +1033,47 @@ impl RawModuleDefV10Builder {
         }
     }
 
+    pub fn add_outbox(
+        &mut self,
+        table_source_name: impl Into<RawIdentifier>,
+        remote_reducer: impl Into<RawIdentifier>,
+        target_column: impl Into<ColId>,
+        arg_columns: impl IntoIterator<Item = ColId>,
+        on_result_reducer: Option<impl Into<RawIdentifier>>,
+        signature_hash: Hash,
+    ) {
+        self.outboxes_mut().push(RawOutboxDefV10 {
+            table_source_name: table_source_name.into(),
+            remote_reducer: remote_reducer.into(),
+            target_column: target_column.into(),
+            arg_columns: arg_columns.into_iter().collect(),
+            on_result_reducer: on_result_reducer.map(Into::into),
+            signature_hash,
+        });
+    }
+
+    pub fn set_outbox_on_result(
+        &mut self,
+        table_source_name: impl Into<RawIdentifier>,
+        on_result_reducer: impl Into<RawIdentifier>,
+    ) {
+        let table_source_name = table_source_name.into();
+        let on_result_reducer = Some(on_result_reducer.into());
+        if let Some(outbox) = self
+            .outboxes_mut()
+            .iter_mut()
+            .find(|outbox| outbox.table_source_name == table_source_name)
+        {
+            assert!(
+                outbox.on_result_reducer.is_none(),
+                "outbox table `{table_source_name}` has multiple on_result reducers"
+            );
+            outbox.on_result_reducer = on_result_reducer;
+        } else {
+            panic!("on_result reducer references unknown outbox table `{table_source_name}`");
+        }
+    }
+
     /// Get mutable access to the environment section, creating it if missing.
     fn environment_mut(&mut self) -> &mut Vec<RawEnvironmentDeclarationV10> {
         let idx = self
@@ -1338,26 +1374,6 @@ impl RawModuleDefV10Builder {
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {
         self.explicit_names_mut().merge(names);
-    }
-
-    /// Register an IDC outbox table.
-    pub fn add_outbox(
-        &mut self,
-        table_name: impl Into<RawIdentifier>,
-        remote_reducer: impl Into<RawIdentifier>,
-        target_column: impl Into<ColId>,
-        arg_columns: impl IntoIterator<Item = ColId>,
-        on_result_reducer: Option<impl Into<RawIdentifier>>,
-        signature_hash: impl Into<String>,
-    ) {
-        self.outboxes_mut().push(RawOutboxDefV10 {
-            table_name: table_name.into(),
-            remote_reducer: remote_reducer.into(),
-            target_column: target_column.into(),
-            arg_columns: arg_columns.into_iter().collect(),
-            on_result_reducer: on_result_reducer.map(Into::into),
-            signature_hash: signature_hash.into(),
-        });
     }
 
     pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {

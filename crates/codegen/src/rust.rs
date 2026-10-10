@@ -29,7 +29,7 @@ pub struct Rust;
 
 pub fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
     itertools::chain!(
-        iter_types(module).flat_map(|typ| Rust.generate_type_files(module, typ)),
+        iter_module_binding_types(module).flat_map(|typ| Rust.generate_type_files(module, typ)),
         [generate_module_bindings_root_file(module)],
     )
     .collect()
@@ -975,7 +975,7 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
 
 fn write_module_binding_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
     match ty {
-        AlgebraicTypeUse::Identity => write!(out, "spacetimedb::Identity")?,
+        AlgebraicTypeUse::Identity => write!(out, "Identity")?,
         AlgebraicTypeUse::ConnectionId => write!(out, "spacetimedb::ConnectionId")?,
         AlgebraicTypeUse::Timestamp => write!(out, "spacetimedb::Timestamp")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "spacetimedb::TimeDuration")?,
@@ -1001,6 +1001,43 @@ fn write_module_binding_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &Alg
             write!(out, ">")?;
         }
         _ => write_type(module, out, ty)?,
+    }
+    Ok(())
+}
+
+fn write_module_binding_type_for_outbox_macro<W: Write>(
+    module: &ModuleDef,
+    out: &mut W,
+    ty: &AlgebraicTypeUse,
+) -> fmt::Result {
+    match ty {
+        AlgebraicTypeUse::Identity => write!(out, "$module::Identity")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "spacetimedb::ConnectionId")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "spacetimedb::Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "spacetimedb::TimeDuration")?,
+        AlgebraicTypeUse::Uuid => write!(out, "spacetimedb::Uuid")?,
+        AlgebraicTypeUse::ScheduleAt => write!(out, "spacetimedb::ScheduleAt")?,
+        AlgebraicTypeUse::Primitive(PrimitiveType::I256) => write!(out, "spacetimedb::sats::i256")?,
+        AlgebraicTypeUse::Primitive(PrimitiveType::U256) => write!(out, "spacetimedb::sats::u256")?,
+        AlgebraicTypeUse::Option(inner_ty) => {
+            write!(out, "Option::<")?;
+            write_module_binding_type_for_outbox_macro(module, out, inner_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "Result::<")?;
+            write_module_binding_type_for_outbox_macro(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_module_binding_type_for_outbox_macro(module, out, err_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicTypeUse::Array(elem_ty) => {
+            write!(out, "Vec::<")?;
+            write_module_binding_type_for_outbox_macro(module, out, elem_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicTypeUse::Ref(r) => write!(out, "$module::{}", type_ref_name(module, *r))?,
+        _ => write_module_binding_type(module, out, ty)?,
     }
     Ok(())
 }
@@ -1216,12 +1253,37 @@ fn define_struct_for_product(
     out.newline();
 }
 
+fn define_module_binding_struct_for_product(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+    vis: &str,
+) {
+    print_struct_derives(out);
+    write!(out, "{vis} struct {name} ");
+    out.delimited_block(
+        "{",
+        |out| {
+            for (ident, ty) in elements {
+                write!(out, "pub {}: ", ident.deref().to_case(Case::Snake));
+                write_module_binding_type(module, out, ty).unwrap();
+                writeln!(out, ",");
+            }
+        },
+        "}",
+    );
+    out.newline();
+}
+
 fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
     print_auto_generated_file_comment(out);
     writeln!(out, "{ALLOW_LINTS}");
+    out.newline();
+    writeln!(out, "use spacetimedb::spacetimedb_lib as __lib;");
     out.newline();
     print_module_binding_module_decls(module, out);
     out.newline();
@@ -1243,18 +1305,41 @@ fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
 }
 
 fn print_module_binding_module_decls(module: &ModuleDef, out: &mut Indenter) {
-    for ty in iter_types(module) {
+    for ty in iter_module_binding_types(module) {
         let mod_name = type_module_name(&ty.accessor_name);
         writeln!(out, "pub mod {mod_name};");
     }
 }
 
 fn print_module_binding_reexports(module: &ModuleDef, out: &mut Indenter) {
-    for ty in iter_types(module) {
+    for ty in iter_module_binding_types(module) {
         let mod_name = type_module_name(&ty.accessor_name);
         let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};");
     }
+}
+
+fn iter_module_binding_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> + '_ {
+    let mut reducer_type_refs = module_binding_reducer_type_refs(module);
+    reducer_type_refs.extend(
+        module
+            .tables()
+            .filter(|table| table.schedule.is_some())
+            .map(|table| table.product_type_ref),
+    );
+    let table_type_refs = module
+        .tables()
+        .map(|table| table.product_type_ref)
+        .collect::<BTreeSet<_>>();
+    iter_types(module).filter(move |typ| !table_type_refs.contains(&typ.ty) || reducer_type_refs.contains(&typ.ty))
+}
+
+fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
+    let mut type_refs = BTreeSet::new();
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        gen_imports(&mut type_refs, &reducer.params_for_generate.elements);
+    }
+    type_refs
 }
 
 fn print_module_binding_identity(out: &mut Indenter) {
@@ -1306,18 +1391,83 @@ pub struct RemoteModule;
 
 fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, reducer: &ReducerDef) {
     let handle_name = reducer_function_name(reducer);
+    let outbox_typecheck_macro = format!("__spacetimedb_typecheck_outbox_{handle_name}");
     let reducer_name = rust_string_literal(reducer.name.deref());
     let args_type = function_args_type_name(&reducer.accessor_name);
-    define_struct_for_product(module, out, &args_type, &reducer.params_for_generate.elements, "pub");
+    define_module_binding_struct_for_product(module, out, &args_type, &reducer.params_for_generate.elements, "pub");
     out.newline();
-    let arg_names = reducer
-        .params_for_generate
-        .elements
-        .iter()
-        .map(|(arg, _)| rust_string_literal(arg.deref()))
-        .collect::<Vec<_>>()
-        .join(", ");
     let signature_hash = rust_string_literal(&reducer_signature_hash(module, reducer));
+    let mut outbox_typecheck_calls = Vec::new();
+    for (arg, ty) in &reducer.params_for_generate.elements {
+        let arg_name = arg.deref().to_case(Case::Snake);
+        let mut ty_name = String::new();
+        write_module_binding_type_for_outbox_macro(module, &mut ty_name, ty).unwrap();
+        writeln!(
+            out,
+            "
+#[doc(hidden)]
+macro_rules! __spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate {{
+    ($module:ident;) => {{}};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as {arg_name}), $($rest:tt)*) => {{
+        compile_error!(concat!(
+            \"outbox has multiple columns matching remote reducer parameter `\",
+            stringify!({arg_name}),
+            \"`\"
+        ));
+    }};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as $other:ident), $($rest:tt)*) => {{
+        $module::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate!($module; $($rest)*);
+    }};
+}}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate;
+
+#[doc(hidden)]
+macro_rules! __spacetimedb_typecheck_outbox_{handle_name}_{arg_name} {{
+    ($module:ident;) => {{{{
+        compile_error!(concat!(
+            \"outbox has no column matching remote reducer parameter `\",
+            stringify!({arg_name}),
+            \"`\"
+        ));
+        0u16
+    }}}};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as {arg_name}), $($rest:tt)*) => {{{{
+        let _ = |x: $ty| {{ let _: {ty_name} = x; }};
+        $module::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate!($module; $($rest)*);
+        $index
+    }}}};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as $other:ident), $($rest:tt)*) => {{
+        $module::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}!($module; $($rest)*)
+    }};
+}}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_typecheck_outbox_{handle_name}_{arg_name};
+"
+        );
+        outbox_typecheck_calls.push(format!(
+            "__outbox_receiver::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}!(__outbox_receiver; $($columns)*)"
+        ));
+    }
+    let outbox_typecheck_calls = outbox_typecheck_calls.join(",\n            ");
+    writeln!(
+        out,
+        "
+#[doc(hidden)]
+macro_rules! {outbox_typecheck_macro} {{
+    ($module:path, {{ $($columns:tt)* }}) => {{{{
+        #[allow(unused_imports)]
+        use $module as __outbox_receiver;
+        &[{outbox_typecheck_calls}]
+    }}}};
+}}
+
+#[doc(hidden)]
+pub(crate) use {outbox_typecheck_macro};
+"
+    );
     writeln!(
         out,
         "
@@ -1326,7 +1476,6 @@ pub struct {handle_name};
 
 impl spacetimedb::rt::RemoteReducer for {handle_name} {{
     const NAME: &'static str = {reducer_name};
-    const ARG_NAMES: &'static [&'static str] = &[{arg_names}];
     const SIGNATURE_HASH: &'static str = {signature_hash};
     type Args = {args_type};
 }}

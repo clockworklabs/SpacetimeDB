@@ -857,6 +857,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-idc-receiver"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-idc-sender"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-logs-level-filter"
 version = "0.1.0"
 dependencies = [

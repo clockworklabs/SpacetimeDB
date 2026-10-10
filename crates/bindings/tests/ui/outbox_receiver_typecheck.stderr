@@ -1,0 +1,92 @@
+error: outbox has no column matching remote reducer parameter `body`
+  --> tests/ui/../fixtures/idc_receiver/lib.rs
+   |
+   | /         compile_error!(concat!(
+   | |             "outbox has no column matching remote reducer parameter `",
+   | |             stringify!(body),
+   | |             "`"
+   | |         ));
+   | |__________^
+   |
+  ::: tests/ui/outbox_receiver_typecheck.rs:45:1
+   |
+45 |   #[spacetimedb::table(accessor = canonical_param_name, outbox(receiver::receive_ping))]
+   |   -------------------------------------------------------------------------------------- in this attribute macro expansion
+   |
+   = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: outbox has multiple columns matching remote reducer parameter `body`
+  --> tests/ui/../fixtures/idc_receiver/lib.rs
+   |
+   | /         compile_error!(concat!(
+   | |             "outbox has multiple columns matching remote reducer parameter `",
+   | |             stringify!(body),
+   | |             "`"
+   | |         ));
+   | |__________^
+   |
+  ::: tests/ui/outbox_receiver_typecheck.rs:33:1
+   |
+33 |   #[spacetimedb::table(accessor = duplicate_body, outbox(receiver::receive_ping))]
+   |   -------------------------------------------------------------------------------- in this attribute macro expansion
+   |
+   = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body_reject_duplicate` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: outbox has no column matching remote reducer parameter `body`
+  --> tests/ui/../fixtures/idc_receiver/lib.rs
+   |
+   | /         compile_error!(concat!(
+   | |             "outbox has no column matching remote reducer parameter `",
+   | |             stringify!(body),
+   | |             "`"
+   | |         ));
+   | |__________^
+   |
+  ::: tests/ui/outbox_receiver_typecheck.rs:23:1
+   |
+23 |   #[spacetimedb::table(accessor = missing_body, outbox(receiver::receive_ping))]
+   |   ------------------------------------------------------------------------------ in this attribute macro expansion
+   |
+   = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+ --> tests/ui/outbox_receiver_typecheck.rs:3:1
+  |
+3 | #[spacetimedb::table(accessor = outbound_ping, outbox(receiver::receive_ping))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Identity`, found `u8`
+  |
+  = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+ --> tests/ui/../fixtures/idc_receiver/lib.rs
+  |
+  |         let _ = |x: $ty| { let _: $module::Identity = x; };
+  |                                   -----------------   ^ expected `Identity`, found `u8`
+  |                                   |
+  |                                   expected due to this
+  |
+ ::: tests/ui/outbox_receiver_typecheck.rs:3:1
+  |
+3 | #[spacetimedb::table(accessor = outbound_ping, outbox(receiver::receive_ping))]
+  | ------------------------------------------------------------------------------- in this attribute macro expansion
+  |
+  = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_target` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui/../fixtures/idc_receiver/lib.rs
+    |
+    |         let _ = |x: $ty| { let _: String = x; };
+    |                                   ------   ^ expected `String`, found `u64`
+    |                                   |
+    |                                   expected due to this
+    |
+   ::: tests/ui/outbox_receiver_typecheck.rs:13:1
+    |
+ 13 | #[spacetimedb::table(accessor = wrong_body, outbox(receiver::receive_ping))]
+    | ---------------------------------------------------------------------------- in this attribute macro expansion
+    |
+    = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: try using a conversion method
+    |
+126 |         let _ = |x: $ty| { let _: String = x.to_string(); };
+    |                                             ++++++++++++

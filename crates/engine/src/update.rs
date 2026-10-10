@@ -1052,7 +1052,7 @@ mod test {
                     ColId(1),
                     [ColId(2)],
                     Option::<&str>::None,
-                    "test-signature",
+                    spacetimedb_lib::hash_bytes(b"test-signature"),
                 );
             }
 
@@ -1109,7 +1109,7 @@ mod test {
                 ColId(1),
                 [ColId(2)],
                 on_result,
-                "test-signature",
+                spacetimedb_lib::hash_bytes(b"test-signature"),
             );
 
             builder

@@ -279,10 +279,21 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         schedules,
         lifecycle_validations,
         http_handlers_and_routes,
+        Ok(raw_outboxes),
     )
         .combine_errors()
         .and_then(
-            |(mut tables, types, reducers, procedures, views, schedules, lifecycles, http_handlers_and_routes)| {
+            |(
+                mut tables,
+                types,
+                reducers,
+                procedures,
+                views,
+                schedules,
+                lifecycles,
+                http_handlers_and_routes,
+                raw_outboxes,
+            )| {
                 let (mut reducers, mut procedures, mut views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
@@ -291,7 +302,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
-                attach_outboxes_to_tables(&mut tables, raw_outboxes)?;
+                attach_outboxes_to_tables(&mut tables, &mut reducers, raw_outboxes, &mut validator.core)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
@@ -804,11 +815,11 @@ impl<'a> ModuleValidatorV10<'a> {
             constraints,
             sequences,
             schedule: None, // V10 handles schedules separately
+            outbox: None,   // V10 handles outboxes separately
             table_type,
             table_access,
             is_event,
             accessor_name: identifier(raw_table_name)?,
-            outbox: None,
         })
     }
 
@@ -1143,49 +1154,27 @@ fn attach_lifecycles_to_reducers(
     Ok(())
 }
 
-fn attach_schedules_to_tables(
+fn attach_outboxes_to_tables(
     tables: &mut HashMap<Identifier, TableDef>,
-    schedules: Vec<(ScheduleDef, Identifier)>,
+    reducers: &mut IndexMap<Identifier, ReducerDef>,
+    outboxes: Vec<RawOutboxDefV10>,
+    core: &mut CoreValidator<'_>,
 ) -> Result<()> {
-    for schedule in schedules {
-        let (schedule, table_name) = schedule;
-        let table = tables.values_mut().find(|t| *t.name == *table_name).ok_or_else(|| {
-            ValidationError::MissingScheduleTable {
-                table_name: table_name.as_raw().clone(),
-                schedule_name: schedule.name.clone(),
-            }
-        })?;
-
-        // Enforce invariant: only one schedule per table
-        if table.schedule.is_some() {
-            return Err(ValidationError::DuplicateSchedule {
-                table: table.name.clone(),
-            }
-            .into());
-        }
-
-        if table.is_event {
-            return Err(ValidationError::ScheduledEventTable {
-                table: table.name.clone(),
-            }
-            .into());
-        }
-
-        table.schedule = Some(schedule);
-    }
-
-    Ok(())
-}
-
-fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxes: Vec<RawOutboxDefV10>) -> Result<()> {
     for outbox in outboxes {
-        let table_ident = identifier(outbox.table_name.clone())?;
-        let raw_table_name = outbox.table_name.clone();
+        let RawOutboxDefV10 {
+            table_source_name,
+            remote_reducer,
+            target_column,
+            arg_columns,
+            on_result_reducer,
+            signature_hash,
+        } = outbox;
+
         let table = tables
             .values_mut()
-            .find(|table| table.accessor_name == table_ident)
-            .ok_or_else(|| ValidationError::TableNotFound {
-                table: raw_table_name.clone(),
+            .find(|table| table.accessor_name.as_raw() == &table_source_name)
+            .ok_or_else(|| ValidationError::MissingOutboxTable {
+                table_name: table_source_name.clone(),
             })?;
 
         if table.outbox.is_some() {
@@ -1221,7 +1210,7 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             .into());
         }
 
-        let Some(target_col) = table.columns.get(outbox.target_column.idx()) else {
+        let Some(target_col) = table.columns.get(target_column.idx()) else {
             return Err(ValidationError::OutboxTargetColumnMissing {
                 table: table.name.clone(),
             }
@@ -1234,7 +1223,7 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             .into());
         }
 
-        for arg_column in &outbox.arg_columns {
+        for arg_column in &arg_columns {
             if table.columns.get(arg_column.idx()).is_none() {
                 return Err(ValidationError::OutboxArgumentColumnNotFound {
                     table: table.name.clone(),
@@ -1244,23 +1233,67 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             }
         }
 
+        let on_result_reducer = on_result_reducer
+            .map(|name| {
+                let raw_name = name.clone();
+                let name = core.resolve_function_ident(name)?;
+                if let Some(reducer) = reducers.get_mut(&name) {
+                    reducer.visibility = crate::def::FunctionVisibility::Private;
+                    Ok::<_, ValidationErrors>(name)
+                } else {
+                    Err(ValidationError::MissingOutboxOnResult {
+                        table: table.name.clone(),
+                        reducer_name: raw_name,
+                    }
+                    .into())
+                }
+            })
+            .transpose()?;
+
         table.outbox = Some(OutboxDef {
             remote_reducer: ReducerName::new(
-                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(outbox.remote_reducer.into_inner()))
+                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(remote_reducer.into_inner()))
                     .map_err(|error| ValidationError::IdentifierError { error })?,
             ),
-            target_column: outbox.target_column,
-            arg_columns: outbox.arg_columns,
-            on_result_reducer: outbox
-                .on_result_reducer
-                .map(|name| {
-                    NamespacedIdentifier::new(&RawNamespacedIdentifier::new(name.into_inner()))
-                        .map(ReducerName::new)
-                        .map_err(|error| ErrorStream::from(ValidationError::IdentifierError { error }))
-                })
-                .transpose()?,
-            signature_hash: outbox.signature_hash,
+            target_column,
+            arg_columns,
+            on_result_reducer: on_result_reducer.map(ReducerName::new),
+            signature_hash,
         });
+    }
+
+    Ok(())
+}
+
+fn attach_schedules_to_tables(
+    tables: &mut HashMap<Identifier, TableDef>,
+    schedules: Vec<(ScheduleDef, Identifier)>,
+) -> Result<()> {
+    for schedule in schedules {
+        let (schedule, table_name) = schedule;
+        let table = tables.values_mut().find(|t| *t.name == *table_name).ok_or_else(|| {
+            ValidationError::MissingScheduleTable {
+                table_name: table_name.as_raw().clone(),
+                schedule_name: schedule.name.clone(),
+            }
+        })?;
+
+        // Enforce invariant: only one schedule per table
+        if table.schedule.is_some() {
+            return Err(ValidationError::DuplicateSchedule {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        if table.is_event {
+            return Err(ValidationError::ScheduledEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        table.schedule = Some(schedule);
     }
 
     Ok(())
@@ -1398,6 +1431,7 @@ mod tests {
     use crate::error::*;
     use crate::identifier::Identifier;
     use crate::identifier::NamespacePath;
+    use crate::reducer_name::ReducerName;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
@@ -1408,6 +1442,7 @@ mod tests {
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
+    use spacetimedb_lib::hash_bytes;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
@@ -1728,13 +1763,14 @@ mod tests {
             .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
             .finish();
         builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        let signature_hash = hash_bytes(b"test-signature");
         builder.add_outbox(
             "outbound_pings",
             "receive_ping",
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            signature_hash,
         );
 
         let module: ModuleDef = builder.finish().try_into().expect("valid outbox module");
@@ -1743,7 +1779,7 @@ mod tests {
         assert_eq!(&outbox.remote_reducer[..], "receive_ping");
         assert_eq!(outbox.target_column, ColId(1));
         assert_eq!(outbox.arg_columns, vec![ColId(2)]);
-        assert_eq!(outbox.signature_hash, "test-signature");
+        assert_eq!(outbox.signature_hash, signature_hash);
 
         let schema = TableSchema::from_module_def(&module, table, (), TableId::SENTINEL);
         let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
@@ -1775,7 +1811,7 @@ mod tests {
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            spacetimedb_lib::hash_bytes(b"test-signature"),
         );
 
         let result: Result<ModuleDef> = builder.finish().try_into();
@@ -2531,6 +2567,84 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
             lifecycle == &Lifecycle::Init
         });
+    }
+
+    fn outbox_with_on_result() -> RawModuleDefV10Builder {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "PingOutbox",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::U256),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "ping_outbox_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("on_ping_result", ProductType::unit());
+        builder.add_outbox(
+            "PingOutbox",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Some("on_ping_result"),
+            hash_bytes(b"receive_ping"),
+        );
+        builder
+    }
+
+    #[test]
+    fn outbox_on_result_reducer_is_attached() {
+        let def: ModuleDef = outbox_with_on_result().finish().try_into().unwrap();
+        let table = &def.tables[&expect_identifier("ping_outbox")];
+        let outbox = table.outbox.as_ref().unwrap();
+
+        assert_eq!(outbox.remote_reducer, ReducerName::for_test("receive_ping"));
+        assert_eq!(outbox.target_column, ColId(1));
+        assert_eq!(outbox.on_result_reducer, Some(ReducerName::for_test("on_ping_result")));
+        assert_eq!(
+            def.reducers[&expect_identifier("on_ping_result")].visibility,
+            FunctionVisibility::Private
+        );
+    }
+
+    #[test]
+    fn outbox_on_result_uses_canonical_submodule_namespace_and_round_trips() {
+        let mut child = outbox_with_on_result();
+        let mut names = ExplicitNames::default();
+        names.insert_table("PingOutbox", "WireOutbox");
+        names.insert_function("on_ping_result", "ResultDone");
+        child.add_explicit_names(names);
+
+        let mut middle = RawModuleDefV10Builder::new();
+        middle.add_submodule("innerMount", child.finish());
+        let mut names = ExplicitNames::default();
+        names.insert_namespace("innerMount", "InnerWire");
+        middle.add_explicit_names(names);
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("outerLib", middle.finish());
+        let mut def: ModuleDef = root.finish().try_into().unwrap();
+
+        for _ in 0..3 {
+            let child = &def.submodules()["outer_lib"].submodules()["InnerWire"];
+            let table = &child.tables[&expect_identifier("WireOutbox")];
+            let outbox = table.outbox.as_ref().unwrap();
+            let callback = outbox.on_result_reducer.as_ref().unwrap();
+            assert_eq!(&**callback, "outer_lib.InnerWire.ResultDone");
+            assert_eq!(
+                def.reducer_by_name(callback).unwrap().1.visibility,
+                FunctionVisibility::Private
+            );
+            assert_eq!(outbox.remote_reducer, ReducerName::for_test("receive_ping"));
+            assert_eq!(&*table.accessor_name, "PingOutbox");
+
+            let raw: RawModuleDefV10 = def.into();
+            def = raw.try_into().expect("mounted outbox callback should round-trip");
+        }
     }
 
     #[test]

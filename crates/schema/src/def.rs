@@ -46,7 +46,7 @@ use spacetimedb_lib::db::raw_def::v9::{
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::environment::EnvironmentSchema;
-use spacetimedb_lib::{ProductType, RawModuleDef};
+use spacetimedb_lib::{Hash as SpacetimeHash, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
@@ -323,6 +323,13 @@ impl ModuleDef {
             }
             if let Some(schedule) = &mut table.schedule {
                 schedule.namespace = path.clone();
+            }
+            if let Some(callback) = table
+                .outbox
+                .as_mut()
+                .and_then(|outbox| outbox.on_result_reducer.as_mut())
+            {
+                *callback = ReducerName::new(path.join(callback.local().clone()));
             }
         }
         for view in self.views.values_mut() {
@@ -1158,11 +1165,13 @@ impl From<ModuleDef> for RawModuleDefV10 {
                 }
                 if let Some(outbox) = td.outbox.clone() {
                     outboxes.push(RawOutboxDefV10 {
-                        table_name: td.accessor_name.clone().into(),
+                        table_source_name: td.accessor_name.clone().into(),
                         remote_reducer: outbox.remote_reducer.into(),
                         target_column: outbox.target_column,
                         arg_columns: outbox.arg_columns,
-                        on_result_reducer: outbox.on_result_reducer.map(Into::into),
+                        on_result_reducer: outbox
+                            .on_result_reducer
+                            .map(|name| reducers[name.local()].accessor_name.clone().into()),
                         signature_hash: outbox.signature_hash,
                     });
                 }
@@ -1262,7 +1271,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
         if !schedules.is_empty() {
             sections.push(RawModuleDefV10Section::Schedules(schedules));
         }
-
         if !outboxes.is_empty() {
             sections.push(RawModuleDefV10Section::Outboxes(outboxes));
         }
@@ -1406,7 +1414,7 @@ pub struct OutboxDef {
     /// Local reducer to invoke with the remote result before acknowledging this stream.
     pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: SpacetimeHash,
 }
 
 impl TableDef {
@@ -1431,6 +1439,7 @@ impl From<TableDef> for RawTableDefV9 {
             constraints,
             sequences,
             schedule,
+            outbox: _,
             table_type,
             table_access,
             ..
@@ -1515,11 +1524,12 @@ impl From<ViewDef> for TableDef {
             constraints: <_>::default(),
             sequences: <_>::default(),
             schedule: None,
+            // V9 view definitions have no IDC outbox metadata.
+            outbox: None,
             table_type: TableType::User,
             table_access: if is_public { Public } else { Private },
             is_event: false,
             accessor_name,
-            outbox: None,
         }
     }
 }

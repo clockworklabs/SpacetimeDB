@@ -438,7 +438,7 @@ fn load_pending_into_targets(db: &RelationalDB, db_queues: &mut HashMap<Delivery
             target_identity: stream.target_identity.0,
             ack_prefix: stream.ack_prefix,
             target_reducer: outbox.remote_reducer.to_string(),
-            signature_hash: Some(outbox.signature_hash.clone()),
+            signature_hash: Some(outbox.signature_hash.to_string()),
             args_bsatn: args_bsatn.into(),
             request_row,
             on_result_reducer: outbox.on_result_reducer.as_ref().map(ToString::to_string),
