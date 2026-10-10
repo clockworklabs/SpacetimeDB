@@ -61,6 +61,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
+pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
+
+pub(crate) fn noop_reducer_success_action() -> ReducerSuccessAction {
+    Box::new(|_, _| Ok(()))
+}
+
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
     type InstancePre: WasmInstancePre<Instance = Self::Instance>;
@@ -409,7 +415,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
-        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone(), mcc.idc_sender.clone());
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
@@ -465,7 +471,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -514,6 +524,25 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
         let (res, trapped) = self.call_reducer_with_tx(None, params);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) fn call_reducer_with_tx_offset(
+        &mut self,
+        params: CallReducerParams,
+    ) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset_inner(None, params);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) fn call_reducer_with_success_action(
+        &mut self,
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
+    ) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset_inner_with_success_action(None, params, on_success);
         self.trapped = trapped;
         res
     }
@@ -570,7 +599,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     ) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx_offset_inner(tx, params);
         let (res, trapped) = init_database(replica_ctx, module_def, program, environment, call_reducer);
         self.trapped = trapped;
         res
@@ -614,19 +643,33 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, noop_reducer_success_action())
         });
         (res.result, trapped)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx_offset(
+    fn call_reducer_with_tx_offset_inner(
         &mut self,
         tx: Option<MutTxId>,
         params: CallReducerParams,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, noop_reducer_success_action())
+        })
+    }
+
+    fn call_reducer_with_tx_offset_inner_with_success_action(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common
+                .call_reducer_with_tx(tx, params, &mut self.instance, on_success)
         })
     }
 
@@ -1065,6 +1108,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
+        on_success: ReducerSuccessAction,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
@@ -1186,7 +1230,7 @@ impl InstanceCommon {
         let execution_budget_used = result.stats.execution_budget_used();
         let total_duration = result.stats.total_duration();
 
-        let event = ModuleEvent {
+        let mut event = ModuleEvent {
             timestamp,
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
@@ -1203,8 +1247,16 @@ impl InstanceCommon {
             request_id,
             timer,
         };
+        let mut tx = out.tx;
+        if matches!(event.status, EventStatus::Committed(_)) {
+            if let Err(err) = on_success(&mut tx, &event.reducer_return_value) {
+                event.status = EventStatus::FailedInternal(err.to_string());
+                event.reducer_return_value = None;
+            }
+        }
+
         let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
-            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
+            commit_and_broadcast_event(&info.subscriptions, client, event, tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),

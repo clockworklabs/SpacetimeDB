@@ -13,6 +13,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
+use crate::host::wasm_common::module_host_actor::ReducerSuccessAction;
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -49,6 +50,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StInboundMsgRow};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_engine::sql::rls::RowLevelExpr;
@@ -402,6 +404,14 @@ pub enum ModuleWithInstance {
 enum ModuleHostInner {
     Wasm(Box<WasmtimeModuleHost>),
     Js(Box<V8ModuleHost>),
+}
+
+#[derive(Debug)]
+enum IdcDeliveryDecision {
+    Ready,
+    Replayed(StInboundMsgRow),
+    AlreadyAcked,
+    OutOfOrder { expected: u64 },
 }
 
 struct CallTimerGuard {
@@ -1637,6 +1647,28 @@ impl From<UpdateEnvironmentResult> for UpdateDatabaseResult {
 #[error("no such module")]
 pub struct NoSuchModule;
 
+pub enum IdcReducerCallOutcome {
+    Applied(ReducerCallResultWithTxOffset),
+    Replayed(IdcStoredReducerOutcome),
+    AlreadyAcked,
+}
+
+#[derive(Debug)]
+pub struct IdcStoredReducerOutcome {
+    pub result_status: StInboundMsgResultStatus,
+    pub result_payload: Bytes,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum IdcReducerCallError {
+    #[error(transparent)]
+    Reducer(#[from] ReducerCallError),
+    #[error("IDC delivery is out of order: expected seq {expected}, got {actual}")]
+    OutOfOrder { expected: u64, actual: u64 },
+    #[error(transparent)]
+    Datastore(#[from] DBError),
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum ReducerCallError {
     #[error(transparent)]
@@ -2430,6 +2462,134 @@ impl ModuleHost {
         .map_err(Into::into)
     }
 
+    async fn call_reducer_with_params_tx_offset(
+        &self,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        call_instance!(
+            self,
+            reducer_name,
+            params,
+            |p, inst| inst.call_reducer_with_tx_offset(p),
+            |p, inst| inst.call_reducer_with_tx_offset(p).await,
+        )
+        .map_err(Into::into)
+    }
+
+    async fn call_idc_reducer_with_params(
+        &self,
+        sender_identity: Identity,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<IdcReducerCallOutcome, IdcReducerCallError> {
+        let stdb = self.relational_db();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, decision) = stdb
+            .with_auto_rollback(tx, |tx| {
+                tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)?;
+                let applied_prefix = tx.inbound_idc_applied_prefix(sender_identity, stream_id)?;
+                let decision = if seq <= applied_prefix {
+                    match tx.inbound_idc_outcome(sender_identity, stream_id, seq)? {
+                        Some(row) => IdcDeliveryDecision::Replayed(row),
+                        None => IdcDeliveryDecision::AlreadyAcked,
+                    }
+                } else if seq != applied_prefix + 1 {
+                    IdcDeliveryDecision::OutOfOrder {
+                        expected: applied_prefix + 1,
+                    }
+                } else {
+                    IdcDeliveryDecision::Ready
+                };
+                anyhow::Ok(decision)
+            })
+            .map_err(DBError::from)?;
+        if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx).map_err(DBError::from)? {
+            stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+        }
+
+        match decision {
+            IdcDeliveryDecision::Ready => {
+                let on_success: ReducerSuccessAction = Box::new(move |tx, reducer_return_value| {
+                    tx.record_inbound_idc_outcome(
+                        sender_identity,
+                        stream_id,
+                        seq,
+                        StInboundMsgResultStatus::Ok,
+                        reducer_return_value.clone().unwrap_or_default(),
+                    )?;
+                    Ok(())
+                });
+                self.guard_closed().map_err(ReducerCallError::from)?;
+                let timer_guard = self.start_call_timer(reducer_name);
+                let result = match &*self.inner {
+                    ModuleHostInner::Wasm(host) => {
+                        let executor = host.executor.clone();
+                        executor
+                            .run_sync_job(move |state| {
+                                state.with_instance(move |inst| {
+                                    drop(timer_guard);
+                                    inst.call_reducer_with_success_action(params, on_success)
+                                })
+                            })
+                            .await
+                    }
+                    ModuleHostInner::Js(host) => {
+                        drop(timer_guard);
+                        host.main_instance
+                            .with_instance(|inst| async move {
+                                inst.call_reducer_with_success_action(params, on_success).await
+                            })
+                            .await
+                    }
+                };
+
+                if result.result.is_err() {
+                    let mut tx = self
+                        .relational_db()
+                        .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+                    let payload = match &result.result.outcome {
+                        ReducerOutcome::Failed(err) => Bytes::copy_from_slice(err.as_bytes()),
+                        ReducerOutcome::BudgetExceeded => Bytes::from_static(b"Module energy budget exhausted."),
+                        ReducerOutcome::Committed => Bytes::new(),
+                    };
+                    tx.record_inbound_idc_outcome(
+                        sender_identity,
+                        stream_id,
+                        seq,
+                        StInboundMsgResultStatus::Err,
+                        payload,
+                    )
+                    .map_err(DBError::from)?;
+                    match self.relational_db().commit_tx(tx).map_err(DBError::from)? {
+                        Some((tx_offset, tx_data, tx_metrics, reducer)) => {
+                            self.relational_db()
+                                .report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                            return Ok(IdcReducerCallOutcome::Applied(ReducerCallResultWithTxOffset {
+                                result: result.result,
+                                tx_offset: from_tx_offset(tx_offset),
+                            }));
+                        }
+                        None => return Ok(IdcReducerCallOutcome::Applied(result)),
+                    }
+                }
+
+                Ok(IdcReducerCallOutcome::Applied(result))
+            }
+            IdcDeliveryDecision::Replayed(row) => Ok(IdcReducerCallOutcome::Replayed(IdcStoredReducerOutcome {
+                result_status: row.result_status,
+                result_payload: row.result_payload,
+            })),
+            IdcDeliveryDecision::AlreadyAcked => Ok(IdcReducerCallOutcome::AlreadyAcked),
+            IdcDeliveryDecision::OutOfOrder { expected } => {
+                Err(IdcReducerCallError::OutOfOrder { expected, actual: seq })
+            }
+        }
+    }
+
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
         let log_message = match err {
             ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
@@ -2499,6 +2659,103 @@ impl ModuleHost {
             async |call| self.call_reducer_with_params(&call.name, call.params).await,
         )
         .await
+    }
+
+    pub async fn call_reducer_with_tx_offset(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        self.with_reducer_call(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+            async |call| self.call_reducer_with_params_tx_offset(&call.name, call.params).await,
+        )
+        .await
+    }
+
+    pub(in crate::host) async fn call_reducer_with_success_action(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        on_success: ReducerSuccessAction,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let (reducer_def, params) = self.reducer_call_params(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+        )?;
+
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(&reducer_def.name);
+        let result = match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                executor
+                    .run_sync_job(move |state| {
+                        state.with_instance(move |inst| {
+                            drop(timer_guard);
+                            inst.call_reducer_with_success_action(params, on_success).result
+                        })
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                drop(timer_guard);
+                host.main_instance
+                    .with_instance(|inst| async move {
+                        inst.call_reducer_with_success_action(params, on_success).await.result
+                    })
+                    .await
+            }
+        };
+
+        Ok(result)
+    }
+
+    pub async fn call_idc_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        reducer_name: &str,
+        args: FunctionArgs,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+    ) -> Result<IdcReducerCallOutcome, IdcReducerCallError> {
+        let (reducer_def, params) = self
+            .reducer_call_params(
+                caller_identity,
+                caller_connection_id,
+                None,
+                None,
+                None,
+                reducer_name,
+                args,
+            )
+            .map_err(IdcReducerCallError::Reducer)?;
+
+        self.call_idc_reducer_with_params(caller_identity, stream_id, seq, ack_prefix, &reducer_def.name, params)
+            .await
     }
 
     pub async fn enqueue_reducer(

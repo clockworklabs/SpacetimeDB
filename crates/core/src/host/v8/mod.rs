@@ -80,12 +80,15 @@ use crate::host::module_host::{
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
-    HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
-    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    noop_reducer_success_action, AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult,
+    ExecutionStats, ExecutionTimings, HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp,
+    ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ReducerSuccessAction, ViewExecuteResult,
+    ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{
+    InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, ReducerCallResultWithTxOffset, Scheduler,
+};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -500,6 +503,22 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
+    pub(in crate::host) async fn call_reducer_with_tx_offset(
+        &self,
+        params: CallReducerParams,
+    ) -> ReducerCallResultWithTxOffset {
+        self.request(CallReducerWithTxOffsetRequest { params }).await
+    }
+
+    pub(in crate::host) async fn call_reducer_with_success_action(
+        &self,
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
+    ) -> ReducerCallResultWithTxOffset {
+        self.request(CallReducerWithSuccessActionRequest { params, on_success })
+            .await
+    }
+
     pub(in crate::host) async fn call_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
@@ -650,6 +669,19 @@ js_main_request! {
     CallReducerRequest {
         params: CallReducerParams,
     } => "call_reducer", ReducerCallResult, CallReducer
+}
+
+js_main_request! {
+    CallReducerWithTxOffsetRequest {
+        params: CallReducerParams,
+    } => "call_reducer", ReducerCallResultWithTxOffset, CallReducerWithTxOffset
+}
+
+js_main_request! {
+    CallReducerWithSuccessActionRequest {
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
+    } => "call_reducer", ReducerCallResultWithTxOffset, CallReducerWithSuccessAction
 }
 
 js_main_request! {
@@ -839,6 +871,17 @@ enum JsMainWorkerRequest {
     CallReducer {
         reply_tx: JsReplyTx<ReducerCallResult>,
         params: CallReducerParams,
+    },
+    /// See [`JsMainInstance::call_reducer_with_tx_offset`].
+    CallReducerWithTxOffset {
+        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
+        params: CallReducerParams,
+    },
+    /// See [`JsMainInstance::call_reducer_with_success_action`].
+    CallReducerWithSuccessAction {
+        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
+        params: CallReducerParams,
+        on_success: ReducerSuccessAction,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
     CallReducerDetached {
@@ -1442,14 +1485,32 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
-                let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let mut call_reducer =
+                    |tx, params| instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
                 let (res, trapped) = call_reducer(None, params);
                 (res.result, trapped)
             })
         }
+        JsMainWorkerRequest::CallReducerWithTxOffset { reply_tx, params } => {
+            handle_worker_request("call_reducer", reply_tx, || {
+                let mut call_reducer =
+                    |tx, params| instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
+                call_reducer(None, params)
+            })
+        }
+        JsMainWorkerRequest::CallReducerWithSuccessAction {
+            reply_tx,
+            params,
+            on_success,
+        } => handle_worker_request("call_reducer", reply_tx, || {
+            let mut call_reducer =
+                |tx, params, on_success| instance_common.call_reducer_with_tx(tx, params, inst, on_success);
+            call_reducer(None, params, on_success)
+        }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
-                let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let mut call_reducer =
+                    |tx, params| instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
                 let (_res, trapped) = call_reducer(None, params);
                 trapped
             })
@@ -1497,7 +1558,8 @@ fn handle_main_worker_request(
             caller_connection_id,
         } => handle_worker_request("call_identity_connected", reply_tx, || {
             let call_reducer = |tx, params| {
-                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                let (res, trapped) =
+                    instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
                 (res.result, trapped)
             };
             let mut trapped = false;
@@ -1510,7 +1572,8 @@ fn handle_main_worker_request(
             caller_connection_id,
         } => handle_worker_request("call_identity_disconnected", reply_tx, || {
             let call_reducer = |tx, params| {
-                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                let (res, trapped) =
+                    instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
                 (res.result, trapped)
             };
             let mut trapped = false;
@@ -1526,7 +1589,8 @@ fn handle_main_worker_request(
         JsMainWorkerRequest::DisconnectClient { reply_tx, client_id } => {
             handle_worker_request("disconnect_client", reply_tx, || {
                 let call_reducer = |tx, params| {
-                    let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                    let (res, trapped) =
+                        instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
                     (res.result, trapped)
                 };
                 let mut trapped = false;
@@ -1539,7 +1603,8 @@ fn handle_main_worker_request(
             program,
             environment,
         } => handle_worker_request("init_database", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer =
+                |tx, params| instance_common.call_reducer_with_tx(tx, params, inst, noop_reducer_success_action());
             let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
                 init_database(replica_ctx, &info.module_def, program, environment, call_reducer);
             (res, trapped)
@@ -1672,7 +1737,11 @@ where
                     Either::Left(module) => (module.replica_ctx(), module.scheduler()),
                     Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let idc_sender = match &generation_module_or_mcc {
+                    Either::Left(module) => module.idc_sender(),
+                    Either::Right(mcc) => mcc.idc_sender.clone(),
+                };
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {

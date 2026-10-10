@@ -8172,6 +8172,7 @@ dependencies = [
  "spacetimedb-datastore",
  "spacetimedb-lib",
  "spacetimedb-paths",
+ "spacetimedb-primitives",
  "spacetimedb-schema",
  "thiserror 1.0.69",
  "tokio",

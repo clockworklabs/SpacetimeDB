@@ -1,3 +1,4 @@
+use super::idc_actor::IdcActorSender;
 use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
@@ -41,6 +42,7 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
+    pub idc_sender: IdcActorSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -228,10 +230,11 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcActorSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
+            idc_sender,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
             start_instant: Instant::now(),
@@ -478,6 +481,7 @@ impl InstanceEnv {
             }
             if insert_flags.is_outbox_table {
                 tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+                let _ = self.idc_sender.send(());
             }
         }
 
@@ -1515,8 +1519,12 @@ mod test {
     /// An `InstanceEnv` used for testing the database syscalls.
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
+        let (_, idc_sender) = crate::host::idc_actor::IdcActor::open();
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
-        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+        Ok((
+            InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
+            runtime,
+        ))
     }
 
     #[test]
@@ -1536,8 +1544,9 @@ mod test {
     fn module_http_config_disables_requests() -> Result<()> {
         let db = relational_db()?;
         let (scheduler, _) = Scheduler::open(db.clone());
+        let (_, idc_sender) = crate::host::idc_actor::IdcActor::open();
         let (replica_context, _runtime) = replica_ctx(db, crate::config::ModuleHttpConfig { enabled: false })?;
-        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler);
+        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender);
         let request = st_http::Request {
             method: st_http::Method::Get,
             headers: std::iter::empty().collect(),
