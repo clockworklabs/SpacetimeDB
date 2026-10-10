@@ -24,6 +24,7 @@ type IntArray =
  * const floatOneToTen = ctx.random() * 10;
  * const randomBytes = ctx.random.fill(new Uint8Array(16));
  * const intOneToTen = ctx.random.integerInRange(0, 10);
+ * const shuffledCards = ctx.random.shuffle(cards);
  * ```
  */
 export interface Random {
@@ -39,6 +40,12 @@ export interface Random {
    * in a uniform distribution, mutating and returning it.
    */
   fill<T extends IntArray>(array: T): T;
+
+  /**
+   * Shuffles an array in place using an unbiased Fisher-Yates shuffle, then
+   * returns the same array.
+   */
+  shuffle<T>(array: T[]): T[];
 
   /**
    * Returns a random unsigned 32-bit integer in a uniform distribution in the
@@ -98,6 +105,21 @@ export function makeRandomFromSeed(
       for (let i = 0; i < array.length; i++) {
         array[i] = unsafeUniformIntDistribution(0, upper, rng);
       }
+    }
+    return array;
+  };
+
+  random.shuffle = array => {
+    for (
+      let currentIndex = array.length - 1;
+      currentIndex > 0;
+      currentIndex--
+    ) {
+      const swapIndex = random.integerInRange(0, currentIndex);
+      [array[currentIndex], array[swapIndex]] = [
+        array[swapIndex],
+        array[currentIndex],
+      ];
     }
     return array;
   };
