@@ -86,6 +86,7 @@ members = [
   "tools/ci/commands/portable-datastore",
   "tools/ci/commands/publish-checks",
   "tools/ci/commands/run-spacetime",
+  "tools/ci/commands/rollback-file",
   "tools/ci/commands/typescript-test",
   "tools/ci/commands/version-upgrade-check",
   "tools/ci/commands/docs",

@@ -48,6 +48,7 @@ RUN rustup target add wasm32-unknown-unknown
 
 # Copy over SpacetimeDB
 COPY --from=builder --chmod=755 /usr/src/app/target/release/spacetimedb-standalone /usr/src/app/target/release/spacetimedb-cli /opt/spacetime/
+COPY earliest-allowed-rollback-point /usr/share/spacetimedb/rollback-points/public
 RUN ln -s /opt/spacetime/spacetimedb-cli /usr/local/bin/spacetime
 
 # Create and switch to a non-root user
@@ -62,4 +63,3 @@ EXPOSE 3000
 
 # Define the entrypoint
 ENTRYPOINT ["spacetime"]
-
