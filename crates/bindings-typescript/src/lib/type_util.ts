@@ -3,20 +3,28 @@ import type { Identity } from './identity';
 import type { ScheduleAt } from './schedule_at';
 import type { TimeDuration } from './time_duration';
 import type { Timestamp } from './timestamp';
+import type { Uuid } from './uuid';
 
 type DoNotPrettify =
   | Identity
   | ConnectionId
   | Timestamp
   | TimeDuration
-  | ScheduleAt;
+  | ScheduleAt
+  | Uuid;
 
 /**
  * Utility to make TS show cleaner types by flattening intersections.
+ *
+ * Only object types are flattened. A non-object has no intersection to
+ * flatten, and mapping one is not always identity: `string & Brand` becomes a
+ * structural record of `String`'s members that no longer satisfies `string`.
  */
 export type Prettify<T> = T extends DoNotPrettify
   ? T
-  : { [K in keyof T]: T[K] } & {};
+  : T extends string | number | boolean | bigint | symbol | null | undefined
+    ? T
+    : { [K in keyof T]: T[K] } & {};
 
 /**
  * Helper function to sets a field in an object
