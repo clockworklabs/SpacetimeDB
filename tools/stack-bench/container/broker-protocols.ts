@@ -4,7 +4,7 @@ import { createParser } from 'eventsource-parser';
 import { ANTHROPIC_UPSTREAMS, firstUnpricedReason } from './credential-broker-accounting.js';
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
-import { ANTIGRAVITY_ACCOUNT_CONTROL_PATHS, ANTIGRAVITY_ACCOUNT_HOST, ANTIGRAVITY_ACCOUNT_MODELS,
+import { ANTIGRAVITY_ACCOUNT_CONTROL_PATHS, ANTIGRAVITY_ACCOUNT_HOST, ANTIGRAVITY_ACCOUNT_LOOKUP, ANTIGRAVITY_ACCOUNT_MODELS,
   ANTIGRAVITY_ACCOUNT_TITLE_MODEL, ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS }
   from '../src/agents/antigravity-protocol.js';
 
@@ -193,6 +193,8 @@ interface BrokerProtocol {
   readPaths?: Set<string>;
   // POST paths forwarded the same way, for a service whose account reads are POSTs.
   controlPaths?: Set<string>;
+  // An account check the CLI sends to another host through its HTTPS proxy.
+  accountLookup?: { hostname: string; path: string };
   upstreamPath(path: string): string;
   billable(path: string): boolean;
   headers(request: IncomingMessage): OutgoingHttpHeaders;
@@ -580,6 +582,7 @@ function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
     hostname: brokerHostname(config),
     allowedPaths: new Set(['/v1internal:streamGenerateContent']),
     controlPaths: new Set(ANTIGRAVITY_ACCOUNT_CONTROL_PATHS),
+    accountLookup: ANTIGRAVITY_ACCOUNT_LOOKUP,
     upstreamPath: path => path,
     billable: () => true,
     headers: request => upstreamHeaders(request, config),

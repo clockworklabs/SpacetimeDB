@@ -56,6 +56,9 @@ export type BrokerConfig = {
   credential: string;
   // A file the controller rewrites with a renewed credential; read before each request.
   credentialPath?: string;
+  // The per-session certificate for a protocol's account lookup host.
+  tlsKeyPath?: string;
+  tlsCertPath?: string;
   sessionToken: string;
   readyPath?: string;
   parentPid?: number;
@@ -148,6 +151,8 @@ const brokerConfigSchema = z.strictObject({
   mode: z.enum(['api-key', 'subscription-token']),
   credential: z.string().min(16),
   credentialPath: z.string().min(1).optional(),
+  tlsKeyPath: z.string().min(1).optional(),
+  tlsCertPath: z.string().min(1).optional(),
   sessionToken: z.string().min(16),
   readyPath: z.string().min(1).optional(),
   parentPid: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),

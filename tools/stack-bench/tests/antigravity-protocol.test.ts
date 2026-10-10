@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ANTIGRAVITY_LAUNCHER, antigravityArguments, parseAntigravityResult } from '../src/agents/antigravity-protocol.js';
+import { ANTIGRAVITY_LAUNCHER, antigravityArguments, antigravityFinishedAnswer, parseAntigravityResult } from '../src/agents/antigravity-protocol.js';
 
 const SESSION = '86eb1dda-1452-4d14-ab41-9afdc260bdd2';
 const stream = (result: Record<string, unknown> | null) => [
@@ -87,6 +87,33 @@ test('a resumed Antigravity conversation that finishes is not failed by the erro
     step_update: { conversation_id: SESSION, step_index: 2, state: 'DONE', step_type: 'error_message' } })}\n`);
   assert.equal(parseAntigravityResult(failedAgain, prior).is_error, true);
   assert.equal(parseAntigravityResult(stream(repeated)).is_error, true, 'a first invocation keeps its error');
+});
+
+// Seen live: the agent started the app as a background command, so the CLI never exited or
+// streamed its DEPLOY_COMPLETE; stopped, it reported "interrupted" with its usage.
+test('an Antigravity session stopped after its finished answer returns that answer', () => {
+  const root = mkdtempSync(join(tmpdir(), 'antigravity-answer-'));
+  try {
+    const logs = join(root, 'brain', SESSION, '.system_generated', 'logs');
+    mkdirSync(logs, { recursive: true });
+    const entry = (fields: Record<string, unknown>) => JSON.stringify({ source: 'MODEL', type: 'PLANNER_RESPONSE',
+      status: 'DONE', ...fields });
+    const write = (...entries: string[]) => writeFileSync(join(logs, 'transcript.jsonl'), `${entries.join('\n')}\n`);
+    write(entry({ content: 'DEPLOY_COMPLETE soon', tool_calls: [{ name: 'run_command' }] }));
+    assert.equal(antigravityFinishedAnswer(root, 'DEPLOY_COMPLETE', 0), null, 'a response with a tool call is not final');
+    write(entry({ tool_calls: [{ name: 'run_command' }] }), entry({ content: 'DEPLOY_COMPLETE' }));
+    assert.equal(antigravityFinishedAnswer(root, 'DEPLOY_COMPLETE', 0), 'DEPLOY_COMPLETE');
+    assert.equal(antigravityFinishedAnswer(root, 'UPGRADE_COMPLETE', 0), null);
+    assert.equal(antigravityFinishedAnswer(root, 'DEPLOY_COMPLETE', Date.now() + 60_000), null, 'an earlier session is not this one');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  const interrupted = { status: 'ERROR', error: 'interrupted', response: '', num_turns: 1, usage: usage(1000, 80, 40, 400) };
+  const ended = `${stream(interrupted)}\n${JSON.stringify({ event: 'session_ended_after_answer', response: 'DEPLOY_COMPLETE' })}`;
+  const result = parseAntigravityResult(ended);
+  assert.equal(result.is_error, false);
+  assert.equal(result.result, 'DEPLOY_COMPLETE');
+  assert.deepEqual(result.usage, { input_tokens: 1000, output_tokens: 80, cache_read_input_tokens: 400,
+    cache_creation_input_tokens: 0 });
+  assert.equal(parseAntigravityResult(stream(interrupted)).is_error, true, 'an interruption alone is an error');
 });
 
 test('Antigravity errors, bad usage and missing results are provider errors', () => {

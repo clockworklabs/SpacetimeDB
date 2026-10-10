@@ -12,7 +12,8 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT } from '../src/runtim
 import { validateAntigravityNativeSession, validateClaudeNativeSession, validateCodexNativeSession, validateGrokNativeSession }
   from '../src/agents/native-session-validation.js';
 import { grokArguments, grokTranscriptDirectory, parseGrokResult } from '../src/agents/grok-protocol.js';
-import { ANTIGRAVITY_LAUNCHER, antigravityArguments, antigravityTranscriptDirectory, parseAntigravityResult }
+import { ANTIGRAVITY_LAUNCHER, antigravityArguments, antigravityFinishedAnswer, antigravityTranscriptDirectory,
+  parseAntigravityResult }
   from '../src/agents/antigravity-protocol.js';
 
 type Invocation = { model: string; effort: string; baseUrl: string; resumeSession: string | null;
@@ -99,11 +100,16 @@ const googleProvider: CodingProvider = {
   executable: 'sh', apiKeyEnvironment: 'GEMINI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.gemini/antigravity-cli`,
   tokenEnvironment: 'GEMINI_API_KEY',
-  environment: (baseUrl, mode) => [mode === 'subscription-token' ? `CLOUD_CODE_URL=${baseUrl}` : `GOOGLE_GEMINI_BASE_URL=${baseUrl}`],
+  environment: (baseUrl, mode) => mode === 'subscription-token' ? [`CLOUD_CODE_URL=${baseUrl}`, `HTTPS_PROXY=${baseUrl}`]
+    : [`GOOGLE_GEMINI_BASE_URL=${baseUrl}`],
   projects: appDir => join(antigravityTranscriptDirectory(appDir), 'state'),
   rates: () => null,
   args: options => ['-c', ANTIGRAVITY_LAUNCHER, 'agy', ...antigravityArguments(options)],
-  run: runCodexProcess,
+  run: options => {
+    const startedAt = Date.now();
+    return runCodexProcess({ ...options,
+      finishedAnswer: () => antigravityFinishedAnswer(options.projects, options.marker, startedAt) });
+  },
   validateContinuation: validateAntigravityNativeSession,
   // The controller keeps the stream as the session's audited transcript, beside the
   // agent-writable native state.

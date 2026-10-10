@@ -4,9 +4,10 @@ import { once } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, createServer } from 'node:http';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders, Server } from 'node:http';
-import { connect } from 'node:net';
+import { connect, createServer as createNetServer } from 'node:net';
 import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
+import { connect as tlsConnect } from 'node:tls';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { zstdCompressSync } from 'node:zlib';
@@ -19,7 +20,7 @@ import { noUnpriced, readCredentialBrokerLedger, reconcileCredentialBrokerReceip
   from '../container/credential-broker-accounting.js';
 import type { BrokerConfig, BrokerLedger, BrokerMode, UnpricedReason }
   from '../container/credential-broker-accounting.js';
-import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
+import { credentialBrokerDiagnostics, lookupCertificate, startCredentialBroker, stopCredentialBroker }
   from '../container/credential-broker-process.js';
 import type { CredentialBrokerHandle } from '../container/credential-broker-process.js';
 import type { BrokerStats } from '../container/credential-broker.js';
@@ -279,6 +280,57 @@ test('Google account requests reach Code Assist with the renewed token and only 
     output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
   assert.throws(() => brokerProtocol({ ...config, model: 'test-model' }), /no Antigravity account model/);
   assert.equal(brokerHostname({ provider: 'google', mode: 'subscription-token' }), 'daily-cloudcode-pa.googleapis.com');
+});
+
+// The CLI checks its account against Google's user info service through its HTTPS proxy.
+test('the broker answers the account check over its own certificate and tunnels every other host', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agy-lookup-'));
+  const seen: IncomingHttpHeaders[] = [];
+  const google = createServer((request, response) => {
+    seen.push(request.headers);
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ id: '1234', email: 'person@example.com', verified_email: true, name: 'A Person', picture: 'p' }));
+  });
+  const echo = createNetServer(socket => socket.pipe(socket));
+  try {
+    const certificate = lookupCertificate(root, 'www.googleapis.com');
+    const googlePort = await listen(google);
+    const echoPort = await new Promise<number>(resolveListen => echo.listen(0, '127.0.0.1',
+      () => resolveListen((echo.address() as { port: number }).port)));
+    const sessionToken = 'session-token-value-1234567890';
+    const { server } = createCredentialBroker({ provider: 'google', mode: 'subscription-token',
+      credential: 'provider-secret-value-1234567890', sessionToken, model: 'gemini-3.1-pro-preview-customtools',
+      maxOutputTokens: 4096, tlsKeyPath: certificate.keyPath, tlsCertPath: certificate.certPath },
+    { requestUpstream: httpRequest, upstream: { protocol: 'http:', hostname: '127.0.0.1', port: googlePort } });
+    const brokerPort = await listen(server);
+    const tunnel = (to: string) => new Promise<Socket>((resolveTunnel, reject) => httpRequest({ hostname: '127.0.0.1',
+      port: brokerPort, method: 'CONNECT', path: to }).on('connect', (_response, socket) => resolveTunnel(socket))
+      .on('error', reject).end());
+    const lookup = async (token: string) => {
+      const secure = tlsConnect({ socket: await tunnel('www.googleapis.com:443'), servername: 'www.googleapis.com',
+        ca: certificate.authority });
+      secure.write(`GET /oauth2/v2/userinfo HTTP/1.1\r\nHost: www.googleapis.com\r\nAuthorization: Bearer ${token}\r\nConnection: close\r\n\r\n`);
+      const chunks: Buffer[] = [];
+      for await (const chunk of secure) chunks.push(chunk as Buffer);
+      return Buffer.concat(chunks).toString('utf8');
+    };
+    const answer = await lookup(sessionToken);
+    assert.match(answer, /^HTTP\/1\.1 200/);
+    assert.deepEqual(JSON.parse(answer.slice(answer.indexOf('\r\n\r\n') + 4)),
+      { id: '1234', email: 'agent@stack-bench.invalid', verified_email: true });
+    assert.equal(seen[0]!.authorization, 'Bearer provider-secret-value-1234567890');
+    assert.match(await lookup('wrong-token'), /^HTTP\/1\.1 404/);
+    assert.equal(seen.length, 1);
+    const other = await tunnel(`127.0.0.1:${echoPort}`);
+    other.write('ping');
+    assert.equal(String((await once(other, 'data'))[0]), 'ping');
+    other.destroy();
+    await close(server);
+  } finally {
+    await close(google);
+    echo.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // Remote and file-backed content remains available; its extra input is unpriced.

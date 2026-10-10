@@ -1,5 +1,7 @@
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { SESSION_ENDED_AFTER_ANSWER } from './codex-protocol.js';
 import type { CodexUsage } from './codex-protocol.js';
 
 export function antigravityTranscriptDirectory(appDir: string): string {
@@ -17,6 +19,8 @@ export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, string>> = {
   'gemini-3.1-pro-preview-customtools': 'gemini-pro-agent',
 };
 export const ANTIGRAVITY_ACCOUNT_TITLE_MODEL = 'gemini-3.5-flash-lite';
+// Before a session the CLI checks its account against Google's user info service itself.
+export const ANTIGRAVITY_ACCOUNT_LOOKUP = { hostname: 'www.googleapis.com', path: '/oauth2/v2/userinfo' };
 // The account reads the CLI makes around its model calls.
 export const ANTIGRAVITY_ACCOUNT_CONTROL_PATHS = ['loadCodeAssist', 'retrieveUserQuotaSummary', 'fetchUserInfo',
   'fetchAdminControls', 'fetchAvailableModels', 'listExperiments'].map(method => `/v1internal:${method}`);
@@ -35,7 +39,9 @@ export const ANTIGRAVITY_AUDIT_TOOLS: Readonly<Record<string, { name: string; pa
 // The CLI reads a prompt from stdin only as a stream-json message, so the launcher wraps
 // the prompt it receives. The sign-in mode and telemetry are settings, rewritten each
 // session. On the account route the broker holds the real sign-in: the CLI gets a
-// stand-in carrying the broker's session token that never expires, so it never renews.
+// stand-in carrying the broker's session token that never expires, so it never renews. Its
+// HTTPS proxy is the broker, which answers its account check; the CLI trusts the broker's
+// certificate authority on top of the system's.
 export const ANTIGRAVITY_LAUNCHER = [
   'set -e',
   'state="$HOME/.gemini/antigravity-cli"',
@@ -44,11 +50,19 @@ export const ANTIGRAVITY_LAUNCHER = [
   `  printf '%s\\n' '{"enableTelemetry":false}' > "$state/settings.json"`,
   `  printf '{"token":{"access_token":"%s","token_type":"Bearer","refresh_token":"stack-bench","expiry":"2099-01-01T00:00:00Z"},"auth_method":"consumer"}\\n' "$GEMINI_API_KEY" > "$state/antigravity-oauth-token"`,
   '  unset GEMINI_API_KEY',
+  '  if [ -n "$BROKER_CA_CERT" ]; then',
+  '    export SSL_CERT_FILE="$(mktemp)"',
+  `    { cat /etc/ssl/certs/ca-certificates.crt; printf '%s\\n' "$BROKER_CA_CERT"; } > "$SSL_CERT_FILE"`,
+  '    unset BROKER_CA_CERT',
+  '  fi',
   'else',
   `  printf '%s\\n' '{"modelProvider":"gemini","enableTelemetry":false}' > "$state/settings.json"`,
   'fi',
+  // The CLI replaces this shell, so a signal for the session reaches the CLI itself.
+  'message="$(mktemp)"',
   'node -e \'let s="";process.stdin.setEncoding("utf8").on("data",d=>s+=d).on("end",()=>'
-    + 'process.stdout.write(JSON.stringify({event:"user",message:{role:"user",content:s}})+"\\n"))\' | exec agy "$@"',
+    + 'process.stdout.write(JSON.stringify({event:"user",message:{role:"user",content:s}})+"\\n"))\' > "$message"',
+  'exec agy "$@" < "$message"',
 ].join('\n');
 
 // Plans name the API model the broker allows. The CLI names some models differently and picks
@@ -68,6 +82,25 @@ export function antigravityArguments({ model, effort, resumeSession }: {
 type RecordValue = Record<string, unknown>;
 const record = (value: unknown): value is RecordValue =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// The CLI does not exit, or stream its answer, while a command it started is still running.
+// Its transcript has the answer: the last entry of a conversation written since `sinceMs`
+// is the model's finished response, with no further tool call, containing the marker.
+export function antigravityFinishedAnswer(stateDirectory: string, marker: string, sinceMs: number): string | null {
+  const brain = join(stateDirectory, 'brain');
+  for (const conversation of readdirSync(brain)) {
+    const transcript = join(brain, conversation, '.system_generated', 'logs', 'transcript.jsonl');
+    let last: unknown;
+    try {
+      if (statSync(transcript).mtimeMs < sinceMs) continue;
+      last = JSON.parse(readFileSync(transcript, 'utf8').trimEnd().split('\n').at(-1) ?? '');
+    } catch { continue; }
+    if (record(last) && last.source === 'MODEL' && last.type === 'PLANNER_RESPONSE' && last.status === 'DONE'
+      && !(Array.isArray(last.tool_calls) && last.tool_calls.length) && typeof last.content === 'string'
+      && last.content.includes(marker)) return last.content;
+  }
+  return null;
+}
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 // The stream ends with one `result` event. Its usage covers the whole conversation, so a
@@ -79,12 +112,14 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   let value: RecordValue | null = null;
   let failedStep = false;
   let finished = false;
+  let endedAfter: string | null = null;
   for (const line of stdout.split(/\r?\n/).filter(line => line.trim())) {
     let event: unknown;
     try { event = JSON.parse(line); } catch { continue; }
     if (!record(event)) continue;
     if (typeof event.conversation_id === 'string') sessionId = event.conversation_id;
     if (event.event === 'result' && record(event.result)) value = event.result;
+    if (event.event === SESSION_ENDED_AFTER_ANSWER && typeof event.response === 'string') endedAfter = event.response;
     if (event.event === 'step_update' && record(event.step_update)) {
       const step = event.step_update;
       if (step.step_type === 'error_message') failedStep = true;
@@ -99,7 +134,9 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   // A resumed conversation reports its last error again even when this invocation ends with
   // the model's finished response; a new failure always adds an error step to the stream.
   const staleError = prior !== null && finished && !failedStep;
-  if (value && result.status !== 'SUCCESS' && !staleError) {
+  // The session was stopped after the model's finished answer; the CLI calls that an interruption.
+  const answered = endedAfter !== null && result.error === 'interrupted';
+  if (value && result.status !== 'SUCCESS' && !staleError && !answered) {
     errors.push(typeof result.error === 'string' && result.error ? result.error
       : `Antigravity ended with status ${JSON.stringify(result.status ?? null)}`);
   }
@@ -116,7 +153,8 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
     else for (const key of keys) usage[key] = total[key] - (prior?.[key] ?? 0);
   }
   return { type: 'result', session_id: sessionId, is_error: errors.length > 0,
-    result: [typeof result.response === 'string' ? result.response : '', ...errors].filter(Boolean).join('\n'),
+    result: [answered ? endedAfter : typeof result.response === 'string' ? result.response : '', ...errors]
+      .filter(Boolean).join('\n'),
     num_turns: count(result.num_turns) ? result.num_turns : 0, usage,
     ...(errors.length ? { terminal_reason: 'provider_error' } : {}) };
 }

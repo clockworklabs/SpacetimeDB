@@ -81,15 +81,39 @@ export function parseCodexResult(stdout: string, prior: CodexUsage | null = null
     ...(errors.length ? { terminal_reason: 'provider_error' } : {}) };
 }
 
-export function runCodexProcess({ command, args, input, env, timeoutMs, terminate }: {
+// A CLI can give its final answer and still not exit, for example while a command it started
+// keeps running. `finishedAnswer` reads that answer from the CLI's own record. Once the same
+// answer has stood for the grace period the session is stopped as any other is, and the
+// answer is appended to its output as one event for the provider's result parser.
+export const SESSION_ENDED_AFTER_ANSWER = 'session_ended_after_answer';
+export function runCodexProcess({ command, args, input, env, timeoutMs, terminate, finishedAnswer,
+  answerGraceMs = 15_000, answerPollMs = 3_000 }: {
   command: string; args: string[]; input: string; env: NodeJS.ProcessEnv; timeoutMs: number;
   terminate: (child: { kill(signal?: NodeJS.Signals): boolean }) => void;
+  finishedAnswer?: () => string | null; answerGraceMs?: number; answerPollMs?: number;
 }): Promise<{ status: number | null; signal: NodeJS.Signals | null; stdout: string;
   stderr: string; error: unknown }> {
   return new Promise(resolveResult => {
+    let answer: string | null = null;
+    let answeredAt = 0;
+    let endedAfterAnswer = false;
+    const watch = finishedAnswer ? setInterval(() => {
+      let current: string | null = null;
+      try { current = finishedAnswer(); } catch { /* the record is not readable yet */ }
+      if (current === null || current !== answer) { answer = current; answeredAt = Date.now(); return; }
+      if (endedAfterAnswer || Date.now() - answeredAt < answerGraceMs) return;
+      endedAfterAnswer = true;
+      terminate(child);
+    }, answerPollMs) : undefined;
     const child = execFile(command, args, { env, encoding: 'utf8', windowsHide: true,
       maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
       clearTimeout(timer);
+      clearInterval(watch);
+      if (endedAfterAnswer && !timedOut) {
+        resolveResult({ status: 0, signal: null, stderr, error: null,
+          stdout: `${stdout.replace(/\n?$/, '\n')}${JSON.stringify({ event: SESSION_ENDED_AFTER_ANSWER, response: answer })}\n` });
+        return;
+      }
       if (error && !timedOut) terminate(child);
       resolveResult({ status: error ? typeof error.code === 'number' ? error.code : 1 : 0,
         signal: error?.signal ?? null, stdout, stderr, error: timedOut

@@ -581,6 +581,11 @@ try {
 if (!credentialBroker) throw new Error('credential broker is unavailable');
 const tokenEnvironment = codingProvider.tokenEnvironment;
 dockerExecEnv[tokenEnvironment] = credentialBroker.sessionToken;
+// Only the authority's certificate leaves the controller; its key is already gone.
+if (credentialBroker.certificateAuthority) {
+  dockerExecEnv.BROKER_CA_CERT = credentialBroker.certificateAuthority;
+  args.push('-e', 'BROKER_CA_CERT');
+}
 args.push('-e', tokenEnvironment, ...codingProvider.environment(credentialBroker.baseUrl, auth.mode).flatMap(value => ['-e', value]),
   containerName, 'sh', '-c', sessionWrapper, CODING_CONTAINER_PROCESS_IDENTITY.sessionLabel,
   processRecord,

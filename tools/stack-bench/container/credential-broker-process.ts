@@ -10,6 +10,7 @@ import type { ContainerAuth } from './container-auth.js';
 import { MAX_BROKER_OUTPUT_TOKENS, readCredentialBrokerLedger, validateBrokerConfig }
   from './credential-broker-accounting.js';
 import type { BrokerLedger, PricingRates } from './credential-broker-accounting.js';
+import { brokerProtocol } from './broker-protocols.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 import { killTree } from '../src/runtime/platform.js';
 import { ATTEMPT_CREATION_LABEL } from '../src/runtime/container-identity.js';
@@ -109,6 +110,8 @@ export interface CredentialBroker extends CredentialBrokerHandle {
   diagnosticSecrets: string[];
   finalDiagnostics: BrokerDiagnostics | null;
   finalLedger: BrokerLedger | null;
+  // The certificate authority a CLI trusts for the broker's account lookup, if the protocol has one.
+  certificateAuthority: string | null;
   // Hands the running broker a renewed credential for its next request.
   replaceCredential: (credential: string) => void;
 }
@@ -151,6 +154,26 @@ function appendDiagnosticStderr(state: BrokerProcessState, chunk: string, secret
   } else state.stderrTail = next;
 }
 
+// A certificate for one host, signed by an authority made for this broker alone. The
+// authority's key is deleted once it has signed, so it can sign nothing else.
+export function lookupCertificate(root: string, hostname: string): { keyPath: string; certPath: string; authority: string } {
+  const path = (name: string) => join(root, name);
+  const openssl = (args: string[]) => {
+    const result = spawnSync('openssl', args, { encoding: 'utf8', windowsHide: true });
+    if (result.status !== 0) fail(`account lookup certificate failed: ${(result.stderr || result.error?.message || '').trim()}`);
+  };
+  const newKey = ['-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes'];
+  try {
+    openssl(['req', '-x509', ...newKey, '-keyout', path('authority-key.pem'), '-out', path('authority.pem'),
+      '-days', '1', '-subj', '/CN=Credential broker']);
+    openssl(['req', ...newKey, '-keyout', path('lookup-key.pem'), '-out', path('lookup.csr'), '-subj', `/CN=${hostname}`]);
+    writeFileSync(path('lookup.ext'), `subjectAltName=DNS:${hostname}\nextendedKeyUsage=serverAuth\n`, { mode: 0o600 });
+    openssl(['x509', '-req', '-in', path('lookup.csr'), '-CA', path('authority.pem'), '-CAkey', path('authority-key.pem'),
+      '-set_serial', '1', '-days', '1', '-extfile', path('lookup.ext'), '-out', path('lookup.pem')]);
+  } finally { for (const name of ['authority-key.pem', 'lookup.csr', 'lookup.ext']) rmSync(path(name), { force: true }); }
+  return { keyPath: path('lookup-key.pem'), certPath: path('lookup.pem'), authority: readFileSync(path('authority.pem'), 'utf8') };
+}
+
 export async function startCredentialBroker(selectedAuth: ContainerAuth, { networkMode, deadlineMs,
   model, providerRoute, maxOutputTokens, maxBudgetUsd = null, pricingRates = null, renewable = false,
   env = process.env, docker }: { networkMode: string; deadlineMs: number; model: string; renewable?: boolean;
@@ -187,13 +210,17 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
     if (docker) writeFileSync(heartbeatPath, '', { mode: 0o600 });
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = docker || networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
-    const config = validateBrokerConfig({ provider: selectedAuth.provider, upstream: selectedAuth.upstream,
+    const settings = { provider: selectedAuth.provider, upstream: selectedAuth.upstream,
       providerRoute, accountId: selectedAuth.accountId,
       mode: selectedAuth.mode, credential, ...(renewable ? { credentialPath } : {}), sessionToken, readyPath,
       ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
       model, maxOutputTokens: maxOutputTokens ?? MAX_BROKER_OUTPUT_TOKENS,
-      ...(maxOutputTokens !== undefined ? { explicitOutputLimit: true } : {}), maxBudgetUsd, pricingRates });
+      ...(maxOutputTokens !== undefined ? { explicitOutputLimit: true } : {}), maxBudgetUsd, pricingRates };
+    const lookup = brokerProtocol(validateBrokerConfig(settings)).accountLookup;
+    const certificate = lookup ? lookupCertificate(root, lookup.hostname) : null;
+    const config = validateBrokerConfig({ ...settings,
+      ...(certificate ? { tlsKeyPath: certificate.keyPath, tlsCertPath: certificate.certPath } : {}) });
     writeFileSync(configPath, `${JSON.stringify(config)}\n`, { flag: 'wx', mode: 0o600 });
     if (docker) {
       const network = `container:${docker.networkContainerId}`;
@@ -248,7 +275,7 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       sessionToken, baseUrl: `http://${host}:${ready.port}`, listenHost,
       endpointKind: docker ? 'container-credential-broker' : 'local-credential-broker', processState,
       ...(container ? { container } : {}),
-      diagnosticSecrets, finalDiagnostics: null, finalLedger: null,
+      diagnosticSecrets, finalDiagnostics: null, finalLedger: null, certificateAuthority: certificate?.authority ?? null,
       replaceCredential: next => {
         diagnosticSecrets.push(next);
         writeFileSync(`${credentialPath}.next`, next, { mode: 0o600 });
@@ -393,7 +420,7 @@ export async function stopCredentialBroker(broker: CredentialBrokerHandle | null
         if (broker.container) brokerDocker(['rm', broker.container.id]);
         // Grading can be interrupted before the caller saves its receipt. Keep the
         // atomically written spend ledger; remove only the broker's credentials.
-        for (const name of ['config.json', 'ready.json', 'credential']) {
+        for (const name of ['config.json', 'ready.json', 'credential', 'lookup-key.pem']) {
           rmSync(join(broker.root, name), { force: true });
         }
       }

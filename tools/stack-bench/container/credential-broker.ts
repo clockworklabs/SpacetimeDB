@@ -3,7 +3,9 @@ import { createServer } from 'node:http';
 import type { ClientRequest, IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import type { RequestOptions } from 'node:https';
+import { connect } from 'node:net';
 import type { Socket } from 'node:net';
+import { createSecureContext, TLSSocket } from 'node:tls';
 import { linkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -142,6 +144,12 @@ export function createCredentialBroker(configInput: unknown, {
     updatedAt: new Date().toISOString(),
   });
   recordLedger();
+  // A renewed sign-in arrives as a new file; the next request uses it.
+  const reloadCredential = (): void => {
+    if (!config.credentialPath) return;
+    try { config.credential = readFileSync(config.credentialPath, 'utf8').trim() || config.credential; }
+    catch { /* keep the last credential */ }
+  };
   const server = createServer((request, response) => {
     // A client can disappear while the broker is still draining an upstream
     // response. Socket errors must not terminate the broker and strand a paid
@@ -168,11 +176,7 @@ export function createCredentialBroker(configInput: unknown, {
       rejectRequest(request, response, 502, 'provider accounting or routing validation failed');
       return;
     }
-    // A renewed sign-in arrives as a new file; the next request uses it.
-    if (config.credentialPath) {
-      try { config.credential = readFileSync(config.credentialPath, 'utf8').trim() || config.credential; }
-      catch { /* keep the last credential */ }
-    }
+    reloadCredential();
     const path = requestPath(request.url);
     const unbilled = path !== null && (request.method === 'GET' ? protocol.readPaths
       : request.method === 'POST' ? protocol.controlPaths : undefined)?.has(path);
@@ -387,6 +391,55 @@ export function createCredentialBroker(configInput: unknown, {
       upstreamRequest.end(forwardedBody);
     });
   });
+  // The CLI sends its account check to another host through its HTTPS proxy, which is this
+  // broker. The broker terminates TLS for that host alone, with a per-session certificate the
+  // CLI trusts, and answers the check with the account's id and nothing that names the person.
+  // Every other host is tunnelled unchanged: the broker shares the coding container's network.
+  const lookup = protocol.accountLookup;
+  if (lookup && config.tlsKeyPath && config.tlsCertPath) {
+    const secureContext = createSecureContext({ key: readFileSync(config.tlsKeyPath), cert: readFileSync(config.tlsCertPath) });
+    const lookupServer = createServer((request, response) => {
+      response.on('error', () => {});
+      if (request.method !== 'GET' || requestPath(request.url) !== lookup.path
+        || !clientAuthorized(request, config.sessionToken)) {
+        rejectRequest(request, response, 404, 'not found');
+        return;
+      }
+      reloadCredential();
+      const target = upstream ?? { protocol: 'https:', hostname: lookup.hostname, port: 443 };
+      requestUpstream({ ...target, method: 'GET', path: request.url,
+        headers: { authorization: `Bearer ${config.credential}`, accept: 'application/json' } }, upstreamResponse => {
+        const chunks: Buffer[] = [];
+        upstreamResponse.on('data', (chunk: Buffer) => chunks.push(chunk));
+        upstreamResponse.on('end', () => {
+          const status = upstreamResponse.statusCode ?? 502;
+          let id: unknown = null;
+          try { id = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as JsonRecord).id; } catch { /* no id */ }
+          const body = status === 200 && typeof id === 'string'
+            ? JSON.stringify({ id, email: 'agent@stack-bench.invalid', verified_email: true }) : '{}';
+          response.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+          response.end(body);
+        });
+      }).on('error', () => rejectRequest(request, response, 502, 'upstream request failed')).end();
+    });
+    server.on('connect', (request: IncomingMessage, client: Socket, head: Buffer) => {
+      client.on('error', () => {});
+      const [host = '', port = '443'] = (request.url ?? '').split(':');
+      if (host === lookup.hostname && port === '443') {
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        lookupServer.emit('connection', new TLSSocket(client, { isServer: true, secureContext }));
+        return;
+      }
+      const tunnel = connect(Number(port), host, () => {
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        tunnel.write(head);
+        tunnel.pipe(client);
+        client.pipe(tunnel);
+      });
+      tunnel.on('error', () => client.destroy());
+      client.on('close', () => tunnel.destroy());
+    });
+  }
   server.on('clientError', (_error: Error, socket: Socket) => {
     socket.on('error', () => {});
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');

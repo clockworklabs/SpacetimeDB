@@ -60,3 +60,20 @@ test('Codex process capture runs without provider access', async () => {
   assert.notEqual(timedOut.status, 0);
   assert.match(String(timedOut.error), /timed out/);
 });
+
+test('a CLI that keeps running after its finished answer is stopped and the answer recorded', async () => {
+  let answers = 0;
+  const lingering = await runCodexProcess({ command: process.execPath,
+    args: ['-e', 'process.stdout.write("stream\\n"); setInterval(() => {}, 1000)'], input: '', env: process.env,
+    timeoutMs: 10_000, terminate: child => { child.kill(); },
+    // The first reading is not final; the same answer must stand for the grace period.
+    finishedAnswer: () => (answers += 1) === 1 ? 'draft' : 'DONE', answerGraceMs: 60, answerPollMs: 20 });
+  assert.equal(lingering.status, 0);
+  assert.equal(lingering.error, null);
+  assert.deepEqual(lingering.stdout.trim().split('\n'),
+    ['stream', JSON.stringify({ event: 'session_ended_after_answer', response: 'DONE' })]);
+  const exited = await runCodexProcess({ command: process.execPath, args: ['-e', 'process.stdout.write("out")'],
+    input: '', env: process.env, timeoutMs: 5_000, terminate: () => assert.fail('a CLI that exits is not stopped'),
+    finishedAnswer: () => 'DONE', answerGraceMs: 5_000 });
+  assert.equal(exited.stdout, 'out');
+});
