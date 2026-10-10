@@ -9,11 +9,13 @@ partial struct NonEquatableViewPrimaryKey
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Value = BSATN.ValueRW.Read(reader);
+        Extra = BSATN.ExtraRW.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
         BSATN.ValueRW.Write(writer, Value);
+        BSATN.ExtraRW.Write(writer, Extra);
     }
 
     object SpacetimeDB.BSATN.IStructuralReadWrite.GetSerializer()
@@ -22,11 +24,12 @@ partial struct NonEquatableViewPrimaryKey
     }
 
     public override string ToString() =>
-        $"NonEquatableViewPrimaryKey {{ Value = {SpacetimeDB.BSATN.StringUtil.GenericToString(Value)} }}";
+        $"NonEquatableViewPrimaryKey {{ Value = {SpacetimeDB.BSATN.StringUtil.GenericToString(Value)}, Extra = {SpacetimeDB.BSATN.StringUtil.GenericToString(Extra)} }}";
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<NonEquatableViewPrimaryKey>
     {
         internal static readonly SpacetimeDB.BSATN.U32 ValueRW = new();
+        internal static readonly SpacetimeDB.BSATN.U32 ExtraRW = new();
 
         public NonEquatableViewPrimaryKey Read(System.IO.BinaryReader reader)
         {
@@ -47,7 +50,8 @@ partial struct NonEquatableViewPrimaryKey
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Value", ValueRW.GetAlgebraicType(registrar))
+                        new("Value", ValueRW.GetAlgebraicType(registrar)),
+                        new("Extra", ExtraRW.GetAlgebraicType(registrar))
                     }
                 )
             );
@@ -60,14 +64,16 @@ partial struct NonEquatableViewPrimaryKey
     public override int GetHashCode()
     {
         var ___hashValue = Value.GetHashCode();
-        return ___hashValue;
+        var ___hashExtra = Extra.GetHashCode();
+        return ___hashValue ^ ___hashExtra;
     }
 
 #nullable enable
     public bool Equals(NonEquatableViewPrimaryKey that)
     {
         var ___eqValue = this.Value.Equals(that.Value);
-        return ___eqValue;
+        var ___eqExtra = this.Extra.Equals(that.Extra);
+        return ___eqValue && ___eqExtra;
     }
 
     public override bool Equals(object? that)
