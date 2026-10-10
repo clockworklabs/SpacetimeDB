@@ -576,8 +576,8 @@ function googleProtocol(config: BrokerConfig): BrokerProtocol {
 // the account's plan, models and settings through POSTs that are forwarded unbilled.
 // The account's own model names stand for the API models a plan selects.
 function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
-  const model = Object.hasOwn(ANTIGRAVITY_ACCOUNT_MODELS, config.model) ? ANTIGRAVITY_ACCOUNT_MODELS[config.model]
-    : fail('no Antigravity account model is known for the selected model');
+  const models = (Object.hasOwn(ANTIGRAVITY_ACCOUNT_MODELS, config.model) ? ANTIGRAVITY_ACCOUNT_MODELS[config.model] : null)
+    ?? fail('no Antigravity account model is known for the selected model');
   return {
     hostname: brokerHostname(config),
     allowedPaths: new Set(['/v1internal:streamGenerateContent']),
@@ -589,7 +589,7 @@ function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
     parseRequest: body => {
       const payload = jsonObject(body);
       const title = payload.model === ANTIGRAVITY_ACCOUNT_TITLE_MODEL;
-      if ((payload.model !== model && !title) || !isRecord(payload.request)) {
+      if ((!models.includes(String(payload.model)) && !title) || !isRecord(payload.request)) {
         fail('request model does not match the selected model');
       }
       payload.request = geminiRequest(payload.request, config, title);

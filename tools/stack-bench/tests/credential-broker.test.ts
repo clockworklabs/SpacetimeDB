@@ -279,6 +279,12 @@ test('Google account requests reach Code Assist with the renewed token and only 
     cachedContentTokenCount: 400, candidatesTokenCount: 50, thoughtsTokenCount: 30 }))), { input_tokens: 600,
     output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
   assert.throws(() => brokerProtocol({ ...config, model: 'test-model' }), /no Antigravity account model/);
+  // The account names a model once per effort; another model's name is refused.
+  const flash = brokerProtocol({ ...config, model: 'gemini-3.8-flash' });
+  const generate = (model: string) => flash.parseRequest(
+    Buffer.from(JSON.stringify({ model, request: { contents: [] } })), '/v1internal:streamGenerateContent');
+  assert.equal(generate('gemini-3.8-flash-medium').model, 'gemini-3.8-flash-medium');
+  assert.throws(() => generate('gemini-pro-agent'), /does not match/);
   assert.equal(brokerHostname({ provider: 'google', mode: 'subscription-token' }), 'daily-cloudcode-pa.googleapis.com');
 });
 

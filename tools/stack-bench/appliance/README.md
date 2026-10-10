@@ -209,8 +209,11 @@ renewed token for its next request. If renewal fails, Google refuses the session
 once the token runs out. The coding container's agy signs in with a stand-in that
 carries the broker's session token. Campaigns pin the signed-in account, not the
 token bytes. Receipts price account usage at the plan's frozen API rates, as a
-comparison cost. The broker knows the account's model for
-`gemini-3.1-pro-preview-customtools` (Gemini 3.1 Pro at high effort) only.
+comparison cost. The broker knows the account's model names for
+`gemini-3.8-flash` at any effort, `gemini-3.1-pro-preview-customtools`
+(Gemini 3.1 Pro at high effort) and `gemini-3.1-pro-preview` (at low effort).
+agy also checks its account with Google directly; the broker is its HTTPS
+proxy and answers that one check with the account's id only.
 
 ### OpenRouter credentials and routing
 

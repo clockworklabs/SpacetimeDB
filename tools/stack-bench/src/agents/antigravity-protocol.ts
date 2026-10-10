@@ -13,10 +13,13 @@ export const ANTIGRAVITY_TITLE_MODEL = 'gemini-3.1-flash-lite-preview';
 export const ANTIGRAVITY_TITLE_PROMPT = 'You are a conversation title generator.';
 
 // With a Google account sign-in the CLI calls Google's Code Assist service, which names
-// models its own way: the plan's API model at the effort it implies, and its title model.
+// models its own way: one name for each effort of the plan's API model, and its title model.
+// Each name here was seen in a live request for that model and effort.
 export const ANTIGRAVITY_ACCOUNT_HOST = 'daily-cloudcode-pa.googleapis.com';
-export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, string>> = {
-  'gemini-3.1-pro-preview-customtools': 'gemini-pro-agent',
+export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, readonly string[]>> = {
+  'gemini-3.8-flash': ['gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high'],
+  'gemini-3.1-pro-preview': ['gemini-3.1-pro-low'],
+  'gemini-3.1-pro-preview-customtools': ['gemini-pro-agent'],
 };
 export const ANTIGRAVITY_ACCOUNT_TITLE_MODEL = 'gemini-3.5-flash-lite';
 // Before a session the CLI checks its account against Google's user info service itself.
