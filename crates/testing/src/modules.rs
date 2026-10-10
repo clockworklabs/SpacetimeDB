@@ -414,6 +414,8 @@ impl CompiledModule {
         )
         .await
         .unwrap();
+        // These in-process module tests do not run an HTTP listener.
+        env.set_idc_http_port(0).unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;

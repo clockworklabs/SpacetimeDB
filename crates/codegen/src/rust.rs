@@ -8,6 +8,7 @@ use crate::util::{
 use crate::CodegenOptions;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
+use spacetimedb_lib::hash_bytes;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
@@ -25,6 +26,14 @@ type Imports = BTreeSet<AlgebraicTypeRef>;
 const INDENT: &str = "    ";
 
 pub struct Rust;
+
+pub fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+    itertools::chain!(
+        iter_types(module).flat_map(|typ| Rust.generate_type_files(module, typ)),
+        [generate_module_bindings_root_file(module)],
+    )
+    .collect()
+}
 
 impl Lang for Rust {
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
@@ -964,6 +973,44 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     s
 }
 
+fn write_module_binding_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
+    match ty {
+        AlgebraicTypeUse::Identity => write!(out, "spacetimedb::Identity")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "spacetimedb::ConnectionId")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "spacetimedb::Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "spacetimedb::TimeDuration")?,
+        AlgebraicTypeUse::Uuid => write!(out, "spacetimedb::Uuid")?,
+        AlgebraicTypeUse::ScheduleAt => write!(out, "spacetimedb::ScheduleAt")?,
+        AlgebraicTypeUse::Primitive(PrimitiveType::I256) => write!(out, "spacetimedb::sats::i256")?,
+        AlgebraicTypeUse::Primitive(PrimitiveType::U256) => write!(out, "spacetimedb::sats::u256")?,
+        AlgebraicTypeUse::Option(inner_ty) => {
+            write!(out, "Option::<")?;
+            write_module_binding_type(module, out, inner_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "Result::<")?;
+            write_module_binding_type(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_module_binding_type(module, out, err_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicTypeUse::Array(elem_ty) => {
+            write!(out, "Vec::<")?;
+            write_module_binding_type(module, out, elem_ty)?;
+            write!(out, ">")?;
+        }
+        _ => write_type(module, out, ty)?,
+    }
+    Ok(())
+}
+
+fn module_binding_type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
+    let mut s = String::new();
+    write_module_binding_type(module, &mut s, ty).unwrap();
+    s
+}
+
 /// Arguments to a reducer or procedure pretty-printed in various ways that are convenient to compute together.
 struct FormattedArglist {
     /// The arguments as `ident: ty, ident: ty, ident: ty,`,
@@ -1167,6 +1214,140 @@ fn define_struct_for_product(
     );
 
     out.newline();
+}
+
+fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    writeln!(out, "{ALLOW_LINTS}");
+    out.newline();
+    print_module_binding_module_decls(module, out);
+    out.newline();
+    print_module_binding_reexports(module, out);
+    out.newline();
+    print_module_binding_identity(out);
+    out.newline();
+    print_module_binding_remote_module(out);
+    out.newline();
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        print_module_binding_reducer_handle(module, out, reducer);
+        out.newline();
+    }
+
+    OutputFile {
+        filename: "lib.rs".to_owned(),
+        code: output.into_inner(),
+    }
+}
+
+fn print_module_binding_module_decls(module: &ModuleDef, out: &mut Indenter) {
+    for ty in iter_types(module) {
+        let mod_name = type_module_name(&ty.accessor_name);
+        writeln!(out, "pub mod {mod_name};");
+    }
+}
+
+fn print_module_binding_reexports(module: &ModuleDef, out: &mut Indenter) {
+    for ty in iter_types(module) {
+        let mod_name = type_module_name(&ty.accessor_name);
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
+        writeln!(out, "pub use {mod_name}::{type_name};");
+    }
+}
+
+fn print_module_binding_identity(out: &mut Indenter) {
+    writeln!(
+        out,
+        "
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Identity(pub spacetimedb::Identity);
+
+impl spacetimedb::SpacetimeType for Identity {{
+    fn make_type<S: spacetimedb::spacetimedb_lib::sats::typespace::TypespaceBuilder>(
+        typespace: &mut S,
+    ) -> spacetimedb::spacetimedb_lib::AlgebraicType {{
+        <spacetimedb::Identity as spacetimedb::SpacetimeType>::make_type(typespace)
+    }}
+}}
+
+impl spacetimedb::Serialize for Identity {{
+    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {{
+        <spacetimedb::Identity as spacetimedb::Serialize>::serialize(&self.0, serializer)
+    }}
+}}
+
+impl<'de> spacetimedb::Deserialize<'de> for Identity {{
+    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {{
+        <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
+    }}
+}}
+"
+    );
+}
+
+fn print_module_binding_remote_module(out: &mut Indenter) {
+    writeln!(
+        out,
+        "
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct RemoteModule;
+
+"
+    );
+}
+
+fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, reducer: &ReducerDef) {
+    let handle_name = reducer_function_name(reducer);
+    let reducer_name = rust_string_literal(reducer.name.deref());
+    let args_type = function_args_type_name(&reducer.accessor_name);
+    define_struct_for_product(module, out, &args_type, &reducer.params_for_generate.elements, "pub");
+    out.newline();
+    let arg_names = reducer
+        .params_for_generate
+        .elements
+        .iter()
+        .map(|(arg, _)| rust_string_literal(arg.deref()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let signature_hash = rust_string_literal(&reducer_signature_hash(module, reducer));
+    writeln!(
+        out,
+        "
+#[allow(non_camel_case_types)]
+pub struct {handle_name};
+
+impl spacetimedb::rt::RemoteReducer for {handle_name} {{
+    const NAME: &'static str = {reducer_name};
+    const ARG_NAMES: &'static [&'static str] = &[{arg_names}];
+    const SIGNATURE_HASH: &'static str = {signature_hash};
+    type Args = {args_type};
+}}
+"
+    );
+}
+
+fn reducer_signature_hash(module: &ModuleDef, reducer: &ReducerDef) -> String {
+    let mut sig = String::from("spacetimedb::idc::reducer_signature::v1\0");
+    sig.push_str(reducer.name.deref());
+    for (name, ty) in &reducer.params_for_generate.elements {
+        sig.push('\0');
+        sig.push_str(name.deref());
+        sig.push(':');
+        sig.push_str(&module_binding_type_name(module, ty));
+    }
+    hash_bytes(sig.as_bytes()).to_hex().to_string()
+}
+
+fn rust_string_literal(value: &str) -> String {
+    format!("{value:?}")
 }
 
 fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {

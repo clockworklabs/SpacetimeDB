@@ -30,6 +30,7 @@ pub type IdcActorSender = mpsc::UnboundedSender<()>;
 pub struct IdcActorConfig {
     pub sender_identity: Identity,
     pub http_port: u16,
+    pub signing_key: Option<Arc<jsonwebtoken::EncodingKey>>,
 }
 
 pub struct IdcActor {
@@ -476,6 +477,13 @@ fn encode_reducer_args(row: &ProductValue, arg_columns: &[ColId]) -> Vec<u8> {
 }
 
 async fn attempt_delivery(client: &reqwest::Client, config: &IdcActorConfig, msg: &PendingMessage) -> DeliveryOutcome {
+    let Some(key) = &config.signing_key else {
+        return DeliveryOutcome::TransportError("IDC signing key is not configured".into());
+    };
+    let token = match crate::auth::idc::sign(key, config.sender_identity, msg.target_identity()) {
+        Ok(token) => token,
+        Err(error) => return DeliveryOutcome::TransportError(format!("IDC signing failed: {error}")),
+    };
     let target_db_hex = msg.target_identity().to_hex();
     let mut url = format!(
         "http://localhost:{}/v1/database/{target_db_hex}/call-from-database/{}?stream_id={}&seq={}&ack_prefix={}",
@@ -492,6 +500,7 @@ async fn attempt_delivery(client: &reqwest::Client, config: &IdcActorConfig, msg
 
     let result = client
         .post(&url)
+        .bearer_auth(token)
         .header("Content-Type", "application/octet-stream")
         .body(msg.args_bsatn.clone())
         .send()
@@ -571,13 +580,13 @@ mod tests {
     use axum::routing::post;
     use axum::Router;
     use spacetimedb_datastore::system_tables::{
-        IdentityViaU256, StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID,
+        StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID,
     };
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::{product, AlgebraicType};
-    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{ColumnSchema, OutboxSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_table::page_pool::PagePool;
@@ -591,12 +600,14 @@ mod tests {
         reducer: String,
         query: HashMap<String, String>,
         body: Bytes,
+        authorization: String,
     }
 
     async fn capture_idc_call(
         State(tx): State<mpsc::UnboundedSender<CapturedRequest>>,
         Path((target_db, reducer)): Path<(String, String)>,
         Query(query): Query<HashMap<String, String>>,
+        headers: axum::http::HeaderMap,
         body: Bytes,
     ) -> impl IntoResponse {
         tx.send(CapturedRequest {
@@ -604,6 +615,7 @@ mod tests {
             reducer,
             query,
             body,
+            authorization: headers[axum::http::header::AUTHORIZATION].to_str().unwrap().to_owned(),
         })
         .expect("test receiver should still be listening");
         (StatusCode::OK, Bytes::from_static(b"remote-ok"))
@@ -628,7 +640,7 @@ mod tests {
             TableName::for_test("outbox"),
             None,
             vec![
-                ColumnSchema::for_test(0, "target", AlgebraicType::U256),
+                ColumnSchema::for_test(0, "target", AlgebraicType::identity()),
                 ColumnSchema::for_test(1, "msg_id", AlgebraicType::U64),
                 ColumnSchema::for_test(2, "value", AlgebraicType::U32),
             ],
@@ -642,7 +654,7 @@ mod tests {
             false,
             None,
             Some(OutboxSchema {
-                remote_reducer: Identifier::new_unsafe_assume_valid("receive_value".into()),
+                remote_reducer: ReducerName::for_test("receive_value"),
                 target_column: ColId(0),
                 arg_columns: vec![ColId(2)],
                 on_result_reducer: None,
@@ -654,7 +666,7 @@ mod tests {
     fn insert_outbox_message(db: &RelationalDB, target: Identity, value: u32) -> anyhow::Result<TableId> {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let table_id = db.create_table(&mut tx, outbox_schema())?;
-        let row = to_vec(&product![IdentityViaU256(target), 7u64, value])?;
+        let row = to_vec(&product![target, 7u64, value])?;
         let (row_ptr, insert_flags) = {
             let (_, row_ref, insert_flags) = db.insert(&mut tx, table_id, &row)?;
             (row_ref.pointer(), insert_flags)
@@ -683,6 +695,7 @@ mod tests {
 
     #[tokio::test]
     async fn idc_actor_delivers_outbox_message_and_acks_stream() -> anyhow::Result<()> {
+        let keys = crate::auth::JwtKeys::generate()?;
         let (captured_tx, mut captured_rx) = mpsc::unbounded_channel();
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let app = Router::new()
@@ -704,12 +717,16 @@ mod tests {
         let db = open_test_db();
         let target = Identity::ONE;
         insert_outbox_message(&db, target, 42)?;
+        let tx = db.begin_tx(Workload::Internal);
+        let stream_id = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap())?.stream_id;
+        let _ = db.release_tx(tx);
         let (_notify_tx, notify_rx) = mpsc::unbounded_channel();
         let actor = tokio::spawn(run_idc_loop(
             db.clone(),
             IdcActorConfig {
                 sender_identity: Identity::ZERO,
                 http_port,
+                signing_key: Some(Arc::new(keys.private)),
             },
             None,
             notify_rx,
@@ -720,14 +737,22 @@ mod tests {
             .expect("IDC actor should call the receiver");
         assert_eq!(captured.target_db, target.to_hex().to_string());
         assert_eq!(captured.reducer, "receive_value");
-        assert_eq!(captured.query.get("stream_id").map(String::as_str), Some("1"));
+        assert_eq!(
+            crate::auth::idc::verify(
+                &keys.public,
+                captured.authorization.strip_prefix("Bearer ").unwrap(),
+                target,
+            )?,
+            Identity::ZERO,
+        );
+        assert_eq!(captured.query.get("stream_id"), Some(&stream_id.to_string()));
         assert_eq!(captured.query.get("seq").map(String::as_str), Some("1"));
         assert_eq!(captured.query.get("ack_prefix").map(String::as_str), Some("0"));
         assert_eq!(
             captured.query.get("signature_hash").map(String::as_str),
             Some("receiver-signature")
         );
-        let request_row = product![IdentityViaU256(target), 7u64, 42u32];
+        let request_row = product![target, 7u64, 42u32];
         assert_eq!(
             captured.body,
             Bytes::from(encode_reducer_args(&request_row, &[ColId(2)]))

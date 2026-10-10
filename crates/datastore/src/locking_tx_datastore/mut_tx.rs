@@ -3241,7 +3241,7 @@ impl MutTxId {
         &mut self,
         identity: Identity,
         connection_id: ConnectionId,
-        jwt_payload: &str,
+        jwt_payload: Option<&str>,
     ) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
@@ -3254,7 +3254,10 @@ impl MutTxId {
                     "[{identity}]: insert_st_client: failed to insert client ({identity}, {connection_id}), error: {e}"
                 );
             })?;
-        self.insert_st_client_credentials(connection_id, jwt_payload)
+        if let Some(jwt_payload) = jwt_payload {
+            self.insert_st_client_credentials(connection_id, jwt_payload)?;
+        }
+        Ok(())
     }
 
     fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {

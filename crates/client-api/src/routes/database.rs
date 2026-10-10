@@ -254,7 +254,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 /// acknowledging the sender.
 pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
-    Extension(auth): Extension<SpacetimeAuth>,
+    Extension(caller_auth): Extension<ConnectionAuthCtx>,
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Path(CallParams { reducer }): Path<CallParams>,
     Query(query): Query<CallFromDatabaseQuery>,
@@ -268,8 +268,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
         return Err((StatusCode::BAD_REQUEST, "IDC seq must start at 1").into());
     }
 
-    let caller_identity = auth.claims.identity;
-    let caller_auth: ConnectionAuthCtx = auth.into();
+    let caller_identity = caller_auth.identity;
     let owner_identity = database.owner_identity;
     let module = find_database_module(&worker_ctx, &database).await?;
 
@@ -1894,7 +1893,6 @@ where
             .route("/names", self.names_post)
             .route("/names", self.names_put)
             .route("/call/:reducer", self.call_reducer_procedure_post)
-            .route("/call-from-database/:reducer", self.call_from_database_post)
             .route("/schema", self.schema_get)
             .route("/environment", self.environment_get)
             .route("/environment", self.environment_put)
@@ -1934,6 +1932,18 @@ where
             )),
         );
 
+        // Authenticate IDC separately: there is no anonymous fallback and no module-visible JWT.
+        let idc_router = axum::Router::<S>::new()
+            .route(
+                "/:name_or_identity/call-from-database/:reducer",
+                self.call_from_database_post,
+            )
+            .route_layer(axum::middleware::from_fn_with_state(
+                ctx.clone(),
+                crate::auth::idc_auth_middleware::<S>,
+            ))
+            .route_layer(resolving_egress_metrics_middleware.clone());
+
         let authed_named_router = axum::Router::new()
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>));
@@ -1952,6 +1962,7 @@ where
         axum::Router::new()
             .merge(authed_root_router)
             .merge(authed_named_router)
+            .merge(idc_router)
             .merge(http_route_router)
     }
 }
@@ -2149,6 +2160,7 @@ mod tests {
     #[derive(Clone)]
     struct DummyJwtProvider {
         validator: DummyValidator,
+        keys: Option<std::sync::Arc<spacetimedb::auth::JwtKeys>>,
     }
 
     impl TokenSigner for DummyJwtProvider {
@@ -2175,7 +2187,7 @@ mod tests {
         }
 
         fn public_key_bytes(&self) -> &[u8] {
-            b""
+            self.keys.as_ref().map_or(b"", |keys| keys.public_pem.as_ref())
         }
     }
 
@@ -2194,6 +2206,7 @@ mod tests {
             Self {
                 jwt: DummyJwtProvider {
                     validator: DummyValidator,
+                    keys: None,
                 },
                 client_actor_index: std::sync::Arc::new(ClientActorIndex::new()),
                 module_logs_dir: ModuleLogsDir::from_path_unchecked(std::env::temp_dir()),
@@ -2476,6 +2489,54 @@ mod tests {
         async fn authorize_sql(&self, _subject: Identity, _database: Identity) -> Result<AuthCtx, Unauthorized> {
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
+    }
+
+    #[tokio::test]
+    async fn idc_route_requires_host_credentials_and_exposes_no_jwt() -> anyhow::Result<()> {
+        let receiver = test_identity(201);
+        let sender = test_identity(202);
+        let keys = std::sync::Arc::new(spacetimedb::auth::JwtKeys::generate()?);
+        let mut state = DummyState::new().with_database(receiver);
+        state.jwt.keys = Some(keys.clone());
+        let app = DatabaseRoutes {
+            call_from_database_post: axum::routing::post(|Extension(auth): Extension<ConnectionAuthCtx>| async move {
+                assert!(auth.jwt_payload.is_none());
+                auth.identity.to_hex().to_string()
+            }),
+            ..DatabaseRoutes::<DummyState>::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+        let valid = spacetimedb::auth::idc::sign(&keys.private, sender, receiver)?;
+        let wrong_receiver = spacetimedb::auth::idc::sign(&keys.private, sender, sender)?;
+        let wrong_key =
+            spacetimedb::auth::idc::sign(&spacetimedb::auth::JwtKeys::generate()?.private, sender, receiver)?;
+        let (_, client_token) =
+            crate::auth::TokenClaims::new("localhost".into(), "client".into()).encode_and_sign(&keys.private)?;
+        for token in [
+            None,
+            Some("malformed"),
+            Some(wrong_receiver.as_str()),
+            Some(wrong_key.as_str()),
+            Some(client_token.as_str()),
+            Some(valid.as_str()),
+        ] {
+            let mut request = Request::builder()
+                .method("POST")
+                .uri(format!("/{}/call-from-database/receive", receiver.to_hex()));
+            if let Some(token) = token {
+                request = request.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            let response = app.clone().oneshot(request.body(Body::empty())?).await?;
+            if token == Some(valid.as_str()) {
+                assert_eq!(response.status(), StatusCode::OK);
+                let body = response.into_body().collect().await?.to_bytes();
+                assert_eq!(body.as_ref(), sender.to_hex().as_bytes());
+            } else {
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            }
+        }
+        Ok(())
     }
 
     /// Tests that requests to user-defined routes under `/database/:name-or-identity/routes`
