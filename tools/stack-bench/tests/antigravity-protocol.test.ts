@@ -46,9 +46,15 @@ test('the launcher passes the prompt unchanged as one stream message and selects
     assert.deepEqual(JSON.parse(readFileSync(join(root, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8')),
       { modelProvider: 'gemini', enableTelemetry: false });
     // On the account route the CLI signs in with a stand-in carrying the broker's session token.
-    writeFileSync(join(root, 'agy'), `#!/bin/sh\ncat > /dev/null\nprintf '%s' "\${GEMINI_API_KEY-unset}" > "${root}/key"\n`);
+    // The stand-in records what it holds itself and what a command it runs, as the CLI does, sees.
+    writeFileSync(join(root, 'agy'), `#!/bin/sh\ncat > /dev/null\nprintf '%s' "\${GEMINI_API_KEY-unset}" > "${root}/key"\n`
+      + `printf '%s %s' "\${HTTPS_PROXY-unset}" "\${SSL_CERT_FILE:+trusted}" > "${root}/own"\n`
+      + `bash -c 'sh -c "printf \\"%s %s %s\\" \\"\\\${HTTPS_PROXY-unset}\\" \\"\\\${SSL_CERT_FILE-unset}\\" \\"\\\${BASH_ENV-unset}\\""' > "${root}/command"\n`);
     execFileSync('sh', ['-c', ANTIGRAVITY_LAUNCHER, 'agy'], { input: prompt,
-      env: { PATH: `${root}:${process.env.PATH}`, HOME: root, CLOUD_CODE_URL: 'http://127.0.0.1:1', GEMINI_API_KEY: 'session-1' } });
+      env: { PATH: `${root}:${process.env.PATH}`, HOME: root, CLOUD_CODE_URL: 'http://127.0.0.1:1', GEMINI_API_KEY: 'session-1',
+        HTTPS_PROXY: 'http://127.0.0.1:1', BROKER_CA_CERT: 'CERTIFICATE' } });
+    assert.equal(readFileSync(join(root, 'own'), 'utf8'), 'http://127.0.0.1:1 trusted', 'the CLI keeps its proxy and trust');
+    assert.equal(readFileSync(join(root, 'command'), 'utf8'), 'unset unset unset', 'a command and its children see neither');
     const state = join(root, '.gemini', 'antigravity-cli');
     assert.deepEqual(JSON.parse(readFileSync(join(state, 'settings.json'), 'utf8')), { enableTelemetry: false });
     const standIn = JSON.parse(readFileSync(join(state, 'antigravity-oauth-token'), 'utf8'));

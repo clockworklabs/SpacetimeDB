@@ -44,7 +44,11 @@ export const ANTIGRAVITY_AUDIT_TOOLS: Readonly<Record<string, { name: string; pa
 // session. On the account route the broker holds the real sign-in: the CLI gets a
 // stand-in carrying the broker's session token that never expires, so it never renews. Its
 // HTTPS proxy is the broker, which answers its account check; the CLI trusts the broker's
-// certificate authority on top of the system's.
+// certificate authority on top of the system's. Both settings are for the CLI alone. It
+// hands its whole environment to every command it runs, as `bash -c`, and npm sends even
+// its plain-HTTP registry traffic to an HTTPS proxy: a first study's agents spent their
+// sessions working around it. Bash reads the BASH_ENV file before each command, and that
+// file removes the two settings and itself, so no command or its children sees them.
 export const ANTIGRAVITY_LAUNCHER = [
   'set -e',
   'state="$HOME/.gemini/antigravity-cli"',
@@ -58,6 +62,8 @@ export const ANTIGRAVITY_LAUNCHER = [
   `    { cat /etc/ssl/certs/ca-certificates.crt; printf '%s\\n' "$BROKER_CA_CERT"; } > "$SSL_CERT_FILE"`,
   '    unset BROKER_CA_CERT',
   '  fi',
+  '  export BASH_ENV="$(mktemp)"',
+  `  printf '%s\\n' 'unset HTTPS_PROXY SSL_CERT_FILE BASH_ENV' > "$BASH_ENV"`,
   'else',
   `  printf '%s\\n' '{"modelProvider":"gemini","enableTelemetry":false}' > "$state/settings.json"`,
   'fi',
