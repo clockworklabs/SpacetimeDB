@@ -8,7 +8,9 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import SeedReducer from "../seed_reducer";
 import TransferReducer from "../transfer_reducer";
+import TransferWithAuditReducer from "../transfer_with_audit_reducer";
 
 export type SeedParams = __Infer<typeof SeedReducer>;
 export type TransferParams = __Infer<typeof TransferReducer>;
+export type TransferWithAuditParams = __Infer<typeof TransferWithAuditReducer>;
 
