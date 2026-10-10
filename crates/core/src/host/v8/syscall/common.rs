@@ -4,8 +4,8 @@ use super::super::{
     de::scratch_buf,
     env_on_isolate,
     error::{
-        exception_already_thrown, ErrorOrException, ExceptionThrown, JsStackTrace, SysCallError, SysCallResult,
-        Throwable, TypeError,
+        collapse_exc_thrown, exception_already_thrown, terminate_execution, ErrorOrException, ExceptionThrown,
+        JsStackTrace, SysCallError, SysCallResult, Throwable, TypeError,
     },
     from_value::cast,
     ser::serialize_to_js,
@@ -46,7 +46,12 @@ pub fn call_call_procedure(
         caller_connection_id: connection_id,
         timestamp,
         arg_bytes: procedure_args,
+        confirmed_reads,
     } = op;
+    env_on_isolate(scope)
+        .context("procedure instance environment missing")?
+        .instance_env
+        .procedure_confirmed_reads = confirmed_reads;
     // Serialize the arguments.
     let procedure_id = serialize_to_js(scope, &procedure_id)?;
     let sender = serialize_to_js(scope, &sender.to_u256())?;
@@ -727,6 +732,17 @@ pub fn procedure_commit_mut_tx(
     })?;
     let tx = refresh_views(scope, tx, &hooks, &module_def)?;
     get_env(scope)?.instance_env.commit_procedure_tx(tx)?;
+
+    // The commit and view refresh are synchronous. All transaction guards have
+    // been released before parking this dedicated procedure worker thread.
+    let confirmation = get_env(scope)?.instance_env.procedure_confirmation();
+    let result = tokio::runtime::Handle::current().block_on(confirmation);
+    if let Err(err) = result {
+        // An ordinary exception would be caught by withTx and replay its writes.
+        get_env(scope)?.instance_env.take_procedure_tx_offset();
+        let termination = terminate_execution(scope, err);
+        return Err(collapse_exc_thrown(scope, termination).into());
+    }
 
     Ok(())
 }

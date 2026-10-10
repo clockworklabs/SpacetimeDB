@@ -49,6 +49,7 @@ async fn read(module: &ModuleHost, key: &str) -> AlgebraicValue {
             None,
             "read_environment",
             FunctionArgs::Bsatn(bsatn::to_vec(&product![key]).unwrap().into()),
+            true,
         )
         .await
         .result
@@ -94,7 +95,7 @@ async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
     for procedure in ["my_lib.env_read_procedure", "my_lib.env_read_in_tx"] {
         assert!(module.info.module_def.procedure_by_name(procedure).is_some());
         let result = module
-            .call_procedure(Identity::ZERO, None, None, procedure, FunctionArgs::Nullary)
+            .call_procedure(Identity::ZERO, None, None, procedure, FunctionArgs::Nullary, true)
             .await;
         assert!(result.result.is_err(), "submodule procedure read the root environment");
     }
@@ -415,6 +416,7 @@ fn suspended_procedure_cannot_read_environment_from_a_replacement_program() {
                     None,
                     "read_environment_after_http",
                     FunctionArgs::Bsatn(bsatn::to_vec(&product![url, explicit_tx]).unwrap().into()),
+                    true,
                 );
                 let publish_while_suspended = async {
                     tokio::time::timeout(Duration::from_secs(10), entered_rx)

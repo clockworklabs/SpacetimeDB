@@ -30,6 +30,7 @@ async fn read(env: &StandaloneEnv, database: u64, key: &str) -> anyhow::Result<A
             None,
             "read_environment",
             FunctionArgs::Bsatn(bsatn::to_vec(&product![key])?.into()),
+            true,
         )
         .await
         .result?

@@ -389,7 +389,13 @@ The SpacetimeDB text WebSocket protocol, `v1.json.spacetimedb`, encodes messages
 
 ## `POST /v1/database/:name_or_identity/call/:reducer`
 
-Invoke a reducer in a database.
+Invoke a reducer or procedure in a database.
+
+#### Query Parameters
+
+| Name | Value |
+| ---- | ----- |
+| `confirmed` | Optional boolean for procedure calls, default `true`. Wait for durability before returning success and after each successful `withTx`, before procedure code continues. Set to `false` to allow results from state that has committed in memory but may be lost after a crash. This parameter has no effect on reducer calls.
 
 #### Path parameters
 

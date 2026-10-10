@@ -168,6 +168,16 @@ values observed during prior runs must not influence the behavior of the functio
 Avoid capturing mutable state within functions passed to `withTx`.
 :::
 
+With confirmed reads enabled, `ProcedureCtx.withTx` waits for durability before returning, even for read-only transactions.
+Transaction locks are released before waiting, allowing other transactions to run.
+
+WebSocket procedures inherit the connection's setting.
+HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
+Disabling confirmation skips the wait, so state may be lost after a crash.
+
+If confirmation fails after commit, the procedure stops with an internal error.
+The callback is not retried, and committed transactions are not rolled back.
+
 </TabItem>
 <TabItem value="csharp" label="C#">
 
@@ -220,6 +230,16 @@ values observed during prior runs must not influence the behavior of the functio
 Avoid capturing mutable state within functions passed to `WithTx`.
 :::
 
+With confirmed reads enabled, `ProcedureContext.WithTx` waits for durability before returning, even for read-only transactions.
+Transaction locks are released before waiting, allowing other transactions to run.
+
+WebSocket procedures inherit the connection's setting.
+HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
+Disabling confirmation skips the wait, so state may be lost after a crash.
+
+If confirmation fails after commit, the procedure stops with an internal error.
+The callback is not retried, and committed transactions are not rolled back.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -263,6 +283,16 @@ values observed during prior runs must not influence the behavior of the functio
 
 Avoid capturing mutable state within functions passed to `with_tx`.
 :::
+
+With confirmed reads enabled, `ProcedureContext::with_tx` waits for durability before returning, even for read-only transactions.
+Transaction locks are released before waiting, allowing other transactions to run.
+
+WebSocket procedures inherit the connection's setting.
+HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
+Disabling confirmation skips the wait, so state may be lost after a crash.
+
+If confirmation fails after commit, the procedure stops with an internal error.
+The callback is not retried, and committed transactions are not rolled back.
 
 </TabItem>
 <TabItem value="cpp" label="C++">
@@ -312,6 +342,16 @@ values observed during prior runs must not influence the behavior of the functio
 
 Avoid capturing mutable state within functions passed to `with_tx`.
 :::
+
+With confirmed reads enabled, `ctx.with_tx` waits for durability before returning, even for read-only transactions.
+Transaction locks are released before waiting, allowing other transactions to run.
+
+WebSocket procedures inherit the connection's setting.
+HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
+Disabling confirmation skips the wait, so state may be lost after a crash.
+
+If confirmation fails after commit, the procedure stops with an internal error.
+The callback is not retried, and committed transactions are not rolled back.
 
 </TabItem>
 </Tabs>

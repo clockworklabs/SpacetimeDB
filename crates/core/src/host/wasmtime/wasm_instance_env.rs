@@ -330,6 +330,10 @@ impl WasmInstanceEnv {
         &self.instance_env
     }
 
+    pub fn set_procedure_confirmed_reads(&mut self, confirmed_reads: bool) {
+        self.instance_env.procedure_confirmed_reads = confirmed_reads;
+    }
+
     pub fn create_bytes_sink(&mut self) -> u32 {
         let id = self.alloc_bytes_sink_id();
         self.bytes_sinks.insert(id, Vec::new());
@@ -1749,13 +1753,16 @@ impl WasmInstanceEnv {
 
     /// Commits a mutable transaction,
     /// blocking until the transaction has been committed
-    /// and subscription queries have been run and broadcast.
+    /// and subscription queries have been run and broadcast. Confirmed callers
+    /// additionally wait for durability after releasing all transaction locks.
     ///
     /// Once complete, it returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
-    /// This function does not trap.
+    /// Traps if a committed transaction's durability cannot be confirmed. This
+    /// bypasses the bindings' commit-error retry logic, since writes have already
+    /// taken effect.
     ///
     /// # Errors
     ///
@@ -1769,23 +1776,56 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
-        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |caller| {
-            let res: Result<u32, WasmError> = (|| {
-                let tx = {
-                    let env = caller.data_mut();
-                    env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
-                };
-                let tx = Self::refresh_views(caller, tx)?;
-                caller
-                    .data_mut()
-                    .instance_env
-                    .commit_procedure_tx(tx)
-                    .map_err(WasmError::from)?;
-                Ok(0u16.into())
-            })();
-            res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+    pub fn procedure_commit_mut_tx<'caller>(mut caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
+        let span_start = span::CallSpanStart::new(AbiCall::ProcedureCommitMutTransaction);
+        // Commit and refresh views BEFORE constructing the future. No lock-bearing
+        // transaction may survive the first Pending poll of this host import.
+        let result = Self::procedure_commit_mut_tx_inner(&mut caller);
+        let confirmation = match &result {
+            Ok(0) => Some(caller.data_mut().instance_env.procedure_confirmation()),
+            _ => None,
+        };
+        Box::new(async move {
+            let result = match confirmation {
+                Some(confirmation) => {
+                    let confirmed = confirmation.await;
+                    if confirmed.is_err() {
+                        // Send the error without waiting on the failed durability service.
+                        caller.data_mut().instance_env.take_procedure_tx_offset();
+                    }
+                    // Return a host error (trap), never a retryable ABI errno.
+                    confirmed.map(|()| 0)
+                }
+                None => result,
+            };
+            Self::end_span(caller, span_start);
+            result
         })
+    }
+
+    pub fn procedure_commit_mut_tx_sync(caller: Caller<'_, Self>) -> RtResult<u32> {
+        Self::with_span(
+            caller,
+            AbiCall::ProcedureCommitMutTransaction,
+            Self::procedure_commit_mut_tx_inner,
+        )
+    }
+
+    fn procedure_commit_mut_tx_inner(caller: &mut Caller<'_, Self>) -> RtResult<u32> {
+        let res: Result<u32, WasmError> = (|| {
+            let tx = {
+                let env = caller.data_mut();
+                env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
+            };
+            let tx = Self::refresh_views(caller, tx)?;
+            caller
+                .data_mut()
+                .instance_env
+                .commit_procedure_tx(tx)
+                .map_err(WasmError::from)?;
+            Ok(0u16.into())
+        })();
+        res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
     }
 
     /// Refresh all views made stale by a procedure `tx`.
