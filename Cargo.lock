@@ -8277,6 +8277,7 @@ dependencies = [
  "crossbeam-queue",
  "deno_core_icudata",
  "derive_more 0.99.20",
+ "encoding_rs",
  "enum-map",
  "faststr",
  "flate2",
