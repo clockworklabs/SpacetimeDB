@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, CodegenOptions, Csharp, ImportExtension, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -36,14 +36,14 @@ macro_rules! declare_tests {
 
 declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
-    test_codegen_typescript => TypeScript,
+    test_codegen_typescript => TypeScript::default(),
     test_codegen_rust => Rust,
 }
 
 #[test]
 fn test_typescript_table_handles_are_camel_case() {
     let module = compiled_module();
-    let index = generate(module, &TypeScript, &CodegenOptions::default())
+    let index = generate(module, &TypeScript::default(), &CodegenOptions::default())
         .into_iter()
         .find(|file| file.filename == "index.ts")
         .expect("typescript codegen should emit index.ts")
@@ -71,7 +71,7 @@ fn test_typescript_table_handles_are_camel_case() {
 #[test]
 fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
     let module = CompiledModule::compile("module-test-ts", CompilationMode::Debug).extract_schema_blocking();
-    let files = generate(&module, &TypeScript, &CodegenOptions::default());
+    let files = generate(&module, &TypeScript::default(), &CodegenOptions::default());
     let filenames: Vec<_> = files.iter().map(|f| f.filename.clone()).collect();
     let code = files.into_iter().map(|f| f.code).collect::<Vec<_>>().join("\n");
 
@@ -122,4 +122,39 @@ fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
         filenames.iter().any(|f| f.starts_with("myLib/")) && !filenames.iter().any(|f| f.starts_with("my_lib/")),
         "generated files must live under the accessor namespace directory; got {filenames:?}"
     );
+}
+
+/// The relative module specifiers in `import … from "./…"` and `"../…"` lines.
+fn relative_imports(code: &str) -> Vec<&str> {
+    code.lines()
+        .filter_map(|line| line.split("from \"").nth(1)?.split('"').next())
+        .filter(|spec| spec.starts_with('.'))
+        .collect()
+}
+
+#[test]
+fn typescript_import_extension_applies_to_every_relative_import() {
+    let module = compiled_module();
+    for (import_extension, suffix) in [
+        (ImportExtension::None, ""),
+        (ImportExtension::Js, ".js"),
+        (ImportExtension::Ts, ".ts"),
+    ] {
+        let files = generate(module, &TypeScript { import_extension }, &CodegenOptions::default());
+        let specs: Vec<String> = files
+            .iter()
+            .flat_map(|file| relative_imports(&file.code))
+            .map(String::from)
+            .collect();
+        assert!(!specs.is_empty(), "the module's bindings import each other");
+        for spec in specs {
+            let stem = spec
+                .strip_suffix(suffix)
+                .unwrap_or_else(|| panic!("{spec:?} should end with {suffix:?}"));
+            assert!(
+                !stem.ends_with(".js") && !stem.ends_with(".ts"),
+                "{spec:?} has more than one extension"
+            );
+        }
+    }
 }
