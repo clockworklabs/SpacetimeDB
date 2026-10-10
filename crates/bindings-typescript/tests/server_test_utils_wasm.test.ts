@@ -185,9 +185,43 @@ describe('server test-utils real wasm runtime', () => {
     });
 
     expect(response.status).toBe(201);
+    expect(response.text()).toBe('response');
     expect([...test.db.person.iter()]).toEqual([
       { id: 14, name: 'HTTP interleave' },
     ]);
+  });
+
+  it('returns a string response body from the HTTP responder', () => {
+    const { spacetime, moduleExports } = makeModule();
+    const test = createModuleTestHarness(spacetime, moduleExports);
+    const ctx = test
+      .procedureContextBuilder(TestAuth.internal())
+      .http(() => ({
+        body: '{"ok":true}',
+        code: 200,
+        headers: { entries: [] },
+        version: { tag: 'Http11' },
+      }))
+      .build();
+
+    expect(ctx.http.fetch('https://example.com/').json()).toEqual({
+      ok: true,
+    });
+  });
+
+  it('returns an empty response body when the HTTP responder omits one', () => {
+    const { spacetime, moduleExports } = makeModule();
+    const test = createModuleTestHarness(spacetime, moduleExports);
+    const ctx = test
+      .procedureContextBuilder(TestAuth.internal())
+      .http(() => ({
+        code: 204,
+        headers: { entries: [] },
+        version: { tag: 'Http11' },
+      }))
+      .build();
+
+    expect(ctx.http.fetch('https://example.com/').text()).toBe('');
   });
 
   it('throws a deterministic error when no HTTP responder is configured', () => {
