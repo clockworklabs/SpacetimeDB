@@ -748,7 +748,7 @@ pub fn call_identity_connected(
     let stdb = module.relational_db();
     let workload = Workload::reducer_no_args(
         ReducerName::new(Identifier::new_unsafe_assume_valid("call_identity_connected".into())),
-        caller_auth.claims.identity,
+        caller_auth.identity,
         caller_connection_id,
     );
     let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload);
@@ -762,9 +762,9 @@ pub fn call_identity_connected(
 
     mut_tx
         .insert_st_client(
-            caller_auth.claims.identity,
+            caller_auth.identity,
             caller_connection_id,
-            &caller_auth.jwt_payload,
+            caller_auth.jwt_payload.as_deref(),
         )
         .map_err(DBError::from)
         .map_err(Box::new)?;
@@ -777,7 +777,7 @@ pub fn call_identity_connected(
         let tx = Some(ScopeGuard::into_inner(mut_tx));
         let params = ModuleHost::call_reducer_params(
             &module.module_def,
-            caller_auth.claims.identity,
+            caller_auth.identity,
             Some(caller_connection_id),
             None,
             None,

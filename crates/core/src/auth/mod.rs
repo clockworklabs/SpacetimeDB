@@ -6,8 +6,81 @@ use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 
 use crate::config::CertificateAuthority;
 
-pub use spacetimedb_auth::identity;
+pub use spacetimedb_auth::{idc, identity};
 pub mod token_validation;
+
+#[cfg(test)]
+mod idc_tests {
+    use super::*;
+    use serde_json::json;
+    use spacetimedb_lib::Identity;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn idc_credentials_require_trusted_key_recipient_and_expiry() -> anyhow::Result<()> {
+        let keys = JwtKeys::generate()?;
+        let sender = Identity::ZERO;
+        let receiver = Identity::ONE;
+        let token = idc::sign(&keys.private, sender, receiver)?;
+        assert_eq!(idc::verify(&keys.public, &token, receiver)?, sender);
+        assert!(idc::verify(&keys.public, &token, sender).is_err());
+        assert!(idc::verify(&JwtKeys::generate()?.public, &token, receiver).is_err());
+
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let claims = json!({
+            "iss": "spacetimedb-idc-v1", "aud": receiver.to_hex().to_string(),
+            "sender": sender, "iat": now, "exp": now + 60,
+        });
+        for (field, value) in [
+            ("iss", json!("client-issuer")),
+            ("exp", json!(now - 1)),
+            ("exp", json!(now + 3600)),
+            ("iat", json!(now + 30)),
+            ("sender", json!("invalid")),
+        ] {
+            let mut invalid = claims.clone();
+            invalid[field] = value;
+            let token = jsonwebtoken::encode(
+                &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256),
+                &invalid,
+                &keys.private,
+            )?;
+            assert!(
+                idc::verify(&keys.public, &token, receiver).is_err(),
+                "accepted invalid {field}"
+            );
+        }
+        for field in ["iss", "aud", "sender", "iat", "exp"] {
+            let mut invalid = claims.clone();
+            invalid.as_object_mut().unwrap().remove(field);
+            let token = jsonwebtoken::encode(
+                &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256),
+                &invalid,
+                &keys.private,
+            )?;
+            assert!(
+                idc::verify(&keys.public, &token, receiver).is_err(),
+                "accepted missing {field}"
+            );
+        }
+        let forged = jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(&keys.public_pem),
+        )?;
+        assert!(idc::verify(&keys.public, &forged, receiver).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn idc_credentials_are_not_client_tokens() -> anyhow::Result<()> {
+        use token_validation::TokenValidator;
+        let keys = JwtKeys::generate()?;
+        let token = idc::sign(&keys.private, Identity::ZERO, Identity::ONE)?;
+        assert!(keys.public.validate_token(&token).await.is_err());
+        Ok(())
+    }
+}
 
 /// JWT verification and signing keys.
 #[derive(Clone)]

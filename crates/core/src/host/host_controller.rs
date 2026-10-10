@@ -223,6 +223,7 @@ pub struct HostController {
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
     /// Local HTTP port used by `IdcActor` to call receiver reducers.
     idc_http_port: OnceCell<u16>,
+    idc_signing_key: OnceCell<Arc<jsonwebtoken::EncodingKey>>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -389,6 +390,7 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             idc_http_port: OnceCell::new(),
+            idc_signing_key: OnceCell::new(),
         }
     }
 
@@ -405,6 +407,13 @@ impl HostController {
 
     pub fn set_idc_http_port(&self, port: u16) -> Result<(), u16> {
         self.idc_http_port.set(port)
+    }
+
+    /// Configure trusted host credentials before starting database actors.
+    pub fn set_idc_signing_key(&self, key: jsonwebtoken::EncodingKey) -> anyhow::Result<()> {
+        self.idc_signing_key
+            .set(Arc::new(key))
+            .map_err(|_| anyhow::anyhow!("IDC signing key already configured"))
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -1229,6 +1238,7 @@ struct Host {
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
     idc_http_port: u16,
+    idc_signing_key: Option<Arc<jsonwebtoken::EncodingKey>>,
     _idc_actor: IdcActor,
 }
 
@@ -1492,6 +1502,7 @@ impl Host {
             IdcActorConfig {
                 sender_identity: replica_ctx.database_identity,
                 http_port: idc_http_port,
+                signing_key: host_controller.idc_signing_key.get().cloned(),
             },
             module_host.downgrade(),
         );
@@ -1511,6 +1522,7 @@ impl Host {
                 tx_metrics_recorder_task,
                 view_cleanup_task,
                 idc_http_port,
+                idc_signing_key: host_controller.idc_signing_key.get().cloned(),
                 _idc_actor: idc_actor,
             },
             bootstrap_completion,
@@ -1631,6 +1643,7 @@ impl Host {
                         IdcActorConfig {
                             sender_identity: replica_ctx.database_identity,
                             http_port: self.idc_http_port,
+                            signing_key: self.idc_signing_key.clone(),
                         },
                         module.downgrade(),
                     );
@@ -1666,6 +1679,7 @@ impl Host {
                         IdcActorConfig {
                             sender_identity: replica_ctx.database_identity,
                             http_port: self.idc_http_port,
+                            signing_key: self.idc_signing_key.clone(),
                         },
                         module.downgrade(),
                     );

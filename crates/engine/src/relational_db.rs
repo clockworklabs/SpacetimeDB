@@ -4008,6 +4008,32 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn idc_connection_has_no_jwt_credentials() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+        let connection_id = ConnectionId::from_u128(123);
+        let client_connection_id = ConnectionId::from_u128(124);
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            tx.insert_st_client(Identity::ONE, connection_id, None)?;
+            tx.insert_st_client(Identity::ZERO, client_connection_id, Some("client-jwt"))?;
+            Ok::<(), DBError>(())
+        })?;
+        db.with_read_only(Workload::ForTests, |tx| {
+            assert_eq!(tx.get_jwt_payload(connection_id)?, None);
+            assert_eq!(tx.get_jwt_payload(client_connection_id)?.as_deref(), Some("client-jwt"));
+            Ok::<(), DBError>(())
+        })?;
+        assert!(db
+            .connected_clients()?
+            .iter()
+            .any(|(identity, id)| *identity == Identity::ONE && *id == connection_id));
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            tx.delete_st_client(Identity::ONE, connection_id, Identity::ZERO)?;
+            Ok::<(), DBError>(())
+        })?;
+        Ok(())
+    }
+
     /// This tests that we are able to correctly replay mutations to system tables,
     /// in this case specifically `st_client`.
     ///
@@ -4431,7 +4457,7 @@ mod tests {
         assert_eq!(user_table_names, expected_table_names);
 
         db.with_auto_commit(Workload::ForTests, |tx| {
-            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt")
+            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, Some("invalid_jwt"))
                 .unwrap();
             Ok::<(), DBError>(())
         })?;

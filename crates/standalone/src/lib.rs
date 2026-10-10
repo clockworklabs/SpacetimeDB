@@ -97,6 +97,7 @@ impl StandaloneEnv {
         .with_initial_environment_source(Arc::new(control_db.clone()));
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
+        host_controller.set_idc_signing_key(jwt_keys.private.clone())?;
 
         let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.into());
 
