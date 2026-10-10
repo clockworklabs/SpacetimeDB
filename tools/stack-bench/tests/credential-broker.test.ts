@@ -306,6 +306,13 @@ test('Google account requests reach Code Assist with the renewed token and only 
     Buffer.from(JSON.stringify({ model, request: { contents: [] } })), '/v1internal:streamGenerateContent');
   assert.equal(generate('gemini-3.8-flash-medium').model, 'gemini-3.8-flash-medium');
   assert.throws(() => generate('gemini-pro-agent'), /does not match/);
+  // Seen live: the CLI asks a small model whether a running command waits for input. The broker
+  // refused it 556 times in one study; it is forwarded as the title call is, by its own prompt.
+  const helper = (text: string) => flash.parseRequest(Buffer.from(JSON.stringify({ model: 'gemini-2.5-flash-lite',
+    request: { contents: [], systemInstruction: { parts: [{ text }] } } })), '/v1internal:streamGenerateContent');
+  const waiting = helper('You are a classifier that determines if a terminal command is actively waiting for the user to type.');
+  assert.equal(flash.sideCall!('/v1internal:streamGenerateContent', waiting), true);
+  assert.throws(() => helper('Write the code for me.'), /does not match/);
   assert.equal(brokerHostname({ provider: 'google', mode: 'subscription-token' }), 'daily-cloudcode-pa.googleapis.com');
 });
 

@@ -21,7 +21,13 @@ export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, readonly string
   'gemini-3.1-pro-preview': ['gemini-3.1-pro-low'],
   'gemini-3.1-pro-preview-customtools': ['gemini-pro-agent'],
 };
-export const ANTIGRAVITY_ACCOUNT_TITLE_MODEL = 'gemini-3.5-flash-lite';
+// The CLI's own helper calls on the account route, each known by its model and the prompt it
+// carries: the conversation title, and a check whether a command still running is waiting
+// for input, which the CLI needs to tell the model so.
+export const ANTIGRAVITY_ACCOUNT_HELPERS: Readonly<Record<string, string>> = {
+  'gemini-3.5-flash-lite': ANTIGRAVITY_TITLE_PROMPT,
+  'gemini-2.5-flash-lite': 'You are a classifier that determines if a terminal command is actively waiting',
+};
 // Before a session the CLI checks its account against Google's user info service itself.
 export const ANTIGRAVITY_ACCOUNT_LOOKUP = { hostname: 'www.googleapis.com', path: '/oauth2/v2/userinfo' };
 // The account reads the CLI makes around its model calls.

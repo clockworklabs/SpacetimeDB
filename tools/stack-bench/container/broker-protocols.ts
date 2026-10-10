@@ -5,7 +5,7 @@ import { ANTHROPIC_UPSTREAMS, firstUnpricedReason } from './credential-broker-ac
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
 import { ANTIGRAVITY_ACCOUNT_CONTROL_PATHS, ANTIGRAVITY_ACCOUNT_HOST, ANTIGRAVITY_ACCOUNT_LOOKUP, ANTIGRAVITY_ACCOUNT_MODELS,
-  ANTIGRAVITY_ACCOUNT_TITLE_MODEL, ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS }
+  ANTIGRAVITY_ACCOUNT_HELPERS, ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS }
   from '../src/agents/antigravity-protocol.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -509,9 +509,10 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
 }
 
 // A Gemini generateContent request, checked and bounded the same way on both routes. The
-// CLI titles each conversation on a small model: that call carries only the title prompt.
-function geminiRequest(request: JsonRecord, config: BrokerConfig, title: boolean): JsonRecord {
-  if (title && (!JSON.stringify(request.systemInstruction ?? '').includes(ANTIGRAVITY_TITLE_PROMPT)
+// CLI makes its own helper calls on a small model, such as titling the conversation: a
+// helper call carries only its known prompt, and no tools.
+function geminiRequest(request: JsonRecord, config: BrokerConfig, helperPrompt: string | null): JsonRecord {
+  if (helperPrompt !== null && (!JSON.stringify(request.systemInstruction ?? '').includes(helperPrompt)
     || request.tools !== undefined)) fail('request model does not match the selected model');
   const generation = isRecord(request.generationConfig) ? request.generationConfig : {};
   const limit = generation.maxOutputTokens;
@@ -563,7 +564,7 @@ function googleProtocol(config: BrokerConfig): BrokerProtocol {
       headers['x-goog-api-key'] = config.credential;
       return headers;
     },
-    parseRequest: (body, path) => geminiRequest(jsonObject(body), config, path === title),
+    parseRequest: (body, path) => geminiRequest(jsonObject(body), config, path === title ? ANTIGRAVITY_TITLE_PROMPT : null),
     requestPricing: geminiPricing,
     outputLimit: geminiOutputLimit,
     responseUsage: googleUsage,
@@ -578,6 +579,8 @@ function googleProtocol(config: BrokerConfig): BrokerProtocol {
 function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
   const models = (Object.hasOwn(ANTIGRAVITY_ACCOUNT_MODELS, config.model) ? ANTIGRAVITY_ACCOUNT_MODELS[config.model] : null)
     ?? fail('no Antigravity account model is known for the selected model');
+  const helperPrompt = (payload: JsonRecord): string | null => typeof payload.model === 'string'
+    && Object.hasOwn(ANTIGRAVITY_ACCOUNT_HELPERS, payload.model) ? ANTIGRAVITY_ACCOUNT_HELPERS[payload.model]! : null;
   return {
     hostname: brokerHostname(config),
     allowedPaths: new Set(['/v1internal:streamGenerateContent']),
@@ -588,17 +591,17 @@ function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
     headers: request => upstreamHeaders(request, config),
     parseRequest: body => {
       const payload = jsonObject(body);
-      const title = payload.model === ANTIGRAVITY_ACCOUNT_TITLE_MODEL;
-      if ((!models.includes(String(payload.model)) && !title) || !isRecord(payload.request)) {
+      const helper = helperPrompt(payload);
+      if ((!models.includes(String(payload.model)) && helper === null) || !isRecord(payload.request)) {
         fail('request model does not match the selected model');
       }
-      payload.request = geminiRequest(payload.request, config, title);
+      payload.request = geminiRequest(payload.request, config, helper);
       return payload;
     },
     requestPricing: payload => geminiPricing(payload.request as JsonRecord),
     outputLimit: payload => geminiOutputLimit(payload.request as JsonRecord),
     responseUsage: googleUsage,
-    sideCall: (_path, payload) => payload.model === ANTIGRAVITY_ACCOUNT_TITLE_MODEL,
+    sideCall: (_path, payload) => helperPrompt(payload) !== null,
   };
 }
 
