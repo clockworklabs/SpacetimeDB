@@ -50,6 +50,7 @@ present.
 | ---------- | ------ | -------- | --- |
 | A client calls a reducer or procedure | the client | no | the client's token |
 | A scheduled reducer or procedure runs | the database | yes | none |
+| The database's [container](../00100-databases/00800-container-hosting.md) calls a reducer or procedure | the database | yes | none |
 | `client_connected` or `client_disconnected` runs | the client | no | the client's token |
 | `init` runs, including when the database is cleared | the database's owner | no | none |
 | A procedure opens a transaction | the procedure's sender | same as the procedure | same as the procedure |
@@ -72,13 +73,16 @@ An invocation is internal exactly when its sender is the database itself.
 Checking whether an invocation is internal is equivalent to comparing the sender
 with the database's identity, and it's how you tell the database acting on its
 own behalf apart from everyone else, including the database's owner. Today, the
-database's internal invocations are its scheduled reducers and procedures.
+database's internal invocations are its scheduled reducers and procedures, and
+the calls of its [container](../00100-databases/00800-container-hosting.md).
 Internal invocations never have a JWT.
 
 Most modules don't need this check, because [visibility](#function-visibility)
 already keeps clients away from scheduled functions. Use it when a function
 must only ever run as the database itself, for example a scheduled reducer that
-the database's owner must not be able to run by hand.
+the database's owner must not be able to run by hand, or a reducer that only the
+database's [container](../00100-databases/00800-container-hosting.md#restricting-reducers-to-the-container)
+may call.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -128,7 +132,9 @@ function runs:
 - **Public** functions can be called by any client. Reducers and procedures are
   public unless they fall into one of the categories below.
 - **Private** functions can't be called by clients. Only the database's owner
-  can call them directly, and the database runs them through its scheduler.
+  and the database itself, through its
+  [container](../00100-databases/00800-container-hosting.md), can call them
+  directly, and the database runs them through its scheduler.
   Scheduled reducers and procedures are private. If anyone else calls a private
   function, SpacetimeDB responds as if it didn't exist.
 - **Lifecycle reducers**, which are `init`, `client_connected`, and
