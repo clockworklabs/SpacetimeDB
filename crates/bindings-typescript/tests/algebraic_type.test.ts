@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { AlgebraicType } from '../src/lib/algebraic_type';
+import BinaryReader from '../src/lib/binary_reader';
+import BinaryWriter from '../src/lib/binary_writer';
+import { t } from '../src/lib/type_builders';
 
 describe('AlgebraicType', () => {
   test('intoMapKey handles all primitive types', () => {
@@ -50,5 +53,24 @@ describe('AlgebraicType', () => {
     expect(typeof mapKey).toEqual('string');
     // Serialized as: [len (u32), val1 (u16), val2 (u16), val3 (u16)]
     expect(mapKey).toEqual('AwAAAAEAAgADAA==');
+  });
+
+  test('a result round-trips when its ok and err types differ', () => {
+    const ty = t.result(t.u32(), t.string()).algebraicType;
+    // The expected bytes come from the Rust `sats` encoder.
+    const cases: Array<[object, string]> = [
+      [{ ok: 7 }, '0007000000'],
+      [{ err: 'boom' }, '0104000000626f6f6d'],
+    ];
+    for (const [value, hex] of cases) {
+      const writer = new BinaryWriter(0);
+      AlgebraicType.makeSerializer(ty)(writer, value);
+      const bytes = writer.getBuffer();
+      expect(
+        Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+      ).toBe(hex);
+      const reader = new BinaryReader(bytes);
+      expect(AlgebraicType.makeDeserializer(ty)(reader)).toEqual(value);
+    }
   });
 });
