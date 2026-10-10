@@ -114,7 +114,7 @@ The `init` reducer:
 - Failure prevents publishing or clearing
 
 :::tip Module Owner
-In the `init` reducer, `ctx.sender()` is the **module owner** — the identity of the user who published the database. This is the only place where the owner identity is automatically provided, so if you need to reference it later (e.g. for authorization), store it in a table during `init`:
+In the `init` reducer, `ctx.sender()` is the **module owner** — the identity of the user who published the database. Because the sender is the owner rather than the database itself, `init` is not an [internal invocation](../../00500-authentication/00600-authorization.md#internal-invocations). This is the only place where the owner identity is automatically provided, so if you need to reference it later (e.g. for authorization), store it in a table during `init`:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -404,6 +404,6 @@ Reducers can be triggered at specific times using schedule tables. See [Schedule
 
 :::info Scheduled Reducer Context
 Scheduled reducer calls originate from SpacetimeDB itself, not from a client. Therefore:
-- `ctx.sender()` will be the module's own identity
+- `ctx.sender()` will be the module's own identity, so the invocation is [internal](../../00500-authentication/00600-authorization.md#internal-invocations)
 - The connection ID will be absent (`null` in TypeScript, `null` in C#, `None` in Rust, and `std::nullopt` in C++)
 :::
