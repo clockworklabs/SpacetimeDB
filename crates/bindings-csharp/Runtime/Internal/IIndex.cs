@@ -144,12 +144,16 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         return row;
     }
 
-    protected Row DoUpdate(Row row)
+    protected Row DoUpdate(Row row) => UpdateRow(row, ITableView<Handle, Row>.tableId);
+
+    protected Row DoUpdate(Row row, TableHandle table) => UpdateRow(row, table.Id);
+
+    private Row UpdateRow(Row row, FFI.TableId tableId)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = bytes.Length;
-        FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
+        FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
@@ -207,12 +211,16 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         return row;
     }
 
-    protected Row DoUpdate(Row row)
+    protected Row DoUpdate(Row row) => UpdateRow(row, ITableView<Handle, Row>.tableId);
+
+    protected Row DoUpdate(Row row, TableHandle table) => UpdateRow(row, table.Id);
+
+    private Row UpdateRow(Row row, FFI.TableId tableId)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = bytes.Length;
-        FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
+        FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }

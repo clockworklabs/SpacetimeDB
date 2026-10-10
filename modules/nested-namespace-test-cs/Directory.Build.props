@@ -1,0 +1,10 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0;TargetFrameworks=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;TargetFramework;TargetFrameworks" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../../crates/bindings-csharp/Runtime/Runtime.csproj" SetTargetFramework="TargetFramework=$(TargetFramework);TargetFrameworks=$(TargetFramework)" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

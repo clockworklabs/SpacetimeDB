@@ -82,6 +82,8 @@ public interface ITableView<View, T>
 
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
+    static virtual string LookupName => tableName;
+
     // These are static helpers that codegen can use.
 
     private class RawTableIter(FFI.TableId tableId) : RawTableIterBase<T>
@@ -92,17 +94,19 @@ public interface ITableView<View, T>
 
     private static readonly string tableName = typeof(View).Name;
 
-    // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
-    private static readonly Lazy<FFI.TableId> tableId_ =
-        new(() =>
-        {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
-            FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
-            return out_;
-        });
+    // Instance-aware handles supply their own IDs and never need this legacy cache.
+    private static Lazy<FFI.TableId>? legacyTableId;
 
 #pragma warning disable IDE1006 // Used by static interface member call sites.
-    internal static FFI.TableId tableId => tableId_.Value;
+    internal static FFI.TableId tableId =>
+        (
+            legacyTableId ??= new(() =>
+            {
+                var name_bytes = System.Text.Encoding.UTF8.GetBytes(View.LookupName);
+                FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
+                return out_;
+            })
+        ).Value;
 #pragma warning restore IDE1006
 
     ulong Count { get; }
@@ -115,7 +119,11 @@ public interface ITableView<View, T>
 
     ulong Clear();
 
-    protected static ulong DoCount()
+    protected static ulong DoCount() => CountRows(tableId);
+
+    protected static ulong DoCount(TableHandle table) => CountRows(table.Id);
+
+    private static ulong CountRows(FFI.TableId tableId)
     {
         FFI.datastore_table_row_count(tableId, out var count);
         return count;
@@ -123,7 +131,13 @@ public interface ITableView<View, T>
 
     protected static IEnumerable<T> DoIter() => new RawTableIter(tableId);
 
-    protected static T DoInsert(T row)
+    protected static IEnumerable<T> DoIter(TableHandle table) => new RawTableIter(table.Id);
+
+    protected static T DoInsert(T row) => InsertRow(row, tableId);
+
+    protected static T DoInsert(T row, TableHandle table) => InsertRow(row, table.Id);
+
+    private static T InsertRow(T row, FFI.TableId tableId)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
@@ -141,7 +155,11 @@ public interface ITableView<View, T>
         return View.ReadGenFields(reader, row);
     }
 
-    protected static bool DoDelete(T row)
+    protected static bool DoDelete(T row) => DeleteRow(row, tableId);
+
+    protected static bool DoDelete(T row, TableHandle table) => DeleteRow(row, table.Id);
+
+    private static bool DeleteRow(T row, FFI.TableId tableId)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
@@ -159,7 +177,11 @@ public interface ITableView<View, T>
         return out_ > 0;
     }
 
-    protected static ulong DoClear()
+    protected static ulong DoClear() => ClearRows(tableId);
+
+    protected static ulong DoClear(TableHandle table) => ClearRows(table.Id);
+
+    private static ulong ClearRows(FFI.TableId tableId)
     {
         FFI.datastore_clear(tableId, out var count);
         return count;

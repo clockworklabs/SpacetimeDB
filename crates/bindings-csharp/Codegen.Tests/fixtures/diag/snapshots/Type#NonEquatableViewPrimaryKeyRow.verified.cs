@@ -6,6 +6,11 @@ partial struct NonEquatableViewPrimaryKeyRow
     : System.IEquatable<NonEquatableViewPrimaryKeyRow>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Identity = BSATN.IdentityRW.Read(reader);
@@ -48,7 +53,7 @@ partial struct NonEquatableViewPrimaryKeyRow
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Identity", IdentityRW.GetAlgebraicType(registrar))
+                        new("Identity", IdentityRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

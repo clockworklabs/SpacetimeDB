@@ -6,6 +6,11 @@ partial struct TestTypeParams<T>
     : System.IEquatable<TestTypeParams>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Field = BSATN.FieldRW.Read(reader);
@@ -47,7 +52,7 @@ partial struct TestTypeParams<T>
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Field", FieldRW.GetAlgebraicType(registrar))
+                        new("Field", FieldRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

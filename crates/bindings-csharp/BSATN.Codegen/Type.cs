@@ -470,7 +470,7 @@ public static class SpacetimeDbFieldDiscovery
         typeSyntax
             .Members.OfType<FieldDeclarationSyntax>()
             .SelectMany(f => f.Declaration.Variables)
-            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Select(v => type.GetMembers(v.Identifier.ValueText).OfType<IFieldSymbol>().Single())
             .Where(f => !f.IsStatic);
 
     public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
@@ -694,6 +694,9 @@ public abstract record BaseTypeDeclaration<M>
 
             extensions.Contents.Append(
                 $$"""
+                #if NET10_0_OR_GREATER
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+                #endif
                 public void ReadFields(System.IO.BinaryReader reader) {
             {{string.Join(
                     "\n",

@@ -4,6 +4,11 @@
 
 partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         IntField = BSATN.IntFieldRW.Read(reader);
@@ -62,7 +67,7 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
                     new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                     new("NullableIntField", NullableIntFieldRW.GetAlgebraicType(registrar)),
-                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar))
+                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 

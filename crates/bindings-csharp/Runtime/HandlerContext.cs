@@ -16,6 +16,23 @@ public abstract class HandlerContextBase
 
     // **Note:** must be 0..=u32::MAX
     protected int CounterUuid = 0;
+#if NET10_0_OR_GREATER
+    private protected HandlerContextBase? SelectionSource;
+    protected ref int SharedCounterUuid => ref (SelectionSource ?? this).CounterUuid;
+
+    protected virtual HandlerTxContextBase SelectTxContext(HandlerTxContextBase tx) => tx;
+
+    // Keep captured callbacks off the ordinary, unselected transaction path.
+    private TResult WithSelectedTx<TResult>(Func<HandlerTxContextBase, TResult> body) =>
+        SelectionSource!.WithTx(tx => body(SelectTxContext(tx)));
+
+    private TxOutcome<TResult> TryWithSelectedTx<TResult, TError>(
+        Func<HandlerTxContextBase, Result<TResult, TError>> body
+    )
+        where TError : Exception =>
+        SelectionSource!.TryWithTx<TResult, TError>(tx => body(SelectTxContext(tx)));
+#endif
+
     private readonly TransactionalContextState<HandlerTxContextBase> txState;
 
     protected HandlerContextBase(Random random, Timestamp time)
@@ -63,8 +80,16 @@ public abstract class HandlerContextBase
     }
 
     [Experimental("STDB_UNSTABLE")]
-    public TResult WithTx<TResult>(Func<HandlerTxContextBase, TResult> body) =>
-        txState.WithTx(body);
+    public TResult WithTx<TResult>(Func<HandlerTxContextBase, TResult> body)
+    {
+#if NET10_0_OR_GREATER
+        if (SelectionSource is not null)
+        {
+            return WithSelectedTx(body);
+        }
+#endif
+        return txState.WithTx(body);
+    }
 
     [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
@@ -72,6 +97,12 @@ public abstract class HandlerContextBase
     )
         where TError : Exception
     {
+#if NET10_0_OR_GREATER
+        if (SelectionSource is not null)
+        {
+            return TryWithSelectedTx<TResult, TError>(body);
+        }
+#endif
         var outcome = txState.TryWithTx(body);
         return outcome.IsSuccess
             ? TxOutcome<TResult>.Success(outcome.Value!)
@@ -84,13 +115,32 @@ public abstract class HandlerContextBase
 
 public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefreshableTxContext
 {
+#if NET10_0_OR_GREATER
+    private protected HandlerTxContextBase? SelectionSource;
+    private protected LocalBase LocalDb = (LocalBase)inner.Db;
+    private Internal.TxContext currentInner = inner;
+
+    // Selected wrappers must observe refreshes of the original transaction context.
+    internal Internal.TxContext Inner => SelectionSource?.Inner ?? currentInner;
+
+    internal void Refresh(Internal.TxContext inner)
+    {
+        currentInner = inner;
+        LocalDb = (LocalBase)inner.Db;
+    }
+#else
     internal Internal.TxContext Inner { get; private set; } = inner;
 
     internal void Refresh(Internal.TxContext inner) => Inner = inner;
+#endif
 
     void IRefreshableTxContext.Refresh(Internal.TxContext inner) => Refresh(inner);
 
+#if NET10_0_OR_GREATER
+    public LocalBase Db => LocalDb;
+#else
     public LocalBase Db => (LocalBase)Inner.Db;
+#endif
     public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Timestamp Timestamp => Inner.Timestamp;
     public AuthCtx SenderAuth => Inner.SenderAuth;

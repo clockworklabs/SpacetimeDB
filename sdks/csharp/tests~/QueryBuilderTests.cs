@@ -95,6 +95,27 @@ public sealed class QueryBuilderTests
 
 
     [Fact]
+    public void QualifiedName_QuotesNamespaceAndLocalName()
+    {
+        var name = new SqlTableName("we\"ird.namespace", "users.with.dots");
+        Assert.Equal("we\"ird.namespace", name.Namespace);
+        Assert.Equal("users.with.dots", name.LocalName);
+        Assert.Equal("\"we\"\"ird.namespace\".\"users.with.dots\"", name.ToString());
+        Assert.Null(new SqlTableName("users").Namespace);
+        Assert.Equal("SELECT * FROM \"auth.users\"", MakeTable("auth.users").ToSql());
+        Assert.Equal("\"auth.users\".\"id\"", new Col<Row, int>("auth.users", "id").ToString());
+        Assert.Equal("\"auth.users\".\"id\"", new IxCol<Row, int>("auth.users", "id").ToString());
+        var segments = new[] { "outer.data", "in\"ner" };
+        var nested = new SqlTableName(segments, "users");
+        segments[0] = "changed";
+        Assert.Equal("\"outer.data\".\"in\"\"ner\".\"users\"", nested.ToString());
+        Assert.Equal("\"users\"", new SqlTableName(Array.Empty<string>(), "users").ToString());
+        var escaped = new SqlTableName("auth\"data", "select");
+        Assert.Equal("\"auth\"\"data\".\"select\".\"i\"\"d\"", new Col<Row, int>(escaped, "i\"d").ToString());
+        Assert.Equal("\"auth\"\"data\".\"select\".\"i\"\"d\"", new IxCol<Row, int>(escaped, "i\"d").ToString());
+    }
+
+    [Fact]
     public void All_QuotesTableName()
     {
         var table = MakeTable("My\"Table");

@@ -23,10 +23,10 @@
     }
   },
   {/*
-        
-        SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
-                                                                                  ^^^^^^^^^
-SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
+
+        builder.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
+                                                              ^^^^^^^^^
+        builder.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
 */
     Message: 'Module.MY_FILTER' is inaccessible due to its protection level,
     Severity: Error,
@@ -253,7 +253,7 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-            
+
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
@@ -276,9 +276,9 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
-SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
-                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        builder.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
+        builder.RegisterClientVisibilityFilter(global::Module.MY_THIRD_FILTER);
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         {
 */
     Message: Argument 1: cannot convert from 'string' to 'SpacetimeDB.Filter',
@@ -322,7 +322,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-            
+
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
                                      ^^^^^^^^^^^^^^^^
                 var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
@@ -345,10 +345,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
-        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
-                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
-}
+        public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+            new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
 */
     Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)' and 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)',
     Severity: Error,
@@ -368,10 +368,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
-        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
-                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
-}
+        public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+            new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
 */
     Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)' and 'TestDuplicateTableNameCols.TestDuplicateTableNameCols(string)',
     Severity: Error,
@@ -391,10 +391,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
-        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
-                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-}
+        public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+            new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
 */
     Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)' and 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)',
     Severity: Error,
@@ -414,10 +414,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
-        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
-                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-}
+        public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+            new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
 */
     Message: The call is ambiguous between the following methods or properties: 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)' and 'TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(string)',
     Severity: Error,
@@ -437,10 +437,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-}
-public readonly struct TestDuplicateTableNameCols
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
-{
+    }
+    public readonly struct TestDuplicateTableNameCols
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
 */
     Message: The namespace 'SpacetimeDB' already contains a definition for 'TestDuplicateTableNameCols',
     Severity: Error,
@@ -461,9 +461,9 @@ public readonly struct TestDuplicateTableNameCols
   },
   {/*
 
-public readonly struct TestDuplicateTableNameIxCols
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-{
+    public readonly struct TestDuplicateTableNameIxCols
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
 */
     Message: The namespace 'SpacetimeDB' already contains a definition for 'TestDuplicateTableNameIxCols',
     Severity: Error,
@@ -575,10 +575,10 @@ public readonly struct TestDuplicateTableNameIxCols
     }
   },
   {/*
-{
-    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
-                                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^
-        new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
+    {
+        public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+                                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+            new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
 */
     Message: Type 'QueryBuilder' already defines a member called 'TestDuplicateTableName' with the same parameter types,
     Severity: Error,
@@ -599,9 +599,9 @@ public readonly struct TestDuplicateTableNameIxCols
   },
   {/*
 
-    internal TestDuplicateTableNameCols(string tableName)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^
-    {
+        internal TestDuplicateTableNameCols(string tableName)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        {
 */
     Message: Type 'TestDuplicateTableNameCols' already defines a member called 'TestDuplicateTableNameCols' with the same parameter types,
     Severity: Error,
@@ -622,9 +622,9 @@ public readonly struct TestDuplicateTableNameIxCols
   },
   {/*
 
-    internal TestDuplicateTableNameIxCols(string tableName)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    {
+        internal TestDuplicateTableNameIxCols(string tableName)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        {
 */
     Message: Type 'TestDuplicateTableNameIxCols' already defines a member called 'TestDuplicateTableNameIxCols' with the same parameter types,
     Severity: Error,

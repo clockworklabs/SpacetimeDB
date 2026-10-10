@@ -7,229 +7,6 @@ using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
-partial class RawModuleDefV10
-{
-    private readonly Typespace typespace = new();
-    private readonly List<RawTypeDefV10> typeDefs = [];
-    private readonly List<RawTableDefV10> tableDefs = [];
-    private readonly List<RawScheduleDefV10> scheduleDefs = [];
-    private readonly List<RawReducerDefV10> reducerDefs = [];
-    private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
-    private readonly List<RawProcedureDefV10> procedureDefs = [];
-    private readonly List<RawHttpHandlerDefV10> httpHandlerDefs = [];
-    private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
-    private readonly List<RawViewDefV10> viewDefs = [];
-    private readonly List<RawViewPrimaryKeyDefV10> viewPrimaryKeyDefs = [];
-    private readonly List<RawEnvironmentDeclarationV10> environment = [];
-    private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
-    private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
-        new(StringComparer.Ordinal);
-
-    private SpacetimeDB.CaseConversionPolicy? caseConversionPolicy = null;
-    private readonly List<ExplicitNameEntry> explicitNames = [];
-
-    // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
-    // Fix it up to a different mangling scheme if it causes problems.
-    private static string GetFriendlyName(Type type) =>
-        type.IsGenericType
-            ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
-            : type.Name;
-
-    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
-        new([], GetFriendlyName(type));
-
-    internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
-    {
-        var typeList = typespace.Types;
-        var typeRef = new AlgebraicType.Ref(typeList.Count);
-        // Put a dummy self-reference just so that we get stable index even if `makeType` recursively adds more types.
-        typeList.Add(typeRef);
-        typeList[typeRef.Ref_] = makeType(typeRef);
-        typeDefs.Add(
-            new RawTypeDefV10(
-                SourceName: MakeScopedTypeName(typeof(T)),
-                Ty: (uint)typeRef.Ref_,
-                CustomOrdering: true
-            )
-        );
-        return typeRef;
-    }
-
-    internal void RegisterReducer(RawReducerDefV10 reducer, Lifecycle? lifecycle)
-    {
-        reducerDefs.Add(reducer);
-        if (lifecycle is { } lifecycleSpec)
-        {
-            lifecycleReducerDefs.Add(
-                new RawLifeCycleReducerDefV10(lifecycleSpec, reducer.SourceName)
-            );
-            reducer.Visibility = FunctionVisibility.Private;
-        }
-    }
-
-    internal void RegisterProcedure(RawProcedureDefV10 procedure) => procedureDefs.Add(procedure);
-
-    internal void RegisterHttpHandler(RawHttpHandlerDefV10 handler) => httpHandlerDefs.Add(handler);
-
-    internal bool HasHttpHandler(string sourceName) =>
-        httpHandlerDefs.Any(handler => handler.SourceName == sourceName);
-
-    internal void RegisterHttpRoute(RawHttpRouteDefV10 route) => httpRouteDefs.Add(route);
-
-    internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
-    {
-        tableDefs.Add(table);
-        if (schedule is { } scheduleDef)
-        {
-            scheduleDefs.Add(scheduleDef);
-        }
-    }
-
-    internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
-
-    internal void RegisterEnvironment(RawEnvironmentDeclarationV10 declaration) =>
-        environment.Add(declaration);
-
-    internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
-        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
-
-    internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
-        rowLevelSecurityDefs.Add(rls);
-
-    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
-    {
-        if (!defaultValuesByTable.TryGetValue(table, out var defaults))
-        {
-            defaults = [];
-            defaultValuesByTable.Add(table, defaults);
-        }
-        defaults.Add(new RawColumnDefaultValueV10(colId, [.. value]));
-    }
-
-    internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
-        caseConversionPolicy = policy;
-
-    internal void RegisterExplicitTableName(string sourceName, string canonicalName) =>
-        explicitNames.Add(new ExplicitNameEntry.Table(new NameMapping(sourceName, canonicalName)));
-
-    internal void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
-        explicitNames.Add(
-            new ExplicitNameEntry.Function(new NameMapping(sourceName, canonicalName))
-        );
-
-    internal void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
-        explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
-
-    internal RawModuleDefV10 BuildModuleDefinition()
-    {
-        var builtTables = new List<RawTableDefV10>(tableDefs.Count);
-        foreach (var table in tableDefs)
-        {
-            defaultValuesByTable.TryGetValue(table.SourceName, out var defaults);
-            builtTables.Add(
-                new RawTableDefV10(
-                    SourceName: table.SourceName,
-                    ProductTypeRef: table.ProductTypeRef,
-                    PrimaryKey: table.PrimaryKey,
-                    Indexes: table.Indexes,
-                    Constraints: table.Constraints,
-                    Sequences: table.Sequences,
-                    TableType: table.TableType,
-                    TableAccess: table.TableAccess,
-                    DefaultValues: defaults is null ? [] : [.. defaults],
-                    IsEvent: table.IsEvent
-                )
-            );
-        }
-
-        var internalFunctions = lifecycleReducerDefs
-            .Select(l => l.FunctionName)
-            .Concat(scheduleDefs.Select(s => s.FunctionName))
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var reducer in reducerDefs)
-        {
-            if (internalFunctions.Contains(reducer.SourceName))
-            {
-                reducer.Visibility = FunctionVisibility.Private;
-            }
-        }
-
-        foreach (var procedure in procedureDefs)
-        {
-            if (internalFunctions.Contains(procedure.SourceName))
-            {
-                procedure.Visibility = FunctionVisibility.Private;
-            }
-        }
-
-        var sections = new List<RawModuleDefV10Section>
-        {
-            new RawModuleDefV10Section.Typespace(typespace),
-            new RawModuleDefV10Section.Environment(environment),
-        };
-
-        if (typeDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.Types(typeDefs));
-        }
-        if (builtTables.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.Tables(builtTables));
-        }
-        if (reducerDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.Reducers(reducerDefs));
-        }
-        if (procedureDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.Procedures(procedureDefs));
-        }
-        if (httpHandlerDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.HttpHandlers(httpHandlerDefs));
-        }
-        if (httpRouteDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.HttpRoutes(httpRouteDefs));
-        }
-        if (viewDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.Views(viewDefs));
-        }
-        if (viewPrimaryKeyDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.ViewPrimaryKeys(viewPrimaryKeyDefs));
-        }
-        if (scheduleDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.Schedules(scheduleDefs));
-        }
-        if (lifecycleReducerDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
-        }
-        // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
-        if (caseConversionPolicy is { } policy)
-        {
-            sections.Add(new RawModuleDefV10Section.CaseConversionPolicy(policy));
-        }
-        if (explicitNames.Count > 0)
-        {
-            sections.Add(
-                new RawModuleDefV10Section.ExplicitNames(new ExplicitNames([.. explicitNames]))
-            );
-        }
-        if (rowLevelSecurityDefs.Count > 0)
-        {
-            sections.Add(new RawModuleDefV10Section.RowLevelSecurity(rowLevelSecurityDefs));
-        }
-
-        Sections = sections;
-        return this;
-    }
-}
-
 public static class Module
 {
     // Workaround for NativeAOT-LLVM IL scanner bug:
@@ -265,49 +42,67 @@ public static class Module
         }
     }
 
-    private static readonly RawModuleDefV10 moduleDef = new();
+    public static readonly ModuleBuilder RootBuilder = new();
 
-    private static class ReducerCache<R>
-        where R : IReducer, new()
+    private static NamespaceRegistry? namespaces;
+
+    private static NamespaceRegistry Namespaces =>
+        namespaces
+        ?? throw new InvalidOperationException("Module namespaces have not been installed.");
+
+    public static int InstanceCount => Namespaces.InstanceCount;
+
+    public static int ResolveInstance(int contextInstance, string assemblyIdentity) =>
+        Namespaces.ResolveInstance(contextInstance, assemblyIdentity);
+
+    public static string ResolveName(int instanceId, string localName) =>
+        Namespaces.Resolve(instanceId, localName);
+
+    internal static int[] BindNamespace(string? assemblyIdentity, string accessor) =>
+        Namespaces.BindNamespace(assemblyIdentity, accessor);
+
+    public static void InstallNamespaces(NamespaceRegistry registry)
     {
-        public static readonly R Instance = new();
+        if (namespaces is not null)
+        {
+            throw new InvalidOperationException("Module namespaces have already been installed.");
+        }
+
+        namespaces = registry;
     }
 
-    private static class ProcedureCache<P>
-        where P : IProcedure, new()
-    {
-        public static readonly P Instance = new();
-    }
+    public static string ResolveName(string assemblyIdentity, string localName) =>
+        Namespaces.Resolve(assemblyIdentity, localName);
 
-    private static class HttpHandlerCache<H>
-        where H : IHttpHandler, new()
-    {
-        public static readonly H Instance = new();
-    }
+    public static string ResolveFunctionName(
+        string assemblyIdentity,
+        string sourceName,
+        string? explicitName
+    ) => Namespaces.ResolveFunction(assemblyIdentity, sourceName, explicitName);
 
-    private static class ViewDispatcherCache<TDispatcher>
-        where TDispatcher : IView, new()
-    {
-        public static readonly TDispatcher Instance = new();
-    }
+    public static string ResolveFunctionName(
+        int instanceId,
+        string sourceName,
+        string? explicitName
+    ) => Namespaces.ResolveFunction(instanceId, sourceName, explicitName);
 
-    private static class AnonymousViewDispatcherCache<TDispatcher>
-        where TDispatcher : IAnonymousView, new()
-    {
-        public static readonly TDispatcher Instance = new();
-    }
+    public static SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
+        Namespaces.ResolveSqlName(assemblyIdentity, localName);
 
+    public static SqlTableName ResolveSqlName(int instanceId, string localName) =>
+        Namespaces.ResolveSqlName(instanceId, localName);
+
+#if !NET10_0_OR_GREATER
     private static Func<
         Identity,
         ConnectionId?,
         Random,
         Timestamp,
         IReducerContext
-    >? newReducerContext = null;
-    private static Func<Identity, IViewContext>? newViewContext = null;
-    private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
-    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
-        null;
+    >? newReducerContext;
+    private static Func<Identity, IViewContext>? newViewContext;
+    private static Func<IAnonymousViewContext>? newAnonymousViewContext;
+    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext;
 
     private static Func<
         Identity,
@@ -315,7 +110,7 @@ public static class Module
         Random,
         Timestamp,
         IProcedureContext
-    >? newProcedureContext = null;
+    >? newProcedureContext;
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
@@ -334,10 +129,17 @@ public static class Module
 
     public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
         newAnonymousViewContext = ctor;
+#endif
 
-    public readonly struct TypeRegistrar() : ITypeRegistrar
+    public readonly struct TypeRegistrar : ITypeRegistrar
     {
         private readonly Dictionary<Type, AlgebraicType.Ref> types = [];
+        private readonly ModuleBuilder target;
+
+        public TypeRegistrar()
+            : this(RootBuilder) { }
+
+        internal TypeRegistrar(ModuleBuilder target) => this.target = target;
 
         // Registers type in the module definition.
         //
@@ -349,121 +151,62 @@ public static class Module
         // e.g. self-recursion even before the algebraic type itself is constructed.
         public AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
         {
-            // Store for the closure access.
-            var types = this.types;
             if (types.TryGetValue(typeof(T), out var existingTypeRef))
             {
                 return existingTypeRef;
             }
-            return moduleDef.RegisterType<T>(typeRef =>
-            {
-                // Store the type reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
-                types.Add(typeof(T), typeRef);
-                return makeType(typeRef);
-            });
+
+            // Passes types down to register the type reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
+            return target.RegisterType<T>(types, makeType);
         }
     }
-
-    static readonly TypeRegistrar typeRegistrar = new();
 
     public static void RegisterReducer<R>()
-        where R : IReducer, new()
-    {
-        var reducer = ReducerCache<R>.Instance;
-        moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar), reducer.Lifecycle);
-    }
+        where R : IReducer, new() => RootBuilder.RegisterReducer<R>();
 
     public static void RegisterProcedure<P>()
-        where P : IProcedure, new()
-    {
-        var procedure = ProcedureCache<P>.Instance;
-        moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
-    }
+        where P : IProcedure, new() => RootBuilder.RegisterProcedure<P>();
 
     public static void RegisterHttpHandler<H>()
-        where H : IHttpHandler, new()
-    {
-        var handler = HttpHandlerCache<H>.Instance;
-        moduleDef.RegisterHttpHandler(handler.MakeHandlerDef());
-    }
+        where H : IHttpHandler, new() => RootBuilder.RegisterHttpHandler<H>();
 
-    public static void RegisterHttpRouter(SpacetimeDB.Router router)
-    {
-        foreach (var route in router.GetRoutes())
-        {
-            if (!moduleDef.HasHttpHandler(route.HandlerFunction))
-            {
-                throw new ArgumentException(
-                    $"HTTP router references unknown handler `{route.HandlerFunction}`",
-                    nameof(router)
-                );
-            }
-
-            moduleDef.RegisterHttpRoute(
-                new RawHttpRouteDefV10(
-                    HandlerFunction: route.HandlerFunction,
-                    Method: route.Method,
-                    Path: route.Path
-                )
-            );
-        }
-    }
+    public static void RegisterHttpRouter(SpacetimeDB.Router router) =>
+        RootBuilder.RegisterHttpRouter(router);
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new()
-    {
-        moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar), View.MakeScheduleDesc());
-    }
+        where View : ITableView<View, T>, new() => RootBuilder.RegisterTable<T, View>();
 
     public static void RegisterView<TDispatcher>()
-        where TDispatcher : IView, new()
-    {
-        var dispatcher = ViewDispatcherCache<TDispatcher>.Instance;
-        var def = dispatcher.MakeViewDef(typeRegistrar);
-        moduleDef.RegisterView(def);
-    }
+        where TDispatcher : IView, new() => RootBuilder.RegisterView<TDispatcher>();
 
     public static void RegisterAnonymousView<TDispatcher>()
-        where TDispatcher : IAnonymousView, new()
-    {
-        var dispatcher = AnonymousViewDispatcherCache<TDispatcher>.Instance;
-        var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
-        moduleDef.RegisterView(def);
-    }
+        where TDispatcher : IAnonymousView, new() =>
+        RootBuilder.RegisterAnonymousView<TDispatcher>();
 
     public static void RegisterEnvironment(RawEnvironmentDeclarationV10 declaration) =>
-        moduleDef.RegisterEnvironment(declaration);
+        RootBuilder.RegisterEnvironment(declaration);
 
     public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
-        moduleDef.RegisterViewPrimaryKey(viewSourceName, columns);
+        RootBuilder.RegisterViewPrimaryKey(viewSourceName, columns);
 
-    public static void RegisterClientVisibilityFilter(Filter rlsFilter)
-    {
-        if (rlsFilter is Filter.Sql(var rlsSql))
-        {
-            moduleDef.RegisterRowLevelSecurity(new RawRowLevelSecurityDefV9 { Sql = rlsSql });
-        }
-        else
-        {
-            throw new Exception($"Unimplemented row level security type: {rlsFilter}");
-        }
-    }
+    public static void RegisterClientVisibilityFilter(Filter rlsFilter) =>
+        RootBuilder.RegisterClientVisibilityFilter(rlsFilter);
 
     public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
-        moduleDef.RegisterTableDefaultValue(table, colId, value);
+        RootBuilder.RegisterTableDefaultValue(table, colId, value);
 
     public static void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
-        moduleDef.SetCaseConversionPolicy(policy);
+        RootBuilder.SetCaseConversionPolicy(policy);
 
     public static void RegisterExplicitTableName(string sourceName, string canonicalName) =>
-        moduleDef.RegisterExplicitTableName(sourceName, canonicalName);
+        RootBuilder.RegisterExplicitTableName(sourceName, canonicalName);
 
     public static void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
-        moduleDef.RegisterExplicitFunctionName(sourceName, canonicalName);
+        RootBuilder.RegisterExplicitFunctionName(sourceName, canonicalName);
 
     public static void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
-        moduleDef.RegisterExplicitIndexName(sourceName, canonicalName);
+        RootBuilder.RegisterExplicitIndexName(sourceName, canonicalName);
 
     public static byte[] Consume(this BytesSource source)
     {
@@ -569,6 +312,27 @@ public static class Module
         ulong conn_id_0,
         ulong conn_id_1,
         Timestamp timestamp
+    ) =>
+        CreateReducerContext(
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            conn_id_0,
+            conn_id_1,
+            timestamp,
+            0
+        );
+
+    public static IReducerContext CreateReducerContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        int instanceId
     )
     {
         var senderIdentity = Identity.From(
@@ -578,7 +342,17 @@ public static class Module
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
 
+#if NET10_0_OR_GREATER
+        return new ReducerContext(
+            senderIdentity,
+            connectionId,
+            random,
+            time,
+            instanceId: instanceId
+        );
+#else
         return newReducerContext!(senderIdentity, connectionId, random, time);
+#endif
     }
 
     public static IProcedureContext CreateProcedureContext(
@@ -589,6 +363,27 @@ public static class Module
         ulong conn_id_0,
         ulong conn_id_1,
         Timestamp timestamp
+    ) =>
+        CreateProcedureContext(
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            conn_id_0,
+            conn_id_1,
+            timestamp,
+            0
+        );
+
+    public static IProcedureContext CreateProcedureContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        int instanceId
     )
     {
         var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
@@ -596,14 +391,22 @@ public static class Module
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
 
+#if NET10_0_OR_GREATER
+        return new ProcedureContext(sender, connectionId, random, time, instanceId);
+#else
         return newProcedureContext!(sender, connectionId, random, time);
+#endif
     }
 
     public static SpacetimeDB.HandlerContextBase CreateHandlerContext(Timestamp timestamp)
     {
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
+#if NET10_0_OR_GREATER
+        return new HandlerContext(random, time);
+#else
         return newHandlerContext!(random, time);
+#endif
     }
 
     public static IViewContext CreateViewContext(
@@ -611,13 +414,55 @@ public static class Module
         ulong sender_1,
         ulong sender_2,
         ulong sender_3
+    ) => CreateViewContext(sender_0, sender_1, sender_2, sender_3, 0);
+
+    public static IViewContext CreateViewContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        int instanceId
     )
     {
         var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
+#if NET10_0_OR_GREATER
+        return new ViewContext(sender, LocalReadOnly.ForInstance(instanceId));
+#else
         return newViewContext!(sender);
+#endif
     }
 
-    public static IAnonymousViewContext CreateAnonymousViewContext() => newAnonymousViewContext!();
+    public static IAnonymousViewContext CreateAnonymousViewContext() =>
+        CreateAnonymousViewContext(0);
+
+    public static IAnonymousViewContext CreateAnonymousViewContext(int instanceId)
+    {
+#if NET10_0_OR_GREATER
+        return new AnonymousViewContext(LocalReadOnly.ForInstance(instanceId));
+#else
+        return newAnonymousViewContext!();
+#endif
+    }
+
+#if NET10_0_OR_GREATER
+    public static int GetInstanceId(Local db) => db.InstanceId;
+
+    public static int GetInstanceId(LocalReadOnly db) => db.InstanceId;
+
+    public static int GetInstanceId(QueryBuilder from) => from.InstanceId;
+
+    public static int GetInstanceId(IReducerContext context) =>
+        ((ReducerContext)context).ModuleInstanceId;
+
+    public static int GetInstanceId(IProcedureContext context) =>
+        ((ProcedureContext)context).ModuleInstanceId;
+
+    public static int GetInstanceId(IViewContext context) =>
+        ((ViewContext)context).ModuleInstanceId;
+
+    public static int GetInstanceId(IAnonymousViewContext context) =>
+        ((AnonymousViewContext)context).ModuleInstanceId;
+#endif
 
     public static void EnsureNoUnreadBytes(MemoryStream stream, string description)
     {
@@ -652,7 +497,8 @@ public static class Module
         EnsureNativeAotTypeRoots();
         try
         {
-            var module = moduleDef.BuildModuleDefinition();
+            var module = RootBuilder.BuildModuleDefinition();
+            WarnIgnoredRoutes(module, "");
             RawModuleDef versioned = new RawModuleDef.V10(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
@@ -660,6 +506,28 @@ public static class Module
         catch (Exception e)
         {
             Log.Error($"Error while describing the module: {e}");
+        }
+    }
+
+    private static void WarnIgnoredRoutes(RawModuleDefV10 module, string path)
+    {
+        foreach (var section in module.Sections.OfType<RawModuleDefV10Section.Submodules>())
+        {
+            foreach (var child in section.Submodules_)
+            {
+                var childPath = path.Length == 0 ? child.Namespace : path + "." + child.Namespace;
+                if (
+                    child
+                        .Module.Sections.OfType<RawModuleDefV10Section.HttpRoutes>()
+                        .Any(routes => routes.HttpRoutes_.Count > 0)
+                )
+                {
+                    Log.Warn(
+                        $"HTTP routes declared in submodule '{childPath}' are ignored. Define HTTP routes in the root module instead."
+                    );
+                }
+                WarnIgnoredRoutes(child.Module, childPath);
+            }
         }
     }
 }
@@ -670,17 +538,26 @@ public static class Module
 /// </summary>
 public partial class Local
 {
-    // Intentionally empty – generated code adds table handles here.
+#if NET10_0_OR_GREATER
+    internal int InstanceId { get; init; }
+#endif
 }
 
 /// <summary>
 /// Read-only database access for view contexts.
-/// The code generator will extend this partial class to add table accessors.
+/// On .NET 10 the generator provides assembly-scoped extension properties.
+/// On .NET 8 generated modules declare their own type with table accessors.
 /// </summary>
 public sealed partial class LocalReadOnly
 {
-    // This class is intentionally empty - the code generator will add
-    // read-only table accessors for each table in the module.
-    // Example generated code:
-    // public Internal.ViewHandles.UserReadOnly User => new();
+#if NET10_0_OR_GREATER
+    internal int InstanceId { get; init; }
+
+    private static readonly LocalReadOnly Root = new();
+
+    private static LocalReadOnly?[] Instances => field ??= new LocalReadOnly?[Module.InstanceCount];
+
+    internal static LocalReadOnly ForInstance(int instanceId) =>
+        instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
+#endif
 }

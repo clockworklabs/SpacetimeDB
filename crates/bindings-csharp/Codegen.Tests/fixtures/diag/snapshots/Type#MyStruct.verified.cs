@@ -4,6 +4,11 @@
 
 partial struct MyStruct : System.IEquatable<MyStruct>, SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         x = BSATN.xRW.Read(reader);
@@ -44,7 +49,7 @@ partial struct MyStruct : System.IEquatable<MyStruct>, SpacetimeDB.BSATN.IStruct
             registrar.RegisterType<MyStruct>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new("x", xRW.GetAlgebraicType(registrar))
+                    new("x", xRW.GetAlgebraicType(registrar)),
                 }
             ));
 
