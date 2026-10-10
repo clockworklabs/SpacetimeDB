@@ -421,7 +421,7 @@ const PLAYER_FILTER: Filter = Filter::Sql(
 RLS rules automatically apply to subscriptions so that if a client subscribes to a table with RLS filters,
 the subscription will only return rows that the client is allowed to see.
 
-While the contraints and limitations outlined in the [reference docs] do not apply to RLS rules,
+While the constraints and limitations outlined in the [reference docs] do not apply to RLS rules,
 they do apply to the subscriptions that use them.
 For example, it is valid for an RLS rule to have more joins than are supported by subscriptions.
 However a client will not be able to subscribe to the table for which that rule is defined.

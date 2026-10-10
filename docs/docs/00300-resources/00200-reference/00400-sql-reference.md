@@ -167,7 +167,7 @@ SELECT * FROM Inventory WHERE price > {X} AND amount < {Y}
 SELECT projection FROM relation [ WHERE predicate ] [LIMIT NUM]
 ```
 
-The query languge is a strict superset of the subscription language.
+The query language is a strict superset of the subscription language.
 The main differences are seen in column projections and [joins](#from-clause).
 
 The subscription api only supports `*` projections,
@@ -354,7 +354,7 @@ the Spacetime Algebraic Type System.
 Spacetime SQL however does not support all of SATS,
 specifically in the way of product and sum types.
 The language itself does not provide a way to construct them,
-nore does it provide any scalar operators for them.
+nor does it provide any scalar operators for them.
 Nevertheless rows containing them can be returned to clients.
 
 ## Literals
