@@ -6,16 +6,19 @@ import { promisify } from 'node:util';
 
 const RENEWAL_TIMEOUT_MS = 2 * 60_000;
 
-// Google's CLI renews an expired sign-in before any command. This runs it on a private
-// copy of the sign-in in its own container, outside every agent's sandbox, and returns
-// the file it leaves. `directory` must be at the same path on the Docker host.
+// Google's CLI renews a sign-in before any command, but only once its token has expired.
+// This runs it on a private copy of the sign-in marked expired, in its own container
+// outside every agent's sandbox, and returns the file it leaves. The token it replaces
+// stays valid until its own expiry. `directory` must be at the same path on the Docker host.
 export function agyRenewal(image: string, directory: string): (text: string) => Promise<string> {
   return async text => {
     const home = mkdtempSync(join(directory, 'stack-bench-agy-renewal-'));
     try {
       const state = join(home, '.gemini', 'antigravity-cli');
       mkdirSync(state, { recursive: true, mode: 0o700 });
-      writeFileSync(join(state, 'antigravity-oauth-token'), text, { mode: 0o600 });
+      const login = JSON.parse(text) as { token: { expiry: string } };
+      login.token.expiry = '2000-01-01T00:00:00Z';
+      writeFileSync(join(state, 'antigravity-oauth-token'), JSON.stringify(login), { mode: 0o600 });
       writeFileSync(join(state, 'settings.json'), '{"enableTelemetry":false}\n', { mode: 0o600 });
       // The model list names the account's plan; none of the output is kept.
       try {
