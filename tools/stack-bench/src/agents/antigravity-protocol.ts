@@ -110,7 +110,6 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   const errors: string[] = [];
   let sessionId: string | null = null;
   let value: RecordValue | null = null;
-  let failedStep = false;
   let finished = false;
   let endedAfter: string | null = null;
   for (const line of stdout.split(/\r?\n/).filter(line => line.trim())) {
@@ -122,7 +121,6 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
     if (event.event === SESSION_ENDED_AFTER_ANSWER && typeof event.response === 'string') endedAfter = event.response;
     if (event.event === 'step_update' && record(event.step_update)) {
       const step = event.step_update;
-      if (step.step_type === 'error_message') failedStep = true;
       finished = step.step_type === 'agent_response' && step.state === 'DONE';
     }
   }
@@ -131,13 +129,12 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   if (typeof result.conversation_id === 'string') sessionId = result.conversation_id;
   if (sessionId !== null && !/^[0-9a-f-]{36}$/i.test(sessionId)) sessionId = null;
   if (!sessionId) errors.push('Antigravity returned no valid conversation ID');
-  // A resumed conversation reports its last error again even when this invocation ends with
-  // the model's finished response; a new failure always adds an error step to the stream.
-  const staleError = prior !== null && finished && !failedStep;
-  // The session was stopped after the model's finished answer. The CLI then reports an
-  // interruption, or again the last error it had already retried past; neither is a failure.
+  // The result names the conversation's last error even when the CLI retried past it, was
+  // resumed after it, or was stopped after its finished answer. A failure that ends the
+  // invocation leaves an error step last in the stream; one that ends with the model's
+  // finished response, in the stream or recorded by the runner, did not fail.
   const answered = endedAfter !== null;
-  if (value && result.status !== 'SUCCESS' && !staleError && !answered) {
+  if (value && result.status !== 'SUCCESS' && !finished && !answered) {
     errors.push(typeof result.error === 'string' && result.error ? result.error
       : `Antigravity ended with status ${JSON.stringify(result.status ?? null)}`);
   }

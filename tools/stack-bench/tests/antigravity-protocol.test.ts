@@ -7,9 +7,11 @@ import test from 'node:test';
 import { ANTIGRAVITY_LAUNCHER, antigravityArguments, antigravityFinishedAnswer, parseAntigravityResult } from '../src/agents/antigravity-protocol.js';
 
 const SESSION = '86eb1dda-1452-4d14-ab41-9afdc260bdd2';
-const stream = (result: Record<string, unknown> | null) => [
+// A stream's steps end with the model's finished response unless `steps` says otherwise.
+const stream = (result: Record<string, unknown> | null, steps = ['agent_response']) => [
   { event: 'init', conversation_id: SESSION, init: { model: 'gemini-3.8-flash', cwd: '/app' } },
-  { event: 'step_update', step_update: { conversation_id: SESSION, step_index: 1, state: 'DONE', step_type: 'agent_response' } },
+  ...steps.map((type, index) => ({ event: 'step_update',
+    step_update: { conversation_id: SESSION, step_index: index + 1, state: 'DONE', step_type: type } })),
   ...(result ? [{ event: 'result', result: { conversation_id: SESSION, ...result } }] : []),
 ].map(event => JSON.stringify(event)).join('\n');
 const usage = (input: number, output: number, thinking: number, cached: number) =>
@@ -83,10 +85,11 @@ test('a resumed Antigravity conversation that finishes is not failed by the erro
   const resumed = parseAntigravityResult(stream(repeated), prior);
   assert.equal(resumed.is_error, false);
   assert.equal(resumed.result, 'UPGRADE_COMPLETE\n');
-  const failedAgain = stream(repeated).replace(/\n(?=[^\n]*"event":"result")/, `\n${JSON.stringify({ event: 'step_update',
-    step_update: { conversation_id: SESSION, step_index: 2, state: 'DONE', step_type: 'error_message' } })}\n`);
-  assert.equal(parseAntigravityResult(failedAgain, prior).is_error, true);
-  assert.equal(parseAntigravityResult(stream(repeated)).is_error, true, 'a first invocation keeps its error');
+  assert.equal(parseAntigravityResult(stream(repeated, ['agent_response', 'error_message']), prior).is_error, true);
+  // Seen live at level 3: a first invocation retried past a 429, finished, and still named it.
+  const retried = parseAntigravityResult(stream(repeated, ['tool', 'error_message', 'tool', 'agent_response']));
+  assert.equal(retried.is_error, false);
+  assert.equal(retried.result, 'UPGRADE_COMPLETE\n');
 });
 
 // Seen live: the agent started the app as a background command, so the CLI never exited or
@@ -107,24 +110,25 @@ test('an Antigravity session stopped after its finished answer returns that answ
     assert.equal(antigravityFinishedAnswer(root, 'DEPLOY_COMPLETE', Date.now() + 60_000), null, 'an earlier session is not this one');
   } finally { rmSync(root, { recursive: true, force: true }); }
   const interrupted = { status: 'ERROR', error: 'interrupted', response: '', num_turns: 1, usage: usage(1000, 80, 40, 400) };
-  const ended = `${stream(interrupted)}\n${JSON.stringify({ event: 'session_ended_after_answer', response: 'DEPLOY_COMPLETE' })}`;
+  // The stream stalls at the command that is still running.
+  const ended = `${stream(interrupted, ['tool'])}\n${JSON.stringify({ event: 'session_ended_after_answer', response: 'DEPLOY_COMPLETE' })}`;
   const result = parseAntigravityResult(ended);
   assert.equal(result.is_error, false);
   assert.equal(result.result, 'DEPLOY_COMPLETE');
   assert.deepEqual(result.usage, { input_tokens: 1000, output_tokens: 80, cache_read_input_tokens: 400,
     cache_creation_input_tokens: 0 });
-  assert.equal(parseAntigravityResult(stream(interrupted)).is_error, true, 'an interruption alone is an error');
+  assert.equal(parseAntigravityResult(stream(interrupted, ['tool'])).is_error, true, 'an interruption alone is an error');
   // Seen live at level 3: stopped after UPGRADE_COMPLETE, the CLI repeated a 503 it had retried past.
   const repeated = { ...interrupted, error: 'API error (attempt 1): Error 503, Status: UNAVAILABLE' };
   const afterRetry = parseAntigravityResult(
-    `${stream(repeated)}\n${JSON.stringify({ event: 'session_ended_after_answer', response: 'UPGRADE_COMPLETE' })}`);
+    `${stream(repeated, ['tool'])}\n${JSON.stringify({ event: 'session_ended_after_answer', response: 'UPGRADE_COMPLETE' })}`);
   assert.equal(afterRetry.is_error, false);
   assert.equal(afterRetry.result, 'UPGRADE_COMPLETE');
 });
 
 test('Antigravity errors, bad usage and missing results are provider errors', () => {
   const failed = parseAntigravityResult(stream({ status: 'ERROR', error: 'quota exceeded', response: '',
-    num_turns: 0, usage: usage(0, 0, 0, 0) }));
+    num_turns: 0, usage: usage(0, 0, 0, 0) }, ['tool', 'error_message']));
   assert.equal(failed.is_error, true);
   assert.match(String(failed.result), /quota exceeded/);
   assert.equal(parseAntigravityResult(stream({ status: 'SUCCESS', response: 'x', num_turns: 1,
