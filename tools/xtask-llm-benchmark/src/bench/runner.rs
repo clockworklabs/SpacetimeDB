@@ -69,32 +69,37 @@ pub async fn ensure_goldens_built_once(
     build_goldens_only_for_lang(host, bench_root, lang, selectors, golden_scope).await
 }
 
-async fn publish_rust_async(
-    publisher: SpacetimeRustPublisher,
-    host_url: String,
-    wdir: PathBuf,
-    db: String,
-    clear_database: bool,
-) -> Result<PublishedDatabase> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await?
+fn with_build_cleanup<T>(project: &Path, lang: Lang, publish: impl FnOnce() -> Result<T>) -> Result<T> {
+    let result = publish();
+    // Only task-local outputs: never follow the shared Cargo target override or shared caches.
+    let directories: &[&str] = match lang {
+        Lang::Rust => &["target"],
+        Lang::CSharp => &["bin", "obj", ".nuget"],
+        Lang::TypeScript => &["node_modules", "dist"],
+    };
+    for directory in directories {
+        let path = project.join(directory);
+        if let Err(error) = fs::remove_dir_all(&path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("[cleanup] failed to remove build output {}: {error}", path.display());
+        }
+    }
+    result
 }
-async fn publish_cs_async(
-    publisher: DotnetPublisher,
+
+async fn publish_async(
+    publisher: impl Publisher + 'static,
+    lang: Lang,
     host_url: String,
     wdir: PathBuf,
     db: String,
     clear_database: bool,
 ) -> Result<PublishedDatabase> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await?
-}
-async fn publish_ts_async(
-    publisher: TypeScriptPublisher,
-    host_url: String,
-    wdir: PathBuf,
-    db: String,
-    clear_database: bool,
-) -> Result<PublishedDatabase> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await?
+    task::spawn_blocking(move || {
+        with_build_cleanup(&wdir, lang, || publisher.publish(&host_url, &wdir, &db, clear_database))
+    })
+    .await?
 }
 
 async fn delete_database_async(database: PublishedDatabase) -> Result<()> {
@@ -177,8 +182,9 @@ impl TaskRunner {
         let host_url = params.host.unwrap_or_else(|| "local".to_owned());
         let database = match params.lang {
             Lang::Rust => {
-                publish_rust_async(
+                publish_async(
                     self.rust_publisher,
+                    params.lang,
                     host_url,
                     wdir,
                     params.db_name,
@@ -187,10 +193,26 @@ impl TaskRunner {
                 .await?
             }
             Lang::CSharp => {
-                publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name, params.clear_database).await?
+                publish_async(
+                    self.cs_publisher,
+                    params.lang,
+                    host_url,
+                    wdir,
+                    params.db_name,
+                    params.clear_database,
+                )
+                .await?
             }
             Lang::TypeScript => {
-                publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name, params.clear_database).await?
+                publish_async(
+                    self.ts_publisher,
+                    params.lang,
+                    host_url,
+                    wdir,
+                    params.db_name,
+                    params.clear_database,
+                )
+                .await?
             }
         };
 
@@ -428,7 +450,7 @@ impl TaskRunner {
             hash: cfg.hash.to_string(),
             task: task_id.clone(),
             lang: cfg.lang_name.to_string(),
-            model_name: cfg.route.display_name.to_string(),
+            model_name: cfg.route.model_id(),
             vendor: cfg.route.vendor.slug().to_string(),
             golden_published: publish_error.is_none(),
             total_tests: total_tasks as u32,
@@ -1261,7 +1283,7 @@ fn build_fail_outcome(
         golden_published: false,
         category: Some(category),
 
-        model_name: route.display_name.to_string(),
+        model_name: route.model_id(),
         total_tests: 1,
         passed_tests: 0,
 
@@ -1353,4 +1375,47 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
         return Ok(format!("t_{:03}", n));
     }
     bail!("invalid task selector: {raw}")
+}
+
+#[cfg(test)]
+mod build_cleanup_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_sources_and_shared_files_after_success_and_failure() {
+        let root = std::env::temp_dir().join(format!("llm-build-cleanup-{}", std::process::id()));
+        for (lang, directories) in [
+            (Lang::Rust, vec!["target"]),
+            (Lang::CSharp, vec!["bin", "obj", ".nuget"]),
+            (Lang::TypeScript, vec!["node_modules", "dist"]),
+        ] {
+            for succeeds in [true, false] {
+                let project = root.join("project");
+                fs::create_dir_all(&project).unwrap();
+                fs::write(project.join("source"), "retain source").unwrap();
+                fs::write(root.join("shared-cache"), "retain cache").unwrap();
+                for directory in &directories {
+                    fs::create_dir_all(project.join(directory)).unwrap();
+                    fs::write(project.join(directory).join("artifact"), "build output").unwrap();
+                }
+                let result = with_build_cleanup(&project, lang, || {
+                    assert!(directories.iter().all(|dir| project.join(dir).exists()));
+                    if succeeds {
+                        Ok(())
+                    } else {
+                        Err(anyhow!("build failed"))
+                    }
+                });
+                assert_eq!(result.is_ok(), succeeds);
+                if let Err(error) = result {
+                    assert_eq!(error.to_string(), "build failed");
+                }
+                assert!(directories.iter().all(|dir| !project.join(dir).exists()));
+                assert_eq!(fs::read_to_string(project.join("source")).unwrap(), "retain source");
+                assert_eq!(fs::read_to_string(root.join("shared-cache")).unwrap(), "retain cache");
+                with_build_cleanup(&project, lang, || Ok(())).unwrap();
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 }
