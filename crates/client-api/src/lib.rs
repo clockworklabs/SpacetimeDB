@@ -18,6 +18,7 @@ use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
+use spacetimedb_lib::container::{ContainerInfo, ContainerSpec};
 use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentUpdate};
 use spacetimedb_lib::{Hash, ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
@@ -306,6 +307,9 @@ pub trait ControlStateReadAccess {
 
     // Locks
     async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool>;
+
+    // Containers
+    async fn get_container(&self, database_identity: &Identity) -> Result<Option<ContainerInfo>, ContainerError>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -384,6 +388,53 @@ pub trait ControlStateWriteAccess: Send + Sync {
         environment: EnvironmentUpdate,
         expected_module_hash: Hash,
     ) -> anyhow::Result<UpdateEnvironmentResult>;
+
+    /// Set, replace, or remove (`None`) the container of a database.
+    /// The caller has already been authorized to update the database.
+    async fn set_container(
+        &self,
+        caller: &Identity,
+        database_identity: &Identity,
+        spec: Option<ContainerSpec>,
+    ) -> Result<(), ContainerError>;
+
+    async fn set_container_running(
+        &self,
+        caller: &Identity,
+        database_identity: &Identity,
+        running: bool,
+    ) -> Result<(), ContainerError>;
+}
+
+/// Errors from container operations, which map onto HTTP status codes.
+#[derive(Debug, Error)]
+pub enum ContainerError {
+    #[error("container hosting is not supported by this server")]
+    Unsupported,
+    #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
+    NotFound(String),
+    #[error("{0}")]
+    Invalid(String),
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
+
+impl From<ContainerError> for ErrorResponse {
+    fn from(e: ContainerError) -> Self {
+        let status = match &e {
+            ContainerError::Unsupported => StatusCode::NOT_IMPLEMENTED,
+            ContainerError::Forbidden(_) => StatusCode::FORBIDDEN,
+            ContainerError::NotFound(_) => StatusCode::NOT_FOUND,
+            ContainerError::Invalid(_) => StatusCode::BAD_REQUEST,
+            ContainerError::Internal(e) => {
+                log::error!("container operation failed: {e:#}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into();
+            }
+        };
+        (status, e.to_string()).into()
+    }
 }
 
 #[async_trait]
@@ -442,6 +493,10 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
 
     async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool> {
         (**self).is_database_locked(database_identity).await
+    }
+
+    async fn get_container(&self, database_identity: &Identity) -> Result<Option<ContainerInfo>, ContainerError> {
+        (**self).get_container(database_identity).await
     }
 }
 
@@ -526,6 +581,24 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self)
             .update_environment(publisher, database_identity, environment, expected_module_hash)
             .await
+    }
+
+    async fn set_container(
+        &self,
+        caller: &Identity,
+        database_identity: &Identity,
+        spec: Option<ContainerSpec>,
+    ) -> Result<(), ContainerError> {
+        (**self).set_container(caller, database_identity, spec).await
+    }
+
+    async fn set_container_running(
+        &self,
+        caller: &Identity,
+        database_identity: &Identity,
+        running: bool,
+    ) -> Result<(), ContainerError> {
+        (**self).set_container_running(caller, database_identity, running).await
     }
 }
 
