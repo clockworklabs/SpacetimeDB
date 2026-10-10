@@ -323,6 +323,7 @@ impl OutboundMessage {
                 ws_v2::ServerMessage::OneOffQueryResult(_) => Some(WorkloadType::Sql),
                 ws_v2::ServerMessage::ReducerResult(_) => Some(WorkloadType::Reducer),
                 ws_v2::ServerMessage::ProcedureResult(_) => Some(WorkloadType::Procedure),
+                ws_v2::ServerMessage::Pong(_) => None,
             },
         }
     }
@@ -357,6 +358,7 @@ fn v2_message_num_rows(message: &ws_v2::ServerMessage) -> Option<usize> {
             ws_v2::ReducerOutcome::Err(_) | ws_v2::ReducerOutcome::InternalError(_) => None,
         },
         ws_v2::ServerMessage::ProcedureResult(_) => None,
+        ws_v2::ServerMessage::Pong(_) => None,
     }
 }
 
