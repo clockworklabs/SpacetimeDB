@@ -14,7 +14,10 @@ TABLES
 
 REDUCERS
 - Exercise()
-  - This is the only exported reducer
+  - Also export SetSale(id: ulong, category: string, amount: long) and RemoveSale(id: ulong)
+  - These reducers must update arbitrary sales and totals, not just the exercise data
+  - Setting an existing sale replaces its category and amount; removing a missing sale is a no-op
+  - Zero and negative amounts are valid; remove a category only when its last sale is removed
   - Keep CategoryTotal transactionally synchronized when a Sale is inserted, changed, moved between categories, or deleted
   - Insert books Sale rows with Ids 1 and 2 and Amounts 10 and 20
   - Update the second books Sale to 25
