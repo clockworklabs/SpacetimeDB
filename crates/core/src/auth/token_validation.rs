@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use thiserror;
 
-use super::identity::{IncomingClaims, SpacetimeIdentityClaims};
+use super::identity::{ContainerClaim, IncomingClaims, SpacetimeIdentityClaims};
 use super::JwtKeys;
 
 #[derive(thiserror::Error, Debug)]
@@ -102,7 +102,14 @@ where
                 issuer: None,
             };
             match first_validator.validate_token(token).await {
-                Ok(claims) => return Ok(claims),
+                // Only this cluster's own key can issue a container credential.
+                Ok(mut claims) => {
+                    if let Some(container) = ContainerClaim::from_audience(&claims.audience)? {
+                        claims.identity = container.database;
+                        claims.container = Some(container);
+                    }
+                    return Ok(claims);
+                }
                 Err(e) => e,
             }
         };
@@ -114,7 +121,13 @@ where
         if issuer == self.local_issuer {
             return Err(local_key_error);
         }
-        self.oidc_validator.validate_token(token).await
+        let claims = self.oidc_validator.validate_token(token).await?;
+        if ContainerClaim::in_audience(&claims.audience) {
+            return Err(TokenValidationError::Other(anyhow::anyhow!(
+                "a container audience is only valid in tokens issued by this cluster"
+            )));
+        }
+        Ok(claims)
     }
 }
 
@@ -434,7 +447,7 @@ fn validate_url_scheme(url: &str) -> Result<(), TokenValidationError> {
 mod tests {
     use std::time::Duration;
 
-    use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
+    use crate::auth::identity::{ContainerClaim, IncomingClaims, SpacetimeIdentityClaims};
     use crate::auth::token_validation::{
         BasicTokenValidator, CachingOidcTokenValidator, FullTokenValidator, JwtErrorKind, OidcTokenValidator,
         TokenSigner, TokenValidationError, TokenValidator,
@@ -983,6 +996,64 @@ mod tests {
             oidc_validator: OidcTokenValidator,
         };
         run_oidc_test(v, &Default::default()).await
+    }
+
+    fn container_token(kp: &JwtKeys, issuer: &str, audience: &[&str]) -> anyhow::Result<String> {
+        Ok(kp.private.sign(&IncomingClaims {
+            identity: None,
+            subject: "container:1:1".into(),
+            issuer: issuer.into(),
+            audience: audience.iter().map(|&aud| aud.into()).collect(),
+            iat: std::time::SystemTime::now(),
+            exp: None,
+            extra: None,
+        })?)
+    }
+
+    #[tokio::test]
+    async fn container_audience_is_honored_only_from_the_local_key() -> anyhow::Result<()> {
+        let local = JwtKeys::generate()?;
+        let foreign = JwtKeys::generate()?;
+        let v = FullTokenValidator {
+            local_key: local.public.clone(),
+            local_issuer: "local".into(),
+            oidc_validator: foreign.public.clone(),
+        };
+        let claim = ContainerClaim {
+            database: Identity::from_u256(7u32.into()),
+            generation: 3,
+        };
+
+        let audience = claim.audience();
+
+        // Signed by this cluster: the holder authenticates as the database.
+        let claims = v
+            .validate_token(&container_token(&local, "local", &["other", &audience])?)
+            .await?;
+        assert_eq!(claims.identity, claim.database);
+        assert_eq!(claims.container, Some(claim));
+
+        // Another issuer cannot mint a container credential.
+        let err = v
+            .validate_token(&container_token(&foreign, "foreign", &[&audience])?)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("container audience"), "{err}");
+
+        // A token may name only one container, and must name it correctly.
+        let other = ContainerClaim { generation: 4, ..claim }.audience();
+        for audience in [&[&*audience, &*other][..], &["spacetimedb-container:nope"]] {
+            assert!(v
+                .validate_token(&container_token(&local, "local", audience)?)
+                .await
+                .is_err());
+        }
+
+        // Without a container audience, tokens are unchanged.
+        let claims = v.validate_token(&container_token(&local, "local", &["other"])?).await?;
+        assert_eq!(claims.identity, Identity::from_claims("local", "container:1:1"));
+        assert_eq!(claims.container, None);
+        Ok(())
     }
 
     /// Convert a set of keys to a JWKS JSON string.

@@ -2161,6 +2161,10 @@ mod tests {
         fn module_logs_dir(&self, _replica_id: u64) -> ModuleLogsDir {
             self.module_logs_dir.clone()
         }
+
+        async fn is_current_container(&self, _claim: &spacetimedb::auth::identity::ContainerClaim) -> bool {
+            false
+        }
     }
 
     #[derive(Debug)]

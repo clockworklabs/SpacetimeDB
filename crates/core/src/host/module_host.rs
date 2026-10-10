@@ -2399,7 +2399,7 @@ impl ModuleHost {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
 
-        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if reducer_def.visibility.is_private() && !self.may_call_private(caller_identity) {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
@@ -2924,7 +2924,7 @@ impl ModuleHost {
             .procedure_by_name_with_module(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
-        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if procedure_def.visibility.is_private() && !self.may_call_private(caller_identity) {
             return Err(ProcedureCallError::NoSuchProcedure);
         }
 
@@ -2946,7 +2946,13 @@ impl ModuleHost {
         ))
     }
 
+    /// Whether `caller_identity` may call private functions: the database itself, as its
+    /// container presents it, or its owner.
     //TODO(shub) #4195: Also allow for collaborators along with owner
+    fn may_call_private(&self, caller_identity: Identity) -> bool {
+        caller_identity == self.info.database_identity || self.is_database_owner(caller_identity)
+    }
+
     fn is_database_owner(&self, caller_identity: Identity) -> bool {
         self.info.owner_identity == caller_identity
     }
