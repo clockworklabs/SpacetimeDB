@@ -142,7 +142,7 @@ This interface may change in an upcoming release as we rework SpacetimeDB's auth
 impl DbConnectionBuilder {
     fn on_connect_error(
         self,
-        callback: impl FnOnce(&ErrorContext, spacetimedb_sdk::Error),
+        callback: impl FnMut(&ErrorContext, spacetimedb_sdk::Error, Option<spacetimedb_sdk::NextReconnect>),
     ) -> DbConnectionBuilder;
 }
 ```
@@ -155,12 +155,26 @@ Chain a call to `.on_connect_error(callback)` to your builder to register a call
 impl DbConnectionBuilder {
     fn on_disconnect(
         self,
-        callback: impl FnOnce(&ErrorContext, Option<spacetimedb_sdk::Error>),
+        callback: impl FnMut(&ErrorContext, Option<spacetimedb_sdk::Error>, Option<spacetimedb_sdk::NextReconnect>),
     ) -> DbConnectionBuilder;
 }
 ```
 
 Chain a call to `.on_disconnect(callback)` to your builder to register a callback to run when your established `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+
+#### Automatic reconnection
+
+Enable `with_automatic_reconnect()` on the builder to retain the connection, cache, subscriptions, and callbacks across transient outages. `with_automatic_reconnect_options(AutomaticReconnectOptions { min_delay, max_delay })` changes the default one-second minimum and 30-second maximum delays. Retries use exponential backoff with 50% jitter clamped to these bounds. The SDK enforces a 500 ms minimum and a maximum of at least one second and `min_delay`.
+
+Register `on_automatic_reconnect(|conn, identity, token| { ... })` for each successful reconnect. It accepts `FnMut`; `on_connect` remains a one-shot initial-connection callback. The third parameter of `on_disconnect` and `on_connect_error` is `Some(NextReconnect { attempt, delay })` when a retry is scheduled, and `None` when the connection has ended. Initial connection failures do not retry.
+
+A reconnect reuses the retained token. Use `with_token_provider(|| async { /* return spacetimedb_sdk::Result<String> */ })` to refresh expiring tokens. Refresh happens when remaining validity is at most 5% of token lifetime or 30 seconds, whichever is larger, when expiry cannot be read, or after the retained token is rejected. A provider failure retries. A freshly returned token that is rejected, a changed identity, and fatal protocol errors stop recovery.
+
+`is_reconnecting()` is true while waiting for or establishing a reconnect; `is_active()` is false. Keep advancing the connection during this interval. Cache reads remain available. Existing subscriptions replay in one batch and call `on_applied` again. Row callbacks report only net changes. Subscriptions created during an outage are queued; unsubscribed handles are excluded from replay.
+
+Reducer calls while reconnecting return `Error::Disconnected`; procedure callbacks receive a disconnected error. In-flight calls fail with an `InternalError` for which `is_unknown_result()` is true, because they may have executed before the connection dropped. The SDK never retries these calls. Synthetic reducer error events use `Timestamp::UNIX_EPOCH` because no server completion timestamp is known. Explicit `disconnect()` cancels all reconnect work.
+
+Regenerate client bindings when upgrading to expose `is_reconnecting()`. Update lifecycle error callbacks to accept their third parameter and make subscription `on_applied` callbacks repeatable. The server must support session replacement and batch subscriptions.
 
 #### Method `with_token`
 
@@ -361,7 +375,7 @@ Subscribe to queries by calling `ctx.subscription_builder()` and chaining config
 
 ```rust
 impl SubscriptionBuilder {
-    fn on_applied(self, callback: impl FnOnce(&SubscriptionEventContext)) -> Self;
+    fn on_applied(self, callback: impl FnMut(&SubscriptionEventContext)) -> Self;
 }
 ```
 

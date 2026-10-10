@@ -17,6 +17,7 @@ browser = [
     "dep:gloo-net",
     "dep:gloo-storage",
     "dep:gloo-utils",
+    "dep:gloo-timers",
     "dep:js-sys",
     "dep:tokio-tungstenite-wasm",
     "dep:wasm-bindgen",
@@ -33,6 +34,10 @@ spacetimedb-metrics.workspace = true
 spacetimedb-query-builder.workspace = true
 
 thiserror.workspace = true
+base64.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 anymap3 = "1.0.1"
 brotli.workspace = true
 bytes.workspace = true

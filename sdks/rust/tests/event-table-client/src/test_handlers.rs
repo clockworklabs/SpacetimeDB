@@ -60,7 +60,7 @@ async fn connect_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"));
     build_and_run(conn).await
 }
 
@@ -70,7 +70,7 @@ fn subscribe_these_then(
     callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
 ) {
     ctx.subscription_builder()
-        .on_applied(callback)
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>(callback))
         .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
         .subscribe(queries);
 }
@@ -218,9 +218,11 @@ async fn exec_v1_rejects_event_table(db_name: &str) {
             let error_result = test_counter.add_test("v1-rejects-event-table");
 
             ctx.subscription_builder()
-                .on_applied(move |_ctx: &SubscriptionEventContext| {
-                    panic!("Subscription to event table should not succeed over v1");
-                })
+                .on_applied(test_counter::once::<SubscriptionEventContext, _>(
+                    move |_ctx: &SubscriptionEventContext| {
+                        panic!("Subscription to event table should not succeed over v1");
+                    },
+                ))
                 .on_error(move |_ctx, error| {
                     let msg = format!("{error:?}");
                     if msg.contains("v2") || msg.contains("upgrade") || msg.contains("Upgrade") {

@@ -30,7 +30,7 @@ impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
 }
 
 pub(crate) type OnAppliedCallback<M> =
-    Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
+    Box<dyn FnMut(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
 pub(crate) type OnErrorCallback<M> =
     Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, crate::Error) + Send + 'static>;
 pub type OnEndedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::SubscriptionEventContext) + Send + 'static>;
@@ -46,24 +46,54 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 }
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
-    pub(crate) fn on_disconnect(&mut self, _ctx: &M::ErrorContext) {
-        // We need to clear all the subscriptions.
-        // TODO: is this correct? We don't remove them from the client cache,
-        // we may want to resume them in the future if we impl reconnecting,
-        // and users can already register on-disconnect callbacks which will run in this case.
+    pub(crate) fn suspend(&mut self, ctx: &M::SubscriptionEventContext) {
+        let ids: Vec<_> = self.subscriptions.keys().copied().collect();
+        for id in ids {
+            let sub = self.subscriptions[&id].clone();
+            let cancelled = sub.inner.lock().unwrap().unsubscribe_called;
+            if cancelled {
+                self.unsubscribe_applied(ctx, id);
+            } else {
+                sub.inner.lock().unwrap().status = SubscriptionServerState::Pending;
+            }
+        }
+    }
 
-        // NOTE(cloutiertyler)
-        // This function previously invoke `on_error` for all subscriptions.
-        // However, this is inconsistent behavior given that `on_disconnect` for
-        // connections no longer always has an error argument and that the user
-        // can add an `on_ended` callback when unsubscribing.
-        //
-        // We propose instead that `on_ended` be added to the subscription
-        // builder so that it can be invoked when the subscription is ended
-        // because of a normal disconnect, but without the user calling
-        // `unsubscribe_then`. This can be done in a non-breaking way.
-        //
-        // For now, we will just do nothing when a subscription ends normally.
+    pub(crate) fn replay(&mut self, ctx: &M::SubscriptionEventContext) -> Box<[ws::v2::SubscribeSet]> {
+        self.suspend(ctx);
+        let old = std::mem::take(&mut self.subscriptions);
+        old.into_values()
+            .filter_map(|handle| {
+                let id = next_query_set_id();
+                // Rebinding and starting must be atomic with unsubscribe_then:
+                // a concurrent cancellation must either end locally or target the new ID.
+                let mut state = handle.inner.lock().unwrap();
+                if state.unsubscribe_called {
+                    let on_ended = state.on_ended();
+                    drop(state);
+                    if let Some(callback) = on_ended {
+                        callback(ctx);
+                    }
+                    return None;
+                }
+                state.query_set_id = id;
+                let msg = state.start().expect("uncancelled replay subscription");
+                drop(state);
+                self.subscriptions.insert(id, handle);
+                Some(ws::v2::SubscribeSet {
+                    query_set_id: id,
+                    query_strings: msg.query_strings,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn on_disconnect(&mut self, ctx: &M::SubscriptionEventContext) {
+        for (_, mut sub) in std::mem::take(&mut self.subscriptions) {
+            if let Some(callback) = sub.on_ended() {
+                callback(ctx);
+            }
+        }
     }
 
     /// Register a new subscription. This does not send the subscription to the server.
@@ -80,8 +110,10 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
             // TODO: log or double check error handling.
             return;
         };
-        if let Some(callback) = sub.on_applied() {
-            callback(ctx)
+        let callback = sub.on_applied();
+        if let Some(mut callback) = callback {
+            callback(ctx);
+            sub.inner.lock().unwrap().on_applied = Some(callback);
         }
     }
 
@@ -162,7 +194,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     }
 
     /// Register a callback to run when the subscription is applied.
-    pub fn on_applied(mut self, callback: impl FnOnce(&M::SubscriptionEventContext) + Send + 'static) -> Self {
+    pub fn on_applied(mut self, callback: impl FnMut(&M::SubscriptionEventContext) + Send + 'static) -> Self {
         self.on_applied = Some(Box::new(callback));
         self
     }
@@ -431,7 +463,7 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         self.on_applied.take()
     }
 
-    pub fn on_ended(&mut self) -> Option<OnAppliedCallback<M>> {
+    pub fn on_ended(&mut self) -> Option<OnEndedCallback<M>> {
         // TODO: Consider logging a warning if the state is wrong (like being in the Error state).
         if self.is_ended() {
             return None;

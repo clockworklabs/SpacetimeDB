@@ -36,6 +36,8 @@ members = [
   "crates/smoketests",
   "sdks/csharp/test-harness~",
   "sdks/rust",
+  "sdks/rust/examples/reconnect-desktop",
+  "modules/sdk-test-reconnect",
   "sdks/unreal",
   "crates/snapshot",
   "crates/sqltest",
