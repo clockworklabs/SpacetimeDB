@@ -114,6 +114,12 @@ test('an Antigravity session stopped after its finished answer returns that answ
   assert.deepEqual(result.usage, { input_tokens: 1000, output_tokens: 80, cache_read_input_tokens: 400,
     cache_creation_input_tokens: 0 });
   assert.equal(parseAntigravityResult(stream(interrupted)).is_error, true, 'an interruption alone is an error');
+  // Seen live at level 3: stopped after UPGRADE_COMPLETE, the CLI repeated a 503 it had retried past.
+  const repeated = { ...interrupted, error: 'API error (attempt 1): Error 503, Status: UNAVAILABLE' };
+  const afterRetry = parseAntigravityResult(
+    `${stream(repeated)}\n${JSON.stringify({ event: 'session_ended_after_answer', response: 'UPGRADE_COMPLETE' })}`);
+  assert.equal(afterRetry.is_error, false);
+  assert.equal(afterRetry.result, 'UPGRADE_COMPLETE');
 });
 
 test('Antigravity errors, bad usage and missing results are provider errors', () => {

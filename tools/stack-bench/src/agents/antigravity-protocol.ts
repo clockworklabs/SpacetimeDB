@@ -134,8 +134,9 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   // A resumed conversation reports its last error again even when this invocation ends with
   // the model's finished response; a new failure always adds an error step to the stream.
   const staleError = prior !== null && finished && !failedStep;
-  // The session was stopped after the model's finished answer; the CLI calls that an interruption.
-  const answered = endedAfter !== null && result.error === 'interrupted';
+  // The session was stopped after the model's finished answer. The CLI then reports an
+  // interruption, or again the last error it had already retried past; neither is a failure.
+  const answered = endedAfter !== null;
   if (value && result.status !== 'SUCCESS' && !staleError && !answered) {
     errors.push(typeof result.error === 'string' && result.error ? result.error
       : `Antigravity ended with status ${JSON.stringify(result.status ?? null)}`);
