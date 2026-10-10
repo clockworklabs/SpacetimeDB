@@ -789,7 +789,7 @@ Attach a container to a database, replacing any existing one
 
 ###### **Options:**
 
-* `--image <IMAGE>` — An OCI image reference pinned to a digest, like `name@sha256:<hex>`, or, for a server that uses your Docker daemon, a local image ID, like `sha256:<hex>`
+* `--image <IMAGE>` — An OCI image reference pinned to a digest, like `name@sha256:<hex>`, or a local image ID, like `sha256:<hex>`, that the database stores (`spacetime publish` uploads it) or the server's own Docker daemon has
 * `--env-key <ENV_KEY>` — A database environment key to set in the container (repeatable)
 * `--port <PORT>` — A port the container serves, as `name=port` (repeatable)
 * `--cpu-millicores <CPU_MILLICORES>` — CPU limit, in thousandths of a CPU

@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
-use axum::extract::{DefaultBodyLimit, Extension};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, Request, State};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
@@ -100,10 +102,11 @@ pub fn cli() -> clap::Command {
                 .long("enable-containers")
                 .action(SetTrue)
                 .help(
-                    "Run the containers attached to databases with Docker. Overrides `[containers] enabled` \
-                     in config.toml, which by default runs them only if SpacetimeDB listens only on loopback \
-                     and Docker answers. Containers are not isolated from this machine's network, and the \
-                     owner of any database can attach one, so enable this only on a trusted machine.",
+                    "Run the containers attached to databases with Docker, for clients on any machine. \
+                     Overrides `[containers] enabled` in config.toml, which by default runs them if Docker \
+                     answers, but lets only clients on this machine attach, start or upload them. Containers \
+                     are not isolated from this machine's network, and the owner of any database can attach \
+                     one, so enable this only on a trusted machine.",
                 ),
         )
         .arg(
@@ -163,8 +166,8 @@ struct ConfigFile {
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct ContainersConfig {
-    /// `true`, `false`, or `"auto"` (`None`, the default): run containers only if SpacetimeDB
-    /// listens only on loopback and a Docker daemon answers; see [`start_containers`].
+    /// `true`, `false`, or `"auto"` (`None`, the default): run containers if a Docker daemon
+    /// answers, for clients on this machine only; see [`start_containers`].
     #[serde(default, deserialize_with = "de_enabled")]
     enabled: Option<bool>,
     docker_host: Option<String>,
@@ -292,11 +295,20 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     db_routes.db_reset = db_routes.db_reset.layer(DefaultBodyLimit::disable());
+    let local_only = axum::middleware::from_fn_with_state(ctx.clone(), local_container_clients_only);
+    // The platform too, so that `spacetime publish` from another machine fails before building.
+    db_routes.container_platform_get = db_routes.container_platform_get.route_layer(local_only.clone());
+    db_routes.container_image_head = db_routes.container_image_head.route_layer(local_only.clone());
+    db_routes.container_put = db_routes.container_put.route_layer(local_only.clone());
+    db_routes.container_start = db_routes.container_start.route_layer(local_only.clone());
+    db_routes.container_image_put = db_routes.container_image_put.route_layer(local_only);
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
         .layer(Extension(task_dumps))
-        .with_state(ctx.clone());
+        .with_state(ctx.clone())
+        // For `local_container_clients_only`.
+        .into_make_service_with_connect_info::<SocketAddr>();
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
@@ -381,15 +393,35 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Unless containers were enabled explicitly, refuse to attach, start or upload containers for
+/// clients on other machines, or for web pages, whose requests browsers mark with `Origin`; see
+/// [`start_containers`].
+async fn local_container_clients_only(
+    State(ctx): State<Arc<StandaloneEnv>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let local = peer.ip().to_canonical().is_loopback() && !request.headers().contains_key(http::header::ORIGIN);
+    if ctx.containers_for_local_clients_only() && !local {
+        let message = "This server runs containers only for clients on its own machine, other than web pages, \
+                       since containers were not enabled explicitly. To let other clients attach, start or upload \
+                       containers, restart it with --enable-containers, or with `enabled = true` in the \
+                       [containers] section of config.toml. Containers are not isolated from the server's network.";
+        return (http::StatusCode::FORBIDDEN, message).into_response();
+    }
+    next.run(request).await
+}
+
 /// Run the containers attached to databases, if the flags or `config` enable them, and log
 /// whether they run and why.
 ///
-/// By default (`enabled = "auto"`), containers run only if SpacetimeDB listens only on loopback
-/// and a Docker daemon answers. Anyone who can reach the server can create a database, and
-/// containers are not isolated from this machine's network, so a server that other machines can
-/// reach runs containers only if they are explicitly enabled. On Linux, Docker Engine connects
-/// containers to the host through the Docker bridge, which cannot reach loopback, so "auto" also
-/// needs an explicit API URL there.
+/// By default (`enabled = "auto"`), containers run if a Docker daemon answers, but only clients
+/// on this machine may attach, start or upload them. Anyone who can reach the server can create a
+/// database, and containers are not isolated from this machine's network, so clients on other
+/// machines may do so only if containers are explicitly enabled. On Linux, Docker Engine connects
+/// containers to the host through the Docker bridge, which cannot reach loopback, so "auto" leaves
+/// containers off unless the server listens on every address or an API URL is set.
 async fn start_containers(
     args: &ArgMatches,
     config: ContainersConfig,
@@ -421,26 +453,20 @@ async fn start_containers(
             "Containers are enabled by {source}, though SpacetimeDB listens on {listen_addr}: any client \
              that can reach it can create a database and run images on this machine, and {not_isolated}"
         ),
-        None if !loopback => {
+        None if cfg!(target_os = "linux") && !listen_addr.ip().is_unspecified() && api_url.is_none() => {
             log::info!(
-                "Containers are disabled, since SpacetimeDB listens on {listen_addr}, which other machines may \
-                 reach. To run containers, listen on loopback, e.g. --listen-addr 127.0.0.1:{}, \
-                 or pass --enable-containers",
+                "Containers are disabled, since on Linux they reach the server through the Docker bridge, \
+                 and SpacetimeDB listens only on {listen_addr}. To run containers, listen on every address, \
+                 e.g. --listen-addr 0.0.0.0:{}, or set `api-url` in the [containers] section of config.toml",
                 listen_addr.port()
             );
             return Ok(());
         }
-        None if cfg!(target_os = "linux") && api_url.is_none() => {
-            log::info!(
-                "Containers are disabled, since on Linux they cannot reach a server that listens only on \
-                 loopback. To run containers, listen where the Docker bridge can reach SpacetimeDB and pass \
-                 --enable-containers"
-            );
-            return Ok(());
-        }
         None => match spacetimedb_container_supervisor::ping(docker_host.as_deref(), DOCKER_PING_TIMEOUT).await {
+            Ok(()) if loopback => format!("Containers are enabled, since Docker answers; {not_isolated}"),
             Ok(()) => format!(
-                "Containers are enabled, since SpacetimeDB listens only on loopback and Docker answers; \
+                "Containers are enabled, since Docker answers, for clients on this machine: clients on other \
+                 machines cannot attach, start or upload containers unless you pass --enable-containers; \
                  {not_isolated}"
             ),
             Err(e) => {
@@ -451,7 +477,7 @@ async fn start_containers(
     };
 
     let options = ContainerOptions {
-        docker_host,
+        docker_host: docker_host.clone(),
         runtime: args.get_one::<String>("container_runtime").cloned().or(config.runtime),
         // Quotas need overlay2 on XFS with project quotas, which few development machines have.
         scratch_quota: false,
@@ -469,7 +495,8 @@ async fn start_containers(
         }
         Err(e) => return Err(e),
     }
-    ctx.enable_containers();
+    // Unless they were enabled explicitly; enforced by `local_container_clients_only`.
+    ctx.enable_containers(docker_host, enabled.is_none());
     log::warn!("{enabled_message}");
     Ok(())
 }

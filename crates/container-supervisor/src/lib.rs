@@ -8,6 +8,10 @@
 //! assigned. The supervisor ID is persisted in the state directory, so that separate clusters
 //! sharing one Docker Engine never remove each other's containers.
 //!
+//! A running container keeps the environment it started with, so the supervisor records a digest
+//! of its environment values in a label, and restarts it under the same generation when the
+//! database's values differ.
+//!
 //! Each running generation receives a short-lived token for its database, signed with this
 //! cluster's key. The token is a file in a directory bind-mounted at `/run/spacetimedb`,
 //! rewritten well before it expires. Hosts accept it only while its generation is current.
@@ -28,8 +32,8 @@ use async_trait::async_trait;
 use bollard::{
     models::{ContainerCreateBody, HostConfig},
     query_parameters::{
-        CreateContainerOptions, CreateImageOptions, ListContainersOptions, ListNetworksOptions, RemoveContainerOptions,
-        StopContainerOptions,
+        CreateContainerOptions, CreateImageOptions, ImportImageOptions, ListContainersOptions, ListNetworksOptions,
+        RemoveContainerOptions, StopContainerOptions,
     },
     Docker,
 };
@@ -47,6 +51,8 @@ const LABEL_SUPERVISOR: &str = "spacetimedb.supervisor";
 const LABEL_NODE: &str = "spacetimedb.node_id";
 const LABEL_DATABASE: &str = "spacetimedb.database_id";
 const LABEL_GENERATION: &str = "spacetimedb.generation";
+/// A digest of the container's environment values, from [`env_fingerprint`].
+const LABEL_ENV: &str = "spacetimedb.env_sha256";
 
 const TICK: Duration = Duration::from_secs(2);
 /// How long to wait before treating an exit as final: Docker's default shutdown timeout.
@@ -174,6 +180,8 @@ struct Observed {
     /// platform stopped it rather than the program exiting on its own.
     stopped_by_platform: bool,
     finished_at: Option<std::time::SystemTime>,
+    /// The label [`LABEL_ENV`], which containers created before it existed lack.
+    env_sha256: Option<String>,
 }
 
 #[derive(Default)]
@@ -249,6 +257,25 @@ pub async fn ping(docker_host: Option<&str>, timeout: Duration) -> anyhow::Resul
     Ok(())
 }
 
+/// The platform of the Docker Engine, like `linux/arm64`. See [`ContainerOptions::docker_host`].
+pub async fn platform(docker_host: Option<&str>) -> anyhow::Result<String> {
+    let version = connect(docker_host)?.negotiate_version().await?.version().await?;
+    match (version.os, version.arch) {
+        (Some(os), Some(arch)) => Ok(format!("{os}/{arch}")),
+        _ => bail!("Docker did not report its platform"),
+    }
+}
+
+/// Whether the Docker Engine has the image `image`. See [`ContainerOptions::docker_host`].
+pub async fn has_image(docker_host: Option<&str>, image: &str) -> anyhow::Result<bool> {
+    let docker = connect(docker_host)?.negotiate_version().await?;
+    match docker.inspect_image(image).await {
+        Ok(_) => Ok(true),
+        Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn connect(docker_host: Option<&str>) -> anyhow::Result<Docker> {
     let docker = match docker_host {
         Some(host) => Docker::connect_with_host(host),
@@ -280,6 +307,19 @@ fn environment(module: &spacetimedb::host::ModuleHost, keys: &[String]) -> anyho
         env.insert(key.clone(), value);
     }
     Ok(env)
+}
+
+/// A SHA-256 digest of environment values, which a container's label records instead of the
+/// values themselves.
+fn env_fingerprint(env: &BTreeMap<String, String>) -> String {
+    let mut hasher = openssl::sha::Sha256::new();
+    for (key, value) in env {
+        for part in [key, value] {
+            hasher.update(&(part.len() as u64).to_le_bytes());
+            hasher.update(part.as_bytes());
+        }
+    }
+    hasher.finish().iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Read this node's supervisor ID from the state directory, creating it on first use.
@@ -340,6 +380,13 @@ impl<N: ContainerControl> Supervisor<N> {
             if !wanted {
                 info!(
                     "removing unassigned container database_id={} generation={}",
+                    observed.database_id, observed.generation
+                );
+                self.remove(&observed.id).await?;
+            } else if observed.running && self.env_changed(&observed, &assigned[&observed.database_id]).await {
+                // Left out of `running`, so the same generation starts again below.
+                info!(
+                    "restarting container database_id={} generation={}: its environment values changed",
                     observed.database_id, observed.generation
                 );
                 self.remove(&observed.id).await?;
@@ -506,6 +553,7 @@ impl<N: ContainerControl> Supervisor<N> {
                     .as_deref()
                     .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
                     .map(std::time::SystemTime::from),
+                env_sha256: labels.get(LABEL_ENV).cloned(),
             });
         }
         Ok(observed)
@@ -515,17 +563,18 @@ impl<N: ContainerControl> Supervisor<N> {
         let spec = &assigned.spec;
         let module = self.leader_module(database_id).await?;
         let mut env = environment(&module, &spec.env_keys)?;
+        let env_sha256 = env_fingerprint(&env);
         env.insert("SPACETIMEDB_URI".into(), self.options.api_url.clone());
         env.insert(
             "SPACETIMEDB_DATABASE_IDENTITY".into(),
             assigned.database_identity.to_hex().to_string(),
         );
         env.insert("SPACETIMEDB_TOKEN_FILE".into(), format!("{CREDENTIALS_MOUNT}/token"));
-        self.ensure_image(&spec.image).await?;
+        self.ensure_image(&module, &spec.image).await?;
         self.check_image(&spec.image).await?;
         let credentials = self.credentials_dir(database_id, assigned.generation);
 
-        let labels = HashMap::from([
+        let mut labels = HashMap::from([
             (LABEL_SUPERVISOR.to_string(), self.id.clone()),
             (LABEL_NODE.to_string(), node_id.to_string()),
             (LABEL_DATABASE.to_string(), database_id.to_string()),
@@ -538,6 +587,7 @@ impl<N: ContainerControl> Supervisor<N> {
             self.remove_network(&name).await?;
             network.create(&self.docker, &name, labels.clone()).await?;
         }
+        labels.insert(LABEL_ENV.to_string(), env_sha256);
         let host_config = HostConfig {
             nano_cpus: Some(i64::from(spec.resources.cpu_millicores) * 1_000_000),
             memory: Some(memory),
@@ -597,6 +647,26 @@ impl<N: ContainerControl> Supervisor<N> {
         Ok(())
     }
 
+    /// Whether the database's values for a running container's `env-keys` differ from those it
+    /// started with. A container without the label, or whose values can't be read, e.g. while its
+    /// replica restarts or a key has no value, is kept.
+    async fn env_changed(&self, observed: &Observed, assigned: &Assigned) -> bool {
+        let Some(started_with) = &observed.env_sha256 else {
+            return false;
+        };
+        // A generation's `env-keys` don't change, so a container without any has nothing to compare.
+        if assigned.spec.env_keys.is_empty() {
+            return false;
+        }
+        let Ok(module) = self.leader_module(observed.database_id).await else {
+            return false;
+        };
+        let keys = assigned.spec.env_keys.clone();
+        // Off the async runtime, since a read waits for any write in progress.
+        let current = spacetimedb::util::asyncify(move || environment(&module, &keys)).await;
+        current.is_ok_and(|env| env_fingerprint(&env) != *started_with)
+    }
+
     /// The module of the local leader replica, launching the replica if the node has not yet
     /// done so, e.g. after a restart.
     async fn leader_module(&self, database_id: u64) -> anyhow::Result<spacetimedb::host::ModuleHost> {
@@ -609,15 +679,43 @@ impl<N: ContainerControl> Supervisor<N> {
             .context("the database's leader replica is not running")
     }
 
-    async fn ensure_image(&self, image: &str) -> anyhow::Result<()> {
+    /// Make sure Docker has `image`: load a local image ID that the database stores, and pull
+    /// anything else.
+    async fn ensure_image(&self, module: &spacetimedb::host::ModuleHost, image: &str) -> anyhow::Result<()> {
         let inspected = self.docker.inspect_image(image).await;
         if inspected.is_ok() {
             return Ok(());
         }
         if is_local_image_id(image) {
-            return inspected.map(drop).with_context(|| {
-                format!("image {image} is not in this server's Docker daemon, and local image IDs are never pulled")
-            });
+            let db = module.relational_db().clone();
+            let id = image.to_owned();
+            let stored = spacetimedb::util::asyncify(move || {
+                db.with_read_only(Workload::Internal, |tx| spacetimedb::db::container_image::get(tx, &id))
+            })
+            .await
+            .context("unable to read the images stored in the database")?;
+            let Some(stored) = stored else {
+                return inspected.map(drop).with_context(|| {
+                    format!(
+                        "image {image} is in neither the database nor this server's Docker daemon; publish again \
+                         to upload it. Local image IDs are never pulled"
+                    )
+                });
+            };
+            info!("loading image {image} from the database");
+            self.docker
+                .import_image(ImportImageOptions::default(), bollard::body_full(stored.into()), None)
+                .try_collect::<Vec<_>>()
+                .await
+                .with_context(|| format!("unable to load image {image} into Docker"))?;
+            // A loaded image's ID depends on the daemon's image store, classic or containerd.
+            self.docker.inspect_image(image).await.with_context(|| {
+                format!(
+                    "Docker loaded image {image} under another ID, probably because its image store (classic or \
+                     containerd) differs from the one that built the image; push the image to a registry instead"
+                )
+            })?;
+            return Ok(());
         }
         info!("pulling image {image}");
         self.docker
@@ -895,4 +993,31 @@ fn stopped_before_platform_start(finished_at: &str) -> bool {
         .into_iter()
         .flatten()
         .any(|start| finished < start)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_fingerprint_changes_with_any_value() {
+        let env = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
+            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        };
+        let empty_key = env_fingerprint(&env(&[("OPENAI_API_KEY", ""), ("OPENAI_MODEL", "gpt-4o-mini")]));
+        assert_eq!(empty_key.len(), 64);
+        assert_ne!(
+            empty_key,
+            env_fingerprint(&env(&[
+                ("OPENAI_API_KEY", "sk-test-123"),
+                ("OPENAI_MODEL", "gpt-4o-mini")
+            ]))
+        );
+        // Keys and values are delimited.
+        assert_ne!(
+            env_fingerprint(&env(&[("A", "BC")])),
+            env_fingerprint(&env(&[("AB", "C")]))
+        );
+        assert_ne!(env_fingerprint(&env(&[("A", "")])), env_fingerprint(&BTreeMap::new()));
+    }
 }

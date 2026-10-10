@@ -12,6 +12,10 @@ use spacetimedb_client_api_messages::name::EnvironmentPublishError;
 use spacetimedb_client_api_messages::publish::SpacetimeEnvironmentRemove;
 use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentSchema};
 
+/// SpacetimeDB Cloud's error for environment values sent with a new or reset database.
+pub(super) const INITIAL_ENVIRONMENT_DEFERRED: &str =
+    "initial environment values during database creation/reset are deferred";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
     Config,
@@ -91,8 +95,7 @@ pub(super) async fn publish_only(
     input: Option<&Value>,
     options: &super::EnvironmentOptions,
 ) -> anyhow::Result<()> {
-    use crate::util::{add_auth_header_opt, get_auth_header, y_or_n};
-    use spacetimedb_client_api_messages::publish::EnvironmentMetadata;
+    use crate::util::{get_auth_header, y_or_n};
 
     let host = config.get_host_url(server)?;
     let server_url = reqwest::Url::parse(&host)?;
@@ -105,6 +108,21 @@ pub(super) async fn publish_only(
         );
     }
     let auth = get_auth_header(config, anonymous, server, !yes.skip_login).await?;
+    update(&host, &auth, database, input, options).await
+}
+
+/// Update an existing database's environment, once the caller has confirmed the
+/// server and logged in.
+pub(super) async fn update(
+    host: &str,
+    auth: &crate::util::AuthHeader,
+    database: &str,
+    input: Option<&Value>,
+    options: &super::EnvironmentOptions,
+) -> anyhow::Result<()> {
+    use crate::util::add_auth_header_opt;
+    use spacetimedb_client_api_messages::publish::EnvironmentMetadata;
+
     let encoded = percent_encoding::percent_encode(
         database.as_bytes(),
         const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') },
@@ -115,7 +133,7 @@ pub(super) async fn publish_only(
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let response = add_auth_header_opt(client.get(&url), &auth).send().await?;
+    let response = add_auth_header_opt(client.get(&url), auth).send().await?;
     let metadata: EnvironmentMetadata = response
         .json_or_error()
         .await
@@ -129,7 +147,7 @@ pub(super) async fn publish_only(
     } else {
         client.patch(url)
     };
-    let mut request = add_auth_header_opt(request, &auth)
+    let mut request = add_auth_header_opt(request, auth)
         .query(&[("expected_module_hash", &metadata.module_hash)])
         .json(&resolved.values)
         .build()?;

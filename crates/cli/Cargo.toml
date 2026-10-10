@@ -40,6 +40,7 @@ colored.workspace = true
 convert_case.workspace = true
 dirs.workspace = true
 duct.workspace = true
+flate2.workspace = true
 futures.workspace = true
 fs-err.workspace = true
 headers.workspace = true

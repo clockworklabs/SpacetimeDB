@@ -79,9 +79,10 @@ directives = [
 
 [containers]
 # Whether to run the containers attached to databases with Docker: true, false,
-# or "auto", which runs them only if SpacetimeDB listens only on loopback and a
-# Docker daemon answers at startup. On Linux, "auto" also needs api-url, since
-# containers reach the host through the Docker bridge rather than loopback.
+# or "auto", which runs them if a Docker daemon answers at startup, but lets only
+# clients on this machine attach, start or upload them. On Linux, "auto" leaves
+# them off unless SpacetimeDB listens on every address (like 0.0.0.0) or api-url
+# is set, since containers reach the host through the Docker bridge.
 # Containers are not isolated from this machine's network.
 # --enable-containers and --disable-containers override this.
 # enabled = "auto"

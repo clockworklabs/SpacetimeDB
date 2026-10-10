@@ -165,7 +165,7 @@ The `containers` table controls whether the server runs the containers attached 
 
 #### `containers.enabled`
 
-`true`, `false`, or `"auto"` (the default). With `"auto"`, the server runs containers only if it listens only on loopback addresses, such as `127.0.0.1`, and a Docker daemon answers when it starts. Since anyone who can reach the server can create a database, and containers are not isolated from the machine's network, a server that other machines can reach runs containers only if `enabled = true`. On a machine shared with other users, loopback does not keep them out either. On Linux, `"auto"` also requires `api-url`, since containers reach the host through the Docker bridge rather than loopback. (`--enable-containers`, `--disable-containers`)
+`true`, `false`, or `"auto"` (the default). With `"auto"`, the server runs containers if a Docker daemon answers when it starts, but only clients on the same machine (connecting from a loopback address, such as `127.0.0.1`) may attach, start or upload containers; others get 403 Forbidden. Since anyone who can reach the server can create a database, and containers are not isolated from the machine's network, clients on other machines may do so only if `enabled = true`. Requests from web pages, which browsers mark with an `Origin` header, are refused too. On a machine shared with other users, loopback does not keep them out, and a reverse proxy or tunnel on the machine makes every client look local. On Linux, `"auto"` leaves containers off unless the server listens on every address, like the default `0.0.0.0`, or `api-url` is set, since containers reach the host through the Docker bridge. (`--enable-containers`, `--disable-containers`)
 
 #### `containers.docker-host`
 
