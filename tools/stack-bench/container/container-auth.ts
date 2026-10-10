@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { PathLike } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { readGrokLogin } from '../src/agents/grok-login.js';
+import { readAgyLogin } from '../src/agents/agy-login.js';
 import type { AnthropicUpstream } from './credential-broker-accounting.js';
 
 export const SUBSCRIPTION_TOKEN_ENVIRONMENT = 'CLAUDE_CODE_OAUTH_TOKEN';
@@ -50,8 +51,13 @@ export function resolveContainerAuth({ provider = 'anthropic', apiKey = '', env 
     return { provider, mode: 'subscription-token', credential: readGrokLogin(read(authFile, 'utf8')).token };
   }
   if (provider === 'google') {
-    if (!apiKey) throw new Error('Google requires a Gemini API key');
-    return { provider, mode: 'api-key', credential: apiKey };
+    const authFile = env.AGY_AUTH_FILE?.trim();
+    if (apiKey && authFile) throw new Error('use only one of Gemini API-key and Google account authentication');
+    if (apiKey) return { provider, mode: 'api-key', credential: apiKey };
+    if (!authFile || !isAbsolute(authFile)) throw new Error('Google requires a Gemini API key or an absolute AGY_AUTH_FILE');
+    if (!exists(authFile)) throw new Error('AGY_AUTH_FILE does not exist');
+    // run-build renews the sign-in before the session and while it runs.
+    return { provider, mode: 'subscription-token', credential: readAgyLogin(read(authFile, 'utf8')).token };
   }
   if (provider === 'openrouter') {
     if (!apiKey) throw new Error('OpenRouter requires an API key');

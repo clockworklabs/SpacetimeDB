@@ -213,7 +213,8 @@ export function credentialReady(
         exists: path => exists(String(path)) });
       return { ok: true, mode: auth.mode, kind: auth.mode === 'api-key' ? 'api-key' : 'account-token-snapshot',
         source: auth.mode === 'api-key' ? `selected:${environment}`
-          : `secret-file:${adapter.provider === 'xai' ? 'GROK_AUTH_FILE' : 'CODEX_AUTH_FILE'}` };
+          : `secret-file:${adapter.provider === 'xai' ? 'GROK_AUTH_FILE'
+            : adapter.provider === 'google' ? 'AGY_AUTH_FILE' : 'CODEX_AUTH_FILE'}` };
     } catch (error) {
       return { ok: false, source: null, reason: error instanceof Error ? error.message : 'Invalid provider credentials' };
     }

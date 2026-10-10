@@ -54,6 +54,8 @@ export type BrokerConfig = {
   providerRoute?: string;
   mode: BrokerMode;
   credential: string;
+  // A file the controller rewrites with a renewed credential; read before each request.
+  credentialPath?: string;
   sessionToken: string;
   readyPath?: string;
   parentPid?: number;
@@ -145,6 +147,7 @@ const brokerConfigSchema = z.strictObject({
   upstream: z.enum(ANTHROPIC_UPSTREAM_IDS).optional(),
   mode: z.enum(['api-key', 'subscription-token']),
   credential: z.string().min(16),
+  credentialPath: z.string().min(1).optional(),
   sessionToken: z.string().min(16),
   readyPath: z.string().min(1).optional(),
   parentPid: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),

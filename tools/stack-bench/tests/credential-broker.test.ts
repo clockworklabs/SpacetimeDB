@@ -75,7 +75,7 @@ interface BrokerReady {
 
 type BrokerTestConfig = Partial<Pick<BrokerConfig,
   'ledgerPath' | 'maxBudgetUsd' | 'pricingRates' | 'maxOutputTokens' | 'provider' | 'providerRoute' | 'accountId' | 'model'
-  | 'upstream'>> & {
+  | 'upstream' | 'credentialPath'>> & {
     upstreamBody?: string | Buffer;
     upstreamStatus?: number;
     upstreamHeaders?: OutgoingHttpHeaders;
@@ -234,6 +234,51 @@ test('Google requests reach the selected model with the real key and only file, 
     cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
   assert.equal(protocol.requestPricing({ tools: [{ googleSearch: {} }] }).unpriced, 'hosted-tool');
   assert.equal(brokerHostname({ provider: 'google', mode: 'api-key' }), 'generativelanguage.googleapis.com');
+});
+
+// With a Google account sign-in the CLI calls Code Assist: the model is named in a wrapper,
+// account reads are POSTs forwarded unbilled, and each request carries the latest renewed token.
+test('Google account requests reach Code Assist with the renewed token and only file, shell and task tools', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agy-account-'));
+  const credentialPath = join(root, 'credential');
+  writeFileSync(credentialPath, 'renewed-token-value-1234567890');
+  const call = '/v1internal:streamGenerateContent?alt=sse';
+  const tools = [{ functionDeclarations: ['view_file', 'run_command', 'search_web', 'invoke_subagent']
+    .map(name => ({ name })) }];
+  const usageEvent = (usageMetadata: Record<string, number>) =>
+    `data: ${JSON.stringify({ response: { candidates: [], usageMetadata }, traceId: 't' })}\r\n\r\n`;
+  try {
+    await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen, stats }) => {
+      const post = (to: string, body: Record<string, unknown>) => send(brokerPort, { path: to,
+        headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      assert.equal((await post('/v1internal:loadCodeAssist', { metadata: { ideType: 'ANTIGRAVITY' } })).status, 200);
+      assert.deepEqual(JSON.parse(seen[0]!.body), { metadata: { ideType: 'ANTIGRAVITY' } });
+      assert.equal((await post(call, { project: 'p', model: 'gemini-pro-agent', request: { contents: [], tools } })).status, 200);
+      assert.equal(seen[1]!.url, call);
+      const forwarded = JSON.parse(seen[1]!.body);
+      assert.deepEqual(forwarded.request.tools[0].functionDeclarations.map((tool: { name: string }) => tool.name),
+        ['view_file', 'run_command']);
+      assert.equal(forwarded.request.generationConfig.maxOutputTokens, 4096);
+      assert.equal(stats().billableRequests, 1);
+      writeFileSync(credentialPath, 'later-token-value-1234567890');
+      assert.equal((await post(call, { model: 'gemini-3.5-flash-lite',
+        request: { contents: [], systemInstruction: { parts: [{ text: 'You are a conversation title generator.' }] } } })).status, 200);
+      assert.deepEqual(seen.map(request => request.headers.authorization), ['Bearer renewed-token-value-1234567890',
+        'Bearer renewed-token-value-1234567890', 'Bearer later-token-value-1234567890']);
+      // Another model, and any other account call, never reaches Google.
+      assert.equal((await post(call, { model: 'gemini-3.8-flash-high', request: { contents: [] } })).status, 400);
+      assert.equal((await post('/v1internal:writeTrajectoryAcls', {})).status, 404);
+      assert.equal(seen.length, 3);
+    }, { provider: 'google', model: 'gemini-3.1-pro-preview-customtools', credentialPath, maxBudgetUsd: 10,
+      pricingRates: PRICING_RATES, upstreamBody: usageEvent({ promptTokenCount: 10, candidatesTokenCount: 1 }) });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  const config = { provider: 'google', mode: 'subscription-token', credential: 'x'.repeat(16),
+    sessionToken: 'y'.repeat(16), model: 'gemini-3.1-pro-preview-customtools', maxOutputTokens: 4096 } as const;
+  assert.deepEqual(brokerProtocol(config).responseUsage(Buffer.from(usageEvent({ promptTokenCount: 1000,
+    cachedContentTokenCount: 400, candidatesTokenCount: 50, thoughtsTokenCount: 30 }))), { input_tokens: 600,
+    output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
+  assert.throws(() => brokerProtocol({ ...config, model: 'test-model' }), /no Antigravity account model/);
+  assert.equal(brokerHostname({ provider: 'google', mode: 'subscription-token' }), 'daily-cloudcode-pa.googleapis.com');
 });
 
 // Remote and file-backed content remains available; its extra input is unpriced.

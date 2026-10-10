@@ -97,15 +97,14 @@ For a model-free check, no provider secret is needed. To configure model work,
 write the subscription token through stdin:
 
 ```sh
-docker run --rm -i --mount type=volume,source=stack-bench-state,target=/state stack-bench-controller:local set-secret claude_subscription_token
+docker run --rm -it --mount type=volume,source=stack-bench-state,target=/state stack-bench-controller:local set-secret claude_subscription_token
 ```
 
-Supply the token on stdin and close input. For API billing, use secret name
+Paste the token when asked and press Enter; it is not shown. Input piped to
+`docker run -i` is read whole instead. For API billing, use secret name
 `anthropic_api_key` and set `STACK_BENCH_AGENT_AUTH=api-key` in `operator.env`.
 The secret stays in a private volume file; it is not a command argument or
 part of the environment file. The Docker socket is not needed by `set-secret`.
-After pasting the token and pressing Enter, close stdin with Ctrl+D in a POSIX
-terminal, or Ctrl+Z followed by Enter in Windows PowerShell.
 
 The credential broker checks model, output-token and request-size limits. Receipts
 price token usage at the plan's frozen rates. The cost limit covers priced spend,
@@ -187,6 +186,31 @@ request. API mode uses an explicit `max_output_tokens` limit. Both modes require
 explicit campaign pricing. The New run form can read the selected account's model
 list, but it does not infer price or output limits from that list. See the [GPT-5.3-Codex model limits](https://developers.openai.com/api/docs/models/gpt-5.3-codex)
 and [GPT-5.4 model limits](https://developers.openai.com/api/docs/models/gpt-5.4).
+
+### Google credentials
+
+Select the `antigravity` agent adapter and an explicit billing mode in `operator.env`:
+
+- `STACK_BENCH_AGENT_AUTH=gemini-api-key` uses `STACK_BENCH_GEMINI_API_KEY_FILE`.
+  Store the key with `set-secret gemini_api_key`.
+- `STACK_BENCH_AGENT_AUTH=agy-account` uses `STACK_BENCH_AGY_AUTH_FILE`. Sign in
+  to agy in its own volume with the first command, then store the sign-in with the second:
+
+```sh
+docker run --rm -it -v stack-bench-agy-login:/root --entrypoint agy stack-bench-build:local
+docker run --rm -v stack-bench-agy-login:/login:ro alpine cat /login/.gemini/antigravity-cli/antigravity-oauth-token | docker run --rm -i --mount type=volume,source=stack-bench-state,target=/state stack-bench-controller:local set-secret agy_auth
+```
+
+A Google access token lasts an hour, and only agy can renew it. Before a coding
+session, and every ten minutes while it runs, the controller checks the stored
+sign-in under a lock. When less than 40 minutes remain, it runs agy on a private
+copy in a separate container and keeps the renewed file. The broker uses the
+renewed token for its next request. If renewal fails, Google refuses the session
+once the token runs out. The coding container's agy signs in with a stand-in that
+carries the broker's session token. Campaigns pin the signed-in account, not the
+token bytes. Receipts price account usage at the plan's frozen API rates, as a
+comparison cost. The broker knows the account's model for
+`gemini-3.1-pro-preview-customtools` (Gemini 3.1 Pro at high effort) only.
 
 ### OpenRouter credentials and routing
 

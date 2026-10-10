@@ -101,6 +101,7 @@ export function controllerChildEnvironment(source: NodeJS.ProcessEnv = process.e
     'xai-api-key': ['STACK_BENCH_XAI_API_KEY_FILE', 'XAI_API_KEY_FILE'],
     'grok-account': ['STACK_BENCH_GROK_AUTH_FILE', 'GROK_AUTH_FILE'],
     'gemini-api-key': ['STACK_BENCH_GEMINI_API_KEY_FILE', 'GEMINI_API_KEY_FILE'],
+    'agy-account': ['STACK_BENCH_AGY_AUTH_FILE', 'AGY_AUTH_FILE'],
   };
   // Named jobs select per attempt. Keep the legacy default available without
   // clearing credentials belonging to other providers.

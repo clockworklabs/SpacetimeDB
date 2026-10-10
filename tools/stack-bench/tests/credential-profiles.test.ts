@@ -141,20 +141,31 @@ test('an upstream profile is an Anthropic API key, pinned with its endpoint', ()
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a Google profile is a Gemini API key', () => {
+test('a Google profile is a Gemini API key or an agy sign-in pinned by its account', () => {
   const root = mkdtempSync(join(tmpdir(), 'credential-profiles-'));
   try {
     const secretFile = join(root, 'secret');
+    const loginFile = join(root, 'agy_auth');
     const registry = join(root, 'profiles.json');
+    const claims = Buffer.from(JSON.stringify({ iss: 'https://accounts.google.com', sub: 'user-1' })).toString('base64url');
+    const login = (access: string) => JSON.stringify({ token: { access_token: access, refresh_token: '1//r',
+      expiry: '2026-10-09T13:00:00Z' }, auth_method: 'consumer', id_token: `h.${claims}.s` });
     writeFileSync(secretFile, 'SYNTHETIC_SECRET_GEMINI');
+    writeFileSync(loginFile, login('ya29.one'));
     writeFileSync(registry, JSON.stringify({
       gemini: { provider: 'google', mode: 'api-key', secretFile, version: 'v1' },
-      account: { provider: 'google', mode: 'subscription-token', secretFile, version: 'v1' } }));
+      account: { provider: 'google', mode: 'subscription-token', secretFile: loginFile, version: 'v1' } }));
     const source = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry };
     const selected = resolveExecutionCredentials('antigravity', 'a', { default: 'gemini' }, source);
     assert.equal(selected.env.GEMINI_API_KEY_FILE, secretFile);
     assert.deepEqual(resolveContainerAuth({ provider: 'google', env: selected.env }),
       { provider: 'google', mode: 'api-key', credential: 'SYNTHETIC_SECRET_GEMINI' });
-    assert.throws(() => resolveExecutionCredentials('antigravity', 'a', { default: 'account' }, source), /invalid/);
+    const account = resolveExecutionCredentials('antigravity', 'a', { default: 'account' }, source);
+    assert.equal(account.env.AGY_AUTH_FILE, loginFile);
+    assert.deepEqual(resolveContainerAuth({ provider: 'google', env: account.env }),
+      { provider: 'google', mode: 'subscription-token', credential: 'ya29.one' });
+    // A renewed token is the same account; the pin holds.
+    writeFileSync(loginFile, login('ya29.two'));
+    assert.equal(resolveContainerAuth({ provider: 'google', env: account.env }).credential, 'ya29.two');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

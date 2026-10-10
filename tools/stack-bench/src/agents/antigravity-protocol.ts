@@ -10,6 +10,17 @@ export function antigravityTranscriptDirectory(appDir: string): string {
 export const ANTIGRAVITY_TITLE_MODEL = 'gemini-3.1-flash-lite-preview';
 export const ANTIGRAVITY_TITLE_PROMPT = 'You are a conversation title generator.';
 
+// With a Google account sign-in the CLI calls Google's Code Assist service, which names
+// models its own way: the plan's API model at the effort it implies, and its title model.
+export const ANTIGRAVITY_ACCOUNT_HOST = 'daily-cloudcode-pa.googleapis.com';
+export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, string>> = {
+  'gemini-3.1-pro-preview-customtools': 'gemini-pro-agent',
+};
+export const ANTIGRAVITY_ACCOUNT_TITLE_MODEL = 'gemini-3.5-flash-lite';
+// The account reads the CLI makes around its model calls.
+export const ANTIGRAVITY_ACCOUNT_CONTROL_PATHS = ['loadCodeAssist', 'retrieveUserQuotaSummary', 'fetchUserInfo',
+  'fetchAdminControls', 'fetchAvailableModels', 'listExperiments'].map(method => `/v1internal:${method}`);
+
 // Files and a shell, as the other agents have. The CLI has no flag to remove a tool, so the
 // broker drops every other function from the request: subagents, scheduling and messaging,
 // web search and fetch, and questions for an absent user.
@@ -22,11 +33,20 @@ export const ANTIGRAVITY_AUDIT_TOOLS: Readonly<Record<string, { name: string; pa
 };
 
 // The CLI reads a prompt from stdin only as a stream-json message, so the launcher wraps
-// the prompt it receives. API-key mode and telemetry are settings, rewritten each session.
+// the prompt it receives. The sign-in mode and telemetry are settings, rewritten each
+// session. On the account route the broker holds the real sign-in: the CLI gets a
+// stand-in carrying the broker's session token that never expires, so it never renews.
 export const ANTIGRAVITY_LAUNCHER = [
   'set -e',
-  'mkdir -p "$HOME/.gemini/antigravity-cli"',
-  `printf '%s\\n' '{"modelProvider":"gemini","enableTelemetry":false}' > "$HOME/.gemini/antigravity-cli/settings.json"`,
+  'state="$HOME/.gemini/antigravity-cli"',
+  'mkdir -p "$state"',
+  'if [ -n "$CLOUD_CODE_URL" ]; then',
+  `  printf '%s\\n' '{"enableTelemetry":false}' > "$state/settings.json"`,
+  `  printf '{"token":{"access_token":"%s","token_type":"Bearer","refresh_token":"stack-bench","expiry":"2099-01-01T00:00:00Z"},"auth_method":"consumer"}\\n' "$GEMINI_API_KEY" > "$state/antigravity-oauth-token"`,
+  '  unset GEMINI_API_KEY',
+  'else',
+  `  printf '%s\\n' '{"modelProvider":"gemini","enableTelemetry":false}' > "$state/settings.json"`,
+  'fi',
   'node -e \'let s="";process.stdin.setEncoding("utf8").on("data",d=>s+=d).on("end",()=>'
     + 'process.stdout.write(JSON.stringify({event:"user",message:{role:"user",content:s}})+"\\n"))\' | exec agy "$@"',
 ].join('\n');
@@ -57,19 +77,29 @@ export function parseAntigravityResult(stdout: string, prior: CodexUsage | null 
   const errors: string[] = [];
   let sessionId: string | null = null;
   let value: RecordValue | null = null;
+  let failedStep = false;
+  let finished = false;
   for (const line of stdout.split(/\r?\n/).filter(line => line.trim())) {
     let event: unknown;
     try { event = JSON.parse(line); } catch { continue; }
     if (!record(event)) continue;
     if (typeof event.conversation_id === 'string') sessionId = event.conversation_id;
     if (event.event === 'result' && record(event.result)) value = event.result;
+    if (event.event === 'step_update' && record(event.step_update)) {
+      const step = event.step_update;
+      if (step.step_type === 'error_message') failedStep = true;
+      finished = step.step_type === 'agent_response' && step.state === 'DONE';
+    }
   }
   if (!value) errors.push('Antigravity returned no result');
   const result = value ?? {};
   if (typeof result.conversation_id === 'string') sessionId = result.conversation_id;
   if (sessionId !== null && !/^[0-9a-f-]{36}$/i.test(sessionId)) sessionId = null;
   if (!sessionId) errors.push('Antigravity returned no valid conversation ID');
-  if (value && result.status !== 'SUCCESS') {
+  // A resumed conversation reports its last error again even when this invocation ends with
+  // the model's finished response; a new failure always adds an error step to the stream.
+  const staleError = prior !== null && finished && !failedStep;
+  if (value && result.status !== 'SUCCESS' && !staleError) {
     errors.push(typeof result.error === 'string' && result.error ? result.error
       : `Antigravity ended with status ${JSON.stringify(result.status ?? null)}`);
   }

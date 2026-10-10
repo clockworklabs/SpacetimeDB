@@ -28,7 +28,7 @@ interface CodingProvider {
   credentialPath?: string;
   containerTranscripts: string;
   tokenEnvironment: string;
-  environment(baseUrl: string): string[];
+  environment(baseUrl: string, mode: 'api-key' | 'subscription-token'): string[];
   projects(appDir: string): string;
   rates(model: string): PricingRates | null;
   args(options: Invocation): string[];
@@ -91,14 +91,15 @@ const grokProvider: CodingProvider = {
   },
 };
 
-// The CLI sends the broker's session token as its Gemini key, and the broker sends the real
-// key to Google. Its whole state directory persists between sessions so a session can resume.
+// The CLI sends the broker's session token as its Gemini key or account token, and the
+// broker sends the real one to Google. Its whole state directory persists between sessions
+// so a session can resume.
 const googleProvider: CodingProvider = {
   requiresBudget: true,
   executable: 'sh', apiKeyEnvironment: 'GEMINI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.gemini/antigravity-cli`,
   tokenEnvironment: 'GEMINI_API_KEY',
-  environment: baseUrl => [`GOOGLE_GEMINI_BASE_URL=${baseUrl}`],
+  environment: (baseUrl, mode) => [mode === 'subscription-token' ? `CLOUD_CODE_URL=${baseUrl}` : `GOOGLE_GEMINI_BASE_URL=${baseUrl}`],
   projects: appDir => join(antigravityTranscriptDirectory(appDir), 'state'),
   rates: () => null,
   args: options => ['-c', ANTIGRAVITY_LAUNCHER, 'agy', ...antigravityArguments(options)],

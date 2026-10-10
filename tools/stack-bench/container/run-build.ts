@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
@@ -36,6 +37,8 @@ import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 import { CODING_PROVIDERS, parseCodingProvider } from './coding-providers.js';
 import { ensureFreshGrokLogin } from '../src/agents/grok-login.js';
+import { ensureFreshAgyLogin } from '../src/agents/agy-login.js';
+import { agyRenewal } from './agy-renewal.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
 
@@ -70,6 +73,9 @@ const maxOutputTokens = validateProviderOutputLimit(provider,
 const codingProvider = CODING_PROVIDERS[provider];
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
+// A renewed Google token has an hour; checks every ten minutes keep at least half an hour.
+const AGY_MIN_REMAINING_MS = 40 * 60_000;
+const AGY_RENEWAL_INTERVAL_MS = 10 * 60_000;
 const { uid: AGENT_UID, gid: AGENT_GID, home: AGENT_HOME } = CODING_CONTAINER_AGENT;
 const CONTROLLER_GID = process.getgid?.() ?? 0;
 const AGENT_ENVIRONMENT = codingContainerAgentEnvironment();
@@ -539,6 +545,16 @@ const sessionWrapper = 'umask 022; record="$1"; shift; '
   + 'printf \'%s %s\\n\' "$$" "$start" > "$record"; exec "$@"';
 
 if (!auth) throw new Error('container authentication is unavailable');
+// A Google account token lasts an hour, shorter than a session. The official CLI renews the
+// shared sign-in under a lock; the broker takes each renewed token for its next request. If
+// renewal fails the token runs out and Google refuses the session: it fails closed.
+const agyAuthFile = provider === 'google' && auth.mode === 'subscription-token' ? process.env.AGY_AUTH_FILE : undefined;
+const renewAgyLogin = agyAuthFile ? () => ensureFreshAgyLogin(agyAuthFile, AGY_MIN_REMAINING_MS,
+  agyRenewal(image, leaseContext.lease.resources.network ? dirname(leaseContext.path) : tmpdir())) : null;
+if (renewAgyLogin) {
+  try { auth = { ...auth, credential: (await renewAgyLogin()).token }; }
+  catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
+}
 let credentialBroker: Awaited<ReturnType<typeof startCredentialBroker>> | null = null;
 try {
   const docker = leaseContext.lease.resources.network ? (() => {
@@ -554,7 +570,7 @@ try {
   })() : undefined;
   credentialBroker = await startCredentialBroker(auth,
     { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS, model,
-      providerRoute, maxOutputTokens,
+      providerRoute, maxOutputTokens, renewable: renewAgyLogin !== null,
       docker,
       maxBudgetUsd: maxBudgetUsd === null ? null : Number(maxBudgetUsd),
       pricingRates: maxBudgetUsd === null ? null : pricing!.rates });
@@ -565,7 +581,7 @@ try {
 if (!credentialBroker) throw new Error('credential broker is unavailable');
 const tokenEnvironment = codingProvider.tokenEnvironment;
 dockerExecEnv[tokenEnvironment] = credentialBroker.sessionToken;
-args.push('-e', tokenEnvironment, ...codingProvider.environment(credentialBroker.baseUrl).flatMap(value => ['-e', value]),
+args.push('-e', tokenEnvironment, ...codingProvider.environment(credentialBroker.baseUrl, auth.mode).flatMap(value => ['-e', value]),
   containerName, 'sh', '-c', sessionWrapper, CODING_CONTAINER_PROCESS_IDENTITY.sessionLabel,
   processRecord,
   codingProvider.executable, ...codingProvider.args({ model, effort, baseUrl: credentialBroker.baseUrl,
@@ -608,6 +624,11 @@ const runCleanupCommand = (description: string, command: readonly string[]): voi
   if (result.status !== 0) cleanupErrors.push(`${description}: ${String(result.stderr || result.stdout
     || result.error?.message || `exit ${result.status}`).trim()}`);
 };
+const broker = credentialBroker;
+const renewal = renewAgyLogin ? setInterval(() => {
+  renewAgyLogin().then(login => broker.replaceCredential(login.token))
+    .catch(error => console.error(`run-build.js: ${errorMessage(error)}`));
+}, AGY_RENEWAL_INTERVAL_MS) : undefined;
 try {
   res = await codingProvider.run({ command: 'docker', args, input: promptInput,
     env: dockerExecEnv, timeoutMs: CODING_SESSION_TIMEOUT_MS, terminate: terminateSession,
@@ -616,6 +637,7 @@ try {
 } catch (error) {
   sessionError = error;
 } finally {
+  clearInterval(renewal);
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
   if (credentialBroker.container && brokerDiagnostics?.termination?.exited

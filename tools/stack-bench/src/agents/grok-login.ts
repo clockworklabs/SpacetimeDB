@@ -1,12 +1,12 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { withLoginLock } from './login-lock.js';
 
 // A SuperGrok login written by `grok login` (~/.grok/auth.json). The access token
 // lasts hours; the refresh token rotates on every exchange, so exactly one process
 // may refresh a login at a time.
 const ISSUER = 'https://auth.x.ai';
 const TOKEN_ENDPOINT = `${ISSUER}/oauth2/token`;
-const LOCK_STALE_MS = 2 * 60_000;
 
 interface GrokScope extends Record<string, unknown> {
   key: string; refresh_token: string; expires_at: string; oidc_issuer: string; oidc_client_id: string;
@@ -50,21 +50,7 @@ export async function ensureFreshGrokLogin(path: string, minRemainingMs: number,
   { fetch?: Fetch; now?: () => number; waitMs?: number } = {}): Promise<GrokLogin> {
   const current = readGrokLogin(readFileSync(path, 'utf8'));
   if (current.expiresAtMs - now() >= minRemainingMs) return current;
-  const lock = `${path}.stack-bench-lock`;
-  // The lock is judged on the real clock: it is a file the operating system timestamps.
-  const deadline = Date.now() + LOCK_STALE_MS + 30_000;
-  while (true) {
-    try { mkdirSync(lock); break; }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      // A crashed holder leaves its lock; nothing else can clear it.
-      try { if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) { rmSync(lock, { recursive: true, force: true }); continue; } }
-      catch { continue; }
-      if (Date.now() > deadline) throw new Error('Grok login refresh lock is held too long');
-      await new Promise(resolve => setTimeout(resolve, waitMs));
-    }
-  }
-  try {
+  return withLoginLock(path, async () => {
     // Another holder may have refreshed while this one waited.
     const text = readFileSync(path, 'utf8');
     const latest = readGrokLogin(text);
@@ -92,5 +78,5 @@ export async function ensureFreshGrokLogin(path: string, minRemainingMs: number,
       throw new Error('Grok login refresh issued a token shorter than an attempt');
     }
     return refreshed;
-  } finally { rmSync(lock, { recursive: true, force: true }); }
+  }, waitMs);
 }

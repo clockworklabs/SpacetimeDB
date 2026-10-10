@@ -168,13 +168,21 @@ export function createCredentialBroker(configInput: unknown, {
       rejectRequest(request, response, 502, 'provider accounting or routing validation failed');
       return;
     }
+    // A renewed sign-in arrives as a new file; the next request uses it.
+    if (config.credentialPath) {
+      try { config.credential = readFileSync(config.credentialPath, 'utf8').trim() || config.credential; }
+      catch { /* keep the last credential */ }
+    }
     const path = requestPath(request.url);
-    if (request.method === 'GET' && path !== null && protocol.readPaths?.has(path)) {
+    const unbilled = path !== null && (request.method === 'GET' ? protocol.readPaths
+      : request.method === 'POST' ? protocol.controlPaths : undefined)?.has(path);
+    if (unbilled) {
       // An account or configuration read: forwarded with the credential, outside the spend ledger.
       const headers = protocol.headers(request);
-      for (const name of [...HOP_BY_HOP, 'content-length']) delete headers[name];
+      for (const name of HOP_BY_HOP) delete headers[name];
+      if (request.method === 'GET') delete headers['content-length'];
       const read = requestUpstream({ protocol: destination.protocol, hostname: destination.hostname, port: destination.port,
-        method: 'GET', path: protocol.upstreamPath(path + new URL(request.url ?? '', 'http://credential-broker.invalid').search),
+        method: request.method, path: protocol.upstreamPath(path + new URL(request.url ?? '', 'http://credential-broker.invalid').search),
         headers }, upstreamResponse => {
         writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.on('data', (chunk: Buffer) => {
@@ -185,7 +193,7 @@ export function createCredentialBroker(configInput: unknown, {
         upstreamResponse.once('error', () => { if (responseOpen()) response.destroy(); });
       });
       read.on('error', () => { writeHead(502, { 'content-type': 'text/plain' }); endResponse('upstream request failed'); });
-      read.end();
+      request.pipe(read);
       return;
     }
     if (request.method !== 'POST' || path === null || !protocol.allowedPaths.has(path)) {
@@ -196,7 +204,6 @@ export function createCredentialBroker(configInput: unknown, {
     }
     acceptedRequests += 1;
     const requestOrdinal = acceptedRequests;
-    if (protocol.sideCall?.(path)) sideCalls.add(requestOrdinal);
     recordLedger();
 
     const chunks: Buffer[] = [];
@@ -227,6 +234,7 @@ export function createCredentialBroker(configInput: unknown, {
         endResponse('invalid provider request');
         return;
       }
+      if (protocol.sideCall?.(path, payload)) sideCalls.add(requestOrdinal);
       const billable = protocol.billable(path) && config.maxBudgetUsd != null;
       // Preserve agent capabilities. This cap covers priced spend; receipts
       // retain unpriced charges as unknown instead of refusing provider features.

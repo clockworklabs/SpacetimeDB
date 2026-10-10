@@ -43,6 +43,16 @@ test('the launcher passes the prompt unchanged as one stream message and selects
     assert.equal(readFileSync(join(root, 'args'), 'utf8'), '--model\ngemini-3.8-flash\n');
     assert.deepEqual(JSON.parse(readFileSync(join(root, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8')),
       { modelProvider: 'gemini', enableTelemetry: false });
+    // On the account route the CLI signs in with a stand-in carrying the broker's session token.
+    writeFileSync(join(root, 'agy'), `#!/bin/sh\ncat > /dev/null\nprintf '%s' "\${GEMINI_API_KEY-unset}" > "${root}/key"\n`);
+    execFileSync('sh', ['-c', ANTIGRAVITY_LAUNCHER, 'agy'], { input: prompt,
+      env: { PATH: `${root}:${process.env.PATH}`, HOME: root, CLOUD_CODE_URL: 'http://127.0.0.1:1', GEMINI_API_KEY: 'session-1' } });
+    const state = join(root, '.gemini', 'antigravity-cli');
+    assert.deepEqual(JSON.parse(readFileSync(join(state, 'settings.json'), 'utf8')), { enableTelemetry: false });
+    const standIn = JSON.parse(readFileSync(join(state, 'antigravity-oauth-token'), 'utf8'));
+    assert.equal(standIn.token.access_token, 'session-1');
+    assert.ok(Date.parse(standIn.token.expiry) > Date.parse('2090-01-01'));
+    assert.equal(readFileSync(join(root, 'key'), 'utf8'), 'unset');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -63,6 +73,20 @@ test('a resumed Antigravity conversation reports only this invocation', () => {
     cache_creation_input_tokens: 0 });
   assert.equal(parseAntigravityResult(stream({ status: 'SUCCESS', response: 'ok', num_turns: 2,
     usage: usage(100, 1, 0, 0) }), prior).is_error, true);
+});
+
+// Seen live: the resumed level-3 session finished, and its result repeated the 429 it was resumed after.
+test('a resumed Antigravity conversation that finishes is not failed by the error it was resumed after', () => {
+  const prior = { input_tokens: 600, output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 };
+  const repeated = { status: 'ERROR', error: 'Error 429, RESOURCE_EXHAUSTED', response: 'UPGRADE_COMPLETE\n', num_turns: 2,
+    usage: usage(1600, 160, 40, 900) };
+  const resumed = parseAntigravityResult(stream(repeated), prior);
+  assert.equal(resumed.is_error, false);
+  assert.equal(resumed.result, 'UPGRADE_COMPLETE\n');
+  const failedAgain = stream(repeated).replace(/\n(?=[^\n]*"event":"result")/, `\n${JSON.stringify({ event: 'step_update',
+    step_update: { conversation_id: SESSION, step_index: 2, state: 'DONE', step_type: 'error_message' } })}\n`);
+  assert.equal(parseAntigravityResult(failedAgain, prior).is_error, true);
+  assert.equal(parseAntigravityResult(stream(repeated)).is_error, true, 'a first invocation keeps its error');
 });
 
 test('Antigravity errors, bad usage and missing results are provider errors', () => {

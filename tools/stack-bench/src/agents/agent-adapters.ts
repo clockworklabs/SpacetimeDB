@@ -81,10 +81,11 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       outboundDestinations: ['https://cli-chat-proxy.grok.com', 'https://api.x.ai', 'https://auth.x.ai'],
       requiredExecutables: ['grok'], usesStackSkills: true, costLimit: 'native',
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
-  // Google's Antigravity CLI on a Gemini API key.
+  // Google's Antigravity CLI: a Gemini API key reaches the Gemini API, a Google account sign-in Code Assist.
   adapter('antigravity', join('commands', 'agent.js'), 'gemini-3.8-flash',
     { provider: 'google', apiKeyEnvironmentVariable: 'GEMINI_API_KEY',
-      outboundDestinations: ['https://generativelanguage.googleapis.com'],
+      credentialEnvironmentVariables: ['AGY_AUTH'],
+      outboundDestinations: ['https://generativelanguage.googleapis.com', 'https://daily-cloudcode-pa.googleapis.com'],
       requiredExecutables: ['agy'], usesStackSkills: true, costLimit: 'native',
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
   adapter('openrouter', join('commands', 'agent.js'), 'openai/gpt-5.3-codex',

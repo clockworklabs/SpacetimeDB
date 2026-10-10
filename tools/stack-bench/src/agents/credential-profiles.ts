@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.js';
 import { sha256 } from '../evidence/provenance.js';
 import { readGrokLogin } from './grok-login.js';
+import { readAgyLogin } from './agy-login.js';
 import { ANTHROPIC_UPSTREAM_IDS } from '../../container/credential-broker-accounting.js';
 
 const label = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
@@ -24,8 +25,7 @@ export type CredentialAssignment = z.infer<typeof assignmentSchema>;
 const profileSchema = assignmentSchema.omit({ id: true }).extend({
   secretFile: z.string().refine(isAbsolute, 'secretFile must be absolute'),
 }).strict().refine(profile => profile.provider !== 'openrouter' || profile.mode === 'api-key',
-  'OpenRouter requires api-key mode').refine(profile => profile.provider !== 'google' || profile.mode === 'api-key',
-  'Google requires api-key mode').refine(profile => !profile.upstream
+  'OpenRouter requires api-key mode').refine(profile => !profile.upstream
   || (profile.provider === 'anthropic' && profile.mode === 'api-key'), 'only an Anthropic API key names an upstream');
 const PROFILE_FILE = 'STACK_BENCH_CREDENTIAL_PROFILES_FILE';
 const ASSIGNMENT = 'STACK_BENCH_CREDENTIAL_ASSIGNMENT';
@@ -35,7 +35,7 @@ const authenticationVariables = {
   openai: ['OPENAI_API_KEY', 'CODEX_AUTH'],
   openrouter: ['OPENROUTER_API_KEY'],
   xai: ['XAI_API_KEY', 'GROK_AUTH'],
-  google: ['GEMINI_API_KEY'],
+  google: ['GEMINI_API_KEY', 'AGY_AUTH'],
 } as const;
 
 /** Public selection metadata. Never return credential paths or values to a client. */
@@ -63,9 +63,10 @@ function readProfile(id: string, env: NodeJS.ProcessEnv) {
   try { secret = readFileSync(profile.secretFile, 'utf8').trim(); }
   catch { throw new Error(`Credential profile ${id} secret file cannot be read`); }
   if (!secret) throw new Error(`Credential profile ${id} secret file is empty`);
-  // A Grok sign-in rotates its tokens in place, so its account is what stays fixed.
-  const fingerprint = profile.provider === 'xai' && profile.mode === 'subscription-token'
-    ? readGrokLogin(secret).identity : sha256(secret);
+  // Grok and Google sign-ins rotate their tokens in place, so the account is what stays fixed.
+  const account = profile.mode === 'subscription-token';
+  const fingerprint = account && profile.provider === 'xai' ? readGrokLogin(secret).identity
+    : account && profile.provider === 'google' ? readAgyLogin(secret).identity : sha256(secret);
   return { profile, secret, fingerprint };
 }
 
@@ -91,7 +92,8 @@ export function resolveExecutionCredentials(adapterId: string, attemptId: string
   delete env.STACK_BENCH_AGENT_API_KEY;
   delete env.STACK_BENCH_AGENT_API_KEY_FILE;
   const variable = profile.mode === 'api-key' ? authenticationVariables[profile.provider][0]
-    : profile.provider === 'anthropic' ? 'CLAUDE_CODE_OAUTH_TOKEN' : profile.provider === 'xai' ? 'GROK_AUTH' : 'CODEX_AUTH';
+    : profile.provider === 'anthropic' ? 'CLAUDE_CODE_OAUTH_TOKEN' : profile.provider === 'xai' ? 'GROK_AUTH'
+      : profile.provider === 'google' ? 'AGY_AUTH' : 'CODEX_AUTH';
   env[`${variable}_FILE`] = profile.secretFile;
   env[ASSIGNMENT] = JSON.stringify(assignment);
   env[FINGERPRINT] = fingerprint;

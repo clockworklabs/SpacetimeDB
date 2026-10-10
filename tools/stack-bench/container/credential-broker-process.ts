@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -109,6 +109,8 @@ export interface CredentialBroker extends CredentialBrokerHandle {
   diagnosticSecrets: string[];
   finalDiagnostics: BrokerDiagnostics | null;
   finalLedger: BrokerLedger | null;
+  // Hands the running broker a renewed credential for its next request.
+  replaceCredential: (credential: string) => void;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -150,8 +152,8 @@ function appendDiagnosticStderr(state: BrokerProcessState, chunk: string, secret
 }
 
 export async function startCredentialBroker(selectedAuth: ContainerAuth, { networkMode, deadlineMs,
-  model, providerRoute, maxOutputTokens, maxBudgetUsd = null, pricingRates = null,
-  env = process.env, docker }: { networkMode: string; deadlineMs: number; model: string;
+  model, providerRoute, maxOutputTokens, maxBudgetUsd = null, pricingRates = null, renewable = false,
+  env = process.env, docker }: { networkMode: string; deadlineMs: number; model: string; renewable?: boolean;
   maxOutputTokens?: number; maxBudgetUsd?: number | null; pricingRates?: PricingRates | null;
   providerRoute?: string;
   env?: NodeJS.ProcessEnv; docker?: CredentialBrokerDockerOptions }): Promise<CredentialBroker> {
@@ -180,12 +182,14 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
     const readyPath = join(root, 'ready.json');
     const ledgerPath = join(root, 'spend-ledger.json');
     const heartbeatPath = join(root, 'heartbeat');
+    const credentialPath = join(root, 'credential');
+    if (renewable) writeFileSync(credentialPath, credential, { mode: 0o600 });
     if (docker) writeFileSync(heartbeatPath, '', { mode: 0o600 });
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = docker || networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
     const config = validateBrokerConfig({ provider: selectedAuth.provider, upstream: selectedAuth.upstream,
       providerRoute, accountId: selectedAuth.accountId,
-      mode: selectedAuth.mode, credential, sessionToken, readyPath,
+      mode: selectedAuth.mode, credential, ...(renewable ? { credentialPath } : {}), sessionToken, readyPath,
       ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
       model, maxOutputTokens: maxOutputTokens ?? MAX_BROKER_OUTPUT_TOKENS,
@@ -244,7 +248,12 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       sessionToken, baseUrl: `http://${host}:${ready.port}`, listenHost,
       endpointKind: docker ? 'container-credential-broker' : 'local-credential-broker', processState,
       ...(container ? { container } : {}),
-      diagnosticSecrets, finalDiagnostics: null, finalLedger: null };
+      diagnosticSecrets, finalDiagnostics: null, finalLedger: null,
+      replaceCredential: next => {
+        diagnosticSecrets.push(next);
+        writeFileSync(`${credentialPath}.next`, next, { mode: 0o600 });
+        renameSync(`${credentialPath}.next`, credentialPath);
+      } };
   } catch (error) {
     // Keep private authority when Docker cleanup fails. Recovery uses the saved exact ID.
     if (container) brokerDocker(['rm', '-f', container.id]);
@@ -384,7 +393,7 @@ export async function stopCredentialBroker(broker: CredentialBrokerHandle | null
         if (broker.container) brokerDocker(['rm', broker.container.id]);
         // Grading can be interrupted before the caller saves its receipt. Keep the
         // atomically written spend ledger; remove only the broker's credentials.
-        for (const name of ['config.json', 'ready.json']) {
+        for (const name of ['config.json', 'ready.json', 'credential']) {
           rmSync(join(broker.root, name), { force: true });
         }
       }

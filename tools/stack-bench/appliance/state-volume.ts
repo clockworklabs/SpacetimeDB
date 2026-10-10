@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readGrokLogin } from '../src/agents/grok-login.js';
+import { readAgyLogin } from '../src/agents/agy-login.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
 import { stackReleaseImages } from '../src/stacks/stack-identities.js';
@@ -76,13 +77,15 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_CODEX_AUTH_FILE=${root}/secrets/codex_auth`,
     `STACK_BENCH_GROK_AUTH_FILE=${root}/secrets/grok_auth`,
     `STACK_BENCH_GEMINI_API_KEY_FILE=${root}/secrets/gemini_api_key`,
+    `STACK_BENCH_AGY_AUTH_FILE=${root}/secrets/agy_auth`,
     'STACK_BENCH_RELEASE_MANIFEST=',
     '',
   ].join('\n');
 }
 
 const SECRET_NAMES = ['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key',
-  'codex_auth', 'xai_api_key', 'grok_auth', 'zai_api_key', 'deepseek_api_key', 'moonshot_api_key', 'gemini_api_key'];
+  'codex_auth', 'xai_api_key', 'grok_auth', 'zai_api_key', 'deepseek_api_key', 'moonshot_api_key', 'gemini_api_key',
+  'agy_auth'];
 function checkSecretName(name: string | undefined): void {
   if (!SECRET_NAMES.includes(name ?? '')) throw new Error(`secret name must be ${SECRET_NAMES.join(', ')}`);
 }
@@ -91,10 +94,11 @@ export function writeStateSecret(name: string | undefined, input: string,
   root = '/state'): void {
   checkSecretName(name);
   let value = input.trim();
-  if (name === 'codex_auth' || name === 'grok_auth') {
+  if (name === 'codex_auth' || name === 'grok_auth' || name === 'agy_auth') {
     try { value = JSON.stringify(JSON.parse(value)); }
     catch { throw new Error(`${name} must be valid JSON from the agent's account login`); }
     if (name === 'grok_auth') readGrokLogin(value);
+    if (name === 'agy_auth') readAgyLogin(value);
   }
   if (!value || /[\r\n]/.test(value)) {
     throw new Error('secret must be one non-empty line');

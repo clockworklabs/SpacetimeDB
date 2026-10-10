@@ -4,7 +4,9 @@ import { createParser } from 'eventsource-parser';
 import { ANTHROPIC_UPSTREAMS, firstUnpricedReason } from './credential-broker-accounting.js';
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
-import { ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS } from '../src/agents/antigravity-protocol.js';
+import { ANTIGRAVITY_ACCOUNT_CONTROL_PATHS, ANTIGRAVITY_ACCOUNT_HOST, ANTIGRAVITY_ACCOUNT_MODELS,
+  ANTIGRAVITY_ACCOUNT_TITLE_MODEL, ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS }
+  from '../src/agents/antigravity-protocol.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 // Account Responses does not promise max_output_tokens. Reserve the documented
@@ -189,6 +191,8 @@ interface BrokerProtocol {
   allowedPaths: Set<string>;
   // GET paths forwarded with the credential and never billed: account and configuration reads.
   readPaths?: Set<string>;
+  // POST paths forwarded the same way, for a service whose account reads are POSTs.
+  controlPaths?: Set<string>;
   upstreamPath(path: string): string;
   billable(path: string): boolean;
   headers(request: IncomingMessage): OutgoingHttpHeaders;
@@ -198,7 +202,7 @@ interface BrokerProtocol {
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
   // A call the CLI makes beside the session's own work, such as titling it.
-  sideCall?(path: string): boolean;
+  sideCall?(path: string, payload: JsonRecord): boolean;
   responseRejection?(body: Buffer, encoding?: string | string[]): Pick<ProviderFailure, 'category' | 'code'> | null;
 }
 
@@ -351,7 +355,7 @@ export function brokerHostname({ provider, mode, upstream }: Pick<BrokerConfig, 
   if (upstream) return ANTHROPIC_UPSTREAMS[upstream].hostname;
   if (!provider || provider === 'anthropic') return 'api.anthropic.com';
   if (provider === 'openrouter') return 'openrouter.ai';
-  if (provider === 'google') return 'generativelanguage.googleapis.com';
+  if (provider === 'google') return mode === 'subscription-token' ? ANTIGRAVITY_ACCOUNT_HOST : 'generativelanguage.googleapis.com';
   if (provider === 'xai') return mode === 'subscription-token' ? 'cli-chat-proxy.grok.com' : 'api.x.ai';
   return mode === 'subscription-token' ? 'chatgpt.com' : 'api.openai.com';
 }
@@ -377,7 +381,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     responseUsage,
   };
   if (config.provider === 'xai') return grokProtocol(config);
-  if (config.provider === 'google') return googleProtocol(config);
+  if (config.provider === 'google') return config.mode === 'subscription-token' ? googleAccountProtocol(config) : googleProtocol(config);
   const router = config.provider === 'openrouter';
   if (router && (!/^[a-z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(config.model)
     || config.model.startsWith('openrouter/') || /(?:^|[-/])latest$/.test(config.model))) {
@@ -502,9 +506,46 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
   };
 }
 
+// A Gemini generateContent request, checked and bounded the same way on both routes. The
+// CLI titles each conversation on a small model: that call carries only the title prompt.
+function geminiRequest(request: JsonRecord, config: BrokerConfig, title: boolean): JsonRecord {
+  if (title && (!JSON.stringify(request.systemInstruction ?? '').includes(ANTIGRAVITY_TITLE_PROMPT)
+    || request.tools !== undefined)) fail('request model does not match the selected model');
+  const generation = isRecord(request.generationConfig) ? request.generationConfig : {};
+  const limit = generation.maxOutputTokens;
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || (limit as number) < 1
+    || (limit as number) > config.maxOutputTokens)) fail('invalid maxOutputTokens');
+  request.generationConfig = { ...generation, maxOutputTokens: limit ?? config.maxOutputTokens };
+  // The CLI cannot remove a tool, so only the file, shell and task functions reach the model.
+  if (Array.isArray(request.tools)) request.tools = request.tools.map(tool => isRecord(tool)
+    && Array.isArray(tool.functionDeclarations) ? { ...tool, functionDeclarations: tool.functionDeclarations
+      .filter(declaration => isRecord(declaration) && ANTIGRAVITY_TOOLS.includes(String(declaration.name))) } : tool);
+  return request;
+}
+
+function geminiPricing(request: JsonRecord): RequestPricing {
+  const unpriced = firstUnpricedReason(
+    Array.isArray(request.tools) && request.tools.some(tool => !isRecord(tool)
+      || Object.keys(tool).some(key => key !== 'functionDeclarations')) ? 'hosted-tool' : null,
+    request.cachedContent !== undefined ? 'stored-context' : null,
+    JSON.stringify(request.contents ?? []).includes('"fileData"') ? 'unpriced-input' : null,
+    request.serviceTier !== undefined && request.serviceTier !== 'standard' ? 'service-tier' : null);
+  return { unpriced, requiresUsage: null, bounded: unpriced === null };
+}
+
+function geminiOutputLimit(request: JsonRecord): number {
+  const generation = isRecord(request.generationConfig) ? request.generationConfig : {};
+  const thinking = isRecord(generation.thinkingConfig) ? generation.thinkingConfig.thinkingBudget : 0;
+  return (generation.maxOutputTokens as number) + (typeof thinking === 'number' && thinking > 0 ? thinking : 0);
+}
+
+function jsonObject(body: Buffer): JsonRecord {
+  const payload: unknown = JSON.parse(body.toString('utf8'));
+  return isRecord(payload) ? payload : fail('request body must be an object');
+}
+
 // The Gemini API as the Antigravity CLI calls it with an API key; the model is in the path.
-// The CLI also titles each conversation on a small model, which is forwarded and priced at
-// the selected model's rates.
+// The title call is forwarded and priced at the selected model's rates.
 function googleProtocol(config: BrokerConfig): BrokerProtocol {
   const call = (model: string) => `/v1beta/models/${model}:streamGenerateContent`;
   const title = call(ANTIGRAVITY_TITLE_MODEL);
@@ -520,51 +561,54 @@ function googleProtocol(config: BrokerConfig): BrokerProtocol {
       headers['x-goog-api-key'] = config.credential;
       return headers;
     },
-    parseRequest: (body, path) => {
-      const payload: unknown = JSON.parse(body.toString('utf8'));
-      if (!isRecord(payload)) fail('request body must be an object');
-      if (path === title && (!JSON.stringify(payload.systemInstruction ?? '').includes(ANTIGRAVITY_TITLE_PROMPT)
-        || payload.tools !== undefined)) fail('request model does not match the selected model');
-      const generation = isRecord(payload.generationConfig) ? payload.generationConfig : {};
-      const limit = generation.maxOutputTokens;
-      if (limit !== undefined && (!Number.isSafeInteger(limit) || (limit as number) < 1
-        || (limit as number) > config.maxOutputTokens)) fail('invalid maxOutputTokens');
-      payload.generationConfig = { ...generation, maxOutputTokens: limit ?? config.maxOutputTokens };
-      // The CLI cannot remove a tool, so only the file, shell and task functions reach the model.
-      if (Array.isArray(payload.tools)) payload.tools = payload.tools.map(tool => isRecord(tool)
-        && Array.isArray(tool.functionDeclarations) ? { ...tool, functionDeclarations: tool.functionDeclarations
-          .filter(declaration => isRecord(declaration) && ANTIGRAVITY_TOOLS.includes(String(declaration.name))) } : tool);
-      return payload;
-    },
-    requestPricing: payload => {
-      const unpriced = firstUnpricedReason(
-        Array.isArray(payload.tools) && payload.tools.some(tool => !isRecord(tool)
-          || Object.keys(tool).some(key => key !== 'functionDeclarations')) ? 'hosted-tool' : null,
-        payload.cachedContent !== undefined ? 'stored-context' : null,
-        JSON.stringify(payload.contents ?? []).includes('"fileData"') ? 'unpriced-input' : null,
-        payload.serviceTier !== undefined && payload.serviceTier !== 'standard' ? 'service-tier' : null);
-      return { unpriced, requiresUsage: null, bounded: unpriced === null };
-    },
-    outputLimit: payload => {
-      const generation = isRecord(payload.generationConfig) ? payload.generationConfig : {};
-      const thinking = isRecord(generation.thinkingConfig) ? generation.thinkingConfig.thinkingBudget : 0;
-      return (generation.maxOutputTokens as number)
-        + (typeof thinking === 'number' && thinking > 0 ? thinking : 0);
-    },
+    parseRequest: (body, path) => geminiRequest(jsonObject(body), config, path === title),
+    requestPricing: geminiPricing,
+    outputLimit: geminiOutputLimit,
     responseUsage: googleUsage,
     sideCall: path => path === title,
   };
 }
 
-// The last streamed chunk carries the call's usage. Prompt tokens include cache reads;
-// thinking is billed as output.
+// Google's Code Assist service as the Antigravity CLI calls it with a Google account
+// sign-in. The model is named in a wrapper around the Gemini request, and the CLI reads
+// the account's plan, models and settings through POSTs that are forwarded unbilled.
+// The account's own model names stand for the API models a plan selects.
+function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
+  const model = Object.hasOwn(ANTIGRAVITY_ACCOUNT_MODELS, config.model) ? ANTIGRAVITY_ACCOUNT_MODELS[config.model]
+    : fail('no Antigravity account model is known for the selected model');
+  return {
+    hostname: brokerHostname(config),
+    allowedPaths: new Set(['/v1internal:streamGenerateContent']),
+    controlPaths: new Set(ANTIGRAVITY_ACCOUNT_CONTROL_PATHS),
+    upstreamPath: path => path,
+    billable: () => true,
+    headers: request => upstreamHeaders(request, config),
+    parseRequest: body => {
+      const payload = jsonObject(body);
+      const title = payload.model === ANTIGRAVITY_ACCOUNT_TITLE_MODEL;
+      if ((payload.model !== model && !title) || !isRecord(payload.request)) {
+        fail('request model does not match the selected model');
+      }
+      payload.request = geminiRequest(payload.request, config, title);
+      return payload;
+    },
+    requestPricing: payload => geminiPricing(payload.request as JsonRecord),
+    outputLimit: payload => geminiOutputLimit(payload.request as JsonRecord),
+    responseUsage: googleUsage,
+    sideCall: (_path, payload) => payload.model === ANTIGRAVITY_ACCOUNT_TITLE_MODEL,
+  };
+}
+
+// The last streamed chunk carries the call's usage, wrapped in `response` by Code Assist.
+// Prompt tokens include cache reads; thinking is billed as output.
 function googleUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null {
   let usage: JsonRecord | null = null;
   let failed = false;
   const accept = (value: unknown): void => {
-    for (const item of Array.isArray(value) ? value : [value]) {
-      if (!isRecord(item)) continue;
-      if (isRecord(item.error)) failed = true;
+    for (const event of Array.isArray(value) ? value : [value]) {
+      if (!isRecord(event)) continue;
+      const item = isRecord(event.response) ? event.response : event;
+      if (isRecord(event.error) || isRecord(item.error)) failed = true;
       if (isRecord(item.usageMetadata)) usage = item.usageMetadata;
     }
   };
