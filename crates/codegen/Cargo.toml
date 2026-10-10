@@ -21,6 +21,7 @@ serde_json.workspace = true
 fs-err.workspace = true
 insta.workspace = true
 regex.workspace = true
+tempfile.workspace = true
 spacetimedb-testing = { path = "../testing" }
 
 [lints]
