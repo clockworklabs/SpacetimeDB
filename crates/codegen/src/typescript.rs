@@ -538,26 +538,11 @@ impl Lang for TypeScript {
             writeln!(out, "}}");
 
             writeln!(out);
+            // The SDK types `db` from the aliased schema, deprecation notes included.
             writeln!(
                 out,
-                "type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>[\"db\"];"
+                "export type DbView = __DbConnectionImpl<typeof REMOTE_MODULE>[\"db\"];"
             );
-            writeln!(out, "export type DbView = __DbViewBase & {{");
-            out.indent(1);
-            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
-                writeln!(
-                    out,
-                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
-                );
-                writeln!(
-                    out,
-                    "readonly {}: __DbViewBase[{}];",
-                    ts_string_literal(deprecated_accessor),
-                    ts_string_literal(target_accessor)
-                );
-            }
-            out.dedent(1);
-            writeln!(out, "}};");
 
             writeln!(out);
             writeln!(
@@ -680,59 +665,31 @@ impl Lang for TypeScript {
             out,
             "/** The context type returned in callbacks for all possible events. */"
         );
-        if has_table_accessor_aliases {
-            writeln!(
-                out,
-                "export type EventContext = Omit<__EventContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
-            );
-        } else {
-            writeln!(
-                out,
-                "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
-            );
-        }
+        writeln!(
+            out,
+            "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
+        );
 
         writeln!(out, "/** The context type returned in callbacks for reducer events. */");
-        if has_table_accessor_aliases {
-            writeln!(
-                out,
-                "export type ReducerEventContext = Omit<__ReducerEventContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
-            );
-        } else {
-            writeln!(
-                out,
-                "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
-            );
-        }
+        writeln!(
+            out,
+            "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
+        );
 
         writeln!(
             out,
             "/** The context type returned in callbacks for subscription events. */"
         );
-        if has_table_accessor_aliases {
-            writeln!(
-                out,
-                "export type SubscriptionEventContext = Omit<__SubscriptionEventContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
-            );
-        } else {
-            writeln!(
-                out,
-                "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
-            );
-        }
+        writeln!(
+            out,
+            "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
+        );
 
         writeln!(out, "/** The context type returned in callbacks for error events. */");
-        if has_table_accessor_aliases {
-            writeln!(
-                out,
-                "export type ErrorContext = Omit<__ErrorContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
-            );
-        } else {
-            writeln!(
-                out,
-                "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
-            );
-        }
+        writeln!(
+            out,
+            "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
+        );
 
         writeln!(out, "/** The subscription handle type to manage active subscriptions created from a {{@link SubscriptionBuilder}}. */");
         writeln!(
@@ -768,16 +725,13 @@ impl Lang for TypeScript {
         );
         out.indent(1);
         if has_table_accessor_aliases {
-            writeln!(out, "declare db: DbView;");
-
-            writeln!(out);
             writeln!(
                 out,
                 "constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {{"
             );
             out.indent(1);
             writeln!(out, "super(config);");
-            writeln!(out, "this.db = __withTableAccessorAliases(this.db) as DbView;");
+            writeln!(out, "this.db = __withTableAccessorAliases(this.db);");
             out.dedent(1);
             writeln!(out, "}}");
 
