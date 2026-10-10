@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { request as httpRequest, createServer } from 'node:http';
+import { Agent as HttpAgent, request as httpRequest, createServer } from 'node:http';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders, Server } from 'node:http';
 import { connect, createServer as createNetServer } from 'node:net';
 import type { Socket } from 'node:net';
@@ -167,6 +167,27 @@ test('credential broker rejects unauthorized and unsupported requests before ups
       headers: { authorization: `Bearer ${sessionToken}` } })).status, 404);
     assert.equal(seen.length, 0);
     assert.equal(stats().acceptedRequests, 0);
+  });
+});
+
+// Seen live: agy lost a request with a broken pipe after a tool ran for six seconds. Node's
+// default closes an idle connection after five seconds plus a one-second buffer.
+test('the broker keeps an idle connection open for the next request', async () => {
+  await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+    const agent = new HttpAgent({ keepAlive: true, maxSockets: 1 });
+    const localPort = () => new Promise<number>((resolvePort, reject) => {
+      const request = httpRequest({ hostname: '127.0.0.1', port: brokerPort, method: 'POST', path: '/v1/messages', agent,
+        headers: { authorization: `Bearer ${sessionToken}` } }, response => {
+        const port = response.socket.localPort!;
+        response.resume().on('end', () => resolvePort(port));
+      });
+      request.once('error', reject).end(JSON.stringify({ model: 'test-model', max_tokens: 1 }));
+    });
+    try {
+      const first = await localPort();
+      await new Promise(resolveWait => setTimeout(resolveWait, 7_000));
+      assert.equal(await localPort(), first, 'the second request reuses the first connection');
+    } finally { agent.destroy(); }
   });
 });
 

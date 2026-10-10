@@ -10,11 +10,14 @@ export const PREFLIGHT_RESOURCE_FLOORS = Object.freeze({
 
 // Every build container runs with the same enforced Docker limits. These are
 // caps, not reserved CPU or RAM, and do not define a measured host minimum.
+// Docker counts threads as PIDs. Gemini 3.8 Flash sessions reached the former 512 cap
+// in 7 of 15 runs on 2026-10-10, all on stacks with a separate API server, running
+// their own browser tests beside the app; no earlier model had exceeded 438.
 export const BUILD_CONTAINER_RESOURCE_LIMITS = Object.freeze({
   cpuCount: 2,
   memoryBytes: 4 * 1024 ** 3,
   memorySwapBytes: 4 * 1024 ** 3,
-  pids: 512,
+  pids: 2048,
 });
 
 // The backend sidecar holds the stack's database. It peaked at 922 MiB during the

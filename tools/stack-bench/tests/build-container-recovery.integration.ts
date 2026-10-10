@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import { inspectBuildContainer } from '../container/build-container-inspection.js';
 import { buildContainerName } from '../container/reconcile-build-container.js';
-import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
+import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 
@@ -68,7 +68,7 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID']);
     assert(inspected.capDrop.includes('ALL'));
     assert(inspected.securityOpt.includes('no-new-privileges'));
-    assert.equal(inspected.pidsLimit, 512);
+    assert.equal(inspected.pidsLimit, BUILD_CONTAINER_RESOURCE_LIMITS.pids);
     assert.equal(inspected.tmpfs['/tmp'], 'rw,nosuid,nodev,mode=1777');
     assert.equal(inspected.tmpfs['/home/developer'],
       'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');

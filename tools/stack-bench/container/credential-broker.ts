@@ -440,6 +440,10 @@ export function createCredentialBroker(configInput: unknown, {
       client.on('close', () => tunnel.destroy());
     });
   }
+  // Node closes a connection idle for five seconds. A client that reuses it at that moment
+  // loses the request it was sending (seen from agy as a broken pipe). The broker serves
+  // one session and closes its connections when it stops, so idle ones stay open.
+  server.keepAliveTimeout = 0;
   server.on('clientError', (_error: Error, socket: Socket) => {
     socket.on('error', () => {});
     if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
