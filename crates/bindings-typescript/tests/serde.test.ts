@@ -8,6 +8,7 @@ import {
   ScheduleAt,
   Uuid,
 } from '../src';
+import { Result } from '../src/lib/result';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {
@@ -30,6 +31,36 @@ describe('it correctly serializes and deserializes algebraic values', () => {
     );
 
     expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it serializes and deserializes a result with distinct ok and err types', () => {
+    const okType = AlgebraicType.Product({
+      elements: [{ name: 'x', algebraicType: AlgebraicType.U32 }],
+    });
+    const algebraic_type = Result.getAlgebraicType(
+      okType,
+      AlgebraicType.String
+    );
+
+    const errValue = { err: 'nope' };
+    const errWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(errWriter, algebraic_type, errValue);
+    expect(
+      AlgebraicType.deserializeValue(
+        new BinaryReader(errWriter.getBuffer()),
+        algebraic_type
+      )
+    ).toEqual(errValue);
+
+    const okValue = { ok: { x: 42 } };
+    const okWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(okWriter, algebraic_type, okValue);
+    expect(
+      AlgebraicType.deserializeValue(
+        new BinaryReader(okWriter.getBuffer()),
+        algebraic_type
+      )
+    ).toEqual(okValue);
   });
 
   test('when it serializes and deserializes with a sum type', () => {
