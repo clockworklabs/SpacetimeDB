@@ -74,6 +74,7 @@ import type { TrackAction } from '../src/composition/tracks.js';
 
 type JsonRecord = Record<string, unknown>;
 type ActorWrite = {
+  accepted?: boolean;
   confirmed?: boolean;
   url: string;
   method: string;
@@ -412,6 +413,9 @@ export class Actor {
       const write: ActorWrite = { url, method: req.method(), headers: req.headers(), body };
       // Only a fully received successful response can supply bulk setup replay.
       void completed.then(confirmed => { write.confirmed = confirmed; });
+      // A success status shows the server accepted the request. A response whose body the
+      // page does not read finishes late, and never once the page has been replaced.
+      void req.response().then(response => { write.accepted = response?.ok() === true; }).catch(() => {});
       this.writes.push(write);
       if (this.writes.length > 200) this.writes.shift();
       if (body && typeof body === 'object') {

@@ -592,7 +592,7 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
     const classified = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, { url, method: write.method },
       response);
     actor.replay = { ...classified, accepted: classified.ok, status: response.status, url, method: write.method,
-      routeProven: write.confirmed === true };
+      routeProven: write.accepted === true };
   } catch { actor.replay = { accepted: false, status: 0, complete: false, url, method: write.method }; }
   await transport.sleep(input.settleMs ?? 2000, signal);
   return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status };
@@ -636,7 +636,7 @@ async function expectReplayRejected({ input, capabilities }:
     fail('replay-accepted', { actor: actor.name, status: replay.status ?? null, ...named });
   }
   // A refusal measures authorization only when the same request is proven to
-  // work for an authorized actor: a completed captured write, or an accepted
+  // work for an authorized actor: a captured write the server accepted, or an accepted
   // replay or call of the same named action earlier in this run.
   const routeProven = replay.routeProven === true
     || replay.namedAction !== undefined && routeProofs(capabilities).has(replay.namedAction);

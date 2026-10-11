@@ -46,6 +46,7 @@ export interface BrowserPage {
 }
 
 export interface CapturedWrite {
+  readonly accepted?: boolean;
   readonly confirmed?: boolean;
   readonly body: UnknownRecord | null;
   readonly headers: HeaderRecord;

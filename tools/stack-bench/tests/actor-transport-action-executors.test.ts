@@ -1101,7 +1101,7 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
     id: 41, items: [{ itemId: 7, name: 'Desk Lamp' }],
   }] })], [{
     url: 'http://app.test/api/fulfilment/ship', method: 'POST',
-    headers: { 'content-type': 'application/json' }, body: { orderId: 41 }, confirmed: true,
+    headers: { 'content-type': 'application/json' }, body: { orderId: 41 }, accepted: true,
   }], 'staff-session');
   const customer = actor('customer', [
     JSON.stringify({ items: [{ id: 8, name: 'Webcam' }] }),
@@ -1131,8 +1131,8 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
   assert.equal(rejected.status, 'passed');
   assert.equal(record(rejected.observation).classification, 'verified');
 
-  // A source write without a successful response does not prove the route works.
-  staff.writes[0]!.confirmed = false;
+  // A source write the server did not accept does not prove the route works.
+  staff.writes[0]!.accepted = false;
   assert.equal((await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
     swap: { find: 'Desk Lamp', with: 'Webcam' }, settleMs: 0 }, provided)).status, 'passed');
   assert.deepEqual(JSON.parse(String(requests[1]?.options.data)), { orderId: 52 });
@@ -1415,7 +1415,7 @@ test('cross-account replay uses caller CSRF context and cannot credit missing ca
   for (const callerContext of [true, false]) {
     let requests = 0;
     const owner = { name: 'owner', received: [], writes: [{
-      url: 'http://app.test/api/orders/1/cancel', method: 'POST', body: {}, confirmed: true,
+      url: 'http://app.test/api/orders/1/cancel', method: 'POST', body: {}, accepted: true,
       headers: { cookie: 'sid=owner', 'x-csrf-token': 'owner-csrf', origin: 'http://app.test' },
     }] };
     const other = { name: 'other', received: [], writes: callerContext ? [{
