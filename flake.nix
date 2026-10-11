@@ -188,6 +188,9 @@
               rustStable
               rustNightly
               pkgs.cargo-insta
+              # Pinned to match WASM_BINDGEN_VERSION in
+              # crates/bindings-typescript/scripts/generate-test-utils-wasm.mjs.
+              pkgs.wasm-bindgen-cli_0_2_104
             ];
           };
         }
