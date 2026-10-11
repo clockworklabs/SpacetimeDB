@@ -490,7 +490,8 @@ test('mixed native and HTTP signup probes expose either source of authority', as
     if (req.url?.startsWith('/v1/database/auth/schema')) {
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ reducers: [{ name: 'profile_save', params: { elements:
-        ['name', 'digest', 'role'].map(name => ({ name: { some: name }, algebraic_type: { String: [] } })) } }] })); return;
+        ['name', 'digest', 'role'].map(name => ({ name: { some: name }, algebraic_type: { String: [] } })) } },
+        { name: 'tick', params: { elements: [] } }] })); return;
     }
     if (req.method !== 'POST') { res.end('<body>accounts</body>'); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
@@ -512,7 +513,7 @@ test('mixed native and HTTP signup probes expose either source of authority', as
     send({ tag: 'InitialConnection', value: { identity: { __identity__: 1n }, connectionId: { __connection_id__: 1n }, token: 'fixture-token' } });
     socket.on('message', raw => {
       const message = codec.ClientMessage.deserialize(new codec.BinaryReader(raw));
-      if (message.value.reducer === 'create_product') {
+      if (['create_product', 'tick'].includes(message.value.reducer)) {
         send({ tag: 'ReducerResult', value: { requestId: message.value.requestId,
           timestamp: { __timestamp_micros_since_unix_epoch__: 1n }, result: { tag: 'OkEmpty' } } });
         return;
@@ -619,6 +620,18 @@ test('mixed native and HTTP signup probes expose either source of authority', as
     const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage, 'baseline'));
     assert.deepEqual(baseline.writes.map(write => write.transport), ['spacetime-websocket', 'http']);
     assert(!JSON.stringify(baseline).includes('opaque-derived-password'));
+    await t.test('a timer call without parameters does not disturb the signup sequence', { timeout: 30_000 }, async () => {
+      const page = await fresh('ticking');
+      const tick = encode(codec.ClientMessage, { tag: 'CallReducer', value: {
+        reducer: 'tick', requestId: 9, flags: 0, args: new Uint8Array() } });
+      try {
+        const result = await withAuthRequestPatch(page, 'ticking', 'unsubmitted-password', { fields: { role: 'admin' } }, async () => {
+          await page.evaluate(bytes => (window as unknown as { fixtureSocket: WebSocket }).fixtureSocket.send(new Uint8Array(bytes)), [...tick]);
+          await submit(page, 'ticking');
+        }, undefined, 'signup', { writes: baseline.writes, index: 0 });
+        assert.equal(result.requestPatch.transport, 'spacetime-websocket');
+      } finally { await page.context().close(); }
+    });
     const restock = (page: typeof baselinePage) => page.evaluate(async () => (await fetch('/restock', { method: 'POST' })).status);
     assert.equal(await restock(baselinePage), 403);
     accounts.set('admin', 'admin'); assert.equal(await restock(await fresh('admin')), 200);

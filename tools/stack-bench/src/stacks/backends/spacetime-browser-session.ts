@@ -357,7 +357,7 @@ async function authDeclarations(capture: Capture) {
   ];
   for (const declared of operations) {
     const fields = declared.params?.elements;
-    if (!fields?.length || !fields.every(field => typeof field.name?.some === 'string')) continue;
+    if (!fields || !fields.every(field => typeof field.name?.some === 'string')) continue;
     const types = fields.map(field => argumentType(field.algebraic_type));
     if (types.some(type => !type)) continue;
     declarations.set(declared.key, {
@@ -398,6 +398,9 @@ export async function startSpacetimeAuthWriteCapture(page: object,
         return null;
       }
       const declaration = declarations?.get(operation(message.value));
+      // A call without parameters carries no credential or claim. An app's own timer may
+      // send one at any moment, so it is not part of the signup sequence.
+      if (declaration && !declaration.names.length) return null;
       // An undeclared procedure leaves the capture unproved; the app's call still proceeds.
       if (!declaration && message.tag === 'CallProcedure') { fail(); return null; }
       if (!declaration || !leasedSocket(capture, socket, target, true, true)) {
