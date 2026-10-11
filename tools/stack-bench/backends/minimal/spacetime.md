@@ -21,9 +21,8 @@ Publish only the named module to the exact server URI. Local publish and
 development commands must use `--yes`. Do not pipe confirmation input, publish
 anonymously, or use the hosted service. Create `/app/start.sh`. From a clean
 source checkout, it must install dependencies, build the complete application,
-and start it on `<VITE_PORT>`. The script must not change source files.
-`APP_WARM_START=1` only permits reusing current dependencies. Leave the
-application running when the work is complete.
+and start it on `<VITE_PORT>`. The script must not change source files. Leave
+the application running when the work is complete.
 
 The included TypeScript server and client skills provide SDK guidance.
 CLI `--help` is available for command syntax.
