@@ -162,6 +162,18 @@ test('clean-source application start uses the private attempt database URL', asy
       assert.equal(launchEnvironment?.VITE_PORT, '65534');
       assert.equal(launchEnvironment?.APP_WARM_START, '1');
       assert(!launch.some(value => value.includes('local-app-password')));
+      // A first start from clean source is not a warm one: the flag is absent, not empty.
+      await assert.rejects(controlAppServer({ backend, app: root, port: 65534, probe: '' }, 'start', {
+        cleanSource: true,
+        exec: (_command, args, options) => {
+          if (args[0] === 'inspect') return id;
+          if (args[0] === 'exec' && args.includes('-d')) { launch = args; launchEnvironment = options.env; throw launchReached; }
+          return '';
+        },
+      }), error => error === launchReached);
+      assert.equal(launchEnvironment?.APP_WARM_START, undefined);
+      assert(!launch.includes('APP_WARM_START'));
+      assert.equal(launchEnvironment?.VITE_PORT, '65534');
     }
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;

@@ -24,7 +24,9 @@ export interface RuntimeControlSpec {
 }
 
 interface DiagnosticsOptions { exec?: TextCommandExecutor }
-interface RuntimeControlOptions { signal?: AbortSignal | null; exec?: TextCommandExecutor }
+interface RuntimeControlOptions { signal?: AbortSignal | null; exec?: TextCommandExecutor;
+  // The app was just reset to its source, without dependencies: a first start, not a warm one.
+  cleanSource?: boolean }
 
 export interface PreparedRuntimeCrash {
   crash(): Promise<ProcessCrashReceipt>;
@@ -202,7 +204,7 @@ export async function controlBackendRuntime(
 export async function controlAppServer(
   spec: RuntimeControlSpec,
   mode: RuntimeControlMode = 'restart',
-  { signal = null, exec }: RuntimeControlOptions = {},
+  { signal = null, exec, cleanSource = false }: RuntimeControlOptions = {},
 ): Promise<void> {
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
@@ -213,7 +215,9 @@ export async function controlAppServer(
       lease,
     }),
     ...adapter.lifecycle.applicationEnvironment?.(lease),
-    APP_WARM_START: '1',
+    // Telling an app it starts warm when its dependencies were just removed made a script
+    // that installs only on a cold start fail: all 15 Gemini 3.1 Pro runs on 2026-10-11.
+    ...(cleanSource ? {} : { APP_WARM_START: '1' }),
     VITE_PORT: String(spec.port),
   };
   await controlHostedAppServer({

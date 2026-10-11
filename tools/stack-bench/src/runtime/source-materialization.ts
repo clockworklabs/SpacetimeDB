@@ -40,7 +40,7 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   }
   let startFailure: unknown = null;
   try {
-    await lifecycle(application, 'start');
+    await lifecycle(application, 'start', { cleanSource: true });
   } catch (error) {
     startFailure = error;
   }

@@ -25,9 +25,12 @@ test('accepted startup cannot read rejected files outside the saved source', asy
     const execute = () => execFileSync(process.execPath, ['app.cjs'], { cwd: app, encoding: 'utf8' });
     assert.equal(execute(), 'rejected,rejected,rejected');
     assert.equal(hashAppSource(app).sha256, hash, 'control: excluded files have no source identity');
+    const starts: unknown[] = [];
     await materializeAcceptedSource(accepted, app, { backend: 'postgres', app, port: 6573, probe: '' },
-      async (_spec, mode) => { if (mode === 'start') assert.equal(execute(), ''); });
+      async (_spec, mode, options) => { if (mode === 'start') { starts.push(options); assert.equal(execute(), ''); } });
     assert.equal(execute(), '', 'accepted app must have the same inputs as a clean reconstruction');
+    // The app was reset to source without dependencies, so it is not told this is a warm start.
+    assert.deepEqual(starts, [{ cleanSource: true }]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
