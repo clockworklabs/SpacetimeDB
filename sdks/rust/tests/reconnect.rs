@@ -1,4 +1,4 @@
-#![cfg(not(target_arch = "wasm32"))]
+#![cfg(all(not(target_arch = "wasm32"), not(feature = "browser")))]
 
 #[path = "case-conversion-client/src/module_bindings/mod.rs"]
 mod module_bindings;
