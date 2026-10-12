@@ -394,6 +394,41 @@ test('privacy observes HTTP delivery through reload during a finite window', asy
   }
 });
 
+// An app that keeps reading while a privacy check runs must not make the check inconclusive.
+test('a response that arrives while a proxy snapshot is in flight is not reported missing', async t => {
+  const server = createServer((req, res) => {
+    if (req.url === '/api/profile') { res.setHeader('Content-Type', 'application/json'); res.end('{"name":"Blake Reed"}'); }
+    else { res.setHeader('Content-Type', 'text/html'); res.end('<title>profile</title>'); }
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath() });
+  const proxy = await startNetworkInterruption(true);
+  const context = await browser.newContext({ proxy: proxy.proxy });
+  const page = await context.newPage();
+  // The first snapshot is taken, then held back until a later read has reached the browser.
+  let snapshots = 0;
+  const racing = { ...proxy, httpSnapshot: async () => {
+    const snapshot = await proxy.httpSnapshot();
+    if (snapshots++ === 0) {
+      const read = page.waitForResponse(`${url}/api/profile`);
+      await page.evaluate(() => fetch('/api/profile').then(response => response.json()));
+      await (await read).finished();
+      await page.waitForTimeout(100); // the observer notes the receipt after reading the server address
+    }
+    return snapshot;
+  } };
+  const actor = new Actor('reader', page, context, false, false, false, [], true, racing);
+  t.after(async () => { await context.close(); await proxy.dispose(); await browser.close(); });
+  await actor.ready;
+  await page.goto(url);
+  await actor.syncReceived();
+  assert(snapshots > 1, 'the late receipt needs a later snapshot');
+  assert.equal(actor.wasSent('14 Market Street'), false, 'the capture stays complete');
+  assert.equal(actor.wasSent('Blake Reed', false), true, 'the late response is inspected');
+});
+
 // Partial bytes may prove a privacy failure, but must not become complete JSON
 // for ID discovery or confirm a write for bulk replay before its response ends.
 test('HTTP privacy fragments do not become completed source or confirmed writes', async t => {

@@ -464,10 +464,18 @@ export class Actor {
   async syncReceived(): Promise<void> {
     if (!this.networkInterruption?.observesHttp) return;
     try {
-      const snapshot = await this.networkInterruption.httpSnapshot();
+      const take = async () => {
+        const snapshot = await this.networkInterruption!.httpSnapshot();
+        return { snapshot, records: new Map(snapshot.records.map(record => [record.id, record])) };
+      };
+      // The proxy records a response before the browser sees it, so a receipt missing from a
+      // snapshot arrived while that snapshot was in flight. A later snapshot holds it.
+      let { snapshot, records } = await take();
+      for (let again = 0; again < 3 && [...this.httpReceipts.keys()].some(id => !records.has(id)); again++) {
+        ({ snapshot, records } = await take());
+      }
       this.pendingHttp = snapshot.pending;
       for (const record of snapshot.records) this.transport.record(record.body, true);
-      const records = new Map(snapshot.records.map(record => [record.id, record]));
       const unmatched = [...this.httpReceipts].find(([id, expected]) => {
         const actual = records.get(id);
         return !actual || actual.url !== expected.url || actual.method !== expected.method
