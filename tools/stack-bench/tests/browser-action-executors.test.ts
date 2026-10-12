@@ -314,12 +314,14 @@ test('message order requires observed messages and compares the merged sender se
 
 test('optional clicks operate enabled controls and skip unavailable controls', async () => {
   for (const [visible, enabled] of [[false, false], [true, false], [true, true]]) {
-    let clicks = 0;
+    let clicks = 0, timeout: unknown;
     const provided = services({ loc: () => ({ isVisible: async () => visible,
-      isDisabled: async () => !enabled, click: async () => { clicks += 1; } }) });
+      isDisabled: async () => !enabled, click: async (options: { timeout: number }) => { clicks += 1; timeout = options.timeout; } }) });
     const result = await run({ do: 'click', actor: 'a', testid: 'buy-now', ifAvailable: true, within: 1 }, provided);
     assert.equal(result.status, 'passed');
     assert.equal(clicks, visible && enabled ? 1 : 0);
+    // The short wait is for the control to appear; a control that is there gets the ordinary click time.
+    if (clicks) assert.equal(timeout, 5000);
   }
 });
 

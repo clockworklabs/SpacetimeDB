@@ -306,7 +306,9 @@ async function click({ input, capabilities, signal }:
     }, undefined, { timeout: 1000 }))().catch(() => null);
   let writeCompletion: Awaited<ReturnType<typeof withWriteCompletion>> | undefined;
   const submit = async () => {
-    await target.click({ timeout: input.within ?? browser.defaultWithin });
+    // For an optional control `within` bounds its appearance. It is on screen by now, and the click
+    // itself gets the ordinary time.
+    await target.click({ timeout: input.ifAvailable ? browser.defaultWithin : input.within ?? browser.defaultWithin });
     if (clickedText !== null) {
       await confirmReplacement(actor, browser, input.testid, scope, clickedText, signal).catch(() => {});
     }
