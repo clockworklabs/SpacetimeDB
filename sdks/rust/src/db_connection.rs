@@ -670,13 +670,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     return Ok(());
                 }
                 if let Some(msg) = handle.start() {
-                    self.send_chan
-                        .lock()
-                        .unwrap()
-                        .as_mut()
-                        .ok_or(crate::Error::Disconnected)?
-                        .unbounded_send(ws::v2::ClientMessage::Subscribe(msg))
-                        .map_err(|_| crate::Error::Disconnected)?;
+                    self.send_message(ws::v2::ClientMessage::Subscribe(msg))?;
                 }
                 // else, the handle was already cancelled.
             }
@@ -700,13 +694,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         callback(&self.make_event_ctx(()));
                     }
                     PendingUnsubscribeResult::SendUnsubscribe(m) => {
-                        self.send_chan
-                            .lock()
-                            .unwrap()
-                            .as_mut()
-                            .ok_or(crate::Error::Disconnected)?
-                            .unbounded_send(ws::v2::ClientMessage::Unsubscribe(m))
-                            .map_err(|_| crate::Error::Disconnected)?;
+                        self.send_message(ws::v2::ClientMessage::Unsubscribe(m))?;
                     }
                 }
             }
@@ -745,13 +733,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     request_id,
                     flags,
                 });
-                self.send_chan
-                    .lock()
-                    .unwrap()
-                    .as_mut()
-                    .ok_or(crate::Error::Disconnected)?
-                    .unbounded_send(msg)
-                    .map_err(|_| crate::Error::Disconnected)?;
+                self.send_message(msg)?;
             }
 
             // Invoke a procedure: stash its callback, then send the `CallProcedure` WS message.
@@ -781,13 +763,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     request_id,
                     flags: ws::v2::CallProcedureFlags::Default,
                 });
-                self.send_chan
-                    .lock()
-                    .unwrap()
-                    .as_mut()
-                    .ok_or(crate::Error::Disconnected)?
-                    .unbounded_send(msg)
-                    .map_err(|_| crate::Error::Disconnected)?;
+                self.send_message(msg)?;
             }
 
             // Disconnect: close the connection.
