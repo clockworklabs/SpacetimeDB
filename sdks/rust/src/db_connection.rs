@@ -803,12 +803,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 }
                 *self.send_chan.lock().unwrap() = None;
                 let mut inner = self.inner.lock().unwrap();
+                let notify_disconnect =
+                    inner.connection_lifecycle != ConnectionLifecycle::Ended && self.identity.lock().unwrap().is_some();
                 inner.connection_lifecycle = ConnectionLifecycle::Ended;
                 inner.replay = None;
                 self.fail_pending_operations(&mut inner);
                 let ctx = self.make_event_ctx(None);
                 inner.subscriptions.on_disconnect(&self.make_event_ctx(()));
-                if let Some(callback) = inner.on_disconnect.as_mut() {
+                if notify_disconnect && let Some(callback) = inner.on_disconnect.as_mut() {
                     callback(&ctx, None, None);
                 }
                 return Err(crate::Error::Disconnected);
