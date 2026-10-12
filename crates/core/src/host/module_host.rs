@@ -66,7 +66,7 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
+use spacetimedb_schema::def::{reducer_signature_hash, ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
@@ -74,7 +74,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
@@ -227,6 +227,9 @@ pub struct ModuleInfo {
     /// Loaded by loading the module's program from the system tables, extracting its definition,
     /// and validating.
     pub module_def: Arc<ModuleDef>,
+    /// Signature hashes computed on first IDC use, keyed by fully qualified reducer name.
+    /// A new module gets a fresh cache on update or restart.
+    reducer_signature_hashes: FxHashMap<ReducerName, OnceLock<Hash>>,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -343,8 +346,14 @@ impl ModuleInfo {
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
         let metrics = ModuleMetrics::new(&database_identity);
+        let reducer_signature_hashes = module_def
+            .reducer_ids_and_defs()
+            .into_iter()
+            .map(|(_, reducer)| (reducer.name.clone(), OnceLock::new()))
+            .collect();
         Arc::new(ModuleInfo {
             module_def: Arc::new(module_def),
+            reducer_signature_hashes,
             owner_identity,
             database_identity,
             module_hash,
@@ -355,6 +364,22 @@ impl ModuleInfo {
 
     pub fn relational_db(&self) -> &Arc<RelationalDB> {
         self.subscriptions.relational_db()
+    }
+
+    /// Returns the reducer's signature hash, computing it on first use.
+    pub fn reducer_signature_hash(&self, reducer_name: &ReducerName) -> Hash {
+        *self.reducer_signature_hashes[reducer_name].get_or_init(|| {
+            let (_, reducer, owning_def) = self
+                .module_def
+                .reducer_by_name_with_module(reducer_name)
+                .expect("reducer belongs to this module");
+            reducer_signature_hash(
+                &reducer.params(),
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                owning_def.typespace(),
+            )
+        })
     }
 }
 
@@ -3830,7 +3855,7 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{ModuleHost, ModuleInfo};
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
@@ -3842,6 +3867,101 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn reducer_signature_hash_cache_is_lazy_and_scoped_to_module() -> anyhow::Result<()> {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+        use spacetimedb_lib::{hash_bytes, ProductType};
+        use spacetimedb_schema::def::reducer_signature_hash;
+        use spacetimedb_schema::reducer_name::ReducerName;
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db);
+        let make_info = |child_type| {
+            let mut child = RawModuleDefV10Builder::new();
+            let payload =
+                child.add_algebraic_type([], "Payload", AlgebraicType::product([("value", child_type)]), false);
+            child.add_reducer("receive", ProductType::from([("payload", payload.into())]));
+
+            let mut nested = RawModuleDefV10Builder::new();
+            nested.add_reducer("receive", ProductType::from([("payload", AlgebraicType::U8)]));
+            child.add_submodule("nested", nested.finish());
+
+            let mut sibling = RawModuleDefV10Builder::new();
+            sibling.add_reducer("receive", ProductType::from([("payload", AlgebraicType::U32)]));
+
+            let mut parent = RawModuleDefV10Builder::new();
+            let payload = parent.add_algebraic_type(
+                [],
+                "Payload",
+                AlgebraicType::product([("value", AlgebraicType::U64)]),
+                false,
+            );
+            parent.add_reducer("receive", ProductType::from([("payload", payload.into())]));
+            parent.add_submodule("child", child.finish());
+            parent.add_submodule("sibling", sibling.finish());
+            ModuleInfo::new(
+                parent.finish().try_into().unwrap(),
+                Identity::ZERO,
+                Identity::ONE,
+                hash_bytes(b"test module"),
+                subscriptions.clone(),
+            )
+        };
+        let hash_for = |info: &ModuleInfo, name| {
+            let (_, reducer, owning) = info.module_def.reducer_by_name_with_module(name).unwrap();
+            let hash = info.reducer_signature_hash(&reducer.name);
+            assert_eq!(
+                hash,
+                reducer_signature_hash(
+                    &reducer.params(),
+                    &reducer.ok_return_type,
+                    &reducer.err_return_type,
+                    owning.typespace(),
+                )
+            );
+            assert_eq!(info.reducer_signature_hashes[&reducer.name].get(), Some(&hash));
+            hash
+        };
+
+        let info = make_info(AlgebraicType::String);
+        assert_eq!(info.reducer_signature_hashes.len(), 4);
+        assert!(info.reducer_signature_hashes.values().all(|slot| slot.get().is_none()));
+        let child_hash = hash_for(&info, "child.receive");
+        for name in ["receive", "sibling.receive", "child.nested.receive"] {
+            assert!(info.reducer_signature_hashes[&ReducerName::for_test(name)]
+                .get()
+                .is_none());
+        }
+        assert_eq!(hash_for(&info.clone(), "child.receive"), child_hash);
+        let parent_hash = hash_for(&info, "receive");
+        assert_ne!(parent_hash, child_hash);
+        let sibling_hash = hash_for(&info, "sibling.receive");
+        let nested_hash = hash_for(&info, "child.nested.receive");
+        assert_ne!(sibling_hash, child_hash);
+        assert_ne!(nested_hash, child_hash);
+
+        // Reloading the same definition starts empty and produces the same hash.
+        let reloaded = make_info(AlgebraicType::String);
+        assert!(reloaded
+            .reducer_signature_hashes
+            .values()
+            .all(|slot| slot.get().is_none()));
+        assert_eq!(hash_for(&reloaded, "child.receive"), child_hash);
+
+        // A changed module must not reuse a hash cached for the same reducer name.
+        let updated = make_info(AlgebraicType::Bool);
+        assert!(updated
+            .reducer_signature_hashes
+            .values()
+            .all(|slot| slot.get().is_none()));
+        assert_ne!(hash_for(&updated, "child.receive"), child_hash);
+        assert_eq!(hash_for(&updated, "receive"), parent_hash);
+        assert_eq!(hash_for(&updated, "sibling.receive"), sibling_hash);
+        assert_eq!(hash_for(&updated, "child.nested.receive"), nested_hash);
+        assert_eq!(hash_for(&info, "child.receive"), child_hash);
+        Ok(())
+    }
 
     fn v2_client_config() -> ClientConfig {
         ClientConfig {
