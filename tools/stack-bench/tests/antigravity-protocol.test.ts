@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -61,6 +61,8 @@ test('the launcher passes the prompt unchanged as one stream message and selects
     assert.equal(standIn.token.access_token, 'session-1');
     assert.ok(Date.parse(standIn.token.expiry) > Date.parse('2090-01-01'));
     assert.equal(readFileSync(join(root, 'key'), 'utf8'), 'unset');
+    // The launcher's files sit in its own directory, not among the agent's scratch files.
+    assert.deepEqual(readdirSync(join(root, '.config', 'antigravity-session')).sort(), ['ca.pem', 'command-env', 'message.json']);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
