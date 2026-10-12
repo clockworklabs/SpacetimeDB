@@ -13,6 +13,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
+use crate::host::wasm_common::module_host_actor::ReducerSuccessAction;
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -49,6 +50,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StInboundMsgRow};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_engine::sql::rls::RowLevelExpr;
@@ -1669,6 +1671,64 @@ impl From<UpdateEnvironmentResult> for UpdateDatabaseResult {
 #[error("no such module")]
 pub struct NoSuchModule;
 
+/// Result of processing an IDC delivery, including retransmissions.
+/// New and replayed results must be durable before the transport replies.
+pub enum IdcReducerCallOutcome {
+    /// Recorded a new terminal result, either from reducer execution or validation failure.
+    /// The transaction offset identifies the commit that must become durable.
+    Applied(ReducerCallResultWithTxOffset),
+    /// Returned the stored result of an earlier delivery without invoking the reducer again.
+    Replayed(IdcStoredReducerOutcome),
+    /// The sender already acknowledged this delivery, so its stored result was removed.
+    /// The reducer is not invoked again.
+    AlreadyAcked,
+}
+
+#[derive(Debug)]
+pub struct IdcStoredReducerOutcome {
+    pub result_status: StInboundMsgResultStatus,
+    pub result_payload: Bytes,
+    /// Committed prefix containing the stored outcome; the transport waits for durability.
+    pub tx_offset: u64,
+}
+
+/// Receiver-side sequence decision before an ordered IDC delivery may execute.
+#[derive(Debug)]
+enum IdcDeliveryDecision {
+    Ready,
+    Replayed(StInboundMsgRow),
+    AlreadyAcked,
+    OutOfOrder { expected: u64 },
+}
+
+/// A validation failure that must be recorded before replying to the sender.
+#[derive(Debug, thiserror::Error)]
+enum IdcTerminalError {
+    #[error(transparent)]
+    InvalidArgs(#[from] InvalidReducerArguments),
+    #[error("IDC reducer does not exist: {0}")]
+    NoSuchReducer(String),
+    #[error("IDC reducer signature mismatch for {reducer}: expected {expected}, got {actual}")]
+    SignatureMismatch {
+        reducer: String,
+        expected: Hash,
+        actual: Hash,
+    },
+}
+
+/// A receiver failure that leaves the message pending for retry.
+#[derive(Debug, thiserror::Error)]
+pub enum IdcDeliveryFailure {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("IDC delivery is out of order: expected seq {expected}, got {actual}")]
+    OutOfOrder { expected: u64, actual: u64 },
+    #[error(transparent)]
+    Datastore(#[from] DBError),
+    #[error("internal IDC reducer call error: {0}")]
+    Internal(String),
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum ReducerCallError {
     #[error(transparent)]
@@ -2477,6 +2537,187 @@ impl ModuleHost {
         .map_err(Into::into)
     }
 
+    /// Check an inbound IDC delivery for the ordered configuration
+    /// against the receiver's stream state without mutating it.
+    ///
+    /// Algorithm:
+    ///
+    /// 1. Read `applied_prefix`, the highest contiguous `seq` whose terminal
+    ///    outcome has already been decided for `(sender_identity, stream_id)`.
+    /// 2. If `seq <= applied_prefix`, this is a duplicate or delayed delivery.
+    ///    Return the retained outcome when it still exists; otherwise the sender
+    ///    has already acknowledged it and the delivery is `AlreadyAcked`.
+    /// 3. If `seq == applied_prefix + 1`, the delivery is the next message in
+    ///    the stream and may run the reducer.
+    /// 4. Otherwise, an earlier message is still missing, so report the expected
+    ///    sequence and make the sender retry later.
+    fn check_idc_delivery(
+        tx: &MutTxId,
+        sender_identity: Identity,
+        stream_id: u64,
+        seq: u64,
+    ) -> Result<IdcDeliveryDecision, DatastoreError> {
+        let applied_prefix = tx.inbound_idc_applied_prefix(sender_identity, stream_id)?;
+
+        // This sequence was already processed. Replay its result if retained;
+        // otherwise it was acknowledged. Neither case executes the reducer again.
+        if seq <= applied_prefix {
+            let decision = match tx.inbound_idc_outcome(sender_identity, stream_id, seq)? {
+                Some(row) => IdcDeliveryDecision::Replayed(row),
+                None => IdcDeliveryDecision::AlreadyAcked,
+            };
+            return Ok(decision);
+        }
+
+        // Only the next sequence may execute; later deliveries must wait for
+        // the missing messages to be processed first.
+        let expected = applied_prefix + 1;
+        if seq == expected {
+            return Ok(IdcDeliveryDecision::Ready);
+        }
+        Ok(IdcDeliveryDecision::OutOfOrder { expected })
+    }
+
+    /// Commit acknowledgment cleanup and check whether this delivery can execute.
+    /// Returns `None` for the next sequence, a stored or acknowledged outcome for
+    /// a duplicate, and an error if the sequence skips ahead.
+    ///
+    /// Call this before validating the reducer or its arguments so a module update
+    /// cannot change the result returned for a previously processed delivery.
+    fn prepare_idc_delivery(
+        &self,
+        sender_identity: Identity,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+    ) -> Result<Option<IdcReducerCallOutcome>, IdcDeliveryFailure> {
+        let stdb = self.relational_db();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let checked = stdb.with_auto_rollback(tx, |tx| {
+            // The sender has acknowledged every outcome through ack_prefix,
+            // so those results no longer need to be retained for retries.
+            tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)?;
+            Self::check_idc_delivery(tx, sender_identity, stream_id, seq)
+        });
+        let (tx, decision) = checked.map_err(DBError::from)?;
+        // Commit the acknowledgment cleanup even if this delivery cannot execute.
+        let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+            .commit_tx(tx)?
+            .ok_or_else(|| IdcDeliveryFailure::Internal("IDC sequence check was not committed".into()))?;
+        stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+
+        match decision {
+            IdcDeliveryDecision::Ready => Ok(None),
+            IdcDeliveryDecision::Replayed(row) => {
+                // This offset covers the stored outcome even if cleanup changed no rows.
+                // The transport waits for it to become durable before replying.
+                let outcome = IdcStoredReducerOutcome {
+                    result_status: row.result_status,
+                    result_payload: row.result_payload,
+                    tx_offset,
+                };
+                Ok(Some(IdcReducerCallOutcome::Replayed(outcome)))
+            }
+            IdcDeliveryDecision::AlreadyAcked => Ok(Some(IdcReducerCallOutcome::AlreadyAcked)),
+            IdcDeliveryDecision::OutOfOrder { expected } => {
+                Err(IdcDeliveryFailure::OutOfOrder { expected, actual: seq })
+            }
+        }
+    }
+
+    async fn call_idc_reducer_with_params(
+        &self,
+        sender_identity: Identity,
+        stream_id: u64,
+        seq: u64,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let on_success: ReducerSuccessAction = Box::new(move |tx, reducer_return_value| {
+            tx.record_inbound_idc_outcome(
+                sender_identity,
+                stream_id,
+                seq,
+                StInboundMsgResultStatus::Ok,
+                reducer_return_value.clone().unwrap_or_default(),
+            )?;
+            Ok(())
+        });
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(reducer_name);
+        let result = match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                executor
+                    .run_sync_job(move |state| {
+                        state.with_instance(move |inst| {
+                            drop(timer_guard);
+                            inst.call_idc_reducer(params, on_success)
+                        })
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                drop(timer_guard);
+                host.main_instance
+                    .with_instance(|inst| async move { inst.call_idc_reducer(params, on_success).await })
+                    .await
+            }
+        };
+
+        if result.result.is_err() {
+            let (status, payload) = match &result.result.outcome {
+                ReducerOutcome::Failed(err) => (StInboundMsgResultStatus::Err, Bytes::copy_from_slice(err.as_bytes())),
+                ReducerOutcome::BudgetExceeded => (
+                    StInboundMsgResultStatus::BudgetExceeded,
+                    Bytes::from_static(b"Module energy budget exhausted."),
+                ),
+                ReducerOutcome::Committed => unreachable!("checked failed reducer result"),
+            };
+            // The failed reducer rolled back. Its terminal outcome must commit in a
+            // separate transaction, and that transaction's offset gates the HTTP reply.
+            let mut recorded = self.record_idc_terminal_error(sender_identity, stream_id, seq, status, payload)?;
+            recorded.result = result.result;
+            return Ok(IdcReducerCallOutcome::Applied(recorded));
+        }
+
+        Ok(IdcReducerCallOutcome::Applied(result))
+    }
+
+    /// Decide a new message without committing reducer effects. Signature mismatch,
+    /// missing reducer, and argument validation errors are terminal, just like a
+    /// reducer returning Err. Persisting them advances the stream so later messages
+    /// are not stranded behind a sender-retired sequence.
+    fn record_idc_terminal_error(
+        &self,
+        sender_identity: Identity,
+        stream_id: u64,
+        seq: u64,
+        status: StInboundMsgResultStatus,
+        payload: Bytes,
+    ) -> Result<ReducerCallResultWithTxOffset, IdcDeliveryFailure> {
+        let stdb = self.relational_db();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, ()) = stdb
+            .with_auto_rollback(tx, |tx| {
+                tx.record_inbound_idc_outcome(sender_identity, stream_id, seq, status, payload.clone())
+            })
+            .map_err(DBError::from)?;
+        let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+            .commit_tx(tx)?
+            .ok_or_else(|| IdcDeliveryFailure::Internal("IDC terminal outcome was not committed".into()))?;
+        stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+        let message = String::from_utf8_lossy(&payload).into_owned().into_boxed_str();
+        Ok(ReducerCallResultWithTxOffset {
+            result: ReducerCallResult {
+                outcome: ReducerOutcome::Failed(Box::new(message)),
+                execution_budget_used: FunctionBudget::ZERO,
+                execution_duration: Duration::ZERO,
+            },
+            tx_offset: from_tx_offset(tx_offset),
+        })
+    }
+
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
         let log_message = match err {
             ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
@@ -2571,6 +2812,104 @@ impl ModuleHost {
             async |call| self.call_reducer_with_params_and_offset(&call.name, call.params).await,
         )
         .await
+    }
+
+    /// Processes an ordered IDC message and returns its recorded outcome.
+    ///
+    /// New messages are checked against the current module before running the reducer.
+    /// Successful changes and their outcome commit together. If validation or the
+    /// reducer fails, the error is recorded separately, with any reducer changes rolled back.
+    ///
+    /// Both success and recorded failure return [`IdcReducerCallOutcome::Applied`].
+    /// Retries return [`IdcReducerCallOutcome::Replayed`] without running the reducer
+    /// again. Once the sender acknowledges the outcome and it is removed, later
+    /// retries return [`IdcReducerCallOutcome::AlreadyAcked`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdcDeliveryFailure`] if delivery cannot finish, including when an
+    /// outcome cannot be recorded. The sender should retry the same message.
+    ///
+    /// # Caller Requirements
+    ///
+    /// This does not support pipelining.
+    /// The caller handles authentication and the connection lifecycle, and allows
+    /// at most one delivery in flight per sender and stream. Before replying, it must
+    /// wait for the returned transaction offset to become durable, including for replays.
+    pub async fn call_idc_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        reducer_name: &str,
+        args: FunctionArgs,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+        expected_signature_hash: Hash,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        // TODO(idc): Make it pipelining safe, meaning there can be more than 1 inflight requests
+        // per stream
+        if let Some(outcome) = self.prepare_idc_delivery(caller_identity, stream_id, seq, ack_prefix)? {
+            return Ok(outcome);
+        }
+
+        // Only new messages are checked against the current schema. Validate the
+        // signature before decoding positional arguments, and persist validation
+        // failures exactly like reducer failures rather than returning a bare 422.
+        let prepared = (|| -> Result<_, IdcTerminalError> {
+            let Some((reducer_id, reducer_def, owning_def)) =
+                self.info.module_def.reducer_by_name_with_module(reducer_name)
+            else {
+                return Err(IdcTerminalError::NoSuchReducer(reducer_name.to_string()));
+            };
+
+            if reducer_def.lifecycle.is_some() || reducer_def.visibility.is_private() {
+                return Err(IdcTerminalError::NoSuchReducer(reducer_name.to_string()));
+            }
+
+            let actual_signature_hash = self.info.reducer_signature_hash(&reducer_def.name);
+            if actual_signature_hash != expected_signature_hash {
+                let err = IdcTerminalError::SignatureMismatch {
+                    reducer: reducer_name.to_string(),
+                    expected: expected_signature_hash,
+                    actual: actual_signature_hash,
+                };
+                return Err(err);
+            }
+
+            let params = Self::call_reducer_params(
+                owning_def,
+                caller_identity,
+                Some(caller_connection_id),
+                None,
+                None,
+                None,
+                reducer_id,
+                reducer_def,
+                args,
+            )?;
+
+            Ok((reducer_def, params))
+        })();
+
+        let (reducer_def, params) = match prepared {
+            Ok(prepared) => prepared,
+            Err(err) => {
+                // Only a recorded failure becomes a terminal response. If this
+                // write fails, return a delivery failure so the sender retries.
+                return self
+                    .record_idc_terminal_error(
+                        caller_identity,
+                        stream_id,
+                        seq,
+                        StInboundMsgResultStatus::Err,
+                        Bytes::from(err.to_string()),
+                    )
+                    .map(IdcReducerCallOutcome::Applied);
+            }
+        };
+        self.call_idc_reducer_with_params(caller_identity, stream_id, seq, &reducer_def.name, params)
+            .await
     }
 
     pub async fn enqueue_reducer(

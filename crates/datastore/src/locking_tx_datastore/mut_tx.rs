@@ -22,14 +22,15 @@ use crate::{
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
+        StInboundMsgFields, StInboundMsgResultStatus, StInboundMsgRow, StInboundStreamFields, StInboundStreamRow,
         StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields, StOutboundMsgRow,
         StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StRowLevelSecurityFields,
         StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
         StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
         INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID,
-        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID,
-        ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INBOUND_MSG_ID, ST_INBOUND_STREAM_ID,
+        ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -38,6 +39,8 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
+use anyhow::anyhow;
+use bytes::Bytes;
 use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
 use rand_core::RngCore;
@@ -3463,6 +3466,109 @@ impl MutTxId {
             to_writer(buf, row).unwrap();
             self.insert::<true>(table_id, buf)
         })
+    }
+
+    fn st_inbound_stream_row(&self, sender: Identity, stream_id: u64) -> Result<Option<StInboundStreamRow>> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id]);
+        self.iter_by_col_eq(
+            ST_INBOUND_STREAM_ID,
+            col_list![StInboundStreamFields::SenderIdentity, StInboundStreamFields::StreamId],
+            &key,
+        )?
+        .map(StInboundStreamRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    /// Return the highest contiguous inbound sequence already applied for a stream.
+    pub fn inbound_idc_applied_prefix(&self, sender: Identity, stream_id: u64) -> Result<u64> {
+        Ok(self
+            .st_inbound_stream_row(sender, stream_id)?
+            .map_or(0, |row| row.applied_prefix))
+    }
+
+    /// Look up a retained inbound result for replaying a duplicate delivery.
+    pub fn inbound_idc_outcome(&self, sender: Identity, stream_id: u64, seq: u64) -> Result<Option<StInboundMsgRow>> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, seq]);
+        self.iter_by_col_eq(
+            ST_INBOUND_MSG_ID,
+            col_list![
+                StInboundMsgFields::SenderIdentity,
+                StInboundMsgFields::StreamId,
+                StInboundMsgFields::Seq
+            ],
+            &key,
+        )?
+        .map(StInboundMsgRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    /// Store the result of applying an inbound IDC message.
+    ///
+    /// The applied prefix is kept separately from retained message results so old
+    /// results can be trimmed after ack without allowing old messages to run again.
+    /// Outcomes are immutable: retries must replay the first durable decision.
+    pub fn record_inbound_idc_outcome(
+        &mut self,
+        sender: Identity,
+        stream_id: u64,
+        seq: u64,
+        result_status: StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        if let Some(row) = self.st_inbound_stream_row(sender, stream_id)? {
+            self.delete_by_row_value(ST_INBOUND_STREAM_ID, &row.clone().into())?;
+        }
+        self.insert_via_serialize_bsatn(
+            ST_INBOUND_STREAM_ID,
+            &StInboundStreamRow {
+                sender_identity: IdentityViaU256(sender),
+                stream_id,
+                applied_prefix: seq,
+            },
+        )?;
+
+        let (_, inserted, _) = self.insert_via_serialize_bsatn(
+            ST_INBOUND_MSG_ID,
+            &StInboundMsgRow {
+                sender_identity: IdentityViaU256(sender),
+                stream_id,
+                seq,
+                result_status,
+                result_payload,
+            },
+        )?;
+        if matches!(inserted, RowRefInsertion::Existed(_)) {
+            return Err(
+                anyhow!("IDC outcome already exists for sender {sender}, stream {stream_id}, seq {seq}").into(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Delete retained inbound results the sender has acknowledged.
+    pub fn trim_inbound_idc_outcomes(&mut self, sender: Identity, stream_id: u64, ack_prefix: u64) -> Result<()> {
+        let start = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, 0u64]);
+        let end = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, ack_prefix]);
+        // Bound all three index columns so repeated acknowledgments do not scan
+        // newer outcomes or copy their payloads.
+        let rows = self
+            .iter_by_col_range(
+                ST_INBOUND_MSG_ID,
+                col_list![
+                    StInboundMsgFields::SenderIdentity,
+                    StInboundMsgFields::StreamId,
+                    StInboundMsgFields::Seq
+                ],
+                start..=end,
+            )?
+            .map(|row| row.pointer())
+            .collect::<Vec<_>>();
+        for row in rows {
+            self.delete(ST_INBOUND_MSG_ID, row)?;
+        }
+        Ok(())
     }
 
     /// Read the stable IDC message id from the user-visible outbox row.
