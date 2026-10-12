@@ -1025,6 +1025,23 @@ test('a negative delivery check observes its full window before passing', async 
   assert.deepEqual(delays, [1234]);
 });
 
+test('a negative delivery check judges a window that has settled, and only that', async () => {
+  for (const pending of [0, 1]) {
+    const verdicts: unknown[][] = [];
+    const actor = { name: 'outsider', pendingReceived: pending, syncReceived: async () => {},
+      wasSent: (_needle: string, requireComplete = true, settled = false) => {
+        if (requireComplete) verdicts.push([requireComplete, settled]);
+        return false;
+      } };
+    const provided = services(new Map<string, unknown>([['outsider', actor]]), { sleep: async () => undefined });
+    const checked = await run({ do: 'expectNotReceived', actor: 'outsider', contains: 'secret', within: 1 }, provided);
+    assert.equal(checked.status, 'passed');
+    // Nothing pending when the window closed: a request the app starts afterwards is outside it.
+    // Something still pending: the verdict stays strict.
+    assert.deepEqual(verdicts, [[true, pending === 0]]);
+  }
+});
+
 test('a delivery check is inconclusive when application traffic is not observable', async () => {
   const actor = { name: 'owner', wasSent: () => false };
   const provided = services(new Map<string, unknown>([['owner', actor]]), {

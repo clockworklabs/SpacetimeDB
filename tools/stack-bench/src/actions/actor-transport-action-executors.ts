@@ -676,12 +676,16 @@ async function expectNotReceived({ input, capabilities, signal }: TransportArgum
   // A response can arrive at the observation boundary while its body is still
   // being read. Drain briefly; stalled or lost evidence still fails closed.
   const drainDeadline = Date.now() + 1000;
-  while (actor.pendingReceived && !actor.wasSent(needle, false) && Date.now() < drainDeadline) {
+  // Once nothing is pending, the window's responses have all arrived. An app that keeps
+  // polling starts its next request during the final read; that request is outside the window.
+  let settled = !actor.pendingReceived;
+  while (!settled && !actor.wasSent(needle, false) && Date.now() < drainDeadline) {
     await transport.sleep(25, signal);
     await actor.syncReceived?.();
+    settled = !actor.pendingReceived;
   }
   await actor.syncReceived?.();
-  if (actor.wasSent(needle)) fail('message-delivered', { actor: actor.name });
+  if (actor.wasSent(needle, true, settled)) fail('message-delivered', { actor: actor.name });
   return { received: false, contains: needle };
 }
 

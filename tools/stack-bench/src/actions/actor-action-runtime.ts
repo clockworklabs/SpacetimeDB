@@ -117,7 +117,7 @@ export interface Actor {
   replay?: ReplayResult;
   loc(testid: string, options?: UnknownRecord): Locator;
   record(payload: string | Buffer): void;
-  wasSent(value: string, requireComplete?: boolean): boolean;
+  wasSent(value: string, requireComplete?: boolean, settled?: boolean): boolean;
   syncReceived?(): Promise<void>;
 }
 
