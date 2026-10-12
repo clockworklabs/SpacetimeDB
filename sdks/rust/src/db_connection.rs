@@ -163,11 +163,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             ParsedMessage::TransportError(e) => {
                 let terminal = e.is_terminal();
                 let auth = e.is_auth();
-                self.connection_lost(
-                    Some(InternalError::new(e.to_string()).with_cause(e).into()),
-                    terminal,
-                    auth,
-                )
+                // A normal close is EOF, not a failed connection. Keep other close
+                // codes as errors so their terminal/retry classification is retained.
+                let error = match e {
+                    crate::websocket::WsError::Closed { code: 1000, .. } => None,
+                    e => Some(InternalError::new(e.to_string()).with_cause(e).into()),
+                };
+                self.connection_lost(error, terminal, auth)
             }
             ParsedMessage::IdentityToken(identity, token, conn_id) => {
                 if self.inner.lock().unwrap().connection_lifecycle == ConnectionLifecycle::Ended {
