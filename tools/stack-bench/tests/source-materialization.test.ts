@@ -150,6 +150,31 @@ test('startup may add runtime files but not change or remove accepted source', a
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a start that only renames the package in its lock file keeps the accepted application', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-identity-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(app);
+    writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
+    const lock = (name: string, version: string) => `${JSON.stringify({ name, version: '1.0.0', lockfileVersion: 3,
+      packages: { '': { name, version: '1.0.0', license: 'ISC', dependencies: { express: '^5.3.0' } },
+        'node_modules/express': { version, integrity: 'sha512-fixture' } } }, null, 2)}\n`;
+    writeFileSync(join(app, 'package-lock.json'), lock('app', '5.3.0'));
+    snapshotAppSource(app, accepted);
+    const start = (written: string) => materializeAcceptedSource(accepted, app,
+      { backend: 'postgres', app, port: 0, probe: '' },
+      async (_spec, mode) => { if (mode === 'start') writeFileSync(join(app, 'package-lock.json'), written); });
+    // npm rewrites the name after package.json was renamed by hand: the same packages are installed.
+    await start(lock('storefront', '5.3.0'));
+    assert.equal(readFileSync(join(app, 'package-lock.json'), 'utf8'), lock('app', '5.3.0'), 'the accepted lock file is back');
+    // A different pinned dependency, or a lock file that no longer parses, is a different application.
+    for (const written of [lock('storefront', '5.3.1'), 'not json']) {
+      await assert.rejects(start(written), (error: { code?: string; message?: string }) =>
+        error.code === 'generated_app_source_changed' && /: package-lock\.json$/.test(error.message ?? ''));
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('clean restore discards root local environment even from an older source snapshot', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-old-local-env-'));
   try {

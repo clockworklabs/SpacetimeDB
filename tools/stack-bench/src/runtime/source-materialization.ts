@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { hashFiles } from '../evidence/provenance.js';
@@ -63,8 +63,26 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   };
   // Startup may add runtime state such as a build marker; it must not change or remove accepted files.
   const digest = (root: string, file: string) => hashFiles([join(root, file)], { base: root }).sha256;
+  // A lock file decides what is installed. npm also copies the package's own name, version and
+  // licence into it and rewrites them on a plain install after package.json was edited by hand.
+  // With those apart, an identical lock installs the same application; its accepted bytes go back.
+  const installs = (path: string): string | null => {
+    try {
+      const lock = JSON.parse(readFileSync(path, 'utf8'));
+      const root = lock.packages?.[''] ?? {};
+      for (const holder of [lock, root]) for (const key of ['name', 'version', 'license']) delete holder[key];
+      return JSON.stringify(lock);
+    } catch { return null; }
+  };
+  const sameInstall = (file: string): boolean => {
+    if (basename(file) !== 'package-lock.json') return false;
+    const started = installs(join(appDir, file));
+    if (started === null || started !== installs(join(sourcePath, file))) return false;
+    copyFileSync(join(sourcePath, file), join(appDir, file));
+    return true;
+  };
   const changed = accepted.files.filter(file => !existsSync(join(appDir, file))
-    || digest(appDir, file) !== digest(sourcePath, file));
+    || digest(appDir, file) !== digest(sourcePath, file) && !sameInstall(file));
   if (changed.length) {
     await restoreAcceptedSource();
     throw Object.assign(
