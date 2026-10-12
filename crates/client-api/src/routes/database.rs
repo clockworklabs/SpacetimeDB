@@ -38,7 +38,7 @@ use spacetimedb::host::module_host::{
 };
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
-use spacetimedb::host::{ModuleHost, ReducerOutcome};
+use spacetimedb::host::{ModuleHost, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
@@ -178,7 +178,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
         let result = match module
-            .call_reducer(
+            .call_reducer_with_offset(
                 caller_identity,
                 Some(connection_id),
                 None,
@@ -189,7 +189,9 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             )
             .await
         {
-            Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+            Ok(res) => Ok(CallResult::Reducer(
+                confirm_reducer_call(res, confirmed, module.durable_tx_offset()).await?,
+            )),
             Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
                 // Not a reducer — try procedure instead
                 let ret = module
@@ -236,6 +238,18 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
+}
+
+/// If `confirmed`, waits for a committed reducer's transaction to be durable.
+async fn confirm_reducer_call(
+    res: ReducerCallResultWithTxOffset,
+    confirmed: bool,
+    durable: Option<DurableOffset>,
+) -> axum::response::Result<ReducerCallResult> {
+    if confirmed && matches!(res.result.outcome, ReducerOutcome::Committed) {
+        confirm_call_offset(Some(res.tx_offset), durable).await?;
+    }
+    Ok(res.result)
 }
 
 async fn confirm_call_offset(
@@ -1952,6 +1966,47 @@ mod tests {
         drop(tx);
         let response = environment_publish_result(performed(rx)).await.into_response();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn reducer_call_reports_success_only_once_durable() {
+        use spacetimedb::energy::FunctionBudget;
+        use spacetimedb::subscription::module_subscription_manager::from_tx_offset;
+        use std::pin::pin;
+        use tokio::sync::watch;
+
+        let call = |outcome, tx_offset| ReducerCallResultWithTxOffset {
+            result: ReducerCallResult {
+                outcome,
+                execution_budget_used: FunctionBudget::ZERO,
+                execution_duration: Duration::ZERO,
+            },
+            tx_offset: from_tx_offset(tx_offset),
+        };
+        let (durable, rx) = watch::channel(None);
+
+        // A committed call doesn't return until its transaction is durable.
+        let mut res = pin!(confirm_reducer_call(
+            call(ReducerOutcome::Committed, 7),
+            true,
+            Some(rx.clone().into())
+        ));
+        assert!(futures::poll!(&mut res).is_pending());
+        durable.send_replace(Some(7));
+        assert!(res.await.is_ok());
+
+        // Unconfirmed and failed calls return without waiting.
+        for (outcome, confirmed) in [
+            (ReducerOutcome::Committed, false),
+            (ReducerOutcome::BudgetExceeded, true),
+        ] {
+            let res = pin!(confirm_reducer_call(
+                call(outcome, 8),
+                confirmed,
+                Some(rx.clone().into())
+            ));
+            assert!(matches!(futures::poll!(res), std::task::Poll::Ready(Ok(_))));
+        }
     }
 
     #[tokio::test]

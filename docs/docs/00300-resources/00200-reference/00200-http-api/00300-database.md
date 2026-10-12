@@ -395,7 +395,7 @@ Invoke a reducer or procedure in a database.
 
 | Name | Value |
 | ---- | ----- |
-| `confirmed` | Optional boolean for procedure calls, default `true`. Wait for durability before returning success and after each successful `withTx`, before procedure code continues. Set to `false` to allow results from state that has committed in memory but may be lost after a crash. This parameter has no effect on reducer calls.
+| `confirmed` | Optional boolean, default `true`. Wait for durability before returning success. For procedure calls, also wait after each successful `withTx`, before procedure code continues. Set to `false` to allow results from state that has committed in memory but may be lost after a crash.
 
 #### Path parameters
 
