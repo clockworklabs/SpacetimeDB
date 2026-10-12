@@ -1449,12 +1449,21 @@ export class ProductBuilder<Elements extends ElementsObj>
   }
 }
 
+/**
+ * The TypeScript value of a `t.result(ok, err)` type: an object with either an
+ * `ok` or an `err` field.
+ */
+export type InferTypeOfResult<
+  Ok extends TypeBuilder<any, any>,
+  Err extends TypeBuilder<any, any>,
+> = { ok: InferTypeOfTypeBuilder<Ok> } | { err: InferTypeOfTypeBuilder<Err> };
+
 export class ResultBuilder<
     Ok extends TypeBuilder<any, any>,
     Err extends TypeBuilder<any, any>,
   >
   extends TypeBuilder<
-    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    InferTypeOfResult<Ok, Err>,
     ResultAlgebraicType<
       InferSpacetimeTypeOfTypeBuilder<Ok>,
       InferSpacetimeTypeOfTypeBuilder<Err>
@@ -1462,7 +1471,7 @@ export class ResultBuilder<
   >
   implements
     Defaultable<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      InferTypeOfResult<Ok, Err>,
       ResultAlgebraicType<
         InferSpacetimeTypeOfTypeBuilder<Ok>,
         InferSpacetimeTypeOfTypeBuilder<Err>
@@ -1478,24 +1487,16 @@ export class ResultBuilder<
     this.err = err;
   }
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    value: InferTypeOfResult<Ok, Err>
   ): ResultColumnBuilder<
     Ok,
     Err,
-    SetField<
-      DefaultMetadata,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
+    SetField<DefaultMetadata, 'defaultValue', InferTypeOfResult<Ok, Err>>
   > {
     return new ResultColumnBuilder<
       Ok,
       Err,
-      SetField<
-        DefaultMetadata,
-        'defaultValue',
-        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-      >
+      SetField<DefaultMetadata, 'defaultValue', InferTypeOfResult<Ok, Err>>
     >(this, set(defaultMetadata, { defaultValue: value }));
   }
 }
@@ -3219,12 +3220,10 @@ export class OptionColumnBuilder<
 export class ResultColumnBuilder<
     Ok extends TypeBuilder<any, any>,
     Err extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    > = DefaultMetadata,
+    M extends ColumnMetadata<InferTypeOfResult<Ok, Err>> = DefaultMetadata,
   >
   extends ColumnBuilder<
-    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    InferTypeOfResult<Ok, Err>,
     ResultAlgebraicType<
       InferSpacetimeTypeOfTypeBuilder<Ok>,
       InferSpacetimeTypeOfTypeBuilder<Err>
@@ -3233,7 +3232,7 @@ export class ResultColumnBuilder<
   >
   implements
     Defaultable<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      InferTypeOfResult<Ok, Err>,
       ResultAlgebraicType<
         InferSpacetimeTypeOfTypeBuilder<Ok>,
         InferSpacetimeTypeOfTypeBuilder<Err>
@@ -3245,15 +3244,11 @@ export class ResultColumnBuilder<
   }
 
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    value: InferTypeOfResult<Ok, Err>
   ): ResultColumnBuilder<
     Ok,
     Err,
-    SetField<
-      M,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
+    SetField<M, 'defaultValue', InferTypeOfResult<Ok, Err>>
   > {
     return new ResultColumnBuilder(
       this.typeBuilder,
