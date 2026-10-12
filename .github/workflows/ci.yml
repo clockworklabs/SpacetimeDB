@@ -2402,3 +2402,37 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  typescript-submodules:
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: TypeScript - Submodules
+    runs-on: spacetimedb-new-runner-2
+    env:
+      ARTIFACT_SUFFIX: linux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-cargo-target-dir
+      - *download-build-artifacts
+      - *extract-build-artifacts
+
+      - *expose-spacetime-cli
+
+      - name: Check TypeScript submodules
+        run: cargo ci typescript-submodules
