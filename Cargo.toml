@@ -37,8 +37,6 @@ members = [
   "crates/tiered-storage",
   "sdks/csharp/test-harness~",
   "sdks/rust",
-  "sdks/rust/examples/reconnect-desktop",
-  "modules/sdk-test-reconnect",
   "sdks/unreal",
   "crates/snapshot",
   "crates/sql-parser",

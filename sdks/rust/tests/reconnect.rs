@@ -1,6 +1,6 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-#[path = "../examples/reconnect-desktop/src/module_bindings/mod.rs"]
+#[path = "case-conversion-client/src/module_bindings/mod.rs"]
 mod module_bindings;
 
 use module_bindings::*;
@@ -195,12 +195,14 @@ fn in_flight_call_is_unknown_and_disconnect_cancels_backoff() {
     let result = unknown.clone();
     connection
         .reducers
-        .change_both_then(move |_, outcome| *result.lock().unwrap() = outcome.unwrap_err().is_unknown_result())
+        .create_player_1_then("test".into(), 1, move |_, outcome| {
+            *result.lock().unwrap() = outcome.unwrap_err().is_unknown_result();
+        })
         .unwrap();
     tick_until(&connection, || connection.is_reconnecting());
     assert!(*unknown.lock().unwrap());
     assert!(matches!(
-        connection.reducers.change_both(),
+        connection.reducers.create_player_1("test".into(), 1),
         Err(spacetimedb_sdk::Error::Disconnected)
     ));
     connection.disconnect().unwrap();
