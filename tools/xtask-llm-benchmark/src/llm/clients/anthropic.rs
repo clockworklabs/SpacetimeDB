@@ -4,7 +4,7 @@ use crate::llm::segmentation::{
     anthropic_ctx_limit_tokens, build_anthropic_messages, desired_output_tokens, deterministic_trim_prefix,
     estimate_tokens, headroom_tokens_env, non_context_reserve_tokens_env,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, StatusCode};
@@ -30,7 +30,7 @@ impl AnthropicClient {
         format!("{}/v1/messages", self.base.trim_end_matches('/'))
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let system = prompt.system.clone();
         let segs = prompt.segments.clone();
         let mut static_prefix = prompt.static_prefix.clone().unwrap_or_default();
@@ -73,13 +73,25 @@ impl AnthropicClient {
         struct Req {
             model: String,
             max_tokens: u32,
+            thinking: ThinkingConfig,
+            output_config: OutputConfig,
             #[serde(skip_serializing_if = "Option::is_none")]
             system: Option<serde_json::Value>,
             messages: Vec<serde_json::Value>,
         }
+        #[derive(Serialize)]
+        struct ThinkingConfig {
+            r#type: &'static str,
+        }
+        #[derive(Serialize)]
+        struct OutputConfig {
+            effort: ReasoningEffort,
+        }
         let req = Req {
             model: model_norm.to_string(),
             max_tokens,
+            thinking: ThinkingConfig { r#type: "adaptive" },
+            output_config: OutputConfig { effort: reasoning },
             system: system_json,
             messages,
         };

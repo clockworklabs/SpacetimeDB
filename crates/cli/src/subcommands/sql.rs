@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
+use crate::common_args::Format;
 use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{
     load_config_db_targets, resolve_database_arg, resolve_optional_database_parts, ResolvedDbArgs,
@@ -33,14 +34,7 @@ pub fn cli() -> clap::Command {
         .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .default_value("text")
-                .required(false)
-                .value_parser(clap::value_parser!(Format))
-                .help("Output format for the SQL results"),
-        )
+        .arg(common_args::format().help("Output format for the SQL results"))
         .arg(common_args::yes())
         .arg(
             Arg::new("no_config")
@@ -48,25 +42,6 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Ignore spacetime.json configuration"),
         )
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Format {
-    Text,
-    Json,
-}
-
-impl clap::ValueEnum for Format {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Text, Self::Json]
-    }
-
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self {
-            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
-            Self::Json => Some(clap::builder::PossibleValue::new("json")),
-        }
-    }
 }
 
 pub(crate) async fn parse_req(

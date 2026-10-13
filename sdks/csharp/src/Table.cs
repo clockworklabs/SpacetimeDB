@@ -37,6 +37,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
         internal IParsedTableUpdate MakeParsedTableUpdate();
+        internal void AddSnapshotDeletes(ParsedDatabaseUpdate update);
 
         /// <summary>
         /// Parses an insert-only table update and applies the results to the specified parsed database update.
@@ -102,13 +103,15 @@ namespace SpacetimeDB
         // and therefore avoids using reflection when initializing the row object.
 
         public abstract class IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though.
+            where Column : notnull
         {
             protected abstract Column GetKey(Row row);
         }
 
         public abstract class UniqueIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`.
+            where Column : notnull
         {
             private readonly Dictionary<Column, Row> cache = new();
 
@@ -122,7 +125,8 @@ namespace SpacetimeDB
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>, IComparable<Column>
+            // where Column : IEquatable<Column>, IComparable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`. And if we change it to `SortedDictionary<TKey, TValue>`, it uses `Comparer<SimpleEnum>.Default`.
+            where Column : notnull
         {
             // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, HashSet<Row>> cache = new();
@@ -292,6 +296,22 @@ namespace SpacetimeDB
         IParsedTableUpdate IRemoteTableHandle.MakeParsedTableUpdate()
         {
             return new ParsedTableUpdate();
+        }
+
+        void IRemoteTableHandle.AddSnapshotDeletes(ParsedDatabaseUpdate update)
+        {
+            if (IsEventTable)
+            {
+                return;
+            }
+            var delta = ((ParsedTableUpdate)update.UpdateForTable(this)).Delta;
+            foreach (var entry in Entries.Entries)
+            {
+                for (var i = 0u; i < Entries.Multiplicity(entry.Key); i++)
+                {
+                    delta.Remove(entry.Key, entry.Value);
+                }
+            }
         }
 
         /// <summary>

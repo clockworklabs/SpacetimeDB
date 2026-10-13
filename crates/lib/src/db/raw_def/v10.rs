@@ -103,7 +103,10 @@ pub enum RawModuleDefV10Section {
     Submodules(Vec<RawSubmoduleV10>),
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
-    Environment(Vec<crate::environment::EnvironmentDeclaration>),
+    Environment(Vec<RawEnvironmentDeclarationV10>),
+
+    /// Outbox table definitions.
+    Outboxes(Vec<RawOutboxDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -134,8 +137,32 @@ pub enum MethodOrAny {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSubmoduleV10 {
+    /// The namespace as written in the parent module's source, aka the accessor name.
+    ///
+    /// The canonical namespace stored in the database is derived during validation,
+    /// exactly like table names: the parent module's [`CaseConversionPolicy`] is
+    /// applied unless an [`ExplicitNameEntry::Namespace`] mapping for this accessor
+    /// name overrides it.
     pub namespace: String,
     pub module: RawModuleDefV10,
+}
+
+#[derive(Debug, Clone, crate::SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub enum RawEnvVarTypeV10 {
+    String,
+    StringLiteral(String),
+    Union(Vec<String>),
+}
+
+#[derive(Debug, Clone, crate::SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawEnvironmentDeclarationV10 {
+    pub name: String,
+    pub ty: RawEnvVarTypeV10,
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -161,6 +188,7 @@ pub struct NameMapping {
     /// - Tables: value from `#[spacetimedb::table(accessor = ...)]`.
     /// - Reducers/Procedures/Views: function name
     /// - Indexes: `{table_name}_{column_names}_idx_{algorithm}`
+    /// - Namespaces: the key a submodule is mounted under
     ///
     /// During validation, this may be replaced by `canonical_name`
     /// if an explicit or policy-based name is applied.
@@ -186,6 +214,7 @@ pub enum ExplicitNameEntry {
     Table(NameMapping),
     Function(NameMapping),
     Index(NameMapping),
+    Namespace(NameMapping),
 }
 
 #[derive(Debug, Default, Clone, SpacetimeType)]
@@ -221,6 +250,17 @@ impl ExplicitNames {
 
     pub fn insert_index(&mut self, source_name: impl Into<RawIdentifier>, canonical_name: impl Into<RawIdentifier>) {
         self.insert(ExplicitNameEntry::Index(NameMapping {
+            source_name: source_name.into(),
+            canonical_name: canonical_name.into(),
+        }));
+    }
+
+    pub fn insert_namespace(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        canonical_name: impl Into<RawIdentifier>,
+    ) {
+        self.insert(ExplicitNameEntry::Namespace(NameMapping {
             source_name: source_name.into(),
             canonical_name: canonical_name.into(),
         }));
@@ -309,6 +349,25 @@ pub struct RawColumnDefaultValueV10 {
     /// A BSATN-encoded [`AlgebraicValue`] valid at the column's type.
     /// (We cannot use `AlgebraicValue` directly as it isn't `SpacetimeType`.)
     pub value: Box<[u8]>,
+}
+
+/// Marks a table as an IDC outbox table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawOutboxDefV10 {
+    /// The `source_name` of the outbox table.
+    pub table_name: RawIdentifier,
+    /// The reducer to call on the target database.
+    pub remote_reducer: RawIdentifier,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
+    /// Columns to encode as reducer arguments, in receiver parameter order.
+    pub arg_columns: Vec<ColId>,
+    /// Optional local reducer called with the delivery result.
+    pub on_result_reducer: Option<RawIdentifier>,
+    /// Hash of the receiver reducer signature as seen by sender bindings.
+    pub signature_hash: String,
 }
 
 /// A reducer definition.
@@ -420,20 +479,16 @@ pub struct RawSequenceDefV10 {
     /// This must be the unique `RawSequenceDef` for this column.
     pub column: ColId,
 
-    /// The value to start assigning to this column.
-    /// Will be incremented by 1 for each new row.
-    /// If not present, an arbitrary start point may be selected.
+    /// Deprecated; should be `None`.
     pub start: Option<i128>,
 
-    /// The minimum allowed value in this column.
-    /// If not present, no minimum.
+    /// Deprecated; should be `None`.
     pub min_value: Option<i128>,
 
-    /// The maximum allowed value in this column.
-    /// If not present, no maximum.
+    /// Deprecated; should be `None`.
     pub max_value: Option<i128>,
 
-    /// The increment used when updating the SequenceDef.
+    /// Deprecated; should be `1i128`.
     pub increment: i128,
 }
 
@@ -662,6 +717,14 @@ impl RawModuleDefV10 {
             .expect("Tables section must exist for tests")
     }
 
+    /// Get the outboxes section, if present.
+    pub fn outboxes(&self) -> Option<&Vec<RawOutboxDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Outboxes(outboxes) => Some(outboxes),
+            _ => None,
+        })
+    }
+
     // Get the row-level security section, if present.
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -716,27 +779,6 @@ impl RawModuleDefV10Builder {
     /// Create a new, empty `RawModuleDefV10Builder`.
     pub fn new() -> Self {
         Default::default()
-    }
-
-    /// Declare a complete environment schema, including an explicit empty schema.
-    /// Repeated calls remain repeated sections so host validation rejects ambiguity.
-    pub fn add_environment(&mut self, declarations: Vec<crate::environment::EnvironmentDeclaration>) -> &mut Self {
-        self.module
-            .sections
-            .push(RawModuleDefV10Section::Environment(declarations));
-        self
-    }
-
-    /// New ENV-aware bindings declare an empty schema when no declaration is registered.
-    pub fn ensure_environment(&mut self) {
-        if !self
-            .module
-            .sections
-            .iter()
-            .any(|section| matches!(section, RawModuleDefV10Section::Environment(_)))
-        {
-            self.add_environment(Vec::new());
-        }
     }
 
     /// Get mutable access to the typespace section, creating it if missing.
@@ -975,6 +1017,44 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::HttpRoutes(routes) => routes,
             _ => unreachable!("Just ensured HttpRoutes section exists"),
+        }
+    }
+
+    /// Get mutable access to the outboxes section, creating it if missing.
+    fn outboxes_mut(&mut self) -> &mut Vec<RawOutboxDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Outboxes(_)))
+            .unwrap_or_else(|| {
+                self.module.sections.push(RawModuleDefV10Section::Outboxes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Outboxes(outboxes) => outboxes,
+            _ => unreachable!("Just ensured Outboxes section exists"),
+        }
+    }
+
+    /// Get mutable access to the environment section, creating it if missing.
+    fn environment_mut(&mut self) -> &mut Vec<RawEnvironmentDeclarationV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Environment(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::Environment(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Environment(env) => env,
+            _ => unreachable!("Just ensured Environment section exists"),
         }
     }
 
@@ -1260,6 +1340,44 @@ impl RawModuleDefV10Builder {
         self.explicit_names_mut().merge(names);
     }
 
+    /// Register an IDC outbox table.
+    pub fn add_outbox(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        remote_reducer: impl Into<RawIdentifier>,
+        target_column: impl Into<ColId>,
+        arg_columns: impl IntoIterator<Item = ColId>,
+        on_result_reducer: Option<impl Into<RawIdentifier>>,
+        signature_hash: impl Into<String>,
+    ) {
+        self.outboxes_mut().push(RawOutboxDefV10 {
+            table_name: table_name.into(),
+            remote_reducer: remote_reducer.into(),
+            target_column: target_column.into(),
+            arg_columns: arg_columns.into_iter().collect(),
+            on_result_reducer: on_result_reducer.map(Into::into),
+            signature_hash: signature_hash.into(),
+        });
+    }
+
+    pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {
+        let submodule = RawSubmoduleV10 {
+            namespace: namespace.into(),
+            module,
+        };
+        let existing = self.module.sections.iter_mut().find_map(|s| match s {
+            RawModuleDefV10Section::Submodules(submodules) => Some(submodules),
+            _ => None,
+        });
+        match existing {
+            Some(submodules) => submodules.push(submodule),
+            None => self
+                .module
+                .sections
+                .push(RawModuleDefV10Section::Submodules(vec![submodule])),
+        }
+    }
+
     /// Set the case conversion policy for this module.
     ///
     /// By default, SpacetimeDB applies `SnakeCase` conversion to table names,
@@ -1274,6 +1392,12 @@ impl RawModuleDefV10Builder {
         self.module
             .sections
             .push(RawModuleDefV10Section::CaseConversionPolicy(policy));
+    }
+
+    /// Declare a complete environment schema.
+    pub fn add_environment(&mut self, declarations: Vec<RawEnvironmentDeclarationV10>) -> &mut Self {
+        self.environment_mut().extend(declarations);
+        self
     }
 
     /// Finish building, consuming the builder and returning the module.

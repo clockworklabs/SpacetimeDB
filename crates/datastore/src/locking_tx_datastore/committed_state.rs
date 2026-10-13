@@ -1,13 +1,16 @@
 use super::{
     datastore::Result,
     delete_table::DeleteTable,
-    sequence::{Sequence, SequencesState},
     state_view::StateView,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+#[cfg(feature = "metrics")]
+use crate::db_metrics::DB_METRICS;
+#[cfg(feature = "metrics")]
+use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
+use crate::traits::TxOffset;
 use crate::{
-    db_metrics::DB_METRICS,
     error::TableError,
     execution_context::ExecutionContext,
     locking_tx_datastore::{
@@ -17,11 +20,10 @@ use crate::{
     },
     system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
-        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
-        ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX,
-        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
-        ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_IDX,
+        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_INDEX_ID, ST_INDEX_IDX,
+        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
+        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+        ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
 };
@@ -29,20 +31,23 @@ use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
-        ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX,
+        ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_IDX,
+        ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_OUTBOUND_MSG_ID,
+        ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_IDX, ST_OUTBOX_ID, ST_OUTBOX_IDX,
         ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX,
         ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
+use rand_core::SeedableRng;
+use rand_xoshiro::Xoshiro128PlusPlus;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
-use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{SequenceSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -95,6 +100,17 @@ pub struct CommittedState {
     ///     - system tables: `st_view_sub`, `st_view_arg`
     ///     - Tables which back views.
     pub(super) ephemeral_tables: EphemeralTables,
+
+    /// RNG source for deciding when advancing a sequence should simulate a reallocation.
+    ///
+    /// We don't want users to depend on sequence values being strictly sequential,
+    /// as we have in the past and may in the future used optimizations that would cause values to be skipped.
+    /// To prevent this, [`get_next_sequence_value`](super::mut_tx::get_next_sequence_value) occasionally simulates a skip ahead.
+    ///
+    /// We use an explicit PRNG here rather than reading from the thread RNG because we'd like our tests to be deterministic.
+    ///
+    /// We chose Xoshiro128++ because it is fast and small, and we do not need a cryptographically secure PRNG for this purpose.
+    pub(super) sequence_advance_simulate_reallocation_rng: Xoshiro128PlusPlus,
 }
 
 impl CommittedState {
@@ -130,6 +146,9 @@ impl MemoryUsage for CommittedState {
             read_sets,
             view_instances,
             ephemeral_tables,
+            // Don't include the PRNG; it doesn't live on or use the heap,
+            // and it's easier to just ignore it here than to write a trait impl that returns zero.
+            sequence_advance_simulate_reallocation_rng: _,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -211,6 +230,16 @@ impl CommittedState {
             page_pool,
             datastore_page_bytes: 0,
             ephemeral_tables: <_>::default(),
+            sequence_advance_simulate_reallocation_rng: {
+                #[cfg(any(test, feature = "portable"))]
+                {
+                    Xoshiro128PlusPlus::seed_from_u64(0)
+                }
+                #[cfg(not(any(test, feature = "portable")))]
+                {
+                    Xoshiro128PlusPlus::from_rng(&mut rand::rng())
+                }
+            },
         }
     }
 
@@ -250,8 +279,12 @@ impl CommittedState {
     /// Extremely delicate function to bootstrap the system tables.
     /// Don't update this unless you know what you're doing.
     pub(super) fn bootstrap_system_tables(&mut self, database_identity: Identity) -> Result<()> {
+        #[cfg(not(feature = "metrics"))]
+        let _ = database_identity;
+
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
+        #[cfg(feature = "metrics")]
         let with_label_values = |table_id: TableId, table_name: &str| {
             DB_METRICS
                 .rdb_num_table_rows
@@ -268,6 +301,7 @@ impl CommittedState {
         for schema in ref_schemas {
             let table_id = schema.table_id;
             // Metric for this system table.
+            #[cfg(feature = "metrics")]
             with_label_values(table_id, &schema.table_name).set(0);
 
             let row = StTableRow {
@@ -296,6 +330,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_COLUMNS.
             st_columns.insert(pool, blob_store, &row)?;
             // Increment row count for st_columns.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_COLUMN_ID, ST_COLUMN_NAME).inc();
         }
 
@@ -315,6 +350,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
             st_constraints.insert(pool, blob_store, &row)?;
             // Increment row count for st_constraints.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME).inc();
         }
 
@@ -328,6 +364,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_INDEXES.
             st_indexes.insert(pool, blob_store, &row)?;
             // Increment row count for st_indexes.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_INDEX_ID, ST_INDEX_NAME).inc();
         }
 
@@ -358,6 +395,11 @@ impl CommittedState {
         self.create_table(ST_INDEX_ACCESSOR_ID, schemas[ST_INDEX_ACCESSOR_IDX].clone());
         self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
         self.create_table(ST_ENV_ID, schemas[ST_ENV_IDX].clone());
+        self.create_table(ST_OUTBOUND_STREAM_ID, schemas[ST_OUTBOUND_STREAM_IDX].clone());
+        self.create_table(ST_OUTBOUND_MSG_ID, schemas[ST_OUTBOUND_MSG_IDX].clone());
+        self.create_table(ST_INBOUND_STREAM_ID, schemas[ST_INBOUND_STREAM_IDX].clone());
+        self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
+        self.create_table(ST_OUTBOX_ID, schemas[ST_OUTBOX_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -368,9 +410,9 @@ impl CommittedState {
                 sequence_name: seq.sequence_name.clone(),
                 table_id: seq.table_id,
                 col_pos: seq.col_pos,
-                increment: seq.increment,
-                min_value: seq.min_value,
-                max_value: seq.max_value,
+                increment: SequenceSchema::INCREMENT,
+                min_value: SequenceSchema::MIN_VALUE,
+                max_value: SequenceSchema::MAX_VALUE,
                 start: seq.start,
                 // In practice, this means we will actually start at start - 1, since `allocated`
                 // overrides start, but we keep these fields set this way to match databases
@@ -383,6 +425,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_SEQUENCES.
             st_sequences.insert(pool, blob_store, &row)?;
             // Increment row count for st_sequences
+            #[cfg(feature = "metrics")]
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
@@ -419,31 +462,6 @@ impl CommittedState {
         }
 
         Ok(())
-    }
-
-    /// Builds the in-memory state of sequences from `st_sequence` system table.
-    /// The tables store the lasted allocated value, which tells us where to start generating.
-    pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
-        let mut sequence_state = SequencesState::default();
-        let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
-        for row_ref in st_sequences.scan_rows(&self.blob_store) {
-            let sequence = StSequenceRow::try_from(row_ref)?;
-            let seq = Sequence::new(sequence.clone().into(), Some(sequence.allocated));
-
-            // Clobber any existing in-memory `Sequence`.
-            // Such a value may exist because, when replaying without a snapshot,
-            // `build_sequence_state` is called twice:
-            // once when bootstrapping the empty datastore,
-            // and then again after replaying the commitlog.
-            // At this latter time, `sequence_state.get(seq.id())` for the system table sequences
-            // will return a sequence with incorrect `allocated`,
-            // as it will reflect the state after initializing the system tables,
-            // but before creating any user tables.
-            // The `sequence` we read out of `row_ref` above, and used to construct `seq`,
-            // will correctly reflect the state after creating user tables.
-            sequence_state.insert(seq);
-        }
-        Ok(sequence_state)
     }
 
     /// Returns an iterator doing a full table scan on `table_id`.
@@ -770,20 +788,16 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) -> TxOffset {
+    pub(super) fn rollback(&mut self, tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that e.g., the last change is undone first.
         for change in tx_state.pending_schema_changes.into_iter().rev() {
-            self.rollback_pending_schema_change(seq_state, change);
+            self.rollback_pending_schema_change(change);
         }
         self.next_tx_offset.saturating_sub(1)
     }
 
-    fn rollback_pending_schema_change(
-        &mut self,
-        seq_state: &mut SequencesState,
-        change: PendingSchemaChange,
-    ) -> Option<()> {
+    fn rollback_pending_schema_change(&mut self, change: PendingSchemaChange) -> Option<()> {
         use PendingSchemaChange::*;
         match change {
             // An index was removed. Add it back.
@@ -862,6 +876,11 @@ impl CommittedState {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.primary_key = old_pk.and_then(|cl| cl.as_singleton()));
             }
+            // A table's outbox metadata changed. Change back to the old one.
+            TableAlterOutbox(table_id, old_outbox) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.set_outbox(old_outbox);
+            }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,
             // so it's safe to not rewrite the rows and merely change the type back.
@@ -924,16 +943,14 @@ impl CommittedState {
                 }
             }
             // A sequence was removed. Add it back.
-            SequenceRemoved(table_id, seq, schema) => {
+            SequenceRemoved(table_id, schema) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_sequence(schema));
-                seq_state.insert(seq);
             }
             // A sequence was added. Remove it.
             SequenceAdded(table_id, sequence_id) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_sequence(sequence_id));
-                seq_state.remove(sequence_id);
             }
         }
 
@@ -995,6 +1012,7 @@ impl CommittedState {
     }
 
     /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
+    #[cfg(feature = "durability")]
     pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
         (
             self.tables
@@ -1005,6 +1023,7 @@ impl CommittedState {
         )
     }
 
+    #[cfg(feature = "metrics")]
     pub fn report_data_size(&self, database_identity: Identity) {
         use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 

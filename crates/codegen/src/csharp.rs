@@ -457,7 +457,7 @@ const REDUCER_EVENTS: &str = r#"
         /// Data from all the provided queries will be returned at the same time.
         ///
         /// See the SpacetimeDB SQL docs for more information on SQL syntax:
-        /// <a href="https://spacetimedb.com/docs/sql">https://spacetimedb.com/docs/sql</a>
+        /// <a href="https://spacetimedb.com/docs/reference/sql">https://spacetimedb.com/docs/reference/sql</a>
         /// </summary>
         public SubscriptionHandle Subscribe(
             string[] querySqls
@@ -873,6 +873,7 @@ impl Lang for Csharp<'_> {
                         indented_block(output, |output| {
                             writeln!(output, "case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;");
                             writeln!(output, "case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception(\"out of energy\")); break;");
+                            writeln!(output, "case Status.UnknownResult(var _): InternalOnUnhandledReducerError(ctx, new UnknownResultException()); break;");
                         });
                     });
                     writeln!(output, "return false;");

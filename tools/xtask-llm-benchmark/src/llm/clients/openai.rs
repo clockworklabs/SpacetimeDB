@@ -4,7 +4,7 @@ use crate::llm::segmentation::{
     build_openai_responses_input, deterministic_trim_prefix, estimate_tokens, headroom_tokens_env,
     non_context_reserve_tokens_env, openai_ctx_limit_tokens,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 use anyhow::{bail, Context, Result};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ impl OpenAiClient {
         format!("{}/v1/responses", self.base.trim_end_matches('/'))
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let system = prompt.system.clone();
         let segs = prompt.segments.clone();
 
@@ -85,14 +85,21 @@ impl OpenAiClient {
         struct Req<'a> {
             model: &'a str,
             input: Vec<Value>,
+            reasoning: ReasoningConfig,
             #[serde(skip_serializing_if = "Option::is_none")]
             max_output_tokens: Option<u32>,
+        }
+
+        #[derive(Serialize)]
+        struct ReasoningConfig {
+            effort: ReasoningEffort,
         }
 
         let url = self.responses_url();
         let payload = Req {
             model,
             input,
+            reasoning: ReasoningConfig { effort: reasoning },
             max_output_tokens: None,
         };
 

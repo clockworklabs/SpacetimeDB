@@ -7,9 +7,19 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, sats::product, AlgebraicValue, Identity};
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule, ModuleHandle, DEFAULT_CONFIG};
 use std::collections::BTreeMap;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 type Values = BTreeMap<String, String>;
+
+fn emcc_is_available() -> bool {
+    Command::new("emcc")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
 
 async fn sql(module: &ModuleHost, statement: &str) -> Vec<spacetimedb_lib::ProductValue> {
     spacetimedb::sql::execute::run(
@@ -64,7 +74,11 @@ async fn expect_view_update(handle: &mut ModuleHandle) {
 async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
     values.insert("EMPTY".into(), "root-visible".into());
     let module = publish(handle, values).await;
-    assert!(module.info.module_def.reducer_by_name("lib.env_read_reducer").is_some());
+    assert!(module
+        .info
+        .module_def
+        .reducer_by_name("my_lib.env_read_reducer")
+        .is_some());
     let child = module
         .call_reducer(
             Identity::ZERO,
@@ -72,19 +86,23 @@ async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
             None,
             None,
             None,
-            "lib.env_read_reducer",
+            "my_lib.env_read_reducer",
             FunctionArgs::Nullary,
         )
         .await;
     assert!(child.is_err() || child.unwrap().outcome.into_result().is_err());
-    for procedure in ["lib.env_read_procedure", "lib.env_read_in_tx"] {
+    for procedure in ["my_lib.env_read_procedure", "my_lib.env_read_in_tx"] {
         assert!(module.info.module_def.procedure_by_name(procedure).is_some());
         let result = module
             .call_procedure(Identity::ZERO, None, None, procedure, FunctionArgs::Nullary)
             .await;
         assert!(result.result.is_err(), "submodule procedure read the root environment");
     }
-    for view in ["lib.env_read_view", "lib.env_read_sql_view", "env_read_root_sql_view"] {
+    for view in [
+        "my_lib.env_read_view",
+        "my_lib.env_read_sql_view",
+        "env_read_root_sql_view",
+    ] {
         assert!(module.info.module_def.view_by_name_with_module(view).is_some());
         let result = spacetimedb::sql::execute::run(
             module.relational_db().clone(),
@@ -326,11 +344,19 @@ fn typescript_environment_publish_and_checked_reads() {
 #[test]
 #[serial]
 fn cpp_environment_publish_and_checked_reads() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     exercise_fixture("module-test-cpp");
 }
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn csharp_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-cs");
 }

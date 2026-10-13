@@ -40,7 +40,7 @@
 <p align="center">
     <a href="https://discord.gg/spacetimedb"><img src="https://img.shields.io/discord/1037340874172014652?label=discord&style=flat-square&color=5a66f6"></a>
     &nbsp;
-    <a href="https://twitter.com/spacetime_db"><img src="https://img.shields.io/badge/twitter-Follow_us-1d9bf0.svg?style=flat-square"></a>
+    <a href="https://twitter.com/spacetimedb"><img src="https://img.shields.io/badge/twitter-Follow_us-1d9bf0.svg?style=flat-square"></a>
     &nbsp;
     <a href="https://clockworklabs.io/join"><img src="https://img.shields.io/badge/careers-Join_us-86f7b7.svg?style=flat-square"></a>
     &nbsp;
@@ -50,7 +50,7 @@
 <p align="center">
     <a href="https://discord.gg/spacetimedb"><img height="25" src="./images/social/discord.svg" alt="Discord"></a>
     &nbsp;
-    <a href="https://twitter.com/spacetime_db"><img height="25" src="./images/social/twitter.svg" alt="Twitter"></a>
+    <a href="https://twitter.com/spacetimedb"><img height="25" src="./images/social/twitter.svg" alt="Twitter"></a>
     &nbsp;
     <a href="https://github.com/clockworklabs/spacetimedb"><img height="25" src="./images/social/github.svg" alt="GitHub"></a>
     &nbsp;
@@ -67,7 +67,7 @@
 
 ## What is SpacetimeDB?
 
-SpacetimeDB is a relational database that is also a server. You upload your application logic directly into the database, and clients connect to it without any server in between.
+SpacetimeDB is a relational database that is also a server. You upload your application logic directly into the database, and clients connect to it without any server in between. It is built for reactive applications, where every client sees changes as they happen: web apps like collaborative tools, dashboards, and chat, as well as multiplayer games.
 
 Write your schema and business logic as a **module** in [Rust](https://spacetimedb.com/docs/quickstarts/rust), [C#](https://spacetimedb.com/docs/quickstarts/c-sharp), [TypeScript](https://spacetimedb.com/docs/quickstarts/typescript), or [C++](https://spacetimedb.com/docs/quickstarts/c-plus-plus). SpacetimeDB compiles it, runs it inside the database, and automatically synchronizes state to connected clients in real-time.
 
@@ -82,7 +82,7 @@ This means that you can write your entire application in a single language and d
     </figcaption>
 </figure>
 
-SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. All application state is held in memory for fast access, while a commit log on disk provides durability and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
+SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. All application state is held in memory for fast access, while a commit log on disk provides [durability](#durability) and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
 
 ## Quick Start
 
@@ -145,6 +145,18 @@ const [messages] = useTable(tables.message);
 // messages updates automatically when the server state changes.
 // No polling. No refetching.
 ```
+
+## Use Cases
+
+SpacetimeDB is well suited to web application backends, from everyday CRUD apps to reactive ones like collaborative tools, live dashboards, and chat. Write your module in TypeScript and connect from the browser with the [TypeScript SDK](https://spacetimedb.com/docs/clients/typescript), which includes React hooks like `useTable` and integrations for Vue, Svelte, Angular, and other frameworks. Each reducer runs as an ACID transaction, and subscribed clients receive committed changes automatically, so you don't need polling, a separate API server, or a pub/sub layer to keep them in sync. The `chat-react-ts` template from the Quick Start is a working example.
+
+SpacetimeDB is optimized for low-latency transactional workloads like these, rather than batch processing or analytical queries.
+
+## Durability
+
+Every transaction that changes data is written to an on-disk [commitlog](https://spacetimedb.com/docs/reference/internals/commitlog), which is replayed to recover the database after a crash. Transactions are fsynced in batches, so many transactions share a single `fsync` (group commit) ([`local.rs`](crates/durability/src/imp/local.rs)).
+
+Since SpacetimeDB 2.0, clients get [confirmed reads](https://spacetimedb.com/docs/upgrade#confirmed-reads-enabled-by-default) by default: the server holds back a transaction's subscription updates, and the caller's reducer result, until that transaction is durable ([`client_connection.rs`](crates/core/src/client/client_connection.rs)), so the data a client receives from its subscriptions and reducer calls will survive a crash. SQL queries over HTTP wait for durability by default too. On Maincloud and other replicated deployments, durable instead means [persisted by the replicas the database's replication settings require](https://spacetimedb.com/docs/clients/typescript#method-withconfirmedreads). Apps that can tolerate a client occasionally seeing a write that is then lost in a crash, like many games, can opt out with `withConfirmedReads(false)` for lower latency.
 
 ## Language Support
 
@@ -243,8 +255,8 @@ Full documentation is available at **[spacetimedb.com/docs](https://spacetimedb.
 - [Core concepts](https://spacetimedb.com/docs/core-concepts): tables, reducers, subscriptions, authentication
 - [Tutorials](https://spacetimedb.com/docs/tutorials/chat-app): chat app, Unity multiplayer, Unreal Engine multiplayer
 - [Deployment guide](https://spacetimedb.com/docs/how-to/deploy/maincloud): publishing to Maincloud
-- [CLI reference](https://spacetimedb.com/docs/reference/cli-reference)
-- [SQL reference](https://spacetimedb.com/docs/reference/sql-reference)
+- [CLI reference](https://spacetimedb.com/docs/cli-reference)
+- [SQL reference](https://spacetimedb.com/docs/reference/sql/)
 
 ## License
 

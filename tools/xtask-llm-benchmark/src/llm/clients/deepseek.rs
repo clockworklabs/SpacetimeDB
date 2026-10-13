@@ -7,7 +7,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deepseek_ctx_limit_tokens, deterministic_trim_prefix, estimate_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 #[derive(Clone)]
 pub struct DeepSeekClient {
@@ -21,7 +21,7 @@ impl DeepSeekClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
 
         let system = prompt.system.clone();
@@ -47,6 +47,12 @@ impl DeepSeekClient {
             model: &'a str,
             messages: Vec<Msg<'a>>,
             temperature: f32,
+            thinking: ThinkingConfig,
+            reasoning_effort: ReasoningEffort,
+        }
+        #[derive(Serialize)]
+        struct ThinkingConfig {
+            r#type: &'static str,
         }
         #[derive(Serialize)]
         struct Msg<'a> {
@@ -78,6 +84,8 @@ impl DeepSeekClient {
             model,
             messages,
             temperature: 0.0,
+            thinking: ThinkingConfig { r#type: "enabled" },
+            reasoning_effort: reasoning,
         };
 
         let auth = HttpClient::bearer(&self.api_key);

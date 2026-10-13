@@ -22,10 +22,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
+    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, OutboxDef,
     RawModuleDefVersion, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
+use crate::reducer_name::ReducerName;
 
 /// The local part of a stored, possibly namespaced name.
 ///
@@ -188,6 +189,9 @@ pub struct TableSchema {
     /// Whether this is an event table.
     pub is_event: bool,
 
+    /// Outbox configuration if this is an outbox table.
+    pub outbox: Option<OutboxSchema>,
+
     /// Cache for `row_type_for_table` in the data store.
     pub row_type: ProductType,
 }
@@ -214,6 +218,7 @@ impl TableSchema {
         primary_key: Option<ColId>,
         is_event: bool,
         alias: Option<NamespacedIdentifier>,
+        outbox: Option<OutboxSchema>,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -230,6 +235,7 @@ impl TableSchema {
             primary_key,
             is_event,
             alias,
+            outbox,
         }
     }
 
@@ -267,6 +273,7 @@ impl TableSchema {
             None,
             None,
             false,
+            None,
             None,
         )
     }
@@ -783,6 +790,7 @@ impl TableSchema {
             view_primary_key,
             false,
             None,
+            None,
         )
     }
 
@@ -926,6 +934,7 @@ impl TableSchema {
             None,
             false,
             Some(accessor_name.clone().into()),
+            None,
         )
     }
 }
@@ -957,6 +966,7 @@ impl Schema for TableSchema {
             table_access,
             is_event,
             accessor_name,
+            outbox,
             ..
         } = def;
 
@@ -983,6 +993,14 @@ impl Schema for TableSchema {
             .as_ref()
             .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
 
+        let outbox = outbox.as_ref().map(|outbox| OutboxSchema {
+            remote_reducer: outbox.remote_reducer.clone(),
+            target_column: outbox.target_column,
+            arg_columns: outbox.arg_columns.clone(),
+            on_result_reducer: outbox.on_result_reducer.clone(),
+            signature_hash: outbox.signature_hash.clone(),
+        });
+
         TableSchema::new(
             table_id,
             TableName::new(name.clone()),
@@ -997,6 +1015,7 @@ impl Schema for TableSchema {
             *primary_key,
             *is_event,
             Some(accessor_name.clone().into()),
+            outbox,
         )
     }
 
@@ -1071,6 +1090,15 @@ impl Schema for TableSchema {
             def.schedule.is_some(),
             "Schedule presence mismatch"
         );
+
+        if let Some(outbox) = &self.outbox {
+            let outbox_def = def
+                .outbox
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Outbox not found in definition"))?;
+            outbox.check_compatible(outbox_def)?;
+        }
+        ensure_eq!(self.outbox.is_some(), def.outbox.is_some(), "Outbox presence mismatch");
         Ok(())
     }
 }
@@ -1245,6 +1273,15 @@ impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
 }
 
 /// Represents a schema definition for a database sequence.
+///
+/// Previous versions of this definition exposed options `start`, `min_value`, `max_value` and `increment`.
+/// SpacetimeDB never exercised these options in any useful way,
+/// and supporting them caused considerable implementation burden,
+/// so we chose to remove them.
+/// All sequences start at some arbitrary nonnegative value near zero,
+/// have the range of the non-negative `i128`s,
+/// and increment by 1.
+/// Raw defs still have these values, but we reject any def that uses values other than the defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceSchema {
     /// The unique identifier for the sequence within a database.
@@ -1256,14 +1293,12 @@ pub struct SequenceSchema {
     pub table_id: TableId,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
-    /// The increment value for the sequence.
-    pub increment: i128,
-    /// The initial value to be returned by this sequence.
+    /// The starting point for this schema, i.e. the first value from it.
+    ///
+    /// For user-defined sequences, this will be [`Self::START`].
+    /// For system-defiend sequences, it will be a higher value,
+    /// as we reserve a range of values in system-defined sequences for IDs of future system-defined rows.
     pub start: i128,
-    /// The minimum value for the sequence.
-    pub min_value: i128,
-    /// The maximum value for the sequence.
-    pub max_value: i128,
 }
 
 impl spacetimedb_memory_usage::MemoryUsage for SequenceSchema {
@@ -1273,20 +1308,33 @@ impl spacetimedb_memory_usage::MemoryUsage for SequenceSchema {
             sequence_name,
             table_id,
             col_pos,
-            increment,
             start,
-            min_value,
-            max_value,
         } = self;
         sequence_id.heap_usage()
             + sequence_name.heap_usage()
             + table_id.heap_usage()
             + col_pos.heap_usage()
-            + increment.heap_usage()
             + start.heap_usage()
-            + min_value.heap_usage()
-            + max_value.heap_usage()
     }
+}
+
+impl SequenceSchema {
+    /// Value to fill into the `increment` field of `StSequenceRow`.
+    ///
+    /// All sequences increment by 1.
+    pub const INCREMENT: i128 = SequenceDef::INCREMENT;
+    /// Value to fill into the `start` field of `StSequenceRow`.
+    ///
+    /// User-defined sequences start at 1.
+    const START: i128 = 1;
+    /// Value to fill into the `min_value` field of `StSequenceRow`.
+    ///
+    /// All sequences have a minimum value the same as their start, which is 1.
+    pub const MIN_VALUE: i128 = Self::START;
+    /// Value to fill into the `max_value` field of `StSequenceRow`.
+    ///
+    /// All sequences have a max value of the largest representable value.
+    pub const MAX_VALUE: i128 = i128::MAX;
 }
 
 impl Schema for SequenceSchema {
@@ -1302,11 +1350,7 @@ impl Schema for SequenceSchema {
             sequence_name: def.name.clone().into(),
             table_id: parent_id,
             col_pos: def.column,
-            increment: def.increment,
-            start: def.start.unwrap_or(1),
-            min_value: def.min_value.unwrap_or(1),
-            max_value: def.max_value.unwrap_or(i128::MAX),
-            // allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
+            start: Self::START,
         }
     }
 
@@ -1318,16 +1362,6 @@ impl Schema for SequenceSchema {
             "Sequence name mismatch"
         );
         ensure_eq!(self.col_pos, def.column, "Sequence column mismatch");
-        ensure_eq!(self.increment, def.increment, "Sequence increment mismatch");
-        if let Some(start) = &def.start {
-            ensure_eq!(self.start, *start, "Sequence start mismatch");
-        }
-        if let Some(min_value) = &def.min_value {
-            ensure_eq!(self.min_value, *min_value, "Sequence min_value mismatch");
-        }
-        if let Some(max_value) = &def.max_value {
-            ensure_eq!(self.max_value, *max_value, "Sequence max_value mismatch");
-        }
         Ok(())
     }
 }
@@ -1395,6 +1429,44 @@ impl Schema for ScheduleSchema {
             strip_namespace(&self.function_name, &def.namespace)?,
             &def.function_name[..],
             "Schedule function name mismatch"
+        );
+        Ok(())
+    }
+}
+
+/// Marks a table as an outbox table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxSchema {
+    /// The reducer to invoke on the target database.
+    pub remote_reducer: ReducerName,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
+    /// Columns to encode as reducer arguments, in receiver parameter order.
+    pub arg_columns: Vec<ColId>,
+    /// Local reducer to invoke with the remote result before acknowledging this stream.
+    pub on_result_reducer: Option<ReducerName>,
+    /// Hash of the receiver reducer signature as seen by the sender bindings.
+    pub signature_hash: String,
+}
+
+impl OutboxSchema {
+    fn check_compatible(&self, def: &OutboxDef) -> Result<(), anyhow::Error> {
+        ensure_eq!(
+            &self.remote_reducer,
+            &def.remote_reducer,
+            "Outbox remote reducer mismatch"
+        );
+        ensure_eq!(self.target_column, def.target_column, "Outbox target column mismatch");
+        ensure_eq!(&self.arg_columns, &def.arg_columns, "Outbox arg columns mismatch");
+        ensure_eq!(
+            &self.on_result_reducer,
+            &def.on_result_reducer,
+            "Outbox on_result reducer mismatch"
+        );
+        ensure_eq!(
+            &self.signature_hash,
+            &def.signature_hash,
+            "Outbox signature hash mismatch"
         );
         Ok(())
     }

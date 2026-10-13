@@ -4,29 +4,25 @@ import type {
   InferTypeOfParams,
   TypeBuilder,
 } from '../lib/type_builders';
-import type { CamelCase } from '../lib/type_util';
+import type { CamelCase, NestAccessors } from '../lib/type_util';
 import { coerceParams, toCamelCase, type CoerceParams } from '../lib/util';
 import type { UntypedRemoteModule } from './spacetime_module';
 
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
 
-// Loose shape that allows all three families even when key names are unknown
-type ProceduresViewLoose = {
-  // call: camelCase(name)
-  [k: string]: (params: any) => Promise<any>;
-};
+// Loose shape that allows all three families even when key names are unknown.
+type ProceduresViewLoose = { readonly [k: string]: any };
 
 export type ProceduresView<RemoteModule> = IfAny<
   RemoteModule,
   ProceduresViewLoose,
   RemoteModule extends UntypedRemoteModule
-    ? // x: camelCase(name)
-      {
+    ? NestAccessors<{
         [K in RemoteModule['procedures'][number] as K['accessorName']]: (
           params: InferTypeOfParams<K['params']>
         ) => Promise<Infer<K['returnType']>>;
-      }
+      }>
     : never
 >;
 
@@ -62,9 +58,10 @@ type ProcedureDef<
   Name extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
+  AccessorName extends string = CamelCase<Name>,
 > = {
   name: Name;
-  accessorName: CamelCase<Name>;
+  accessorName: AccessorName;
   params: CoerceParams<Params>;
   returnType: ReturnType;
 };
@@ -73,14 +70,16 @@ export function procedureSchema<
   ProcedureName extends string,
   Params extends ParamsObj,
   ReturnType extends TypeBuilder<any, any>,
+  AccessorName extends string = CamelCase<ProcedureName>,
 >(
   name: ProcedureName,
   params: Params,
-  returnType: ReturnType
-): ProcedureDef<ProcedureName, Params, ReturnType> {
+  returnType: ReturnType,
+  accessorName?: AccessorName
+): ProcedureDef<ProcedureName, Params, ReturnType, AccessorName> {
   return {
     name,
-    accessorName: toCamelCase(name),
+    accessorName: accessorName ?? (toCamelCase(name) as AccessorName),
     params: coerceParams(params),
     returnType,
   };

@@ -1,11 +1,15 @@
 use super::{
-    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
+    committed_state::CommittedState, mut_tx::MutTxId, state_view::StateView, time::Instant, tx::TxId, tx_state::TxState,
 };
+#[cfg(feature = "metrics")]
+use crate::db_metrics::DB_METRICS;
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
+#[cfg(feature = "durability")]
+use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
+#[cfg(feature = "durability")]
+use crate::system_tables::system_table_schema;
+use crate::traits::TxOffset;
 use crate::{
-    db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
     locking_tx_datastore::{
         state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
@@ -16,8 +20,8 @@ use crate::{
 use crate::{
     execution_context::ExecutionContext,
     system_tables::{
-        read_hash_from_col, read_identity_from_col, system_table_schema, StClientRow, StModuleFields, StModuleRow,
-        StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+        read_hash_from_col, read_identity_from_col, StClientRow, StModuleFields, StModuleRow, StTableFields,
+        ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_MODULE_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
     traits::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -25,9 +29,8 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
-use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
@@ -36,8 +39,9 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
 };
+#[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -46,7 +50,7 @@ use spacetimedb_table::{
 };
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub type Result<T> = std::result::Result<T, DatastoreError>;
 
@@ -57,7 +61,6 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 /// Lock Acquisition Order:
 /// 1. `memory`
 /// 2. `committed_state`
-/// 3. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
@@ -66,8 +69,6 @@ pub struct Locking {
     // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
     // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of sequence generation in this database.
-    pub(super) sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
@@ -76,14 +77,9 @@ impl MemoryUsage for Locking {
     fn heap_usage(&self) -> usize {
         let Self {
             committed_state,
-            sequence_state,
             database_identity,
         } = self;
-        std::mem::size_of_val(&**committed_state)
-            + committed_state.read().heap_usage()
-            + std::mem::size_of_val(&**sequence_state)
-            + sequence_state.lock().heap_usage()
-            + database_identity.heap_usage()
+        std::mem::size_of_val(&**committed_state) + committed_state.read().heap_usage() + database_identity.heap_usage()
     }
 }
 
@@ -91,7 +87,6 @@ impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
-            sequence_state: <_>::default(),
             database_identity,
         }
     }
@@ -114,9 +109,6 @@ impl Locking {
 
         // Create the system tables and insert information about themselves into
         commit_state.bootstrap_system_tables(database_identity)?;
-        // The database tables are now initialized with the correct data.
-        // Now we have to build our in memory structures.
-        build_sequence_state(&datastore, &mut commit_state)?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -133,9 +125,45 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
+    #[cfg(feature = "durability")]
     pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<'_, F> {
         let committed_state = self.committed_state.write();
         Replay::new(self.database_identity, committed_state, progress, error_behavior)
+    }
+
+    /// Reserve the first transaction offset for the durable system-schema
+    /// bootstrap record.
+    ///
+    /// The bootstrap record describes rows already installed by
+    /// [`Self::bootstrap`], so this only advances the offset counter. Returns
+    /// `None` if any transaction has already consumed an offset.
+    pub fn reserve_system_schema_bootstrap_tx_offset(&self) -> Option<TxOffset> {
+        let mut committed_state = self.committed_state.write();
+        if committed_state.next_tx_offset == 0 {
+            committed_state.next_tx_offset = 1;
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    /// Read the committed rows which describe built-in system table schemas.
+    ///
+    /// These are the rows installed directly by [`Self::bootstrap`] before any
+    /// transaction exists. Durable databases write these rows into the commit
+    /// log at offset 0 so replay from the beginning can reconstruct system
+    /// tables added after the replaying binary was built.
+    pub fn committed_system_table_schema_rows(&self) -> Result<Vec<(TableId, ProductValue)>> {
+        let committed_state = self.committed_state.read();
+        let mut rows = Vec::new();
+
+        for table_id in [ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID] {
+            for row in committed_state.iter(table_id)? {
+                rows.push((table_id, row.to_product_value()));
+            }
+        }
+
+        Ok(rows)
     }
 
     /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
@@ -148,6 +176,7 @@ impl Locking {
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
+    #[cfg(feature = "durability")]
     pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, page_pool: PagePool) -> Result<Self> {
         let ReconstructedSnapshot {
             database_identity,
@@ -203,11 +232,6 @@ impl Locking {
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
 
-        // Set the sequence state. In practice we will end up doing this again after replaying
-        // the commit log, but we do it here too just to avoid having an incorrectly restored
-        // snapshot.
-        build_sequence_state(&datastore, &mut committed_state)?;
-
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
 
@@ -227,11 +251,11 @@ impl Locking {
     ///
     /// Returns an error if [`DynSnapshotRepo::create_snapshot`] returns an
     /// error.
+    #[cfg(feature = "durability")]
     pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>> {
         Self::take_snapshot_internal(&self.committed_state, repo)?
-            .map(|(_offset, snap)| snap.sync_all())
+            .map(|(_offset, snap)| snap.sync_all().map_err(Into::into))
             .transpose()
-            .map_err(Into::into)
     }
 
     pub fn assert_system_tables_match(&self) -> Result<()> {
@@ -253,6 +277,7 @@ impl Locking {
         self.committed_state.read().datastore_memory_bytes()
     }
 
+    #[cfg(feature = "durability")]
     pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &DynSnapshotRepo,
@@ -344,6 +369,15 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn alter_table_outbox_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        outbox: Option<OutboxSchema>,
+    ) -> Result<()> {
+        tx.alter_table_outbox(table_id, outbox)
     }
 
     pub fn alter_event_table_row_type_mut_tx(
@@ -761,6 +795,7 @@ impl MutTxDatastore for Locking {
 
 /// Various measurements, needed for metrics, of the work performed by a transaction.
 #[must_use = "TxMetrics should be reported"]
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 pub struct TxMetrics {
     /// The transaction metrics for a particular table.
     /// The value `None` for a [`TableId`] means that it was deleted.
@@ -773,6 +808,7 @@ pub struct TxMetrics {
     exec_metrics: ExecutionMetrics,
 }
 
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 struct TableStats {
     /// The number of rows in the table after this transaction.
     ///
@@ -835,6 +871,7 @@ impl TxMetrics {
     }
 
     /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
+    #[cfg(feature = "metrics")]
     pub fn report<'a, R: MetricsRecorder + 'a>(
         &self,
         tx_data: Option<&TxData>,
@@ -979,12 +1016,10 @@ impl MutTx for Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
-        let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
 
         MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
@@ -1015,12 +1050,10 @@ impl Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
-        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
         let lock_wait_time = timer.elapsed();
 
         Some(MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
@@ -1080,19 +1113,24 @@ pub(crate) mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
-        StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
-        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
-        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
-        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
-        ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+        system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
+        StConstraintFields, StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow,
+        StOutboundMsgRow, StOutboundStreamRow, StRowLevelSecurityFields, StScheduledFields, StSequenceFields,
+        StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME,
+        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID,
+        ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME,
+        ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME,
+        ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID,
+        ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID,
+        ST_VIEW_SUB_NAME,
     };
-    use crate::system_tables::{ST_ENV_ID, ST_ENV_NAME};
+    use crate::system_tables::{
+        ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
+        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME, ST_OUTBOX_ID,
+        ST_OUTBOX_NAME,
+    };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use core::{fmt, mem};
@@ -1103,7 +1141,7 @@ pub(crate) mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
-    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
+    use spacetimedb_lib::{resolved_type_via_v9, Identity, ScheduleAt, TimeDuration};
     use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
@@ -1111,10 +1149,11 @@ pub(crate) mod tests {
     use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
-    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+    use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
-        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
-        SequenceSchema,
+        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
+        ScheduleSchema, SequenceSchema,
     };
     use spacetimedb_schema::table_name::TableName;
 
@@ -1325,10 +1364,7 @@ pub(crate) mod tests {
                 sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
-                increment: 1,
                 start: value.start,
-                min_value: 1,
-                max_value: i128::MAX,
             }
         }
     }
@@ -1423,6 +1459,7 @@ pub(crate) mod tests {
             pk,
             false,
             None,
+            None,
         )
     }
 
@@ -1436,9 +1473,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "Foo_id_seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -1560,6 +1594,11 @@ pub(crate) mod tests {
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_OUTBOUND_STREAM_ID.into(), name: ST_OUTBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_OUTBOUND_MSG_ID.into(), name: ST_OUTBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]
@@ -1659,6 +1698,37 @@ pub(crate) mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
             ColRow { table: ST_ENV_ID.into(), pos: 0, name: "key", ty: AlgebraicType::String },
             ColRow { table: ST_ENV_ID.into(), pos: 1, name: "value", ty: AlgebraicType::String },
+
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 0, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 1, name: "outbox_table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 2, name: "target_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 3, name: "next_seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 4, name: "ack_prefix", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 0, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 1, name: "msg_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 3, name: "retry_count", ty: AlgebraicType::U32 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 4, name: "last_transport_error", ty: AlgebraicType::option(AlgebraicType::String) },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 5, name: "result_status", ty: AlgebraicType::option(AlgebraicType::U8) },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 6, name: "result_payload", ty: AlgebraicType::option(AlgebraicType::bytes()) },
+
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 1, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 2, name: "applied_prefix", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_status", ty: AlgebraicType::U8 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 4, name: "result_payload", ty: AlgebraicType::bytes() },
+
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 1, name: "remote_reducer", ty: resolved_type_via_v9::<NamespacedIdentifier>() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 2, name: "target_column", ty: ColId::get_type() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1692,6 +1762,13 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
+            IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
+            IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
+            IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
+            IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1704,6 +1781,7 @@ pub(crate) mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
                 SequenceRow { id: 6, table: ST_VIEW_ID.into(), col_pos: 0, name: "st_view_view_id_seq", start },
                 SequenceRow { id: 7, table: ST_VIEW_ARG_ID.into(), col_pos: 0, name: "st_view_arg_id_seq", start },
+                SequenceRow { id: 8, table: ST_OUTBOUND_STREAM_ID.into(), col_pos: 0, name: "st_outbound_stream_stream_id_seq", start },
             ],
             |row| StSequenceRow {
                 allocated: start - 1,
@@ -1738,6 +1816,13 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
             ConstraintRow { constraint_id: 26, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
+            ConstraintRow { constraint_id: 27, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_stream_stream_id_key", },
+            ConstraintRow { constraint_id: 28, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col_list![1, 2], constraint_name: "st_outbound_stream_outbox_table_id_target_identity_key", },
+            ConstraintRow { constraint_id: 29, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_outbound_msg_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 30, table_id: ST_INBOUND_STREAM_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_inbound_stream_sender_identity_stream_id_key", },
+            ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
+            ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2133,9 +2218,40 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
+        // The rolled-back insert did not consume the first auto-inc value.
         #[rustfmt::skip]
-        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
+    }
+
+    #[test]
+    fn sequence_occasionally_skips_values_to_simulate_reallocation() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.primary_key = Some(0.into());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut previous_value = 0;
+
+        // Determined experimentally;
+        // the fixed seed we use for tests first hits a simulated reallocation point
+        // somewhere between rows 8192 and 16384.
+        const MAX_ROWS: u32 = 16384;
+
+        for row_number in 0..MAX_ROWS {
+            let row = product![0_u32, format!("row_{row_number}"), 0_u32];
+            let (_, row_ref) = insert(&datastore, &mut tx, table_id, &row)?;
+            let value = row_ref.read_col::<u32>(0).unwrap();
+            if value != previous_value + 1 {
+                return Ok(());
+            }
+            previous_value = value;
+        }
+
+        panic!("did not simulate a sequence reallocation after inserting {MAX_ROWS} rows");
     }
 
     fn assert_st_indices(tx: &MutTxId, include_age: bool) -> ResultTest<()> {
@@ -2172,6 +2288,13 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
+            IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
+            IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
+            IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
+            IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -2332,9 +2455,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
@@ -2393,7 +2513,8 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
-        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+        // The auto-inc value generated before the rollback remains available.
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
         datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
@@ -2957,6 +3078,67 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_outbox_insert_records_stream_sequence() -> ResultTest<()> {
+        let mut schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::identity()),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+        schema.outbox = Some(OutboxSchema {
+            remote_reducer: ReducerName::for_test("receive"),
+            target_column: ColId(1),
+            arg_columns: vec![ColId(2)],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        });
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let target = Identity::ONE;
+
+        for msg_id in [10u64, 11] {
+            let row = to_vec(&product![msg_id, target]).unwrap();
+            let (row_ptr, insert_flags) = {
+                let (_, row_ref, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+                (row_ref.pointer(), insert_flags)
+            };
+            assert!(insert_flags.is_outbox_table);
+            tx.record_outbox_insert(table_id, row_ptr)?;
+            tx.record_outbox_insert(table_id, row_ptr)?;
+        }
+
+        let stream_rows = tx
+            .iter(ST_OUTBOUND_STREAM_ID)?
+            .map(StOutboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].outbox_table_id, table_id);
+        assert_eq!(stream_rows[0].target_identity, IdentityViaU256(target));
+        assert_eq!(stream_rows[0].next_seq, 3);
+        assert_eq!(stream_rows[0].ack_prefix, 0);
+
+        let mut outbound_rows = tx
+            .iter(ST_OUTBOUND_MSG_ID)?
+            .map(StOutboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        outbound_rows.sort_by_key(|row| row.seq);
+        assert_eq!(outbound_rows.iter().map(|row| row.seq).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
+            vec![10, 11]
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_row_level_security() -> ResultTest<()> {
         let (_, mut tx, table_id) = setup_table()?;
 
@@ -2977,6 +3159,51 @@ pub(crate) mod tests {
 
         tx.drop_row_level_security(rls.sql)?;
         assert_eq!(tx.row_level_security_for_table_id(table_id)?, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_outbox_updates_insert_flags() -> ResultTest<()> {
+        let schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::U256),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let outbox = OutboxSchema {
+            remote_reducer: ReducerName::for_test("receive"),
+            target_column: ColId(1),
+            arg_columns: vec![],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        };
+        let row = to_vec(&product![1u64, IdentityViaU256(Identity::ONE)]).unwrap();
+
+        let mut tx = begin_mut_tx(&datastore);
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(!insert_flags.is_outbox_table);
+
+        tx.alter_table_outbox(table_id, Some(outbox.clone()))?;
+        assert_eq!(tx.get_schema(table_id).unwrap().outbox, Some(outbox));
+        assert_eq!(
+            tx.schema_for_table_raw(table_id)?.outbox,
+            tx.get_schema(table_id).unwrap().outbox
+        );
+        let row = to_vec(&product![2u64, IdentityViaU256(Identity::ONE)]).unwrap();
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(insert_flags.is_outbox_table);
 
         Ok(())
     }
@@ -3021,7 +3248,7 @@ pub(crate) mod tests {
 
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
             let tx = begin_tx(datastore);
-            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
+            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows) {
                 assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
             Ok(())
@@ -3507,10 +3734,12 @@ pub(crate) mod tests {
             "Unexpected delete entries after altering the table"
         );
 
+        // The rolled-back migration did not consume 7, so the committed migration uses it
+        // after the two initial committed rows with IDs 5 and 6.
         let inserted_rows = [
             product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
             product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
-            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let new_entry = tx_data

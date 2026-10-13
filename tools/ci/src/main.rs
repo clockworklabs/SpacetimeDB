@@ -25,8 +25,16 @@ const COMMANDS: &[Command] = &[
         package: "ci-module-latest-deps",
     },
     Command {
+        path: &["portable-datastore"],
+        package: "ci-portable-datastore",
+    },
+    Command {
         path: &["smoketests"],
         package: "ci-smoketests",
+    },
+    Command {
+        path: &["sdk-tests"],
+        package: "ci-sdk-tests",
     },
     Command {
         path: &["smoketests", "check-mod-list"],
@@ -57,6 +65,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-typescript-test",
     },
     Command {
+        path: &["typescript-submodules"],
+        package: "ci-typescript-submodules",
+    },
+    Command {
         path: &["version-upgrade-check"],
         package: "ci-version-upgrade-check",
     },
@@ -73,6 +85,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-codeowners-check",
     },
     Command {
+        path: &["other-workflows", "new-script-check"],
+        package: "ci-new-script-check",
+    },
+    Command {
         path: &["other-workflows", "cla-assistant"],
         package: "ci-cla-assistant",
     },
@@ -87,6 +103,14 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "check-release-deps"],
         package: "ci-check-release-deps",
+    },
+    Command {
+        path: &["other-workflows", "llm-benchmark-summary"],
+        package: "ci-llm-benchmark-summary",
+    },
+    Command {
+        path: &["other-workflows", "cache-warm"],
+        package: "ci-cache-warm",
     },
 ];
 

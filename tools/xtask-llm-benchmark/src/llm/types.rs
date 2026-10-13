@@ -1,5 +1,15 @@
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
 
 /// Output from an LLM generation call, including token usage.
 #[derive(Debug, Clone, Default)]
@@ -66,5 +76,15 @@ impl Vendor {
 impl fmt::Display for Vendor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.slug())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReasoningEffort;
+
+    #[test]
+    fn reasoning_effort_uses_provider_wire_values() {
+        assert_eq!(serde_json::to_string(&ReasoningEffort::Medium).unwrap(), r#""medium""#);
     }
 }

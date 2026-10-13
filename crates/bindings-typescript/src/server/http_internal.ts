@@ -67,7 +67,8 @@ function fetch(url: URL | string, init: RequestOptions = {}) {
     type: 'basic',
     url: uri,
     status: response.code,
-    statusText: status(response.code),
+    // `status(code)` throws for codes it doesn't know, like Cloudflare's 530.
+    statusText: status.message[response.code] ?? '',
     headers: deserializeHeaders(response.headers),
     aborted: false,
     version: response.version,

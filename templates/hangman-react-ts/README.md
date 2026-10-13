@@ -114,5 +114,5 @@ The React UI in `src/App.tsx` includes the gallows drawing, masked-word board, k
 
 ## Next steps
 
-- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/intro/core-concepts/clients/typescript-reference) for detailed API docs
-- See the [Chat App Tutorial](https://spacetimedb.com/docs/intro/tutorials/chat-app) for another complete React example
+- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/clients/typescript) for detailed API docs
+- See the [Chat App Tutorial](https://spacetimedb.com/docs/tutorials/chat-app) for another complete React example

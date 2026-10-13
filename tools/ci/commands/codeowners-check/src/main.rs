@@ -52,7 +52,6 @@ fn fetch_base_ref(base_ref: &str) -> Result<()> {
         "git",
         "fetch",
         "--no-tags",
-        "--depth=1",
         "origin",
         &format!("{ref_name}:refs/remotes/origin/{ref_name}")
     )

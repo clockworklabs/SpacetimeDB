@@ -1,0 +1,5 @@
+---
+source: crates/schema/src/describe.rs
+expression: "describe_reducer(owning, reducer, PrettyPrintStyle::NoColor)"
+---
+init()  [lifecycle: init] [private]

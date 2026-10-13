@@ -520,7 +520,7 @@ impl fmt::Display for JsStackTraceFrame {
         // TODO(v8): make it more like chrome in the future.
         f.write_fmt(format_args!(
             "at {} ({}:{}:{})",
-            fn_name, script_name, &self.line, &self.column
+            fn_name, script_name, self.line, self.column
         ))?;
 
         if self.is_ctor {

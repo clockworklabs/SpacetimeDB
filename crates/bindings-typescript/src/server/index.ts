@@ -4,6 +4,7 @@ export {
   type InferSchema,
   type ModuleExport,
   type ModuleSettings,
+  type SubmoduleMount,
 } from './schema';
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
@@ -36,5 +37,14 @@ export type { HandlerContext, HttpHandlerExport } from './http';
 export { ScheduleAt } from '../lib/schedule_at';
 
 export type { Environment } from './environment';
+
+// Named so libraries built on this package can emit declaration files for
+// the tables, schemas, and exports they create.
+export type { CoerceRow } from '../lib/table';
+export type { TableSchema } from '../lib/table_schema';
+export type { TablesToSchema } from '../lib/schema';
+export type { EnvironmentValue } from '../lib/environment';
+export type { ReadonlyDbView } from './db_view';
+export type { Schema } from './schema';
 
 import './polyfills'; // Ensure polyfills are loaded

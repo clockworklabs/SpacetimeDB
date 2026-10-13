@@ -18,6 +18,10 @@ Get a SpacetimeDB C# app running in under 5 minutes.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) installed ([.NET 8](https://dotnet.microsoft.com/download/dotnet/8.0) is supported but will be deprecated soon). Please note that target .NET 10 is currently unsupported on Mac.
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed.
 
+::::note
+If you are building C# modules on macOS and need to target .NET 10, run SpacetimeDB inside a Linux environment, such as a Linux VM or container, and build and publish your module from there.
+::::
+
 <InstallCardLink />
 
 ---
@@ -240,5 +244,6 @@ spacetime logs
 
 ## Next steps
 
+- Enable [automatic reconnect](../../00200-core-concepts/00600-clients/00600-csharp-reference.md#method-withautomaticreconnect) with `.WithAutomaticReconnect()` on your client's connection builder. Keep calling `FrameTick()` during outages. Register subscriptions once in `OnConnect`, which runs only on the first connection; the SDK replays them after recovery. Use `OnAutomaticReconnect` for recovery-specific work and subscription `OnApplied` for cache readiness. For expiring authentication tokens, also use [`.WithTokenProvider(() => RefreshTokenAsync())`](../../00200-core-concepts/00600-clients/00600-csharp-reference.md#method-withtokenprovider).
 - See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
 - Read the [C# SDK Reference](../../00200-core-concepts/00600-clients/00600-csharp-reference.md) for detailed API docs

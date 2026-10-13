@@ -52,6 +52,10 @@ pub(crate) trait ResponseExt: Sized {
     /// Like [`reqwest::Response::json()`], but handles non-JSON error messages gracefully.
     async fn json_or_error<T: serde::de::DeserializeOwned>(self) -> anyhow::Result<T>;
 
+    /// Like [`reqwest::Response::error_for_status()`], but the returned error contains
+    /// the error message returned in the response body if present.
+    async fn error_msg_for_status(self) -> anyhow::Result<Self>;
+
     /// Transforms a status of `NOT_FOUND` into `None`.
     fn found(self) -> Option<Self>;
 }
@@ -70,7 +74,6 @@ fn err_status_desc(status: http::StatusCode) -> Option<&'static str> {
 
 impl ResponseExt for reqwest::Response {
     async fn ensure_content_type(self, content_type: &str) -> anyhow::Result<Self> {
-        let status = self.status();
         if self
             .headers()
             .get(http::header::CONTENT_TYPE)
@@ -78,9 +81,22 @@ impl ResponseExt for reqwest::Response {
         {
             return Ok(self);
         }
+        Err(match self.error_msg_for_status().await {
+            Ok(res) => {
+                anyhow::anyhow!(
+                    "HTTP response from url ({}) was success but did not have content-type: {content_type}",
+                    res.url()
+                )
+            }
+            Err(e) => e,
+        })
+    }
+
+    async fn error_msg_for_status(self) -> anyhow::Result<Self> {
+        let status = self.status();
         let url = self.url();
         let Some(status_desc) = err_status_desc(status) else {
-            anyhow::bail!("HTTP response from url ({url}) was success but did not have content-type: {content_type}");
+            return Ok(self);
         };
         let url = url.to_string();
         let status_err = match self.error_for_status_ref() {

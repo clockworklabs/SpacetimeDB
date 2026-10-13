@@ -2,7 +2,7 @@
 >
 > The interface of this project is **not** stable and may change without notice.
 
-See the [C# module library reference](https://spacetimedb.com/docs/modules/c-sharp) and the [C# client SDK reference](https://spacetimedb.com/docs/sdks/c-sharp) for stable, user-facing documentation.
+See the [C# module library reference](https://spacetimedb.com/docs/core-concepts) and the [C# client SDK reference](https://spacetimedb.com/docs/clients/c-sharp) for stable, user-facing documentation.
 
 ## Internal documentation
 

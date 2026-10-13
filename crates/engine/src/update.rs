@@ -4,12 +4,15 @@ use anyhow::Context;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
+use spacetimedb_datastore::system_tables::{
+    StOutboundStreamFields, StOutboundStreamRow, StViewFields, StViewRow, ST_OUTBOUND_STREAM_ID, ST_VIEW_ID,
+};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
+use spacetimedb_sats::bsatn::to_vec;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -233,18 +236,14 @@ fn auto_migrate_database(
                     .ty
                     .clone();
 
-                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                // Convert `SequenceSchema` min/max to `AlgebraicValue`s of the correct type.
                 let min = ty
-                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .saturating_value_from_i128(SequenceSchema::MIN_VALUE)
                     .ok_or_else(|| {
                         anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let max = match sequence_def.max_value {
-                    Some(max) => ty.saturating_value_from_i128(max),
-                    None => ty.saturating_value_from_i128(i128::MAX),
-                }
-                .ok_or_else(|| {
+                let max = ty.saturating_value_from_i128(i128::MAX).ok_or_else(|| {
                     anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
                 })?;
 
@@ -339,9 +338,14 @@ fn auto_migrate_database(
 
                 let mut index_schema = IndexSchema::from_module_def(owning_def, index_def, table_id, 0.into());
 
-                // Apply namespace prefix for submodule indexes
+                // Apply namespace prefix for submodule indexes. The canonical name gets the
+                // canonical namespace; the alias gets the accessor namespace, since that is
+                // what module code looks the index up by.
                 index_schema.index_name = namespace.join_raw(&index_schema.index_name);
-                index_schema.alias = index_schema.alias.as_ref().map(|alias| namespace.join_raw(alias));
+                index_schema.alias = index_schema
+                    .alias
+                    .as_ref()
+                    .map(|alias| owning_def.accessor_path().join_raw(alias));
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
@@ -368,13 +372,13 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeTableAccessorName(table_name_key) => {
                 let (namespace, local) = table_name_key;
                 let table_name = joined(namespace, local);
-                let (_, new_table_def): (&ModuleDef, &spacetimedb_schema::def::TableDef) =
+                let (new_owning_def, new_table_def): (&ModuleDef, &spacetimedb_schema::def::TableDef) =
                     plan.new.find_table(table_name_key).ok_or_else(|| {
                         anyhow::anyhow!("ChangeTableAccessorName: `{table_name}` not found in new module def")
                     })?;
 
                 let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
-                let new_alias = namespace.join(new_table_def.accessor_name.clone());
+                let new_alias = new_owning_def.accessor_path().join(new_table_def.accessor_name.clone());
 
                 log!(
                     logger,
@@ -418,7 +422,7 @@ fn auto_migrate_database(
                     plan.old.find_storing_table(namespace, index_name).ok_or_else(|| {
                         anyhow::anyhow!("ChangeIndexSourceName: `{index_name}` not found in old module def")
                     })?;
-                let (_new_owning_def, new_table_def) =
+                let (new_owning_def, new_table_def) =
                     plan.new.find_storing_table(namespace, index_name).ok_or_else(|| {
                         anyhow::anyhow!("ChangeIndexSourceName: `{index_name}` not found in new module def")
                     })?;
@@ -436,7 +440,9 @@ fn auto_migrate_database(
                     .iter()
                     .find(|index| index.index_name == stored_name)
                     .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{table_full_name}`"))?;
-                let new_source_name = namespace.join_raw(&new_index_def.source_name.clone().into());
+                let new_source_name = new_owning_def
+                    .accessor_path()
+                    .join_raw(&new_index_def.source_name.clone().into());
 
                 log!(
                     logger,
@@ -590,6 +596,19 @@ fn auto_migrate_database(
                 log!(logger, "Changing primary key for table `{table_name}`");
                 stdb.alter_table_primary_key(tx, &table_name, table_def.primary_key)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeOutbox(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan
+                    .new
+                    .find_table(table_name_key)
+                    .ok_or_else(|| anyhow::anyhow!("ChangeOutbox: table `{table_name}` not found in new module def"))?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+                let outbox = TableSchema::from_module_def(owning_def, table_def, (), table_id).outbox;
+
+                log!(logger, "Changing outbox metadata for table `{table_name}`");
+                stdb.alter_table_outbox(tx, table_id, outbox)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
             }
@@ -616,15 +635,21 @@ fn auto_migrate_database(
                     .new
                     .find_table(table_name_key)
                     .ok_or_else(|| anyhow::anyhow!("AddColumns: table `{table_name}` not found in new module def"))?;
-                let table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
-                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, table_id);
+                let old_table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, old_table_id);
 
                 let default_values: Vec<AlgebraicValue> = table_def
                     .columns
                     .iter()
                     .filter_map(|col_def| col_def.default_value.clone())
                     .collect();
-                stdb.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?;
+                let new_table_id =
+                    stdb.add_columns_to_table_mut_tx(tx, old_table_id, column_schemas, default_values)?;
+                // Adding columns recreates the table with a new id, so preserve
+                // any IDC stream rows keyed by the previous outbox table id.
+                if table_def.outbox.is_some() {
+                    rewrite_outbound_stream_outbox_table_id(stdb, tx, old_table_id, new_table_id)?;
+                }
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
                 log!(logger, "Disconnecting all users");
@@ -639,6 +664,43 @@ fn auto_migrate_database(
     Ok(res)
 }
 
+/// Preserve durable IDC stream state when an outbox table is recreated during migration.
+///
+/// Destructive table changes allocate a new table id, but `st_outbound_stream`
+/// is keyed by the outbox table id and receiver identity. Rewrite those rows to
+/// the new table id so existing streams keep their stable stream ids, sequence
+/// cursors, and ack prefixes.
+fn rewrite_outbound_stream_outbox_table_id(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    old_table_id: TableId,
+    new_table_id: TableId,
+) -> anyhow::Result<()> {
+    if old_table_id == new_table_id {
+        return Ok(());
+    }
+
+    let stream_id_index = stdb
+        .index_id_from_name_mut(tx, "st_outbound_stream_stream_id_idx_btree")?
+        .context("st_outbound_stream stream_id index not found")?;
+    let streams = stdb
+        .iter_by_col_eq_mut(
+            tx,
+            ST_OUTBOUND_STREAM_ID,
+            StOutboundStreamFields::OutboxTableId,
+            &old_table_id.into(),
+        )?
+        .map(StOutboundStreamRow::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for mut stream in streams {
+        stream.outbox_table_id = new_table_id;
+        stdb.update(tx, ST_OUTBOUND_STREAM_ID, stream_id_index, &to_vec(&stream)?)?;
+    }
+
+    Ok(())
+}
+
 /// Creates the table for `table_def` in `stdb`.
 pub fn create_table_from_def(
     stdb: &RelationalDB,
@@ -650,7 +712,8 @@ pub fn create_table_from_def(
 }
 
 /// Creates a submodule table in `stdb`, applying the namespace to its canonical name.
-/// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
+/// `name_prefix` is the canonical namespace path the table is mounted under (e.g. `"my_lib."`);
+/// aliases use `owning_def`'s accessor path instead (e.g. `"myLib."`).
 pub fn create_table_from_def_with_prefix(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
@@ -661,12 +724,14 @@ pub fn create_table_from_def_with_prefix(
     let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
     if !name_prefix.is_empty() {
         // Store submodule tables under their namespaced *canonical* name, exactly as root
-        // tables are stored. The accessor name is a codegen concern and lives on as a
-        // namespaced alias in `st_table_accessor`; it must not become the host's identity
-        // for the table, and it must not be dropped (namespacing it keeps it unique across
-        // mounts that share a local name).
+        // tables are stored. The accessor name lives on as a namespaced alias in
+        // `st_table_accessor`, qualified by the *accessor* namespace: that is the name
+        // module code resolves the table by (`ctx.db.myLib.myTable` looks up `myLib.myTable`).
+        // It must not become the host's identity for the table, and it must not be dropped
+        // (namespacing it keeps it unique across mounts that share a local name).
+        let accessor_prefix = owning_def.accessor_path();
         schema.table_name = TableName::from(name_prefix.join(table_def.name.clone()));
-        schema.alias = Some(name_prefix.join(table_def.accessor_name.clone()));
+        schema.alias = Some(accessor_prefix.join(table_def.accessor_name.clone()));
 
         // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
         // resolve it via the namespaced reducer_by_name / procedure_by_name.
@@ -681,7 +746,7 @@ pub fn create_table_from_def_with_prefix(
         // Apply the namespace to index canonical names and aliases for global uniqueness.
         for index in &mut schema.indexes {
             index.index_name = name_prefix.join_raw(&index.index_name);
-            index.alias = index.alias.as_ref().map(|alias| name_prefix.join_raw(alias));
+            index.alias = index.alias.as_ref().map(|alias| accessor_prefix.join_raw(alias));
         }
 
         // Same for constraint and sequence names.
@@ -705,7 +770,7 @@ pub fn create_table_from_view_def(
     view_def: &ViewDef,
 ) -> anyhow::Result<()> {
     stdb.create_view(tx, module_def, view_def)
-        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+        .with_context(|| format!("failed to create table for view {}", view_def.name))?;
     Ok(())
 }
 
@@ -719,7 +784,7 @@ pub fn create_table_from_view_def_with_prefix(
     name_prefix: &NamespacePath,
 ) -> anyhow::Result<()> {
     stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
-        .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
+        .with_context(|| format!("failed to create table for view {}{}", name_prefix, view_def.name))?;
     Ok(())
 }
 
@@ -731,20 +796,55 @@ mod test {
         tests_utils::{begin_mut_tx, insert, TestDB},
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
-    use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
+    use spacetimedb_datastore::system_tables::{
+        IdentityViaU256, StOutboundStreamRow, ST_EVENT_TABLE_ID, ST_OUTBOUND_STREAM_ID,
+    };
     use spacetimedb_lib::{
         db::raw_def::{
             v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
-            v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
+            v9::{btree, direct, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
         },
         Identity,
     };
+    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType};
     use spacetimedb_schema::auto_migrate::ponder_migrate;
 
     struct TestLogger;
     impl UpdateLogger for TestLogger {
         fn info(&self, _: &str) {}
+    }
+
+    #[test]
+    fn rewrite_outbound_stream_outbox_table_id_preserves_stream_state() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let mut tx = begin_mut_tx(&stdb);
+        let old_table_id = TableId(100);
+        let new_table_id = TableId(101);
+
+        let stream = StOutboundStreamRow {
+            stream_id: 1,
+            outbox_table_id: old_table_id,
+            target_identity: IdentityViaU256(Identity::ONE),
+            next_seq: 7,
+            ack_prefix: 3,
+        };
+        stdb.insert(&mut tx, ST_OUTBOUND_STREAM_ID, &to_vec(&stream)?)?;
+
+        rewrite_outbound_stream_outbox_table_id(&stdb, &mut tx, old_table_id, new_table_id)?;
+
+        let rows = stdb
+            .iter_mut(&tx, ST_OUTBOUND_STREAM_ID)?
+            .map(StOutboundStreamRow::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(
+            rows,
+            [StOutboundStreamRow {
+                outbox_table_id: new_table_id,
+                ..stream
+            }]
+        );
+        Ok(())
     }
 
     #[test]
@@ -927,6 +1027,147 @@ mod test {
         Ok(())
     }
 
+    #[test]
+    fn update_db_add_outbox_requires_manual_migration() -> anyhow::Result<()> {
+        fn module_def(outbox: bool) -> ModuleDef {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "outbound_pings",
+                    ProductType::from([
+                        ("msg_id", U64),
+                        ("target", AlgebraicType::identity()),
+                        ("payload", AlgebraicType::String),
+                    ]),
+                    true,
+                )
+                .with_auto_inc_primary_key(0)
+                .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+                .finish();
+
+            if outbox {
+                builder.add_outbox(
+                    "outbound_pings",
+                    "receive_ping",
+                    ColId(1),
+                    [ColId(2)],
+                    Option::<&str>::None,
+                    "test-signature",
+                );
+            }
+
+            builder
+                .finish()
+                .try_into()
+                .expect("builder should create a valid database definition")
+        }
+
+        let old = module_def(false);
+        let new = module_def(true);
+
+        assert!(ponder_migrate(&old, &new).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_db_add_column_and_change_outbox_on_result() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        fn module_def(with_extra_column: bool, on_result: Option<&'static str>) -> ModuleDef {
+            let columns = if with_extra_column {
+                ProductType::from([
+                    ("msg_id", U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                    ("priority", AlgebraicType::U32),
+                ])
+            } else {
+                ProductType::from([
+                    ("msg_id", U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ])
+            };
+
+            let mut builder = RawModuleDefV10Builder::new();
+            let table = builder
+                .build_table_with_new_type("outbound_pings", columns, true)
+                .with_auto_inc_primary_key(0)
+                .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree");
+            let table = if with_extra_column {
+                table.with_default_column_value(3, AlgebraicValue::U32(0))
+            } else {
+                table
+            };
+            table.finish();
+
+            builder.add_outbox(
+                "outbound_pings",
+                "receive_ping",
+                ColId(1),
+                [ColId(2)],
+                on_result,
+                "test-signature",
+            );
+
+            builder
+                .finish()
+                .try_into()
+                .expect("builder should create a valid database definition")
+        }
+
+        let old = module_def(false, None);
+        let new = module_def(true, Some("on_ping_result"));
+        let root = NamespacePath::root();
+        let table_name = Identifier::new_unsafe_assume_valid("outbound_pings".into());
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let MigratePlan::Auto(plan) = ponder_migrate(&old, &new)? else {
+            panic!("expected automatic migration");
+        };
+        assert!(
+            plan.steps.contains(&AutoMigrateStep::AddColumns((&root, &table_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+        assert!(
+            plan.steps
+                .contains(&AutoMigrateStep::ChangeOutbox((&root, &table_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+
+        let mut tx = begin_mut_tx(&stdb);
+        let res = update_database(&stdb, &mut tx, auth_ctx, MigratePlan::Auto(plan), &TestLogger)?;
+        assert!(matches!(res, UpdateResult::RequiresClientDisconnect));
+
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "outbound_pings")?
+            .expect("there should be a table named outbound_pings");
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert_eq!(schema.columns.len(), 4);
+        let outbox = schema.outbox.as_ref().expect("outbox metadata should be present");
+        assert_eq!(outbox.on_result_reducer.as_deref(), Some("on_ping_result"));
+
+        let row = to_vec(&product![
+            0u64,
+            IdentityViaU256(Identity::ONE),
+            "after-combined-migration",
+            1u32
+        ])?;
+        let (_, _, insert_flags) = stdb.insert(&mut tx, table_id, &row)?;
+        assert!(insert_flags.is_outbox_table);
+
+        Ok(())
+    }
+
     /// Regression test for #3934: removing a primary key annotation and then
     /// re-publishing causes "Primary key mismatch" on the NEXT publish.
     #[test]
@@ -1066,6 +1307,65 @@ mod test {
                 module: sub.finish(),
             }]));
         root.try_into().expect("should be a valid module definition")
+    }
+
+    /// A submodule mounted under a camelCase accessor key, so the canonical namespace
+    /// (`my_lib`) differs from the accessor namespace (`myLib`).
+    fn submodule_case_converted_namespace_module() -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("FruitBasket", ProductType::from([("id", U64)]), true)
+            .with_index(btree(0), "basket_id_idx", "basket_id_idx")
+            .finish();
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myLib", sub.finish());
+        root.finish().try_into().expect("should be a valid module definition")
+    }
+
+    /// Table and index aliases must be qualified by the *accessor* namespace, since that is
+    /// the name module code resolves them by (`ctx.db.myLib.FruitBasket` looks up
+    /// `myLib.FruitBasket`), while the canonical name is qualified by the canonical namespace.
+    #[test]
+    fn submodule_aliases_use_accessor_namespace() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = submodule_case_converted_namespace_module();
+
+        let (prefix, owning_def, table_def) = module_def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("submodule table should exist");
+        assert_eq!(prefix.to_string(), "my_lib.", "canonical namespace");
+        assert_eq!(owning_def.accessor_path().to_string(), "myLib.", "accessor namespace");
+
+        let mut tx = begin_mut_tx(&stdb);
+        create_table_from_def_with_prefix(&stdb, &mut tx, owning_def, table_def, &prefix)?;
+
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "my_lib.fruit_basket")?
+            .expect("table should be stored under its canonical namespace");
+        assert!(
+            stdb.table_id_from_name_mut(&tx, "myLib.fruit_basket")?.is_none(),
+            "the accessor namespace must not qualify the canonical name"
+        );
+        // The alias resolves through the datastore's name-or-alias lookup, as the module does.
+        assert_eq!(
+            stdb.table_id_from_name_mut(&tx, "myLib.FruitBasket")?,
+            Some(table_id),
+            "accessor path + accessor name must resolve to the table"
+        );
+
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert_eq!(schema.alias.as_deref(), Some("myLib.FruitBasket"));
+        let index = schema.indexes.first().expect("index should exist");
+        assert!(
+            index.index_name.starts_with("my_lib."),
+            "index canonical name should be qualified by the canonical namespace: {}",
+            index.index_name
+        );
+        assert_eq!(index.alias.as_deref(), Some("myLib.basket_id_idx"));
+
+        stdb.commit_tx(tx)?;
+        Ok(())
     }
 
     /// Submodule tables must be stored under their namespaced *canonical* name, with the
@@ -1640,11 +1940,13 @@ mod test {
         let stdb = stdb.reopen()?;
 
         // After replay, the allocation cursor should be preserved.
+        // We only care that the next value is strictly higher than all the previous ones,
+        // but we happen to get the value 4 here because we do not perform any sequence allocation batching.
         {
             let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
             assert!(
-                ids.iter().last().unwrap() == &4097,
-                "expected id 4097 after reopen, got {ids:?}"
+                ids.iter().last().unwrap() == &4,
+                "expected id 4 after reopen, got {ids:?}"
             );
         }
 

@@ -64,7 +64,8 @@ namespace SpacetimeDB
 
             foreach (var wrapper in wrappers)
             {
-                wrapper.InvokeFailure(ctx, error);
+                try { wrapper.InvokeFailure(ctx, error); }
+                catch (Exception e) { Log.Exception(e); }
             }
         }
 

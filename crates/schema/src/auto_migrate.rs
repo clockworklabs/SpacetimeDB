@@ -15,12 +15,13 @@ use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
     hash_bytes, Identity,
 };
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     raw_identifier::RawIdentifier,
     AlgebraicType, WithTypespace,
 };
-use termcolor_formatter::{ColorScheme, TermColorFormatter};
+use termcolor_formatter::TermColorFormatter;
 use thiserror::Error;
 mod formatter;
 mod termcolor_formatter;
@@ -69,23 +70,17 @@ impl<'def> MigratePlan<'def> {
     }
 
     pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
-        use PrettyPrintStyle::*;
         match self {
             MigratePlan::Manual(_) => {
                 anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
             }
 
-            MigratePlan::Auto(plan) => match style {
-                NoColor => {
-                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::Never);
-                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
-                }
-                AnsiColor => {
-                    let mut fmt = TermColorFormatter::new(ColorScheme::default(), termcolor::ColorChoice::AlwaysAnsi);
-                    format_plan(&mut fmt, plan).map(|_| fmt.to_string())
-                }
+            MigratePlan::Auto(plan) => {
+                let mut fmt = TermColorFormatter::new(style);
+                format_plan(&mut fmt, plan)
+                    .map(|_| fmt.into_string())
+                    .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
             }
-            .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}")),
         }
     }
 }
@@ -307,6 +302,8 @@ pub enum AutoMigrateStep<'def> {
 
     /// Change the accessor name alias of an existing table.
     ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Change IDC outbox metadata on an existing table.
+    ChangeOutbox(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Change the accessor name alias of an existing column.
     ChangeColumnAccessorName(<TableDef as ModuleDefLookup>::Key<'def>, &'def Identifier),
 
@@ -462,6 +459,30 @@ pub enum AutoMigrateError {
 
     #[error("Changing the event flag of table {table} requires a manual migration")]
     ChangeTableEventFlag { table: Identifier },
+
+    #[error(
+        "Changing the target column of outbox table {table} from {old_target:?} to {new_target:?} requires a manual migration"
+    )]
+    ChangeOutboxTargetColumn {
+        table: Identifier,
+        old_target: ColId,
+        new_target: ColId,
+    },
+
+    #[error(
+        "Changing the primary key of outbox table {table} from {old_primary_key:?} to {new_primary_key:?} requires a manual migration"
+    )]
+    ChangeOutboxPrimaryKey {
+        table: Identifier,
+        old_primary_key: Option<ColId>,
+        new_primary_key: Option<ColId>,
+    },
+
+    #[error("Adding outbox metadata to table {table} requires a manual migration")]
+    AddOutbox { table: Identifier },
+
+    #[error("Removing outbox metadata from table {table} requires a manual migration")]
+    RemoveOutbox { table: Identifier },
 
     #[error(
         "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
@@ -773,7 +794,7 @@ fn auto_migrate_table<'def>(
     if old.primary_key != new.primary_key {
         plan.steps.push(AutoMigrateStep::ChangePrimaryKey(key));
     }
-    if old.accessor_name != new.accessor_name {
+    if old.accessor_name != new.accessor_name || old_owning.accessor_path() != new_owning.accessor_path() {
         plan.steps.push(AutoMigrateStep::ChangeTableAccessorName(key));
     }
     if old.schedule != new.schedule {
@@ -784,6 +805,36 @@ fn auto_migrate_table<'def>(
             plan.steps.push(AutoMigrateStep::AddSchedule(new_schedule.key()));
         }
     }
+    let outbox_ok: Result<()> = match (&old.outbox, &new.outbox) {
+        (None, Some(_)) => Err(AutoMigrateError::AddOutbox {
+            table: old.name.clone(),
+        }
+        .into()),
+        (Some(_), None) => Err(AutoMigrateError::RemoveOutbox {
+            table: old.name.clone(),
+        }
+        .into()),
+        (Some(_), Some(_)) if old.primary_key != new.primary_key => Err(AutoMigrateError::ChangeOutboxPrimaryKey {
+            table: old.name.clone(),
+            old_primary_key: old.primary_key,
+            new_primary_key: new.primary_key,
+        }
+        .into()),
+        (Some(old_outbox), Some(new_outbox)) if old_outbox.target_column != new_outbox.target_column => {
+            Err(AutoMigrateError::ChangeOutboxTargetColumn {
+                table: old.name.clone(),
+                old_target: old_outbox.target_column,
+                new_target: new_outbox.target_column,
+            }
+            .into())
+        }
+        _ => {
+            if old.outbox != new.outbox {
+                plan.steps.push(AutoMigrateStep::ChangeOutbox(key));
+            }
+            Ok(())
+        }
+    };
 
     // Diff columns directly using the table defs (avoids root-only ModuleDefLookup).
     let new_col_by_name: HashMap<&Identifier, &ColumnDef> = new.columns.iter().map(|c| (&c.name, c)).collect();
@@ -880,8 +931,8 @@ fn auto_migrate_table<'def>(
         }))
         .collect_all_errors::<ArrayMonoid<Any, 3>>();
 
-    let ((), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
-        (type_ok, event_ok, columns_ok).combine_errors()?;
+    let ((), (), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
+        (type_ok, event_ok, outbox_ok, columns_ok).combine_errors()?;
 
     if event_schema_changed {
         // If we're rewriting an event table, there's no data migration to do.
@@ -1098,10 +1149,10 @@ fn auto_migrate_indexes<'def>(
     // Keyed by the index's namespace-qualified key; the value carries its table's key so
     // sub-objects of added/removed tables can be skipped.
     let index_map = |module: &'def ModuleDef| {
-        let mut map: HashMap<IndexKey<'def>, (TableKey<'def>, &'def IndexDef)> = HashMap::new();
-        for (_, _, table) in module.all_tables_with_prefix() {
+        let mut map: HashMap<IndexKey<'def>, (TableKey<'def>, &'def ModuleDef, &'def IndexDef)> = HashMap::new();
+        for (_, owning, table) in module.all_tables_with_prefix() {
             for index in table.indexes.values() {
-                map.insert(index.key(), (table.key(), index));
+                map.insert(index.key(), (table.key(), owning, index));
             }
         }
         map
@@ -1110,14 +1161,14 @@ fn auto_migrate_indexes<'def>(
     let new_indexes = index_map(new_module);
 
     // Removed indexes: in old but not in new, and not part of a removed table.
-    for (index_key, (table_key, _)) in &old_indexes {
+    for (index_key, (table_key, _, _)) in &old_indexes {
         if !new_indexes.contains_key(index_key) && !removed_tables.contains(table_key) {
             plan.steps.push(AutoMigrateStep::RemoveIndex(*index_key));
         }
     }
 
     // Added indexes: in new but not in old, and not part of a newly added table.
-    for (index_key, (table_key, _)) in &new_indexes {
+    for (index_key, (table_key, _, _)) in &new_indexes {
         if !old_indexes.contains_key(index_key) && !new_tables.contains(table_key) {
             plan.steps.push(AutoMigrateStep::AddIndex(*index_key));
         }
@@ -1126,12 +1177,12 @@ fn auto_migrate_indexes<'def>(
     // Changed indexes: same name in both.
     let change_results: Vec<Result<()>> = old_indexes
         .iter()
-        .filter_map(|(index_key, (_, old_idx))| {
+        .filter_map(|(index_key, (_, old_owning, old_idx))| {
             new_indexes
                 .get(index_key)
-                .map(|(_, new_idx)| (*index_key, old_idx, new_idx))
+                .map(|(_, new_owning, new_idx)| (*index_key, *old_owning, old_idx, *new_owning, new_idx))
         })
-        .map(|(index_key, old_idx, new_idx)| {
+        .map(|(index_key, old_owning, old_idx, new_owning, new_idx)| {
             if old_idx.accessor_name != new_idx.accessor_name {
                 Err(AutoMigrateError::ChangeIndexAccessor {
                     index: old_idx.name.clone(),
@@ -1143,7 +1194,11 @@ fn auto_migrate_indexes<'def>(
                 if old_idx.algorithm != new_idx.algorithm {
                     plan.steps.push(AutoMigrateStep::RemoveIndex(index_key));
                     plan.steps.push(AutoMigrateStep::AddIndex(index_key));
-                } else if old_idx.source_name != new_idx.source_name {
+                } else if old_idx.source_name != new_idx.source_name
+                    || old_owning.accessor_path() != new_owning.accessor_path()
+                {
+                    // The stored alias is the accessor namespace joined with the source
+                    // name, so an accessor namespace change rewrites it too.
                     plan.steps.push(AutoMigrateStep::ChangeIndexSourceName(index_key));
                 }
                 Ok(())
@@ -1316,7 +1371,7 @@ mod tests {
         (ns(namespace), Box::leak(Box::new(RawIdentifier::new(name))))
     }
 
-    fn create_module_def(build_module: impl Fn(&mut RawModuleDefV9Builder)) -> ModuleDef {
+    fn create_module_def(build_module: impl FnOnce(&mut RawModuleDefV9Builder)) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         build_module(&mut builder);
         builder
@@ -1325,13 +1380,60 @@ mod tests {
             .expect("new_def should be a valid database definition")
     }
 
-    fn create_module_def_v10(build_module: impl Fn(&mut RawModuleDefV10Builder)) -> ModuleDef {
+    fn create_module_def_v10(build_module: impl FnOnce(&mut RawModuleDefV10Builder)) -> ModuleDef {
         let mut builder = RawModuleDefV10Builder::new();
         build_module(&mut builder);
         builder
             .finish()
             .try_into()
             .expect("new_def should be a valid database definition")
+    }
+
+    fn outbox_module_def(outbox: Option<(&str, Vec<ColId>, Option<&str>, &str)>) -> ModuleDef {
+        outbox_module_def_with_target(outbox, ColId(1))
+    }
+
+    fn outbox_module_def_with_target(
+        outbox: Option<(&str, Vec<ColId>, Option<&str>, &str)>,
+        target_column: ColId,
+    ) -> ModuleDef {
+        outbox_module_def_with_target_and_primary_key(outbox, target_column, ColId(0))
+    }
+
+    fn outbox_module_def_with_target_and_primary_key(
+        outbox: Option<(&str, Vec<ColId>, Option<&str>, &str)>,
+        target_column: ColId,
+        primary_key: ColId,
+    ) -> ModuleDef {
+        create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "outbound_pings",
+                    ProductType::from([
+                        ("msg_id", AlgebraicType::U64),
+                        ("target", AlgebraicType::identity()),
+                        ("payload", AlgebraicType::String),
+                        ("extra", AlgebraicType::U64),
+                        ("other_target", AlgebraicType::identity()),
+                    ]),
+                    true,
+                )
+                .with_primary_key(primary_key)
+                .with_unique_constraint(primary_key)
+                .with_index_no_accessor_name(btree(primary_key), "outbound_pings_primary_key_idx_btree")
+                .finish();
+
+            if let Some((remote_reducer, arg_columns, on_result_reducer, signature_hash)) = outbox {
+                builder.add_outbox(
+                    "outbound_pings",
+                    remote_reducer.to_owned(),
+                    target_column,
+                    arg_columns,
+                    on_result_reducer.map(str::to_owned),
+                    signature_hash.to_owned(),
+                );
+            }
+        })
     }
 
     fn initial_module_def() -> ModuleDef {
@@ -2353,6 +2455,103 @@ mod tests {
     }
 
     #[test]
+    fn migrate_added_outbox_metadata() {
+        let old_def = outbox_module_def(None);
+        let new_def = outbox_module_def(Some(("receive_ping", vec![ColId(2)], None, "hash-v1")));
+
+        let result = ponder_auto_migrate(&old_def, &new_def);
+        let table_name = expect_identifier("outbound_pings");
+
+        expect_error_matching!(
+            result,
+            AutoMigrateError::AddOutbox { table } => table == &table_name
+        );
+    }
+
+    #[test]
+    fn migrate_changed_outbox_metadata() {
+        let old_def = outbox_module_def(Some(("receive_ping", vec![ColId(2)], None, "hash-v1")));
+        let new_def = outbox_module_def(Some((
+            "receive_pong",
+            vec![ColId(2), ColId(3)],
+            Some("on_result"),
+            "hash-v2",
+        )));
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("changing outbox metadata should auto-migrate");
+        let steps = &plan.steps[..];
+        let root = NamespacePath::root();
+        let table_name = expect_identifier("outbound_pings");
+
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeOutbox((&root, &table_name))),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::DisconnectAllUsers),
+            "steps: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_changed_outbox_target_column_requires_manual_migration() {
+        let old_def = outbox_module_def_with_target(Some(("receive_ping", vec![ColId(2)], None, "hash-v1")), ColId(1));
+        let new_def = outbox_module_def_with_target(Some(("receive_ping", vec![ColId(2)], None, "hash-v1")), ColId(4));
+
+        let result = ponder_auto_migrate(&old_def, &new_def);
+        let table_name = expect_identifier("outbound_pings");
+
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeOutboxTargetColumn {
+                table,
+                old_target,
+                new_target,
+            } => table == &table_name && old_target == &ColId(1) && new_target == &ColId(4)
+        );
+    }
+
+    #[test]
+    fn migrate_changed_outbox_primary_key_requires_manual_migration() {
+        let old_def = outbox_module_def_with_target_and_primary_key(
+            Some(("receive_ping", vec![ColId(2)], None, "hash-v1")),
+            ColId(1),
+            ColId(0),
+        );
+        let new_def = outbox_module_def_with_target_and_primary_key(
+            Some(("receive_ping", vec![ColId(2)], None, "hash-v1")),
+            ColId(1),
+            ColId(3),
+        );
+
+        let result = ponder_auto_migrate(&old_def, &new_def);
+        let table_name = expect_identifier("outbound_pings");
+
+        expect_error_matching!(
+            result,
+            AutoMigrateError::ChangeOutboxPrimaryKey {
+                table,
+                old_primary_key,
+                new_primary_key,
+            } => table == &table_name && old_primary_key == &Some(ColId(0)) && new_primary_key == &Some(ColId(3))
+        );
+    }
+
+    #[test]
+    fn migrate_removed_outbox_metadata() {
+        let old_def = outbox_module_def(Some(("receive_ping", vec![ColId(2)], None, "hash-v1")));
+        let new_def = outbox_module_def(None);
+
+        let result = ponder_auto_migrate(&old_def, &new_def);
+        let table_name = expect_identifier("outbound_pings");
+
+        expect_error_matching!(
+            result,
+            AutoMigrateError::RemoveOutbox { table } => table == &table_name
+        );
+    }
+
+    #[test]
     fn migrate_column_with_changed_accessor_name() {
         let old_def = create_module_def_v10(|builder| {
             builder
@@ -2929,6 +3128,91 @@ mod tests {
         assert!(
             namespaced.is_empty(),
             "unchanged submodule should produce no steps for lib.sessions: {plan:#?}"
+        );
+    }
+
+    /// Remounting a submodule under a different accessor key while pinning the same
+    /// canonical namespace keeps every table: only the aliases are rewritten.
+    #[test]
+    fn submodule_accessor_namespace_change_rewrites_aliases() {
+        let submodule = |namespace: &str| {
+            make_submodule(namespace, |b| {
+                b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_index(btree(0), "sessions_id_idx", "sessions_id_idx")
+                    .finish();
+            })
+        };
+        // Old: mounted as `my_lib`, which is already canonical.
+        let old = create_module_def_with_submodules(|_| {}, vec![submodule("my_lib")]);
+        // New: mounted as `myLib`, pinned to the same canonical namespace `my_lib`.
+        let new = create_module_def_with_submodules(
+            |b| {
+                let mut explicit = ExplicitNames::default();
+                explicit.insert_namespace("myLib", "my_lib");
+                b.add_explicit_names(explicit);
+            },
+            vec![submodule("myLib")],
+        );
+        assert_eq!(
+            new.submodules()["my_lib"].accessor_path().to_string(),
+            "myLib.",
+            "precondition: accessor namespace differs while canonical is unchanged"
+        );
+
+        let plan = ponder_auto_migrate(&old, &new).expect("accessor namespace change should auto-migrate");
+        let steps = &plan.steps[..];
+
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeTableAccessorName(key("my_lib", "sessions"))),
+            "{steps:?}"
+        );
+        // The index's canonical name is generated from its columns; only its alias changes.
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeIndexSourceName(sub_key(
+                "my_lib",
+                "sessions_id_idx_btree"
+            ))),
+            "{steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::RemoveTable(key("my_lib", "sessions")))
+                && !steps.contains(&AutoMigrateStep::AddTable(key("my_lib", "sessions"))),
+            "{steps:?}"
+        );
+    }
+
+    /// The canonical namespace is the table's identity: changing it (here by dropping the
+    /// case conversion that a previous publish relied on) removes and re-adds the tables.
+    #[test]
+    fn submodule_canonical_namespace_change_is_remove_and_add() {
+        let submodule = || {
+            make_submodule("myLib", |b| {
+                b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .finish();
+            })
+        };
+        let old = create_module_def_with_submodules(|_| {}, vec![submodule()]);
+        let new = create_module_def_with_submodules(
+            |b| {
+                let mut explicit = ExplicitNames::default();
+                explicit.insert_namespace("myLib", "myLib");
+                b.add_explicit_names(explicit);
+            },
+            vec![submodule()],
+        );
+
+        let plan = ponder_auto_migrate(&old, &new).expect("canonical namespace change should auto-migrate");
+        let steps = &plan.steps[..];
+
+        assert!(plan.disconnects_all_users(), "{plan:#?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::RemoveTable(key("my_lib", "sessions"))),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&AutoMigrateStep::AddTable(key("myLib", "sessions"))),
+            "{steps:?}"
         );
     }
 
