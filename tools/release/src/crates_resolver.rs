@@ -102,7 +102,9 @@ pub fn find_workspace_root() -> Result<PathBuf> {
 
 /// Returns a list of crates to publish in the correct order
 pub fn get_crates_to_publish() -> Result<Vec<String>> {
+    // Find the workspace root (public directory)
     let workspace_root = find_workspace_root()?;
+
     get_publish_order(get_cargo_metadata(&workspace_root)?)
 }
 
@@ -150,6 +152,7 @@ mod tests {
     fn package(name: &str, dependencies: Vec<Value>) -> Value {
         json!({
             "name": name,
+            "manifest_path": format!("/workspace/{name}/Cargo.toml"),
             "dependencies": dependencies,
         })
     }
