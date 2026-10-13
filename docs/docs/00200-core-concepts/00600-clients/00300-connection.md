@@ -456,11 +456,11 @@ Enable `.with_automatic_reconnect()` to recover after an established connection 
 
 `on_disconnect(|ctx, error, next| ...)` and `on_connect_error(|ctx, error, next| ...)` receive `Option<NextReconnect>`, with the next attempt number and `Duration`, or `None` when no retry is scheduled. Initial connection failures are not retried. `disconnect()` cancels recovery.
 
-Use `.with_automatic_reconnect_options(AutomaticReconnectOptions { min_delay, max_delay })` to configure backoff. Defaults are one second and 30 seconds, with exponential growth and 50% jitter clamped to the bounds. The minimum delay is at least 500 ms; the maximum is at least one second and the minimum delay.
+Use `.with_automatic_reconnect_options(AutomaticReconnectOptions { min_delay, max_delay })` to configure backoff. Defaults are one second and 30 seconds, with exponential growth and 50% jitter clamped to the bounds. The SDK raises `min_delay` to 500 ms if it is lower, then raises `max_delay` to the greater of one second and `min_delay` if necessary.
 
 For expiring credentials, combine `.with_token(Some(initial_token))` and `.with_token_provider(|| async { /* return Result<String> */ })`. The provider refreshes near expiry or after rejection and must return a token for the same identity. Provider failures retry; rejection of a fresh token and identity changes are terminal.
 
-Calls made while reconnecting fail with a disconnected error. Calls interrupted by a drop may have executed: reducer/procedure callback errors expose `is_unknown_result()`. Calls are never replayed. Subscription creation is queued during recovery, and cancellation removes a set from replay.
+Function calls (i.e. reducers/procedures) made while reconnecting fail with a disconnected error. Calls interrupted by a drop may have executed: callback errors expose `is_unknown_result()`. Calls are never replayed. Subscription creation is queued during recovery, and cancellation removes a set from replay.
 
 Regenerate Rust bindings to expose `is_reconnecting()`. Lifecycle error callbacks gain the third argument; subscription `on_applied` closures must implement `FnMut`. `on_connect` remains `FnOnce`. Automatic reconnect requires a server supporting session replacement and batch subscriptions.
 
