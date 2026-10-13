@@ -22,7 +22,7 @@ impl CratesRelease {
 
     fn publish_crates(&self, workspace_root: &Path, crates: &[&CrateToPublish]) -> Result<(), String> {
         if crates.is_empty() {
-            println!("All selected crate versions are already published; nothing to publish.");
+            println!("All selected crates are already published; nothing to publish.");
             return Ok(());
         }
         let cargo_home = if self.dry_run {
@@ -42,10 +42,6 @@ impl CratesRelease {
         }
         if let Some(home) = &cargo_home {
             cmd.env("CARGO_HOME", home.path());
-            println!(
-                "DRY RUN: Verifying packages with temporary CARGO_HOME={}",
-                home.path().display()
-            );
         }
         util::print_command(&cmd);
         let status = cmd
@@ -141,14 +137,21 @@ fn index_contains_version(body: &str, krate: &CrateToPublish) -> Result<bool, St
 
 impl ReleaseTarget for CratesRelease {
     fn release(&self) -> Result<(), String> {
+        println!("Finding crates to publish to crates.io...");
+
         let workspace_root = crate::crates_resolver::find_workspace_root()
-            .map_err(|err| format!("Failed to find workspace root: {err}"))?;
+            .map_err(|e| format!("Failed to find workspace root: {}", e))?;
         let crates = crate::crates_resolver::get_crates_to_publish()
-            .map_err(|err| format!("Failed to find crates to publish: {err}"))?;
-        println!("Crates selected for release:");
+            .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
+        println!("\nCrates to publish in order:");
         for krate in &crates {
-            println!("  - {}@{}", krate.name, krate.version);
+            println!("  - {}", krate.name);
         }
+        if self.dry_run {
+            println!("\nDRY RUN: No crates will be published");
+        }
+
+        println!("\nStarting publish process...");
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -156,7 +159,10 @@ impl ReleaseTarget for CratesRelease {
         let mut pending = Vec::new();
         for krate in &crates {
             if is_published(&client, CRATES_IO_INDEX, krate)? {
-                println!("{}@{} is already published; skipping.", krate.name, krate.version);
+                println!(
+                    "Crate {} already published on crates.io; skipping (treating as success).",
+                    krate.name
+                );
             } else {
                 pending.push(krate);
             }
@@ -167,10 +173,11 @@ impl ReleaseTarget for CratesRelease {
                 self.add_crate_owners(&krate.name)?;
             }
         }
-        println!(
-            "Crate release{} completed successfully!",
-            if self.dry_run { " dry-run" } else { "" }
-        );
+        if self.dry_run {
+            println!("\nDry run completed successfully!");
+        } else {
+            println!("\nAll crates published successfully!");
+        }
         Ok(())
     }
 
