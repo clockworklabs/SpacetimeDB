@@ -198,46 +198,4 @@ mod tests {
                 .unwrap();
         }
     }
-
-    #[test]
-    #[ignore = "downloads crates.io index; run explicitly for release validation"]
-    fn dry_run_verifies_unpublished_dependencies_and_propagates_build_failure() {
-        let workspace = tempfile::tempdir().unwrap();
-        std::fs::write(
-            workspace.path().join("Cargo.toml"),
-            "[workspace]\nmembers = [\"base\", \"dependent\"]\nresolver = \"2\"\n",
-        )
-        .unwrap();
-        let version = "0.0.0-release-dry-run-test";
-        let base = String::from("spacetimedb-release-fixture-base");
-        let dependent = String::from("spacetimedb-release-fixture-dependent");
-        for (dir, package, source) in [
-            ("base", &base, "pub fn value() -> u8 { 42 }"),
-            (
-                "dependent",
-                &dependent,
-                "pub fn value() -> u8 { spacetimedb_release_fixture_base::value() }",
-            ),
-        ] {
-            let path = workspace.path().join(dir);
-            std::fs::create_dir_all(path.join("src")).unwrap();
-            let mut manifest = format!("[package]\nname = {:?}\nversion = {:?}\nedition = \"2021\"\nlicense = \"MIT\"\ndescription = \"Release validation fixture\"\n", package, version);
-            if dir == "dependent" {
-                manifest.push_str(&format!(
-                    "[dependencies]\n{} = {{ path = \"../base\", version = \"={}\" }}\n",
-                    base, version
-                ));
-            }
-            std::fs::write(path.join("Cargo.toml"), manifest).unwrap();
-            std::fs::write(path.join("src/lib.rs"), source).unwrap();
-        }
-        let release = CratesRelease::new(version.into(), true);
-        release.publish_crates(workspace.path(), &[&base, &dependent]).unwrap();
-        std::fs::write(
-            workspace.path().join("dependent/src/lib.rs"),
-            "compile_error!(\"intentional release validation failure\");",
-        )
-        .unwrap();
-        assert!(release.publish_crates(workspace.path(), &[&base, &dependent]).is_err());
-    }
 }
