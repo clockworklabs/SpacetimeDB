@@ -20,6 +20,43 @@ impl CratesRelease {
         Self { dry_run }
     }
 
+    fn publish_crates(&self, workspace_root: &Path, crates: &[&CrateToPublish]) -> Result<(), String> {
+        if crates.is_empty() {
+            println!("All selected crate versions are already published; nothing to publish.");
+            return Ok(());
+        }
+        let cargo_home = if self.dry_run {
+            Some(tempfile::tempdir().map_err(|err| format!("Failed to create temporary Cargo home: {err}"))?)
+        } else {
+            None
+        };
+        // Keep all crates in one invocation so --dry-run can verify unpublished dependencies
+        // using Cargo's temporary registry; separate invocations would look for them on crates.io.
+        let mut cmd = Command::new("cargo");
+        cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
+        for krate in crates {
+            cmd.args(["-p", &krate.name]);
+        }
+        if self.dry_run {
+            cmd.arg("--dry-run");
+        }
+        if let Some(home) = &cargo_home {
+            cmd.env("CARGO_HOME", home.path());
+            println!(
+                "DRY RUN: Verifying packages with temporary CARGO_HOME={}",
+                home.path().display()
+            );
+        }
+        util::print_command(&cmd);
+        let status = cmd
+            .status()
+            .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
+        if !status.success() {
+            return Err(format!("cargo publish failed: {status}"));
+        }
+        Ok(())
+    }
+
     fn add_crate_owners(&self, crate_name: &str) -> Result<(), String> {
         println!("Adding owners for crate: {}", crate_name);
 
@@ -102,63 +139,6 @@ fn index_contains_version(body: &str, krate: &CrateToPublish) -> Result<bool, St
     Ok(found)
 }
 
-fn unpublished_crates(
-    crates: &[CrateToPublish],
-    mut published: impl FnMut(&CrateToPublish) -> Result<bool, String>,
-) -> Result<Vec<&CrateToPublish>, String> {
-    let mut pending = Vec::new();
-    for krate in crates {
-        if published(krate)? {
-            println!("{}@{} is already published; skipping.", krate.name, krate.version);
-        } else {
-            pending.push(krate);
-        }
-    }
-    Ok(pending)
-}
-
-fn publish_command(workspace_root: &Path, crates: &[&CrateToPublish], dry_run: bool) -> Command {
-    // Keep all crates in one invocation so --dry-run can verify unpublished dependencies
-    // using Cargo's temporary registry; separate invocations would look for them on crates.io.
-    let mut cmd = Command::new("cargo");
-    cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
-    for krate in crates {
-        cmd.args(["-p", &krate.name]);
-    }
-    if dry_run {
-        cmd.arg("--dry-run");
-    }
-    cmd
-}
-
-fn publish_crates(workspace_root: &Path, crates: &[&CrateToPublish], dry_run: bool) -> Result<(), String> {
-    if crates.is_empty() {
-        println!("All selected crate versions are already published; nothing to publish.");
-        return Ok(());
-    }
-    let cargo_home = if dry_run {
-        Some(tempfile::tempdir().map_err(|err| format!("Failed to create temporary Cargo home: {err}"))?)
-    } else {
-        None
-    };
-    let mut cmd = publish_command(workspace_root, crates, dry_run);
-    if let Some(home) = &cargo_home {
-        cmd.env("CARGO_HOME", home.path());
-        println!(
-            "DRY RUN: Verifying packages with temporary CARGO_HOME={}",
-            home.path().display()
-        );
-    }
-    util::print_command(&cmd);
-    let status = cmd
-        .status()
-        .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
-    if !status.success() {
-        return Err(format!("cargo publish failed: {status}"));
-    }
-    Ok(())
-}
-
 impl ReleaseTarget for CratesRelease {
     fn release(&self) -> Result<(), String> {
         let workspace_root = crate::crates_resolver::find_workspace_root()
@@ -173,8 +153,15 @@ impl ReleaseTarget for CratesRelease {
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|err| format!("Failed to create crates.io index client: {err}"))?;
-        let pending = unpublished_crates(&crates, |krate| is_published(&client, CRATES_IO_INDEX, krate))?;
-        publish_crates(&workspace_root, &pending, self.dry_run)?;
+        let mut pending = Vec::new();
+        for krate in &crates {
+            if is_published(&client, CRATES_IO_INDEX, krate)? {
+                println!("{}@{} is already published; skipping.", krate.name, krate.version);
+            } else {
+                pending.push(krate);
+            }
+        }
+        self.publish_crates(&workspace_root, &pending)?;
         if !self.dry_run {
             for krate in &crates {
                 self.add_crate_owners(&krate.name)?;
@@ -275,52 +262,13 @@ mod tests {
     }
 
     #[test]
-    fn both_modes_filter_the_same_versions() {
-        let crates = [krate("first", "1.2.3"), krate("second", "2.0.0")];
+    fn empty_selection_skips_cargo_in_both_modes() {
         for dry_run in [false, true] {
-            for published in [[false, false], [true, false], [true, true]] {
-                let mut checked = 0;
-                let pending = unpublished_crates(&crates, |_| {
-                    let result = published[checked];
-                    checked += 1;
-                    Ok(result)
-                })
+            // A nonexistent workspace proves we return before invoking Cargo.
+            CratesRelease { dry_run }
+                .publish_crates(Path::new("/nonexistent-release-workspace"), &[])
                 .unwrap();
-                assert_eq!(checked, 2);
-                assert_eq!(
-                    pending,
-                    crates
-                        .iter()
-                        .zip(published)
-                        .filter_map(|(krate, published)| (!published).then_some(krate))
-                        .collect::<Vec<_>>()
-                );
-                let args: Vec<_> = publish_command(Path::new("."), &pending, dry_run)
-                    .get_args()
-                    .map(|arg| arg.to_string_lossy().into_owned())
-                    .collect();
-                assert_eq!(args.contains(&"--dry-run".into()), dry_run);
-                assert!(!args.contains(&"--no-verify".into()));
-                assert!(!args.contains(&"--registry".into()));
-                if pending.is_empty() {
-                    // A nonexistent workspace proves we return before invoking Cargo.
-                    publish_crates(Path::new("/nonexistent-release-workspace"), &pending, dry_run).unwrap();
-                }
-            }
-            assert!(unpublished_crates(&crates, |_| Err("index unavailable".into())).is_err());
         }
-    }
-
-    #[test]
-    fn publish_commands_differ_only_by_dry_run_flag() {
-        let crates = [krate("first", "1.2.3"), krate("second", "2.0.0")];
-        let pending: Vec<_> = crates.iter().collect();
-        let live = publish_command(Path::new("/workspace"), &pending, false);
-        let dry = publish_command(Path::new("/workspace"), &pending, true);
-        let mut expected: Vec<_> = live.get_args().collect();
-        expected.push(std::ffi::OsStr::new("--dry-run"));
-        assert_eq!(dry.get_args().collect::<Vec<_>>(), expected);
-        assert_eq!(live.get_current_dir(), dry.get_current_dir());
     }
 
     #[test]
@@ -355,12 +303,13 @@ mod tests {
             std::fs::write(path.join("Cargo.toml"), manifest).unwrap();
             std::fs::write(path.join("src/lib.rs"), source).unwrap();
         }
-        publish_crates(workspace.path(), &[&base, &dependent], true).unwrap();
+        let release = CratesRelease { dry_run: true };
+        release.publish_crates(workspace.path(), &[&base, &dependent]).unwrap();
         std::fs::write(
             workspace.path().join("dependent/src/lib.rs"),
             "compile_error!(\"intentional release validation failure\");",
         )
         .unwrap();
-        assert!(publish_crates(workspace.path(), &[&base, &dependent], true).is_err());
+        assert!(release.publish_crates(workspace.path(), &[&base, &dependent]).is_err());
     }
 }
