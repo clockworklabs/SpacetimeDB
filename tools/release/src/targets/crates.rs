@@ -30,8 +30,9 @@ impl CratesRelease {
         } else {
             None
         };
-        // Keep all crates in one invocation so --dry-run can verify unpublished dependencies
-        // using Cargo's temporary registry; separate invocations would look for them on crates.io.
+        // NOTE: We must keep all crates in one publish invocation.
+        // Without this, dry-run doesn't work properly: every crate will look for its deps on crates.io
+        // and fail, but if they're on one invocation then they're able to resolve properly.
         let mut cmd = Command::new("cargo");
         cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
         for c in crates {
