@@ -8726,9 +8726,9 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "duct",
- "semver",
  "serde",
  "serde_json",
+ "toml 0.8.23",
 ]
 
 [[package]]
