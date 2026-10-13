@@ -18,6 +18,7 @@ export const ANTIGRAVITY_TITLE_PROMPT = 'You are a conversation title generator.
 export const ANTIGRAVITY_ACCOUNT_HOST = 'daily-cloudcode-pa.googleapis.com';
 export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, readonly string[]>> = {
   'gemini-3.8-flash': ['gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high'],
+  'gemini-4-argon': ['gemini-4-argon-low', 'gemini-4-argon-medium', 'gemini-4-argon-high'],
   'gemini-3.1-pro-preview': ['gemini-3.1-pro-low'],
   'gemini-3.1-pro-preview-customtools': ['gemini-pro-agent'],
 };

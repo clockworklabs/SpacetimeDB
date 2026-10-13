@@ -306,6 +306,9 @@ test('Google account requests reach Code Assist with the renewed token and only 
     Buffer.from(JSON.stringify({ model, request: { contents: [] } })), '/v1internal:streamGenerateContent');
   assert.equal(generate('gemini-3.8-flash-medium').model, 'gemini-3.8-flash-medium');
   assert.throws(() => generate('gemini-pro-agent'), /does not match/);
+  const argon = brokerProtocol({ ...config, model: 'gemini-4-argon' }).parseRequest(
+    Buffer.from(JSON.stringify({ model: 'gemini-4-argon-medium', request: { contents: [] } })), '/v1internal:streamGenerateContent');
+  assert.equal(argon.model, 'gemini-4-argon-medium');
   // Seen live: the CLI asks a small model whether a running command waits for input. The broker
   // refused it 556 times in one study; it is forwarded as the title call is, by its own prompt.
   const helper = (text: string) => flash.parseRequest(Buffer.from(JSON.stringify({ model: 'gemini-2.5-flash-lite',
