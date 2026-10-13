@@ -57,13 +57,21 @@ fn get_crate_deps(crate_name: &String, packages: &HashMap<String, Package>) -> R
 
     println!("\nChecking crate '{}'...", crate_name);
 
-    // Declared dependencies include inactive optional and target-specific dependencies.
-    // Only local normal/build dependencies need to be added to the publication list.
+    // Include all local normal and build dependencies, including optional dependencies
+    // and dependencies for any target. Exclude dev dependencies and registry dependencies.
     let deps: Vec<_> = package
         .dependencies
         .iter()
         .filter(|dependency| dependency.kind.as_deref() != Some("dev") && dependency.path.is_some())
-        .map(|dependency| dependency.name.clone())
+        .map(|dependency| {
+            assert!(
+                dependency.name.starts_with("spacetimedb-"),
+                "Local publication dependency '{}' of '{}' must start with 'spacetimedb-'",
+                dependency.name,
+                crate_name
+            );
+            dependency.name.clone()
+        })
         .collect();
     if !deps.is_empty() {
         for name in &deps {
@@ -200,7 +208,7 @@ mod tests {
 
     #[test]
     fn includes_local_build_dependencies_and_excludes_dev_and_registry_dependencies() {
-        let mut build = dependency("build-helper");
+        let mut build = dependency("spacetimedb-build-helper");
         build["kind"] = json!("build");
         let mut dev = dependency("unpublished-tests");
         dev["kind"] = json!("dev");
@@ -210,10 +218,22 @@ mod tests {
             order(vec![
                 package("spacetimedb", vec![build, dev, registry]),
                 package("spacetimedb-sdk", vec![]),
-                package("build-helper", vec![]),
+                package("spacetimedb-build-helper", vec![]),
             ]),
-            ["build-helper", "spacetimedb-sdk", "spacetimedb"]
+            ["spacetimedb-build-helper", "spacetimedb-sdk", "spacetimedb"]
         );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Local publication dependency 'build-helper' of 'spacetimedb' must start with 'spacetimedb-'"
+    )]
+    fn panics_for_local_dependencies_without_spacetimedb_prefix() {
+        order(vec![
+            package("spacetimedb", vec![dependency("build-helper")]),
+            package("spacetimedb-sdk", vec![]),
+            package("build-helper", vec![]),
+        ]);
     }
 
     #[test]
