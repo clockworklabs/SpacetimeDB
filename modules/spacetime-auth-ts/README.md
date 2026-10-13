@@ -88,8 +88,8 @@ const signup = await fetch('/auth/password/signup', {
 if (!signup.ok) throw new Error(`signup_failed:${signup.status}`);
 const { token } = (await signup.json()) as { token: string };
 
-await conn.reducers['auth.linkConnection']({ sessionToken: token });
-await conn.reducers['auth.updateProfile']({ name: 'Ada', image: undefined });
+await conn.reducers.auth.linkConnection({ sessionToken: token });
+await conn.reducers.auth.updateProfile({ name: 'Ada', image: undefined });
 ```
 
 See the [Auth example](./example/) for sign-in, a log-based mailer,

@@ -334,13 +334,13 @@ function registerRowCallbacks(connection: DbConnection): void {
   connection.db.myThreadLocks.onUpdate(() => emitThreadLocks());
   connection.db.myThreadLocks.onDelete(() => emitThreadLocks());
 
-  connection.db['auth.my_auth_user'].onInsert(
+  connection.db.auth.myAuthUser.onInsert(
     (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db['auth.my_auth_user'].onUpdate(
+  connection.db.auth.myAuthUser.onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  connection.db['auth.my_auth_user'].onDelete(
+  connection.db.auth.myAuthUser.onDelete(
     (_ctx: EventContext, row: AuthUserRow) => {
       if (!currentUser || row.userId !== currentUser.userId) return;
       currentUser = null;
@@ -415,7 +415,7 @@ async function bindSession(
 
   // Link the connection before subscribing because views read the binding.
   try {
-    await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
+    await currentConn.reducers.auth.linkConnection({ sessionToken: token });
   } catch (err) {
     emitConnectionState(
       'error',
@@ -470,7 +470,7 @@ async function login(args: { email: string; password: string }): Promise<void> {
 async function logout(): Promise<void> {
   if (currentConn) {
     try {
-      currentConn.reducers['auth.unlinkConnection']({});
+      currentConn.reducers.auth.unlinkConnection({});
     } catch {
       /* ignore */
     }
@@ -506,10 +506,10 @@ async function requestEmailVerify(): Promise<void> {
 }
 
 async function listMySessions(): Promise<MySessions> {
-  return await requireConn().procedures['auth.listMySessions']({});
+  return await requireConn().procedures.auth.listMySessions({});
 }
 async function revokeMySession(sessionId: string): Promise<void> {
-  requireConn().reducers['auth.revokeMySession']({ sessionId });
+  requireConn().reducers.auth.revokeMySession({ sessionId });
 }
 
 const authResult = authUrlState(window.location);
@@ -547,7 +547,7 @@ async function main(): Promise<void> {
     listMySessions,
     revokeMySession,
     setProfile: args => {
-      requireConn().reducers['auth.updateProfile']({
+      requireConn().reducers.auth.updateProfile({
         name: args.name,
         image: args.image,
       });
@@ -557,7 +557,7 @@ async function main(): Promise<void> {
   window.stdb = {
     setAgentConfig: async args => {
       const conn = requireConn();
-      conn.reducers['agents.setAgentConfig']({
+      conn.reducers.agents.setAgentConfig({
         staleLockThresholdSecs: args.staleLockThresholdSecs,
       });
       conn.reducers.setTokenLimit({
@@ -567,11 +567,11 @@ async function main(): Promise<void> {
       await refreshConfigStatus();
     },
     setApiKey: async (provider, key) => {
-      requireConn().reducers['agents.setApiKey']({ provider, key });
+      requireConn().reducers.agents.setApiKey({ provider, key });
       await refreshConfigStatus();
     },
     clearApiKey: async provider => {
-      requireConn().reducers['agents.clearApiKey']({ provider });
+      requireConn().reducers.agents.clearApiKey({ provider });
       await refreshConfigStatus();
     },
     getAgentConfigStatus: () => refreshConfigStatus(),
@@ -602,7 +602,7 @@ async function main(): Promise<void> {
       await requireConn().procedures.generateThreadTitle({ threadId });
     },
     clearThreadLock: async threadId => {
-      requireConn().reducers['agents.clearThreadLock']({ threadId });
+      requireConn().reducers.agents.clearThreadLock({ threadId });
     },
   };
 
