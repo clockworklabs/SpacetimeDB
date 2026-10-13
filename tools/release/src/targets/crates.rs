@@ -141,7 +141,7 @@ impl ReleaseTarget for CratesRelease {
             if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
                 println!("Crate {crate_name} already published; skipping.");
             } else {
-                println!("Crate {} must be published.")
+                println!("Crate {crate_name} must be published.")
                 unpublished.push(crate_name);
             }
         }
