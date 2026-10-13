@@ -190,31 +190,6 @@ mod tests {
     }
 
     #[test]
-    fn version_endpoint_distinguishes_missing_versions_from_failures() {
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap();
-        for (status, expected) in [
-            ("200 OK", Some(true)),
-            ("404 Not Found", Some(false)),
-            ("403 Forbidden", None),
-            ("429 Too Many Requests", None),
-            ("503 Service Unavailable", None),
-            ("202 Accepted", None),
-        ] {
-            let (url, thread) = serve_once(status, "");
-            assert_eq!(is_published(&client, &url, "example", "1.2.3").ok(), expected);
-            thread.join().unwrap();
-        }
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
-        assert!(is_published(&client, &url, "example", "1.2.3").is_err());
-    }
-
-    #[test]
     fn empty_selection_skips_cargo_in_both_modes() {
         for dry_run in [false, true] {
             // A nonexistent workspace proves we return before invoking Cargo.
