@@ -1556,6 +1556,67 @@ mod test {
         Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
     }
 
+    struct PendingDurability(tokio::sync::watch::Receiver<Option<u64>>);
+
+    impl spacetimedb_durability::Durability for PendingDurability {
+        type TxData = crate::db::relational_db::Txdata;
+
+        fn append_tx(&self, _: spacetimedb_durability::PreparedTx<Self::TxData>) {}
+
+        fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
+            self.0.clone().into()
+        }
+
+        fn close(&self) -> spacetimedb_durability::Close {
+            Box::pin(std::future::ready(*self.0.borrow()))
+        }
+    }
+
+    #[test]
+    fn procedure_confirmation_waits_without_blocking_transactions() -> Result<()> {
+        use crate::db::relational_db::Persistence;
+        use std::pin::pin;
+
+        let runtime = tokio::runtime::Runtime::new()?;
+        let (durable, rx) = tokio::sync::watch::channel(None);
+        let persistence = Persistence::new(
+            PendingDurability(rx),
+            || Ok(Default::default()),
+            None,
+            spacetimedb_runtime::Handle::tokio(runtime.handle().clone()),
+        );
+        let db = Arc::new(TestDB::open_db(
+            spacetimedb_durability::EmptyHistory::new(),
+            Some(persistence),
+            None,
+            0,
+        )?);
+        let (table, _) = create_table_with_index(&db)?;
+        let (mut env, _subscription_runtime) = instance_env(db.clone())?;
+        env.start_mutable_tx()?;
+        env.insert(table, &mut bsatn_row(6)?)?;
+        env.commit_mutable_tx()?;
+        let confirmation = env.procedure_confirmation();
+        let offset = env.take_procedure_tx_offset().unwrap().try_recv()?;
+        durable.send_replace(Some(offset - 1));
+
+        runtime.block_on(async {
+            let mut confirmation = pin!(confirmation);
+            assert!(futures::poll!(&mut confirmation).is_pending());
+
+            // A second transaction can commit while confirmation is pending.
+            let mut tx = db
+                .try_begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure)
+                .expect("confirmation must release transaction locks");
+            db.insert(&mut tx, table, &bsatn_row(7)?)?;
+            db.commit_tx(tx)?;
+            assert!(futures::poll!(&mut confirmation).is_pending());
+
+            durable.send_replace(Some(offset));
+            confirmation.await
+        })
+    }
+
     #[test]
     fn anonymous_procedure_transactions_are_labeled_as_procedure() -> Result<()> {
         let db = relational_db()?;
