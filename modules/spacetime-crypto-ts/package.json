@@ -40,9 +40,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
-    "directory": "spacetime-crypto-ts"
+    "directory": "modules/spacetime-crypto-ts"
   },
-  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/spacetime-crypto-ts#readme",
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-crypto-ts#readme",
   "bugs": {
     "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
   },
@@ -53,12 +53,12 @@
     "typescript"
   ],
   "scripts": {
-    "format": "prettier . --write --ignore-path ../.prettierignore",
-    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/test-vectors.ts",
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
-    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
+    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../../licenses/apache2.txt', 'LICENSE')\"",
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "devDependencies": {
