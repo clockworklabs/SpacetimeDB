@@ -141,7 +141,7 @@ impl ReleaseTarget for CratesRelease {
             if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
                 println!("Crate {crate_name} already published; skipping.");
             } else {
-                println!("Crate {crate_name} must be published.")
+                println!("Crate {crate_name} must be published.");
                 unpublished.push(crate_name);
             }
         }
@@ -168,26 +168,6 @@ impl ReleaseTarget for CratesRelease {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-
-    fn serve_once(status: &str, body: &str) -> (String, std::thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let thread = std::thread::spawn(move || {
-            let (mut socket, _) = listener.accept().unwrap();
-            socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-            let mut request = [0; 4096];
-            let len = socket.read(&mut request).unwrap();
-            assert!(String::from_utf8_lossy(&request[..len]).starts_with("GET /crates/example/1.2.3 "));
-            socket.write_all(response.as_bytes()).unwrap();
-        });
-        (url, thread)
-    }
 
     #[test]
     fn empty_selection_skips_cargo_in_both_modes() {
