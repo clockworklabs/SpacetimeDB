@@ -30,7 +30,7 @@ test('ensureSignedIn waits for account restoration after reload', async () => {
         { capabilities: { actors: { get: () => ({ page, name: 'a',
           loc: (id: string) => page.locator(stableElementSelector(id)).first() }) },
         'browser-interaction': capability } });
-      assert.equal(restored.status, restoredUser === 'alice' ? 'passed' : 'harness_failure', restored.summary ?? undefined);
+      assert.equal(restored.status, restoredUser === 'alice' ? 'passed' : 'failed', restored.summary ?? undefined);
       if (restoredUser !== 'alice') assert.match(restored.summary ?? '', /different account/);
     }
     await page.setContent(`<span id="current-user">alice</span>
@@ -103,7 +103,7 @@ test('order status probes reject negative labels that contain the expected statu
       const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file!);
       const definition = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
       const step = definition.features.flatMap(feature => feature.criteria.flatMap(criterion => criterion.steps))
-        .find(step => step.testid === 'order-status' && step.value === status)!;
+        .find(step => step.testid === 'order-status' && step.statusText === status)!;
       assert(step);
       for (const text of [status, `  ${status}  `, status!.toUpperCase(), misleading]) {
         await page.setContent(`<span id="order-status">${text}</span>`);
