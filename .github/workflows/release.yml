@@ -143,7 +143,7 @@ jobs:
       # TODO: dry-run via publishing to a local registry: https://doc.rust-lang.org/cargo/reference/registries.html
       - name: Run release (dry-run)
         if: ${{ inputs.dry_run }}
-        # NOTE: This will print a warning that `cargo-release release crates` dry runs are not supported
+        # Validates the publication plan without packaging or uploading crates.
         run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
 
       - name: Run release

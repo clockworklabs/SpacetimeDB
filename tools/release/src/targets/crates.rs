@@ -1,7 +1,5 @@
 use crate::targets::{util, ReleaseTarget};
 use anyhow::Result;
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,13 +19,11 @@ impl CratesRelease {
     }
 
     /// Publishes a single crate to crates.io
-    fn publish_crate(&self, crate_name: &str, manifest_map: &HashMap<String, PathBuf>) -> Result<(), String> {
+    fn publish_crate(&self, package: &crate::crates_resolver::PublishCrate) -> Result<(), String> {
+        let crate_name = &package.name;
         println!("Publishing crate: {}", crate_name);
 
-        let manifest_path = manifest_map
-            .get(crate_name)
-            .ok_or_else(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
-
+        let manifest_path = &package.manifest_path;
         let crate_dir = manifest_path
             .parent()
             .ok_or_else(|| format!("Failed to get parent directory of {}", manifest_path.display()))?;
@@ -147,45 +143,26 @@ impl CratesRelease {
 
 impl ReleaseTarget for CratesRelease {
     fn release(&self) -> Result<(), String> {
-        if self.dry_run {
-            println!("cargo release crates --dry-run is currently not supported. See TODO in workflow file.");
-            return Ok(());
-        }
-
-        println!("Finding crates to publish to crates.io...");
-
-        // Get the workspace root and manifest map
-        let workspace_root = crate::crates_resolver::find_workspace_root()
-            .map_err(|e| format!("Failed to find workspace root: {}", e))?;
-        let manifest_map = crate::crates_resolver::get_crate_manifest_map(&workspace_root)
-            .map_err(|e| format!("Failed to get crate manifest map: {}", e))?;
-
-        // TODO(bfops): we could pass manifest_map into get_crates_to_publish and then it wouldn't need to compute workspace_root or manifest_map again
-        // alternatively, it could return richer data (e.g. including the crate path) and then we wouldn't need to compute manifest_map here
+        println!("Finding crates to publish to crates.io for {}...", self.version);
+        // Validate the entire plan before any crate is uploaded, including in dry-runs.
         let crates = crate::crates_resolver::get_crates_to_publish()
             .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
 
         println!("\nCrates to publish in order:");
-        for crate_name in &crates {
-            println!("  - {}", crate_name);
+        for package in &crates {
+            println!("  - {}@{}", package.name, package.version);
         }
 
         if self.dry_run {
-            println!("\nDRY RUN: No crates will be published");
+            println!("\nDRY RUN: Publication plan validated; packaging and uploads were not attempted.");
+            return Ok(());
         }
 
         println!("\nStarting publish process...");
-        let crates_io_version = self
-            .version
-            .strip_prefix('v')
-            .unwrap_or(&self.version)
-            .split('-')
-            .next()
-            .unwrap();
-        for crate_name in &crates {
-            self.publish_crate(crate_name, &manifest_map)?;
-            self.wait_for_crate_available(crate_name, crates_io_version)?;
-            self.add_crate_owners(crate_name)?;
+        for package in &crates {
+            self.publish_crate(package)?;
+            self.wait_for_crate_available(&package.name, &package.version)?;
+            self.add_crate_owners(&package.name)?;
         }
 
         println!("\nAll crates published successfully!");

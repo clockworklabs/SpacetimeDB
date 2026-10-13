@@ -1,14 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug, Deserialize)]
-struct CargoToml {
-    dependencies: Option<toml::Table>,
-}
+const ROOT_CRATES: &[&str] = &["spacetimedb", "spacetimedb-sdk"];
 
 #[derive(Debug, Deserialize)]
 struct CargoMetadata {
@@ -18,81 +14,26 @@ struct CargoMetadata {
 #[derive(Debug, Deserialize)]
 struct Package {
     name: String,
+    version: String,
     manifest_path: PathBuf,
+    publish: Option<Vec<String>>,
+    dependencies: Vec<Dependency>,
 }
 
-/// Gets cargo metadata and returns a mapping of crate names to their manifest paths
-pub fn get_crate_manifest_map(workspace_root: &Path) -> Result<HashMap<String, PathBuf>> {
-    let output = Command::new("cargo")
-        .arg("metadata")
-        .arg("--format-version=1")
-        .arg("--no-deps")
-        .current_dir(workspace_root)
-        .output()
-        .context("Failed to execute cargo metadata")?;
-
-    if !output.status.success() {
-        anyhow::bail!("cargo metadata failed: {}", String::from_utf8_lossy(&output.stderr));
-    }
-
-    let metadata: CargoMetadata =
-        serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata output")?;
-
-    let mut map = HashMap::new();
-    for package in metadata.packages {
-        map.insert(package.name, package.manifest_path);
-    }
-
-    Ok(map)
+#[derive(Debug, Deserialize)]
+struct Dependency {
+    // Cargo reports the actual package name here, even for renamed dependencies.
+    name: String,
+    req: String,
+    kind: Option<String>,
+    path: Option<PathBuf>,
 }
 
-/// Finds SpacetimeDB dependencies in a Cargo.toml file
-pub fn find_spacetimedb_dependencies(cargo_toml_path: &Path) -> Result<Vec<String>> {
-    let content = fs::read_to_string(cargo_toml_path)
-        .with_context(|| format!("Failed to read Cargo.toml at {}", cargo_toml_path.display()))?;
-
-    // NOTE(bfops): I prefer what find-publish-list.py does; it reads the deps from the cargo metadata output.
-    let cargo_data: CargoToml = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse Cargo.toml at {}", cargo_toml_path.display()))?;
-
-    let mut deps = Vec::new();
-    if let Some(dependencies) = cargo_data.dependencies {
-        for (dep_name, _) in dependencies {
-            if dep_name.starts_with("spacetimedb-") {
-                deps.push(dep_name);
-            }
-        }
-    }
-
-    Ok(deps)
-}
-
-/// Processes a crate to find its SpacetimeDB dependencies
-pub fn get_crate_deps(crate_name: &String, manifest_map: &HashMap<String, PathBuf>) -> Result<Vec<String>> {
-    // Look up the crate in the manifest map
-    let cargo_toml_path = manifest_map
-        .get(crate_name)
-        .with_context(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
-
-    println!("\nChecking crate '{}'...", crate_name);
-
-    let deps = find_spacetimedb_dependencies(cargo_toml_path)?;
-    if !deps.is_empty() {
-        for name in &deps {
-            println!("  {}", name);
-        }
-    } else {
-        println!("  No spacetimedb-* dependencies found.");
-    }
-
-    let mut all_deps = deps.clone();
-
-    for dep_name in deps {
-        let sub_deps = get_crate_deps(&dep_name, manifest_map)?;
-        all_deps.extend(sub_deps);
-    }
-
-    Ok(all_deps)
+#[derive(Debug)]
+pub struct PublishCrate {
+    pub name: String,
+    pub version: String,
+    pub manifest_path: PathBuf,
 }
 
 /// Finds the workspace root (public directory) by searching up the directory tree
@@ -114,39 +55,269 @@ pub fn find_workspace_root() -> Result<PathBuf> {
         .context("Failed to find workspace root. Make sure you're running from within the SpacetimeDB repository.")
 }
 
-/// Returns a list of crates to publish in the correct order
-pub fn get_crates_to_publish() -> Result<Vec<String>> {
-    // Find the workspace root (public directory)
+/// Returns the complete dependency-first publication plan, without resolving registry crates.
+pub fn get_crates_to_publish() -> Result<Vec<PublishCrate>> {
     let workspace_root = find_workspace_root()?;
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version=1", "--no-deps"])
+        .current_dir(workspace_root)
+        .output()
+        .context("Failed to execute cargo metadata")?;
 
-    // Get the manifest map from cargo metadata
-    let manifest_map = get_crate_manifest_map(&workspace_root)?;
-
-    // We must publish the bindings + sdk at a minimum
-    // Note: "bindings" corresponds to the "spacetimedb" crate
-    // and "sdk" corresponds to the "spacetimedb-sdk" crate
-    let root_crates = vec!["spacetimedb".to_string(), "spacetimedb-sdk".to_string()];
-    let mut all_crates = Vec::new();
-    all_crates.extend(root_crates.iter().cloned());
-
-    // Add all dependencies of the root crates
-    for crate_name in &root_crates {
-        all_crates.extend(get_crate_deps(crate_name, &manifest_map)?);
+    if !output.status.success() {
+        bail!("cargo metadata failed: {}", String::from_utf8_lossy(&output.stderr));
     }
 
-    // It takes a bit of reasoning to conclude that this is, in fact, going to be a legitimate
-    // dependency-order of all of these crates. Because of how the list is constructed, once it's reversed,
-    // every crate will be mentioned before any of the crates that use it. Because of that, it's safe to
-    // deduplicate the list in a way that preserves the _first_ occurrence of every crate name, without
-    // violating the "mentioned before it's used" property of the list.
-    let mut seen = HashSet::new();
-    let mut publish_order = Vec::new();
+    let metadata: CargoMetadata =
+        serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata output")?;
+    publication_plan(&metadata, ROOT_CRATES)
+}
 
-    for crate_name in all_crates.into_iter().rev() {
-        if seen.insert(crate_name.clone()) {
-            publish_order.push(crate_name);
+fn publication_plan(metadata: &CargoMetadata, roots: &[&str]) -> Result<Vec<PublishCrate>> {
+    let by_name: HashMap<_, _> = metadata
+        .packages
+        .iter()
+        .map(|package| (package.name.as_str(), package))
+        .collect();
+    let by_path: HashMap<_, _> = metadata
+        .packages
+        .iter()
+        .map(|package| {
+            Ok((
+                package
+                    .manifest_path
+                    .parent()
+                    .context("Manifest has no parent directory")?,
+                package,
+            ))
+        })
+        .collect::<Result<_>>()?;
+    let mut visiting = Vec::new();
+    let mut visited = HashSet::new();
+    let mut plan = Vec::new();
+
+    for root in roots {
+        let package = by_name
+            .get(root)
+            .with_context(|| format!("Crate '{root}' not found in cargo metadata"))?;
+        visit(package, &by_path, &mut visiting, &mut visited, &mut plan)?;
+    }
+    Ok(plan)
+}
+
+fn visit<'a>(
+    package: &'a Package,
+    by_path: &HashMap<&Path, &'a Package>,
+    visiting: &mut Vec<&'a str>,
+    visited: &mut HashSet<&'a str>,
+    plan: &mut Vec<PublishCrate>,
+) -> Result<()> {
+    if visited.contains(package.name.as_str()) {
+        return Ok(());
+    }
+    if let Some(start) = visiting.iter().position(|name| *name == package.name) {
+        let mut cycle = visiting[start..].to_vec();
+        cycle.push(&package.name);
+        bail!("Publication dependency cycle: {}", cycle.join(" -> "));
+    }
+    if let Some(registries) = &package.publish
+        && !registries.iter().any(|registry| registry == "crates-io")
+    {
+        bail!(
+            "Crate '{}' is required for publication but does not allow publishing to crates.io",
+            package.name
+        );
+    }
+    visiting.push(&package.name);
+
+    // Read declared dependencies, not resolve.nodes: inactive optional dependencies
+    // must also be available when Cargo prepares the published package's lockfile.
+    // Do not filter by target, optional status, or dependency-name prefix.
+    for dependency in &package.dependencies {
+        if dependency.kind.as_deref() == Some("dev") {
+            continue;
+        }
+        let Some(path) = &dependency.path else {
+            continue;
+        };
+        let dep_package = by_path.get(path.as_path()).with_context(|| {
+            format!(
+                "Local dependency '{}' of '{}' at {} is not a workspace package",
+                dependency.name,
+                package.name,
+                path.display()
+            )
+        })?;
+        let requirement = semver::VersionReq::parse(&dependency.req)?;
+        let version = semver::Version::parse(&dep_package.version)?;
+        if dependency.name != dep_package.name || !requirement.matches(&version) {
+            bail!(
+                "Dependency '{}' of '{}' requires {}, but local package is {}@{}",
+                dependency.name,
+                package.name,
+                dependency.req,
+                dep_package.name,
+                dep_package.version
+            );
+        }
+        visit(dep_package, by_path, visiting, visited, plan)?;
+    }
+
+    visiting.pop();
+    visited.insert(&package.name);
+    plan.push(PublishCrate {
+        name: package.name.clone(),
+        version: package.version.clone(),
+        manifest_path: package.manifest_path.clone(),
+    });
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn package(name: &str, dependencies: Vec<Value>) -> Value {
+        json!({
+            "name": name,
+            "version": "2.12.0",
+            "manifest_path": format!("/workspace/{name}/Cargo.toml"),
+            "publish": null,
+            "dependencies": dependencies,
+        })
+    }
+
+    fn dependency(name: &str) -> Value {
+        json!({
+            "name": name,
+            "req": "=2.12.0",
+            "kind": null,
+            "path": format!("/workspace/{name}"),
+        })
+    }
+
+    fn plan(packages: Vec<Value>) -> Result<Vec<PublishCrate>> {
+        let metadata = serde_json::from_value(json!({ "packages": packages })).unwrap();
+        publication_plan(&metadata, ROOT_CRATES)
+    }
+
+    #[test]
+    fn includes_optional_target_and_renamed_dependencies_in_dependency_order() {
+        let mut auth = dependency("spacetimedb-auth");
+        auth["optional"] = json!(true);
+        auth["target"] = json!("cfg(not(target_arch = \"wasm32\"))");
+        let mut datastore = dependency("spacetimedb-test-datastore");
+        datastore["optional"] = json!(true);
+        datastore["target"] = auth["target"].clone();
+        let mut core = dependency("spacetimedb-core");
+        core["rename"] = json!("spacetimedb_core");
+        let packages = vec![
+            package("spacetimedb", vec![auth, datastore]),
+            package("spacetimedb-sdk", vec![dependency("spacetimedb-auth")]),
+            package("spacetimedb-auth", vec![]),
+            package("spacetimedb-test-datastore", vec![core]),
+            package("spacetimedb-core", vec![]),
+        ];
+        let names: Vec<_> = plan(packages)
+            .unwrap()
+            .into_iter()
+            .map(|package| package.name)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "spacetimedb-auth",
+                "spacetimedb-core",
+                "spacetimedb-test-datastore",
+                "spacetimedb",
+                "spacetimedb-sdk"
+            ]
+        );
+    }
+
+    #[test]
+    fn includes_build_dependencies_without_name_prefix_and_excludes_dev_and_registry_dependencies() {
+        let mut build = dependency("build-helper");
+        build["kind"] = json!("build");
+        let mut dev = dependency("unpublished-tests");
+        dev["kind"] = json!("dev");
+        let mut registry = dependency("spacetimedb-external");
+        registry["path"] = Value::Null;
+        let names: Vec<_> = plan(vec![
+            package("spacetimedb", vec![build, dev, registry]),
+            package("spacetimedb-sdk", vec![]),
+            package("build-helper", vec![]),
+        ])
+        .unwrap()
+        .into_iter()
+        .map(|package| package.name)
+        .collect();
+        assert_eq!(names, ["build-helper", "spacetimedb", "spacetimedb-sdk"]);
+    }
+
+    #[test]
+    fn rejects_cycles_with_dependency_chain() {
+        let error = plan(vec![
+            package("spacetimedb", vec![dependency("spacetimedb-auth")]),
+            package("spacetimedb-auth", vec![dependency("spacetimedb")]),
+            package("spacetimedb-sdk", vec![]),
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("spacetimedb -> spacetimedb-auth -> spacetimedb"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_dependencies_that_cannot_publish_to_crates_io() {
+        for publish in [json!([]), json!(["private-registry"])] {
+            let mut auth = package("spacetimedb-auth", vec![]);
+            auth["publish"] = publish;
+            let error = plan(vec![
+                package("spacetimedb", vec![dependency("spacetimedb-auth")]),
+                package("spacetimedb-sdk", vec![]),
+                auth,
+            ])
+            .unwrap_err()
+            .to_string();
+            assert!(
+                error.contains("spacetimedb-auth") && error.contains("does not allow publishing"),
+                "{error}"
+            );
         }
     }
 
-    Ok(publish_order)
+    #[test]
+    fn rejects_mismatched_local_versions() {
+        let mut auth = package("spacetimedb-auth", vec![]);
+        auth["version"] = json!("2.11.0");
+        let error = plan(vec![
+            package("spacetimedb", vec![dependency("spacetimedb-auth")]),
+            package("spacetimedb-sdk", vec![]),
+            auth,
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("requires =2.12.0") && error.contains("spacetimedb-auth@2.11.0"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_local_dependencies_outside_metadata() {
+        let error = plan(vec![
+            package("spacetimedb", vec![dependency("missing")]),
+            package("spacetimedb-sdk", vec![]),
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("Local dependency 'missing' of 'spacetimedb'") && error.contains("not a workspace package"),
+            "{error}"
+        );
+    }
 }
