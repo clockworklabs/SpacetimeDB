@@ -62,7 +62,7 @@ Both modes check the requested release version for each selected package using t
 
 The remaining crates are packaged and verified together in one `cargo publish` invocation. Cargo handles dependency ordering and waits for published dependencies to become available. A partially completed release can be rerun to publish the remaining versions. Production then configures owners for every selected crate, including those already published.
 
-Dry runs use the same selection and verification with `cargo publish --dry-run`, without uploads or owner changes. A fresh temporary Cargo home avoids stale registry state and is removed afterward; dependencies are downloaded again. Production uses its usual Cargo home and credentials. The release version must match the manifests (an optional `v` prefix is accepted); it does not rewrite them.
+Dry runs use the same selection and verification with `cargo publish --dry-run`, without uploads or owner changes. A fresh temporary Cargo home avoids stale registry state and is removed afterward; dependencies are downloaded again. Production uses its usual Cargo home and credentials. Published-version checks strip the leading `v` and release-tag suffixes such as `-hotfix2`. Cargo publishes the versions in the manifests; the release tag does not rewrite them.
 
 ### NPM Package
 

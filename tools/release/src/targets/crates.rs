@@ -126,7 +126,13 @@ impl ReleaseTarget for CratesRelease {
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
-        let crates_io_version = self.version.strip_prefix('v').unwrap_or(&self.version);
+        let crates_io_version = self
+            .version
+            .strip_prefix('v')
+            .unwrap_or(&self.version)
+            .split('-')
+            .next()
+            .unwrap();
         let mut pending = Vec::new();
         for crate_name in &crates {
             // Pace requests to respect crates.io's API guidance.
