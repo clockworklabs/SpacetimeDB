@@ -2578,12 +2578,10 @@ impl ModuleHost {
         Ok(IdcDeliveryDecision::OutOfOrder { expected })
     }
 
-    /// Commit acknowledgment cleanup and check whether this delivery can execute.
-    /// Returns `None` for the next sequence, a stored or acknowledged outcome for
-    /// a duplicate, and an error if the sequence skips ahead.
+    /// Trim acknowledged outcomes and check whether this delivery can run.
     ///
-    /// Call this before validating the reducer or its arguments so a module update
-    /// cannot change the result returned for a previously processed delivery.
+    /// Returns `None` for the next sequence, a replay or `AlreadyAcked` for a duplicate,
+    /// and `OutOfOrder` for a gap. Acknowledgment cleanup commits in all three cases.
     fn prepare_idc_delivery(
         &self,
         sender_identity: Identity,
@@ -2684,10 +2682,14 @@ impl ModuleHost {
         Ok(IdcReducerCallOutcome::Applied(result))
     }
 
-    /// Decide a new message without committing reducer effects. Signature mismatch,
-    /// missing reducer, and argument validation errors are terminal, just like a
-    /// reducer returning Err. Persisting them advances the stream so later messages
-    /// are not stranded behind a sender-retired sequence.
+    /// Record a terminal failure when there is no reducer transaction to commit.
+    ///
+    /// Validation failures never start one; reducer failures roll theirs back. Both
+    /// still need a stored outcome so retries get the same error and the next message
+    /// can proceed. The caller must have checked that `seq` is next in the stream.
+    ///
+    /// The returned offset covers this separate commit and must become durable before
+    /// the transport replies.
     fn record_idc_terminal_error(
         &self,
         sender_identity: Identity,
