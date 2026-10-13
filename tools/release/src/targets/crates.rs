@@ -1,4 +1,3 @@
-use crate::crates_resolver::CrateToPublish;
 use crate::targets::{util, ReleaseTarget};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -11,16 +10,16 @@ const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", 
 const CRATES_IO_INDEX: &str = "https://index.crates.io";
 
 pub struct CratesRelease {
+    pub version: String,
     pub dry_run: bool,
 }
 
 impl CratesRelease {
-    // Publishing uses the manifest versions; the release tag is shared with other targets.
-    pub fn new(_version: String, dry_run: bool) -> Self {
-        Self { dry_run }
+    pub fn new(version: String, dry_run: bool) -> Self {
+        Self { version, dry_run }
     }
 
-    fn publish_crates(&self, workspace_root: &Path, crates: &[&CrateToPublish]) -> Result<(), String> {
+    fn publish_crates(&self, workspace_root: &Path, crates: &[&String]) -> Result<(), String> {
         if crates.is_empty() {
             println!("All selected crates are already published; nothing to publish.");
             return Ok(());
@@ -35,7 +34,7 @@ impl CratesRelease {
         let mut cmd = Command::new("cargo");
         cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
         for krate in crates {
-            cmd.args(["-p", &krate.name]);
+            cmd.args(["-p", krate]);
         }
         if self.dry_run {
             cmd.arg("--dry-run");
@@ -104,8 +103,8 @@ fn index_path(name: &str) -> String {
     }
 }
 
-fn is_published(client: &Client, index: &str, krate: &CrateToPublish) -> Result<bool, String> {
-    let url = format!("{}/{}", index.trim_end_matches('/'), index_path(&krate.name));
+fn is_published(client: &Client, index: &str, crate_name: &str, version: &str) -> Result<bool, String> {
+    let url = format!("{}/{}", index.trim_end_matches('/'), index_path(crate_name));
     let response = client
         .get(&url)
         .send()
@@ -117,20 +116,21 @@ fn is_published(client: &Client, index: &str, krate: &CrateToPublish) -> Result<
         .error_for_status()
         .and_then(|response| response.text())
         .map_err(|err| format!("Failed to read {url}: {err}"))?;
-    index_contains_version(&body, krate).map_err(|err| format!("Invalid index response from {url}: {err}"))
+    index_contains_version(&body, crate_name, version)
+        .map_err(|err| format!("Invalid index response from {url}: {err}"))
 }
 
-fn index_contains_version(body: &str, krate: &CrateToPublish) -> Result<bool, String> {
+fn index_contains_version(body: &str, crate_name: &str, version: &str) -> Result<bool, String> {
     if body.is_empty() {
         return Err("empty index entry".into());
     }
     let mut found = false;
     for line in body.lines() {
         let entry: IndexEntry = serde_json::from_str(line).map_err(|err| err.to_string())?;
-        if entry.name != krate.name {
-            return Err(format!("expected package {}, got {}", krate.name, entry.name));
+        if entry.name != crate_name {
+            return Err(format!("expected package {}, got {}", crate_name, entry.name));
         }
-        found |= entry.vers == krate.version;
+        found |= entry.vers == version;
     }
     Ok(found)
 }
@@ -145,7 +145,7 @@ impl ReleaseTarget for CratesRelease {
             .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
         println!("\nCrates to publish in order:");
         for krate in &crates {
-            println!("  - {}", krate.name);
+            println!("  - {}", krate);
         }
         if self.dry_run {
             println!("\nDRY RUN: No crates will be published");
@@ -156,12 +156,13 @@ impl ReleaseTarget for CratesRelease {
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|err| format!("Failed to create crates.io index client: {err}"))?;
+        let crates_io_version = self.version.strip_prefix('v').unwrap_or(&self.version);
         let mut pending = Vec::new();
         for krate in &crates {
-            if is_published(&client, CRATES_IO_INDEX, krate)? {
+            if is_published(&client, CRATES_IO_INDEX, krate, crates_io_version)? {
                 println!(
                     "Crate {} already published on crates.io; skipping (treating as success).",
-                    krate.name
+                    krate
                 );
             } else {
                 pending.push(krate);
@@ -170,7 +171,7 @@ impl ReleaseTarget for CratesRelease {
         self.publish_crates(&workspace_root, &pending)?;
         if !self.dry_run {
             for krate in &crates {
-                self.add_crate_owners(&krate.name)?;
+                self.add_crate_owners(krate)?;
             }
         }
         if self.dry_run {
@@ -192,13 +193,6 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    fn krate(name: &str, version: &str) -> CrateToPublish {
-        CrateToPublish {
-            name: name.into(),
-            version: version.into(),
-        }
-    }
-
     #[test]
     fn sparse_index_paths() {
         for (name, expected) in [
@@ -213,15 +207,14 @@ mod tests {
 
     #[test]
     fn exact_versions_and_malformed_entries() {
-        let package = krate("example", "1.2.3");
         let body = "{\"name\":\"example\",\"vers\":\"1.2.2\"}\n{\"name\":\"example\",\"vers\":\"1.2.3\"}\n";
-        assert!(index_contains_version(body, &package).unwrap());
-        assert!(!index_contains_version(body, &krate("example", "1.2.3-rc.1")).unwrap());
+        assert!(index_contains_version(body, "example", "1.2.3").unwrap());
+        assert!(!index_contains_version(body, "example", "1.2.3-rc.1").unwrap());
         for invalid in ["", "not JSON", "{}", "{\"name\":\"other\",\"vers\":\"1.2.3\"}"] {
-            assert!(index_contains_version(invalid, &package).is_err());
+            assert!(index_contains_version(invalid, "example", "1.2.3").is_err());
         }
         // Do not silently accept a corrupt response after a matching record.
-        assert!(index_contains_version(&format!("{body}not JSON"), &package).is_err());
+        assert!(index_contains_version(&format!("{body}not JSON"), "example", "1.2.3").is_err());
     }
 
     fn serve_once(status: &str, body: &str) -> (String, std::thread::JoinHandle<()>) {
@@ -258,21 +251,21 @@ mod tests {
             ("200 OK", "broken", None),
         ] {
             let (url, thread) = serve_once(status, body);
-            let result = is_published(&client, &url, &krate("example", "1.2.3"));
+            let result = is_published(&client, &url, "example", "1.2.3");
             assert_eq!(result.ok(), expected);
             thread.join().unwrap();
         }
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
-        assert!(is_published(&client, &url, &krate("example", "1.2.3")).is_err());
+        assert!(is_published(&client, &url, "example", "1.2.3").is_err());
     }
 
     #[test]
     fn empty_selection_skips_cargo_in_both_modes() {
         for dry_run in [false, true] {
             // A nonexistent workspace proves we return before invoking Cargo.
-            CratesRelease { dry_run }
+            CratesRelease::new("1.2.3".into(), dry_run)
                 .publish_crates(Path::new("/nonexistent-release-workspace"), &[])
                 .unwrap();
         }
@@ -288,8 +281,8 @@ mod tests {
         )
         .unwrap();
         let version = "0.0.0-release-dry-run-test";
-        let base = krate("spacetimedb-release-fixture-base", version);
-        let dependent = krate("spacetimedb-release-fixture-dependent", version);
+        let base = String::from("spacetimedb-release-fixture-base");
+        let dependent = String::from("spacetimedb-release-fixture-dependent");
         for (dir, package, source) in [
             ("base", &base, "pub fn value() -> u8 { 42 }"),
             (
@@ -300,17 +293,17 @@ mod tests {
         ] {
             let path = workspace.path().join(dir);
             std::fs::create_dir_all(path.join("src")).unwrap();
-            let mut manifest = format!("[package]\nname = {:?}\nversion = {:?}\nedition = \"2021\"\nlicense = \"MIT\"\ndescription = \"Release validation fixture\"\n", package.name, package.version);
+            let mut manifest = format!("[package]\nname = {:?}\nversion = {:?}\nedition = \"2021\"\nlicense = \"MIT\"\ndescription = \"Release validation fixture\"\n", package, version);
             if dir == "dependent" {
                 manifest.push_str(&format!(
                     "[dependencies]\n{} = {{ path = \"../base\", version = \"={}\" }}\n",
-                    base.name, version
+                    base, version
                 ));
             }
             std::fs::write(path.join("Cargo.toml"), manifest).unwrap();
             std::fs::write(path.join("src/lib.rs"), source).unwrap();
         }
-        let release = CratesRelease { dry_run: true };
+        let release = CratesRelease::new(version.into(), true);
         release.publish_crates(workspace.path(), &[&base, &dependent]).unwrap();
         std::fs::write(
             workspace.path().join("dependent/src/lib.rs"),

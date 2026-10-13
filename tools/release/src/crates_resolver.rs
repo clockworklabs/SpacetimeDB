@@ -12,7 +12,6 @@ struct CargoMetadata {
 #[derive(Debug, Deserialize)]
 struct Package {
     name: String,
-    version: String,
     dependencies: Vec<Dependency>,
 }
 
@@ -40,14 +39,8 @@ fn get_cargo_metadata(workspace_root: &Path) -> Result<CargoMetadata> {
     serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata output")
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct CrateToPublish {
-    pub name: String,
-    pub version: String,
-}
-
 /// Processes a crate to find its local publication dependencies
-fn get_crate_deps(crate_name: &String, packages: &HashMap<String, &Package>) -> Result<Vec<String>> {
+fn get_crate_deps(crate_name: &String, packages: &HashMap<String, Package>) -> Result<Vec<String>> {
     let package = packages
         .get(crate_name)
         .with_context(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
@@ -108,30 +101,15 @@ pub fn find_workspace_root() -> Result<PathBuf> {
 }
 
 /// Returns a list of crates to publish in the correct order
-pub fn get_crates_to_publish() -> Result<Vec<CrateToPublish>> {
+pub fn get_crates_to_publish() -> Result<Vec<String>> {
     let workspace_root = find_workspace_root()?;
-    let metadata = get_cargo_metadata(&workspace_root)?;
-    let order = get_publish_order(&metadata)?;
-    let mut versions: HashMap<_, _> = metadata
-        .packages
-        .into_iter()
-        .map(|package| (package.name, package.version))
-        .collect();
-    order
-        .into_iter()
-        .map(|name| {
-            let version = versions
-                .remove(&name)
-                .context("Publication package missing from metadata")?;
-            Ok(CrateToPublish { name, version })
-        })
-        .collect()
+    get_publish_order(get_cargo_metadata(&workspace_root)?)
 }
 
-fn get_publish_order(metadata: &CargoMetadata) -> Result<Vec<String>> {
+fn get_publish_order(metadata: CargoMetadata) -> Result<Vec<String>> {
     let packages = metadata
         .packages
-        .iter()
+        .into_iter()
         .map(|package| (package.name.clone(), package))
         .collect();
 
@@ -172,7 +150,6 @@ mod tests {
     fn package(name: &str, dependencies: Vec<Value>) -> Value {
         json!({
             "name": name,
-            "version": "1.2.3",
             "dependencies": dependencies,
         })
     }
@@ -183,7 +160,7 @@ mod tests {
 
     fn order(packages: Vec<Value>) -> Vec<String> {
         let metadata = serde_json::from_value(json!({ "packages": packages })).unwrap();
-        get_publish_order(&metadata).unwrap()
+        get_publish_order(metadata).unwrap()
     }
 
     #[test]
