@@ -1,5 +1,6 @@
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use syn::parse::Parse;
 use syn::Ident;
 
@@ -78,6 +79,45 @@ pub(crate) fn one_of(options: &[crate::sym::Symbol]) -> String {
             let join = options.join("`, `");
             format!("expected one of: `{join}`")
         }
+    }
+}
+
+pub(crate) fn native_test_utils_registration(register_body: TokenStream) -> TokenStream {
+    if cfg!(feature = "test-utils") {
+        quote! {
+            #[cfg(not(target_arch = "wasm32"))]
+            #[used]
+            #[cfg_attr(
+                any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                ),
+                unsafe(link_section = ".init_array")
+            )]
+            #[cfg_attr(
+                any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
+                ),
+                unsafe(link_section = "__DATA,__mod_init_func")
+            )]
+            #[cfg_attr(target_os = "windows", unsafe(link_section = ".CRT$XCU"))]
+            static _STDB_TEST_UTILS_INIT: unsafe extern "C" fn() = {
+                unsafe extern "C" fn __stdb_test_utils_register() {
+                    #register_body
+                }
+                __stdb_test_utils_register
+            };
+        }
+    } else {
+        quote! {}
     }
 }
 

@@ -6,6 +6,7 @@ use spacetimedb_testing::modules::{
 };
 use std::{
     future::Future,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -40,6 +41,13 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
 
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
+
+fn emcc_is_available() -> bool {
+    Command::new("emcc")
+        .arg("--version")
+        .status()
+        .is_ok_and(|status| status.success())
+}
 
 fn test_calling_a_reducer_in_module(module_name: &'static str) {
     init();
@@ -95,6 +103,10 @@ fn test_calling_a_reducer() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_a_reducer_csharp() {
     test_calling_a_reducer_in_module("module-test-cs");
 }
@@ -108,6 +120,10 @@ fn test_calling_a_reducer_typescript() {
 #[test]
 #[serial]
 fn test_calling_a_reducer_cpp() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_a_reducer_in_module("module-test-cpp");
 }
 
@@ -185,6 +201,10 @@ fn test_nonrepeating_scheduled_reducer() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_nonrepeating_scheduled_reducer_csharp() {
     test_nonrepeating_scheduled_reducer_in_module("module-test-cs");
 }
@@ -404,6 +424,10 @@ fn test_calling_bench_db_circles_rust() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_bench_db_circles_csharp() {
     test_calling_bench_db_circles::<Csharp>();
 }
@@ -416,6 +440,10 @@ fn test_calling_bench_db_circles_typescript() {
 #[test]
 #[serial]
 fn test_calling_bench_db_circles_cpp() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_bench_db_circles::<Cpp>();
 }
 
@@ -445,6 +473,10 @@ fn test_calling_bench_db_ia_loop_rust() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_bench_db_ia_loop_csharp() {
     test_calling_bench_db_ia_loop::<Csharp>();
 }
@@ -457,6 +489,10 @@ fn test_calling_bench_db_ia_loop_typescript() {
 #[test]
 #[serial]
 fn test_calling_bench_db_ia_loop_cpp() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_bench_db_ia_loop::<Cpp>();
 }
 
