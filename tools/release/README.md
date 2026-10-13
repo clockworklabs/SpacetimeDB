@@ -58,7 +58,11 @@ You can also perform a dry run to see what would be published without actually p
 cargo release crates v1.2.0 --dry-run
 ```
 
-After each crate is published, the release waits for that crate version to become visible in the crates.io index before publishing dependent crates.
+Both modes check each selected package's exact manifest version against the crates.io sparse index and skip versions already published. If all versions are published, no publish command is run. Index request or parsing failures stop the release.
+
+The remaining crates are packaged and verified together in one `cargo publish` invocation. Cargo handles dependency ordering and waits for published dependencies to become available. A partially completed release can be rerun to publish the remaining versions. Production then configures owners for every selected crate, including those already published.
+
+Dry runs use the same selection and verification with `cargo publish --dry-run`, without uploads or owner changes. A fresh temporary Cargo home avoids stale registry state and is removed afterward; dependencies are downloaded again. Production uses its usual Cargo home and credentials. Package versions come from the manifests; the release tag does not rewrite them.
 
 ### NPM Package
 
