@@ -24,6 +24,7 @@ impl CratesRelease {
             println!("All selected crates are already published; nothing to publish.");
             return Ok(());
         }
+        // Workaround for some weird bug where dry runs fail if you don't run them in a sterile home dir
         let cargo_home = if self.dry_run {
             Some(tempfile::tempdir().map_err(|err| format!("Failed to create temporary Cargo home: {err}"))?)
         } else {
