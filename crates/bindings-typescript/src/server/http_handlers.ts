@@ -55,7 +55,10 @@ type RouteSpec = {
 };
 
 const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION =
-  'ASCII lowercase letters, digits and `-_~/`';
+  'ASCII lowercase letters, digits and `-_~/*`';
+
+/** The character which, as the final character of a route path, matches any remaining path. */
+const ROUTE_WILDCARD = '*';
 
 export const makeRequest = Symbol('makeRequest');
 
@@ -96,8 +99,31 @@ function characterIsAcceptableForRoutePath(c: string) {
     c === '-' ||
     c === '_' ||
     c === '~' ||
-    c === '/'
+    c === '/' ||
+    c === ROUTE_WILDCARD
   );
+}
+
+/** True if `*` appears at most once in `path`, and only as its final character. */
+function wildcardIsOnlyTrailing(path: string) {
+  const prefix = path.endsWith(ROUTE_WILDCARD) ? path.slice(0, -1) : path;
+  return !prefix.includes(ROUTE_WILDCARD);
+}
+
+/** True if two route paths can match the same request path. */
+function routePathsOverlap(a: string, b: string) {
+  const aPrefix = a.endsWith(ROUTE_WILDCARD) ? a.slice(0, -1) : null;
+  const bPrefix = b.endsWith(ROUTE_WILDCARD) ? b.slice(0, -1) : null;
+  if (aPrefix !== null && bPrefix !== null) {
+    return aPrefix.startsWith(bPrefix) || bPrefix.startsWith(aPrefix);
+  }
+  if (aPrefix !== null) {
+    return b.startsWith(aPrefix);
+  }
+  if (bPrefix !== null) {
+    return a.startsWith(bPrefix);
+  }
+  return a === b;
 }
 
 function assertValidPath(path: string) {
@@ -107,6 +133,11 @@ function assertValidPath(path: string) {
   if (![...path].every(characterIsAcceptableForRoutePath)) {
     throw new TypeError(
       `Route paths may contain only ${ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION}: ${path}`
+    );
+  }
+  if (!wildcardIsOnlyTrailing(path)) {
+    throw new TypeError(
+      `Route paths may contain \`*\` only as the final character: ${path}`
     );
   }
 }
@@ -123,7 +154,7 @@ function routesOverlap(a: RouteSpec, b: RouteSpec) {
   };
 
   return (
-    a.path === b.path &&
+    routePathsOverlap(a.path, b.path) &&
     (a.method.tag === 'Any' ||
       b.method.tag === 'Any' ||
       (a.method.tag === 'Method' &&
