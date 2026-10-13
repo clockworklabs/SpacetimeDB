@@ -140,7 +140,6 @@ jobs:
           chmod +x ./shared-bin/cargo-release
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
-      # Both modes skip published versions and verify the remainder in one Cargo invocation.
       - name: Run release (dry-run)
         if: ${{ inputs.dry_run }}
         # Dry-run uses a temporary Cargo home and skips uploads and owner changes.
