@@ -34,8 +34,8 @@ impl CratesRelease {
         // using Cargo's temporary registry; separate invocations would look for them on crates.io.
         let mut cmd = Command::new("cargo");
         cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
-        for krate in crates {
-            cmd.args(["-p", krate]);
+        for c in crates {
+            cmd.args(["-p", c]);
         }
         if self.dry_run {
             cmd.arg("--dry-run");
@@ -145,8 +145,8 @@ impl ReleaseTarget for CratesRelease {
         let crates = crate::crates_resolver::get_crates_to_publish()
             .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
         println!("\nCrates to publish in order:");
-        for krate in &crates {
-            println!("  - {}", krate);
+        for c in &crates {
+            println!("  - {}", c);
         }
         if self.dry_run {
             println!("\nDRY RUN: No crates will be published");
@@ -159,20 +159,20 @@ impl ReleaseTarget for CratesRelease {
             .map_err(|err| format!("Failed to create crates.io index client: {err}"))?;
         let crates_io_version = self.version.strip_prefix('v').unwrap_or(&self.version);
         let mut pending = Vec::new();
-        for krate in &crates {
-            if is_published(&client, CRATES_IO_INDEX, krate, crates_io_version)? {
+        for c in &crates {
+            if is_published(&client, CRATES_IO_INDEX, c, crates_io_version)? {
                 println!(
                     "Crate {} already published on crates.io; skipping (treating as success).",
-                    krate
+                    c
                 );
             } else {
-                pending.push(krate);
+                pending.push(c);
             }
         }
         self.publish_crates(&workspace_root, &pending)?;
         if !self.dry_run {
-            for krate in &crates {
-                self.add_crate_owners(krate)?;
+            for c in &crates {
+                self.add_crate_owners(c)?;
             }
         }
         if self.dry_run {
