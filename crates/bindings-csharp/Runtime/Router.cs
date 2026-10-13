@@ -15,7 +15,38 @@ public sealed class Router
     );
 
     private const string AcceptableRoutePathCharsHumanDescription =
-        "ASCII lowercase letters, digits and `-_~/`";
+        "ASCII lowercase letters, digits and `-_~/*`";
+
+    private const char RouteWildcard = '*';
+
+    /// <summary>True if <c>*</c> appears at most once in <paramref name="path"/>, and only as its final character.</summary>
+    private static bool WildcardIsOnlyTrailing(string path)
+    {
+        var prefix = path.EndsWith(RouteWildcard) ? path[..^1] : path;
+        return !prefix.Contains(RouteWildcard);
+    }
+
+    /// <summary>True if two route paths can match the same request path.</summary>
+    private static bool RoutePathsOverlap(string a, string b)
+    {
+        var aPrefix = a.EndsWith(RouteWildcard) ? a[..^1] : null;
+        var bPrefix = b.EndsWith(RouteWildcard) ? b[..^1] : null;
+
+        if (aPrefix is not null && bPrefix is not null)
+        {
+            return aPrefix.StartsWith(bPrefix, StringComparison.Ordinal)
+                || bPrefix.StartsWith(aPrefix, StringComparison.Ordinal);
+        }
+        if (aPrefix is not null)
+        {
+            return b.StartsWith(aPrefix, StringComparison.Ordinal);
+        }
+        if (bPrefix is not null)
+        {
+            return a.StartsWith(bPrefix, StringComparison.Ordinal);
+        }
+        return string.Equals(a, b, StringComparison.Ordinal);
+    }
 
     private readonly List<RouteSpec> routes;
 
@@ -130,7 +161,7 @@ public sealed class Router
 
     private static bool RoutesOverlap(RouteSpec a, RouteSpec b)
     {
-        if (!string.Equals(a.Path, b.Path, StringComparison.Ordinal))
+        if (!RoutePathsOverlap(a.Path, b.Path))
         {
             return false;
         }
@@ -157,8 +188,15 @@ public sealed class Router
                 );
             }
         }
+        if (!WildcardIsOnlyTrailing(path))
+        {
+            throw new ArgumentException(
+                $"Route paths may contain `*` only as the final character: {path}",
+                nameof(path)
+            );
+        }
     }
 
     private static bool CharacterIsAcceptableForRoutePath(char c) =>
-        c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_' or '~' or '/';
+        c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_' or '~' or '/' or RouteWildcard;
 }

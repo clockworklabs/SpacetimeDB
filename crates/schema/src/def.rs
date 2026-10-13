@@ -46,6 +46,7 @@ use spacetimedb_lib::db::raw_def::v9::{
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::environment::EnvironmentSchema;
+use spacetimedb_lib::http::route_path_matches;
 use spacetimedb_lib::{hash_bytes, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
@@ -544,8 +545,9 @@ impl ModuleDef {
         path: &str,
     ) -> Option<(HttpHandlerId, &HttpHandlerDef, &HttpRouteDef)> {
         // TODO(perf): Replace this linear scan with a trie or other indexed routing structure.
+        // Validation rejects routes which could match the same request, so at most one does.
         for route in &self.http_routes {
-            if route.path.as_ref() != path {
+            if !route_path_matches(route.path.as_ref(), path) {
                 continue;
             }
             let method_matches = matches!(route.method, MethodOrAny::Any)

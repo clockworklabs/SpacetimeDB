@@ -24,7 +24,10 @@ use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 #[cfg(any(target_arch = "wasm32", feature = "unstable"))]
 use spacetimedb_lib::http as st_http;
 #[cfg(feature = "unstable")]
-use spacetimedb_lib::http::{character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
+use spacetimedb_lib::http::{
+    character_is_acceptable_for_route_path, route_paths_overlap, wildcard_is_only_trailing,
+    ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION,
+};
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::TimeDuration;
@@ -228,6 +231,9 @@ impl Handler {
 /// Only characters described by [`spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION`]
 /// are valid for use in paths. This set may be expanded in the future.
 ///
+/// A path may end with a single `*`, which matches any remaining path, so `/webhooks/*`
+/// matches `/webhooks/github` and `/webhooks/` but not `/webhooks`.
+///
 /// SpacetimeDB uses strict routing, meaning that trailing slashes `/` in paths are significant.
 /// `/foo` and `/foo/` are distinct paths.
 ///
@@ -427,11 +433,14 @@ fn assert_valid_path(path: &str) {
             ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
         );
     }
+    if !wildcard_is_only_trailing(path) {
+        panic!("Route paths may contain `*` only as the final character: {path}");
+    }
 }
 
 #[cfg(feature = "unstable")]
 fn routes_overlap(a: &RouteSpec, b: &RouteSpec) -> bool {
-    if a.path != b.path {
+    if !route_paths_overlap(&a.path, &b.path) {
         return false;
     }
     matches!(a.method, MethodOrAny::Any) || matches!(b.method, MethodOrAny::Any) || a.method == b.method

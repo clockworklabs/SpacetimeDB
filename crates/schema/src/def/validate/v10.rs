@@ -5,7 +5,7 @@ use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_lib::http::character_is_acceptable_for_route_path;
+use spacetimedb_lib::http::{character_is_acceptable_for_route_path, route_paths_overlap, wildcard_is_only_trailing};
 use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::{AlgebraicType, Typespace, WithTypespace};
 
@@ -575,14 +575,17 @@ fn validate_http_route_path(path: &RawIdentifier) -> Result<()> {
     let path_str = path.as_ref();
     if (!path_str.is_empty() && !path_str.starts_with('/'))
         || !path_str.chars().all(character_is_acceptable_for_route_path)
+        || !wildcard_is_only_trailing(path_str)
     {
         return Err(ValidationError::InvalidHttpRoutePath { path: path.clone() }.into());
     }
     Ok(())
 }
 
+/// Two routes overlap when their paths can match the same request path and their methods
+/// can match the same request method, so one of them would be unreachable.
 fn routes_overlap(a: &HttpRouteDef, b: &HttpRouteDef) -> bool {
-    if a.path != b.path {
+    if !route_paths_overlap(&a.path, &b.path) {
         return false;
     }
     matches!(a.method, MethodOrAny::Any) || matches!(b.method, MethodOrAny::Any) || a.method == b.method
@@ -2708,6 +2711,10 @@ mod tests {
             "/backslash\\",
             "/caret^",
             "/percent%",
+            "*",
+            "/mid*path",
+            "/double**",
+            "/star*tail*",
         ] {
             builder.add_http_route("handle", MethodOrAny::Any, path);
         }
@@ -2749,6 +2756,10 @@ mod tests {
                 "/backslash\\",
                 "/caret^",
                 "/percent%",
+                "*",
+                "/mid*path",
+                "/double**",
+                "/star*tail*",
             ];
             expected.sort_unstable();
 
@@ -2756,6 +2767,106 @@ mod tests {
         } else {
             panic!("expected invalid HTTP route path errors");
         }
+    }
+
+    #[test]
+    fn http_routes_wildcard_overlaps_static_path() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Any, "/webhooks/*");
+        builder.add_http_route("handle", MethodOrAny::Any, "/webhooks/github");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpRoute { path, .. } => {
+            path.as_ref() == "/webhooks/github"
+        });
+    }
+
+    #[test]
+    fn http_routes_wildcards_overlap_each_other() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Any, "/webhooks/*");
+        builder.add_http_route("handle", MethodOrAny::Any, "/webhooks/github/*");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpRoute { path, .. } => {
+            path.as_ref() == "/webhooks/github/*"
+        });
+    }
+
+    #[test]
+    fn http_routes_wildcard_does_not_overlap_sibling_path() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Any, "/webhooks/*");
+        builder.add_http_route("handle", MethodOrAny::Any, "/other/github");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn http_routes_wildcard_matching() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/webhooks/*");
+
+        let module_def: ModuleDef = builder.finish().try_into().unwrap();
+
+        for path in ["/webhooks/github", "/webhooks/", "/webhooks/a/b"] {
+            let (_, _, route) = module_def
+                .match_http_route(&HttpMethod::Get, path)
+                .unwrap_or_else(|| panic!("expected /webhooks/* to match {path}"));
+            assert_eq!(route.path.as_ref(), "/webhooks/*");
+        }
+
+        // The prefix itself, a sibling path and another method do not match.
+        for (method, path) in [
+            (HttpMethod::Get, "/webhooks"),
+            (HttpMethod::Get, "/other/github"),
+            (HttpMethod::Post, "/webhooks/github"),
+        ] {
+            assert!(
+                module_def.match_http_route(&method, path).is_none(),
+                "{method:?} {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn http_routes_wildcard_and_covered_path_with_other_method_are_allowed() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/webhooks/*");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Post), "/webhooks/github");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn http_routes_any_wildcard_overlaps_covered_path_with_any_method() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Any, "/webhooks/*");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Post), "/webhooks/github");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpRoute { path, .. } => {
+            path.as_ref() == "/webhooks/github"
+        });
     }
 
     #[test]
