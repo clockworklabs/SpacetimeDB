@@ -52,6 +52,9 @@
     "email",
     "webhooks"
   ],
+  "submodule": {
+    "category": "messaging"
+  },
   "scripts": {
     "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../../licenses/apache2.txt', 'LICENSE')\"",
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\"",
