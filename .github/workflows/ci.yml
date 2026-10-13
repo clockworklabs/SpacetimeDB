@@ -1472,7 +1472,7 @@ jobs:
 
   portable_datastore:
     name: Check portable datastore
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -2407,7 +2407,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Submodules
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       ARTIFACT_SUFFIX: linux
     steps:
