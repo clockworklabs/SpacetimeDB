@@ -11,7 +11,7 @@ use std::time::Instant;
 use tempfile::tempdir;
 
 #[derive(Parser)]
-#[command(about = "Warms the Rust caches used by the Linux CI runner image")]
+#[command(about = "Warms the Rust caches used by CI runner images")]
 struct Args {}
 
 struct WarmRunner {
@@ -66,20 +66,41 @@ where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,
 {
-    cmd("cargo", args)
+    let command = cmd("cargo", args);
+    if cfg!(target_os = "windows") {
+        command
+            .env("CARGO_TARGET_DIR", "C:/actions-runner/_work/target")
+            .env("OPENSSL_RUST_USE_NASM", "1")
+            .env("RUST_BACKTRACE", "full")
+    } else {
+        command
+    }
 }
 
 fn expected_target_dir() -> Result<PathBuf> {
+    if cfg!(target_os = "windows") {
+        return Ok(PathBuf::from(r"C:\actions-runner\_work\target"));
+    }
     let home = env::var_os("HOME").context("HOME is not set")?;
     Ok(PathBuf::from(home).join("actions-runner/_work/target"))
 }
 
 fn checked_target_dir() -> Result<PathBuf> {
-    ensure!(cfg!(target_os = "linux"), "cache warming is supported only on Linux");
+    ensure!(
+        cfg!(any(target_os = "linux", target_os = "windows")),
+        "cache warming is supported only on Linux and Windows"
+    );
+    let expected = expected_target_dir()?;
+    if cfg!(target_os = "windows") {
+        ensure!(
+            !env::current_exe()?.starts_with(&expected),
+            "run cache warming without CARGO_TARGET_DIR set"
+        );
+        return Ok(expected);
+    }
     let target = env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .context("CARGO_TARGET_DIR is not set")?;
-    let expected = expected_target_dir()?;
     ensure!(
         target == expected,
         "refusing to reset unexpected Cargo target {}; expected {}",
@@ -138,6 +159,22 @@ fn warm_runtime_builds(runner: &mut WarmRunner) {
             "x86_64-unknown-linux-gnu",
             "--features",
             "github-token-auth",
+        ]))
+    });
+}
+
+fn warm_windows_runtime_builds(runner: &mut WarmRunner) {
+    runner.required("Build release CLI and standalone with loopback support", || {
+        run(cargo([
+            "build",
+            "--timings",
+            "--release",
+            "-p",
+            "spacetimedb-cli",
+            "-p",
+            "spacetimedb-standalone",
+            "--features",
+            "spacetimedb-standalone/allow_loopback_http_for_tests",
         ]))
     });
 }
@@ -418,8 +455,21 @@ const FAMILIES: &[(&str, WarmFamily)] = &[
     ("independent modules", warm_independent_modules),
 ];
 
+const WINDOWS_FAMILIES: &[(&str, WarmFamily)] = &[
+    ("runtime builds", warm_windows_runtime_builds),
+    ("smoketest archive", warm_windows_smoketests),
+];
+
+fn families() -> &'static [(&'static str, WarmFamily)] {
+    if cfg!(target_os = "windows") {
+        WINDOWS_FAMILIES
+    } else {
+        FAMILIES
+    }
+}
+
 fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
-    for &(name, family) in FAMILIES {
+    for &(name, family) in families() {
         let started = Instant::now();
         reset_cargo_target(target)?;
         runner.set_pass(match name {
@@ -429,6 +479,7 @@ fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
             "local installs" => "sccache population: local installs",
             "CI tools" => "sccache population: CI tools",
             "independent modules" => "sccache population: independent modules",
+            "smoketest archive" => "sccache population: smoketest archive",
             _ => unreachable!(),
         });
         family(runner);
@@ -439,7 +490,7 @@ fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
 
 fn seed_target(runner: &mut WarmRunner, target: &Path) -> Result<()> {
     reset_cargo_target(target)?;
-    for &(name, family) in FAMILIES {
+    for &(name, family) in families() {
         let started = Instant::now();
         runner.set_pass(match name {
             "runtime builds" => "target seed: runtime builds",
@@ -448,6 +499,7 @@ fn seed_target(runner: &mut WarmRunner, target: &Path) -> Result<()> {
             "local installs" => "target seed: local installs",
             "CI tools" => "target seed: CI tools",
             "independent modules" => "target seed: independent modules",
+            "smoketest archive" => "target seed: smoketest archive",
             _ => unreachable!(),
         });
         family(runner);
@@ -472,12 +524,21 @@ fn warm_smoketest_archive() -> Result<()> {
         OsString::from("ci-smoketests"),
         OsString::from("--"),
         OsString::from("--suite"),
-        OsString::from("standalone"),
+        OsString::from(if cfg!(target_os = "windows") {
+            "all"
+        } else {
+            "standalone"
+        }),
         OsString::from("archive"),
         OsString::from("--archive-file"),
         archive.into_os_string(),
     ];
     run(cargo(args))
+}
+
+fn warm_windows_smoketests(runner: &mut WarmRunner) {
+    runner.required("Install cargo-nextest", ensure_cargo_nextest);
+    runner.required("Build smoketest archive", warm_smoketest_archive);
 }
 
 fn main() -> Result<()> {
@@ -503,9 +564,11 @@ fn main() -> Result<()> {
     populate_sccache(&mut runner, &target)?;
     seed_target(&mut runner, &target)?;
 
-    runner.set_pass("target seed: smoketests");
-    runner.required("Install cargo-nextest", ensure_cargo_nextest);
-    runner.required("Build standalone smoketest archive", warm_smoketest_archive);
+    if cfg!(target_os = "linux") {
+        runner.set_pass("target seed: smoketests");
+        runner.required("Install cargo-nextest", ensure_cargo_nextest);
+        runner.required("Build standalone smoketest archive", warm_smoketest_archive);
+    }
     runner.finish()
 }
 

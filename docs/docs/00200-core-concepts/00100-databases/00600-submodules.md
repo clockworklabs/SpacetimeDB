@@ -158,7 +158,7 @@ Call a submodule reducer or a plain helper function typed against the submodule'
 
 ```typescript
 // auth_lib: plain helper function typed against the submodule's own schema
-export function sessionCountHelper(ctx: ReducerCtx<typeof spacetimedb>): number {
+export function sessionCountHelper(ctx: ReducerCtx<typeof spacetimedb.schemaType>): number {
   return ctx.db.sessions.count();
 }
 
@@ -352,7 +352,7 @@ POST /v1/database/my-database/call/myauth.verify_token
 ### CLI
 
 ```bash
-spacetime call my-database "myauth.verify_token" '{"token": "abc123"}'
+spacetime call my-database "myauth.verify_token" '"abc123"'
 ```
 
 Both parts of the wire name are canonical: the namespace prefix is the canonical namespace name

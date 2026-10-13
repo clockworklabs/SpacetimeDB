@@ -15,8 +15,11 @@ fn formats_downloaded_reports_and_reports_io_errors() {
     let reports = root.join("reports");
     fs::create_dir_all(&root).unwrap();
     let output = root.join("payload.json");
+    // Nextest archives relocate binaries, so prefer its runtime path over the compile-time one.
+    let exe = std::env::var_os("NEXTEST_BIN_EXE_ci-llm-benchmark-summary")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_ci-llm-benchmark-summary").into());
     let run = || {
-        Command::new(env!("CARGO_BIN_EXE_ci-llm-benchmark-summary"))
+        Command::new(&exe)
             .arg("--reports-dir")
             .arg(&reports)
             .args(["--run-url", "https://example.com/run", "--run-label", "Manual run"])

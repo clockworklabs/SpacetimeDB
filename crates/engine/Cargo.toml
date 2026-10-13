@@ -50,7 +50,7 @@ bytes.workspace = true
 env_logger.workspace = true
 fs_extra.workspace = true
 pretty_assertions.workspace = true
-spacetimedb-commitlog = { workspace = true, features = ["test"] }
-spacetimedb-datastore = { workspace = true, features = ["test"] }
-spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
+spacetimedb-datastore = { path = "../datastore", features = ["test"] }
+spacetimedb-schema = { path = "../schema", features = ["test"] }
 tokio.workspace = true

@@ -873,6 +873,7 @@ impl Lang for Csharp<'_> {
                         indented_block(output, |output| {
                             writeln!(output, "case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;");
                             writeln!(output, "case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception(\"out of energy\")); break;");
+                            writeln!(output, "case Status.UnknownResult(var _): InternalOnUnhandledReducerError(ctx, new UnknownResultException()); break;");
                         });
                     });
                     writeln!(output, "return false;");

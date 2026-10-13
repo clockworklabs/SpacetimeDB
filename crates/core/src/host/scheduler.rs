@@ -24,11 +24,12 @@ use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::table::RowRef;
+use std::collections::HashMap;
 use std::panic;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tokio_util::time::delay_queue::{DelayQueue, Expired};
+use tokio_util::time::delay_queue::{DelayQueue, Expired, Key};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledFunctionId {
@@ -91,6 +92,7 @@ impl SchedulerStarter {
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
+        let mut queued_ids = HashMap::new();
         let tx = self.db.begin_tx(Workload::Internal);
 
         // Draining rx before processing schedules from the DB to ensure there are no in-flight messages,
@@ -128,7 +130,9 @@ impl SchedulerStarter {
                     id_column,
                     at_column,
                 };
-                queue.insert_at(
+                insert_scheduled_queue_item(
+                    &mut queue,
+                    &mut queued_ids,
                     QueueItem::Id {
                         id,
                         function_name: function_name.clone(),
@@ -144,6 +148,7 @@ impl SchedulerStarter {
             SchedulerActor {
                 rx: self.rx,
                 queue,
+                queued_ids,
                 inflight_calls: FuturesUnordered::new(),
                 active_calls_metric: WORKER_METRICS
                     .scheduler_active_scheduled_functions
@@ -274,6 +279,7 @@ impl Scheduler {
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
+    queued_ids: HashMap<ScheduledFunctionId, Key>,
     inflight_calls: FuturesUnordered<ScheduledFunctionFuture>,
     active_calls_metric: IntGauge,
     module_host: WeakModuleHost,
@@ -371,7 +377,7 @@ impl SchedulerActor {
                 effective_at,
                 real_at,
             } => {
-                self.queue.insert_at(
+                self.insert_scheduled(
                     QueueItem::Id {
                         id,
                         function_name,
@@ -392,6 +398,9 @@ impl SchedulerActor {
 
     fn handle_queued(&mut self, expired: Expired<QueueItem>) {
         let item = expired.into_inner();
+        if let QueueItem::Id { id, .. } = item {
+            self.queued_ids.remove(&id);
+        }
 
         let Some(module_host) = self.module_host.upgrade() else {
             return;
@@ -430,7 +439,7 @@ impl SchedulerActor {
                     ..
                 } = item
                 {
-                    self.queue.insert_at(
+                    self.insert_scheduled(
                         QueueItem::Id {
                             id,
                             function_name,
@@ -444,8 +453,27 @@ impl SchedulerActor {
         }
     }
 
+    fn insert_scheduled(&mut self, item: QueueItem, real_at: Instant) {
+        insert_scheduled_queue_item(&mut self.queue, &mut self.queued_ids, item, real_at);
+    }
+
     fn update_active_calls_metric(&self) {
         self.active_calls_metric.set(self.inflight_calls.len() as i64);
+    }
+}
+
+fn insert_scheduled_queue_item(
+    queue: &mut DelayQueue<QueueItem>,
+    queued_ids: &mut HashMap<ScheduledFunctionId, Key>,
+    item: QueueItem,
+    real_at: Instant,
+) {
+    if let QueueItem::Id { id, .. } = item {
+        if let Some(key) = queued_ids.remove(&id) {
+            queue.remove(&key);
+        }
+        let key = queue.insert_at(item, real_at);
+        queued_ids.insert(id, key);
     }
 }
 
@@ -1081,5 +1109,34 @@ mod tests {
     fn next_interval_tick_is_strictly_after_now_on_boundary() {
         let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_300));
         assert_eq!(next, ts(1_400));
+    }
+
+    #[tokio::test]
+    async fn scheduling_same_row_replaces_pending_queue_entry() {
+        let mut queue = DelayQueue::new();
+        let mut queued_ids = HashMap::new();
+        let id = ScheduledFunctionId {
+            table_id: TableId(1),
+            schedule_id: 1,
+            id_column: ColId(0),
+            at_column: ColId(1),
+        };
+
+        for at in [ts(1_000), ts(2_000)] {
+            insert_scheduled_queue_item(
+                &mut queue,
+                &mut queued_ids,
+                QueueItem::Id {
+                    id,
+                    function_name: Arc::from("tick"),
+                    at,
+                    row_hash: Hash::ZERO,
+                },
+                Instant::now() + Duration::from_secs(60),
+            );
+        }
+
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queued_ids.len(), 1);
     }
 }
