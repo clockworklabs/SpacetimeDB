@@ -1,0 +1,59 @@
+{
+  "submodules": [
+    {
+      "slug": "agents",
+      "path": "modules/spacetime-agents-ts",
+      "category": "ai",
+      "firstParty": true,
+      "image": "/images/submodules/agents.svg"
+    },
+    {
+      "slug": "auth",
+      "path": "modules/spacetime-auth-ts",
+      "category": "auth",
+      "firstParty": true,
+      "image": "/images/submodules/auth.svg"
+    },
+    {
+      "slug": "cron",
+      "path": "modules/spacetime-cron-ts",
+      "category": "utilities",
+      "firstParty": true
+    },
+    {
+      "slug": "crypto",
+      "path": "modules/spacetime-crypto-ts",
+      "category": "utilities",
+      "firstParty": true,
+      "image": "/images/submodules/crypto.svg"
+    },
+    {
+      "slug": "files",
+      "path": "modules/spacetime-files-ts",
+      "category": "storage",
+      "firstParty": true,
+      "image": "/images/submodules/files.svg"
+    },
+    {
+      "slug": "rate-limit",
+      "path": "modules/spacetime-rate-limit-ts",
+      "category": "utilities",
+      "firstParty": true,
+      "image": "/images/submodules/rate-limit.svg"
+    },
+    {
+      "slug": "resend",
+      "path": "modules/spacetime-resend-ts",
+      "category": "messaging",
+      "firstParty": true,
+      "image": "/images/submodules/resend.svg"
+    },
+    {
+      "slug": "retry",
+      "path": "modules/spacetime-retry-ts",
+      "category": "durable",
+      "firstParty": true,
+      "image": "/images/submodules/retry.svg"
+    }
+  ]
+}

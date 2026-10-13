@@ -309,50 +309,82 @@ importers:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/module-test-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-case-conversion-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-connect-disconnect-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-procedural-view-pk-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-procedure-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-view-pk-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
-  spacetime-agents-ts:
+  modules/spacetime-agents-ts:
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -365,7 +397,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -373,7 +405,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-agents-ts/example:
+  modules/spacetime-agents-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
         specifier: workspace:*
@@ -386,7 +418,7 @@ importers:
         version: 4.21.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -404,7 +436,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-agents-ts/example/spacetimedb:
+  modules/spacetime-agents-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/agents':
         specifier: workspace:*
@@ -417,7 +449,7 @@ importers:
         version: link:../../../spacetime-files-ts
       spacetimedb:
         specifier: workspace:*
-        version: link:../../../crates/bindings-typescript
+        version: link:../../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -429,14 +461,14 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-agents-ts/spacetimedb:
+  modules/spacetime-agents-ts/spacetimedb:
     dependencies:
       '@spacetimedb/agents':
         specifier: workspace:*
         version: link:..
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -445,7 +477,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-auth-ts:
+  modules/spacetime-auth-ts:
     dependencies:
       '@noble/curves':
         specifier: ^2.2.0
@@ -471,7 +503,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -479,7 +511,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-auth-ts/example:
+  modules/spacetime-auth-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
         specifier: workspace:*
@@ -492,7 +524,7 @@ importers:
         version: 4.21.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -510,11 +542,30 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-auth-ts/example/spacetimedb:
+  modules/spacetime-auth-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/auth':
         specifier: workspace:*
         version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-auth-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:..
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:../../spacetime-rate-limit-ts
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript
@@ -526,26 +577,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-auth-ts/spacetimedb:
-    dependencies:
-      '@spacetimedb/auth':
-        specifier: workspace:*
-        version: link:..
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:../../spacetime-rate-limit-ts
-      spacetimedb:
-        specifier: workspace:*
-        version: link:../../crates/bindings-typescript
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.18.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  spacetime-cron-ts:
+  modules/spacetime-cron-ts:
     dependencies:
       cron-parser:
         specifier: 5.5.0
@@ -562,7 +594,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -570,7 +602,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-cron-ts/example:
+  modules/spacetime-cron-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
         specifier: workspace:*
@@ -583,7 +615,7 @@ importers:
         version: 4.21.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -601,11 +633,27 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-cron-ts/example/spacetimedb:
+  modules/spacetime-cron-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/cron':
         specifier: workspace:*
         version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-cron-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/cron':
+        specifier: workspace:*
+        version: link:..
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript
@@ -617,23 +665,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-cron-ts/spacetimedb:
-    dependencies:
-      '@spacetimedb/cron':
-        specifier: workspace:*
-        version: link:..
-      spacetimedb:
-        specifier: workspace:*
-        version: link:../../crates/bindings-typescript
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.18.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  spacetime-crypto-ts:
+  modules/spacetime-crypto-ts:
     dependencies:
       '@noble/hashes':
         specifier: ^2.2.0
@@ -655,7 +687,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-example-ui-ts:
+  modules/spacetime-example-ui-ts:
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -676,7 +708,7 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
-  spacetime-files-ts:
+  modules/spacetime-files-ts:
     dependencies:
       '@spacetimedb/crypto':
         specifier: workspace:^
@@ -693,7 +725,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -701,7 +733,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-files-ts/example:
+  modules/spacetime-files-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
         specifier: workspace:*
@@ -717,7 +749,7 @@ importers:
         version: 4.21.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -735,14 +767,14 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-files-ts/example/spacetimedb:
+  modules/spacetime-files-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/files':
         specifier: workspace:*
         version: link:../..
       spacetimedb:
         specifier: workspace:*
-        version: link:../../../crates/bindings-typescript
+        version: link:../../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -751,7 +783,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-rate-limit-ts:
+  modules/spacetime-rate-limit-ts:
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -764,7 +796,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -772,7 +804,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-rate-limit-ts/example:
+  modules/spacetime-rate-limit-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
         specifier: workspace:*
@@ -785,7 +817,7 @@ importers:
         version: 4.21.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -803,11 +835,27 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-rate-limit-ts/example/spacetimedb:
+  modules/spacetime-rate-limit-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/rate-limit':
         specifier: workspace:*
         version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-rate-limit-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:..
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript
@@ -819,23 +867,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-rate-limit-ts/spacetimedb:
-    dependencies:
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:..
-      spacetimedb:
-        specifier: workspace:*
-        version: link:../../crates/bindings-typescript
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.18.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  spacetime-resend-ts:
+  modules/spacetime-resend-ts:
     dependencies:
       '@spacetimedb/crypto':
         specifier: workspace:^
@@ -855,7 +887,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -863,7 +895,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-resend-ts/example:
+  modules/spacetime-resend-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
         specifier: workspace:*
@@ -876,7 +908,7 @@ importers:
         version: 4.21.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
@@ -897,7 +929,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-resend-ts/example/spacetimedb:
+  modules/spacetime-resend-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/rate-limit':
         specifier: workspace:*
@@ -907,7 +939,7 @@ importers:
         version: link:../..
       spacetimedb:
         specifier: workspace:*
-        version: link:../../../crates/bindings-typescript
+        version: link:../../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -916,7 +948,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-retry-ts:
+  modules/spacetime-retry-ts:
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -929,7 +961,7 @@ importers:
         version: 3.6.2
       spacetimedb:
         specifier: workspace:*
-        version: link:../crates/bindings-typescript
+        version: link:../../crates/bindings-typescript
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -937,14 +969,14 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  spacetime-retry-ts/spacetimedb:
+  modules/spacetime-retry-ts/spacetimedb:
     dependencies:
       '@spacetimedb/retry':
         specifier: workspace:*
         version: link:..
       spacetimedb:
         specifier: workspace:*
-        version: link:../../crates/bindings-typescript
+        version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -1108,6 +1140,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
   templates/hangman-react-ts:
     dependencies:
@@ -15567,10 +15602,6 @@ packages:
     resolution: {integrity: sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==}
     engines: {node: '>=18'}
 
-  watchpack@2.5.0:
-    resolution: {integrity: sha512-e6vZvY6xboSwLz2GD36c16+O/2Z6fKvIf4pOXptw2rY9MVwE/TXc6RGqxD3I3x0a28lwBY7DE+76uTPSsBrrCA==}
-    engines: {node: '>=10.13.0'}
-
   watchpack@2.5.1:
     resolution: {integrity: sha512-Zn5uXdcFNIA1+1Ei5McRd+iRzfhENPCe7LeABkJtNulSxjma+l7ltNx55BWZkRlwRnpOgHqxnjyaDgJnNXnqzg==}
     engines: {node: '>=10.13.0'}
@@ -16472,7 +16503,7 @@ snapshots:
       '@babel/helper-module-transforms': 7.28.6(@babel/core@7.29.0)
       '@babel/helpers': 7.28.6
       '@babel/parser': 7.29.7
-      '@babel/template': 7.28.6
+      '@babel/template': 7.29.7
       '@babel/traverse': 7.29.7
       '@babel/types': 7.29.7
       '@jridgewell/remapping': 2.3.5
@@ -16614,8 +16645,8 @@ snapshots:
     dependencies:
       '@babel/core': 7.28.6
       '@babel/helper-module-imports': 7.28.6
-      '@babel/helper-validator-identifier': 7.28.5
-      '@babel/traverse': 7.28.6
+      '@babel/helper-validator-identifier': 7.29.7
+      '@babel/traverse': 7.29.7
     transitivePeerDependencies:
       - supports-color
 
@@ -16623,8 +16654,8 @@ snapshots:
     dependencies:
       '@babel/core': 7.29.0
       '@babel/helper-module-imports': 7.28.6
-      '@babel/helper-validator-identifier': 7.28.5
-      '@babel/traverse': 7.28.6
+      '@babel/helper-validator-identifier': 7.29.7
+      '@babel/traverse': 7.29.7
     transitivePeerDependencies:
       - supports-color
 
@@ -16701,8 +16732,8 @@ snapshots:
 
   '@babel/helpers@7.28.6':
     dependencies:
-      '@babel/template': 7.28.6
-      '@babel/types': 7.28.6
+      '@babel/template': 7.29.7
+      '@babel/types': 7.29.7
 
   '@babel/parser@7.28.3':
     dependencies:
@@ -24494,9 +24525,9 @@ snapshots:
       '@opentelemetry/api': 1.9.0
       zod: 4.3.5
 
-  ajv-formats@2.1.1(ajv@8.17.1):
+  ajv-formats@2.1.1(ajv@8.18.0):
     optionalDependencies:
-      ajv: 8.17.1
+      ajv: 8.18.0
 
   ajv-formats@3.0.1(ajv@8.17.1):
     optionalDependencies:
@@ -24510,9 +24541,9 @@ snapshots:
     dependencies:
       ajv: 6.12.6
 
-  ajv-keywords@5.1.0(ajv@8.17.1):
+  ajv-keywords@5.1.0(ajv@8.18.0):
     dependencies:
-      ajv: 8.17.1
+      ajv: 8.18.0
       fast-deep-equal: 3.1.3
 
   ajv@6.12.6:
@@ -28194,8 +28225,8 @@ snapshots:
 
   magicast@0.5.1:
     dependencies:
-      '@babel/parser': 7.28.6
-      '@babel/types': 7.28.6
+      '@babel/parser': 7.29.7
+      '@babel/types': 7.29.7
       source-map-js: 1.2.1
 
   make-dir@4.0.0:
@@ -31688,9 +31719,9 @@ snapshots:
   schema-utils@4.3.3:
     dependencies:
       '@types/json-schema': 7.0.15
-      ajv: 8.17.1
-      ajv-formats: 2.1.1(ajv@8.17.1)
-      ajv-keywords: 5.1.0(ajv@8.17.1)
+      ajv: 8.18.0
+      ajv-formats: 2.1.1(ajv@8.18.0)
+      ajv-keywords: 5.1.0(ajv@8.18.0)
 
   scule@1.3.0: {}
 
@@ -32597,7 +32628,7 @@ snapshots:
 
   tsx@4.21.0:
     dependencies:
-      esbuild: 0.27.2
+      esbuild: 0.27.3
       get-tsconfig: 4.10.1
     optionalDependencies:
       fsevents: 2.3.3
@@ -33506,11 +33537,6 @@ snapshots:
     dependencies:
       xml-name-validator: 5.0.0
 
-  watchpack@2.5.0:
-    dependencies:
-      glob-to-regexp: 0.4.1
-      graceful-fs: 4.2.11
-
   watchpack@2.5.1:
     dependencies:
       glob-to-regexp: 0.4.1
@@ -33653,7 +33679,7 @@ snapshots:
       schema-utils: 4.3.3
       tapable: 2.3.0
       terser-webpack-plugin: 5.3.14(webpack@5.102.0)
-      watchpack: 2.5.0
+      watchpack: 2.5.1
       webpack-sources: 3.3.3
     transitivePeerDependencies:
       - '@swc/core'
