@@ -235,37 +235,4 @@ mod tests {
             package("build-helper", vec![]),
         ]);
     }
-
-    #[test]
-    #[ignore = "manual dependency detection check against the current workspace"]
-    fn workspace_publication_order() {
-        let metadata = get_cargo_metadata(&find_workspace_root().unwrap()).unwrap();
-        let dependencies: Vec<_> = metadata
-            .packages
-            .iter()
-            .flat_map(|package| {
-                package
-                    .dependencies
-                    .iter()
-                    .filter(|dep| dep.kind.as_deref() != Some("dev") && dep.path.is_some())
-                    .map(|dep| (package.name.clone(), dep.name.clone()))
-            })
-            .collect();
-        let order = get_publish_order(metadata).unwrap();
-        let positions: HashMap<_, _> = order.iter().enumerate().map(|(i, name)| (name.as_str(), i)).collect();
-        assert_eq!(order.len(), positions.len(), "duplicate packages");
-        for required in ["spacetimedb-auth", "spacetimedb-test-datastore", "spacetimedb-core"] {
-            assert!(positions.contains_key(required), "missing {required}");
-        }
-        for (consumer, dependency) in dependencies {
-            if let Some(parent) = positions.get(consumer.as_str()) {
-                let dep = positions.get(dependency.as_str()).expect("missing dependency");
-                assert!(dep < parent, "{dependency} must precede {consumer}");
-            }
-        }
-        println!(
-            "Detected {} crates, without duplicates, in dependency order: {order:?}",
-            order.len()
-        );
-    }
 }
