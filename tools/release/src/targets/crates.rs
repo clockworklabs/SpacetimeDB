@@ -133,7 +133,7 @@ impl ReleaseTarget for CratesRelease {
             .split('-')
             .next()
             .unwrap();
-        let mut pending = Vec::new();
+        let mut unpublished = Vec::new();
         for crate_name in &crates {
             // Pace requests to respect crates.io's API guidance.
             std::thread::sleep(Duration::from_secs(1));
@@ -143,10 +143,10 @@ impl ReleaseTarget for CratesRelease {
                     crate_name
                 );
             } else {
-                pending.push(crate_name);
+                unpublished.push(crate_name);
             }
         }
-        self.publish_crates(&workspace_root, &pending)?;
+        self.publish_crates(&workspace_root, &unpublished)?;
         if !self.dry_run {
             for crate_name in &crates {
                 self.add_crate_owners(crate_name)?;
