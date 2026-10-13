@@ -58,7 +58,7 @@ You can also perform a dry run to see what would be published without actually p
 cargo release crates v1.2.0 --dry-run
 ```
 
-Both modes check the requested release version for each selected package against the crates.io sparse index and skip versions already published. If all versions are published, no publish command is run. Index request or parsing failures stop the release.
+Both modes check the requested release version for each selected package using the crates.io version API and skip versions already published. If all versions are published, no publish command is run. API request failures stop the release.
 
 The remaining crates are packaged and verified together in one `cargo publish` invocation. Cargo handles dependency ordering and waits for published dependencies to become available. A partially completed release can be rerun to publish the remaining versions. Production then configures owners for every selected crate, including those already published.
 

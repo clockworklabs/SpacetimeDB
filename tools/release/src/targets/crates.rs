@@ -1,13 +1,12 @@
 use crate::targets::{util, ReleaseTarget};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
-use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", "spacetimedb-devops"];
-const CRATES_IO_INDEX: &str = "https://index.crates.io";
+const CRATES_IO_API: &str = "https://crates.io/api/v1";
 
 pub struct CratesRelease {
     pub version: String,
@@ -35,8 +34,8 @@ impl CratesRelease {
         // and fail, but if they're on one invocation then they're able to resolve properly.
         let mut cmd = Command::new("cargo");
         cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
-        for c in crates {
-            cmd.args(["-p", c]);
+        for crate_name in crates {
+            cmd.args(["-p", crate_name]);
         }
         if self.dry_run {
             cmd.arg("--dry-run");
@@ -89,52 +88,17 @@ impl CratesRelease {
     }
 }
 
-#[derive(Deserialize)]
-struct IndexEntry {
-    name: String,
-    vers: String,
-}
-
-fn index_path(name: &str) -> String {
-    let name = name.to_ascii_lowercase();
-    match name.len() {
-        1 => format!("1/{name}"),
-        2 => format!("2/{name}"),
-        3 => format!("3/{}/{name}", &name[..1]),
-        _ => format!("{}/{}/{name}", &name[..2], &name[2..4]),
-    }
-}
-
-fn is_published(client: &Client, index: &str, crate_name: &str, version: &str) -> Result<bool, String> {
-    let url = format!("{}/{}", index.trim_end_matches('/'), index_path(crate_name));
+fn is_published(client: &Client, api: &str, crate_name: &str, version: &str) -> Result<bool, String> {
+    let url = format!("{}/crates/{crate_name}/{version}", api.trim_end_matches('/'));
     let response = client
         .get(&url)
         .send()
         .map_err(|err| format!("Failed to query {url}: {err}"))?;
-    if response.status() == StatusCode::NOT_FOUND {
-        return Ok(false);
+    match response.status() {
+        StatusCode::OK => Ok(true),
+        StatusCode::NOT_FOUND => Ok(false),
+        status => Err(format!("Failed to query {url}: {status}")),
     }
-    let body = response
-        .error_for_status()
-        .and_then(|response| response.text())
-        .map_err(|err| format!("Failed to read {url}: {err}"))?;
-    index_contains_version(&body, crate_name, version)
-        .map_err(|err| format!("Invalid index response from {url}: {err}"))
-}
-
-fn index_contains_version(body: &str, crate_name: &str, version: &str) -> Result<bool, String> {
-    if body.is_empty() {
-        return Err("empty index entry".into());
-    }
-    let mut found = false;
-    for line in body.lines() {
-        let entry: IndexEntry = serde_json::from_str(line).map_err(|err| err.to_string())?;
-        if entry.name != crate_name {
-            return Err(format!("expected package {}, got {}", crate_name, entry.name));
-        }
-        found |= entry.vers == version;
-    }
-    Ok(found)
 }
 
 impl ReleaseTarget for CratesRelease {
@@ -146,8 +110,8 @@ impl ReleaseTarget for CratesRelease {
         let crates = crate::crates_resolver::get_crates_to_publish()
             .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
         println!("\nCrates to publish in order:");
-        for c in &crates {
-            println!("  - {}", c);
+        for crate_name in &crates {
+            println!("  - {}", crate_name);
         }
         if self.dry_run {
             println!("\nDRY RUN: No crates will be published");
@@ -155,25 +119,28 @@ impl ReleaseTarget for CratesRelease {
 
         println!("\nStarting publish process...");
         let client = Client::builder()
+            .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
             .timeout(Duration::from_secs(30))
             .build()
-            .map_err(|err| format!("Failed to create crates.io index client: {err}"))?;
+            .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
         let crates_io_version = self.version.strip_prefix('v').unwrap_or(&self.version);
         let mut pending = Vec::new();
-        for c in &crates {
-            if is_published(&client, CRATES_IO_INDEX, c, crates_io_version)? {
+        for crate_name in &crates {
+            // Pace requests to respect crates.io's API guidance.
+            std::thread::sleep(Duration::from_secs(1));
+            if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
                 println!(
                     "Crate {} already published on crates.io; skipping (treating as success).",
-                    c
+                    crate_name
                 );
             } else {
-                pending.push(c);
+                pending.push(crate_name);
             }
         }
         self.publish_crates(&workspace_root, &pending)?;
         if !self.dry_run {
-            for c in &crates {
-                self.add_crate_owners(c)?;
+            for crate_name in &crates {
+                self.add_crate_owners(crate_name)?;
             }
         }
         if self.dry_run {
@@ -195,30 +162,6 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    #[test]
-    fn sparse_index_paths() {
-        for (name, expected) in [
-            ("A", "1/a"),
-            ("ab", "2/ab"),
-            ("abc", "3/a/abc"),
-            ("serde", "se/rd/serde"),
-        ] {
-            assert_eq!(index_path(name), expected);
-        }
-    }
-
-    #[test]
-    fn exact_versions_and_malformed_entries() {
-        let body = "{\"name\":\"example\",\"vers\":\"1.2.2\"}\n{\"name\":\"example\",\"vers\":\"1.2.3\"}\n";
-        assert!(index_contains_version(body, "example", "1.2.3").unwrap());
-        assert!(!index_contains_version(body, "example", "1.2.3-rc.1").unwrap());
-        for invalid in ["", "not JSON", "{}", "{\"name\":\"other\",\"vers\":\"1.2.3\"}"] {
-            assert!(index_contains_version(invalid, "example", "1.2.3").is_err());
-        }
-        // Do not silently accept a corrupt response after a matching record.
-        assert!(index_contains_version(&format!("{body}not JSON"), "example", "1.2.3").is_err());
-    }
-
     fn serve_once(status: &str, body: &str) -> (String, std::thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -231,10 +174,35 @@ mod tests {
             socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
             let mut request = [0; 4096];
             let len = socket.read(&mut request).unwrap();
-            assert!(String::from_utf8_lossy(&request[..len]).starts_with("GET /ex/am/example "));
+            assert!(String::from_utf8_lossy(&request[..len]).starts_with("GET /crates/example/1.2.3 "));
             socket.write_all(response.as_bytes()).unwrap();
         });
         (url, thread)
+    }
+
+    #[test]
+    fn version_endpoint_distinguishes_missing_versions_from_failures() {
+        let client = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        for (status, expected) in [
+            ("200 OK", Some(true)),
+            ("404 Not Found", Some(false)),
+            ("403 Forbidden", None),
+            ("429 Too Many Requests", None),
+            ("503 Service Unavailable", None),
+            ("202 Accepted", None),
+        ] {
+            let (url, thread) = serve_once(status, "");
+            assert_eq!(is_published(&client, &url, "example", "1.2.3").ok(), expected);
+            thread.join().unwrap();
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        assert!(is_published(&client, &url, "example", "1.2.3").is_err());
     }
 
     #[test]
