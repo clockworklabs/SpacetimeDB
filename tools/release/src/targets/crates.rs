@@ -143,7 +143,7 @@ impl ReleaseTarget for CratesRelease {
     fn release(&self) -> Result<(), String> {
         let workspace_root = crate::crates_resolver::find_workspace_root()
             .map_err(|err| format!("Failed to find workspace root: {err}"))?;
-        let crates = crate::crates_resolver::get_crates_to_publish(&workspace_root)
+        let crates = crate::crates_resolver::get_crates_to_publish()
             .map_err(|err| format!("Failed to find crates to publish: {err}"))?;
         println!("Crates selected for release:");
         for krate in &crates {

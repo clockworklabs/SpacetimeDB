@@ -108,8 +108,9 @@ pub fn find_workspace_root() -> Result<PathBuf> {
 }
 
 /// Returns a list of crates to publish in the correct order
-pub fn get_crates_to_publish(workspace_root: &Path) -> Result<Vec<CrateToPublish>> {
-    let metadata = get_cargo_metadata(workspace_root)?;
+pub fn get_crates_to_publish() -> Result<Vec<CrateToPublish>> {
+    let workspace_root = find_workspace_root()?;
+    let metadata = get_cargo_metadata(&workspace_root)?;
     let order = get_publish_order(&metadata)?;
     let mut versions: HashMap<_, _> = metadata
         .packages
