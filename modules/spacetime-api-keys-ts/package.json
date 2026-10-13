@@ -52,6 +52,9 @@
     "authentication",
     "typescript"
   ],
+  "submodule": {
+    "category": "auth"
+  },
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",

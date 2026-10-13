@@ -60,6 +60,9 @@
     "storage",
     "typescript"
   ],
+  "submodule": {
+    "category": "storage"
+  },
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",

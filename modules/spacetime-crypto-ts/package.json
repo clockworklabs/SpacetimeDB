@@ -52,6 +52,9 @@
     "webhooks",
     "typescript"
   ],
+  "submodule": {
+    "category": "utilities"
+  },
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
