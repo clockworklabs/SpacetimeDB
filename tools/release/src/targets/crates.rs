@@ -134,6 +134,7 @@ impl ReleaseTarget for CratesRelease {
             .next()
             .unwrap();
         let mut unpublished = Vec::new();
+        println!("Checking for already-published crates..");
         for crate_name in &crates {
             // Pace requests to respect crates.io's API guidance.
             std::thread::sleep(Duration::from_secs(1));
