@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
@@ -78,7 +78,8 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
     if (basename(file) !== 'package-lock.json') return false;
     const started = installs(join(appDir, file));
     if (started === null || started !== installs(join(sourcePath, file))) return false;
-    copyFileSync(join(sourcePath, file), join(appDir, file));
+    // Written in place: the file belongs to the app's user, and the controller may write it but not replace it.
+    writeFileSync(join(appDir, file), readFileSync(join(sourcePath, file)));
     return true;
   };
   const changed = accepted.files.filter(file => !existsSync(join(appDir, file))
