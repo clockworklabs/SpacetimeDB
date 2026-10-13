@@ -107,12 +107,15 @@ impl ReleaseTarget for CratesRelease {
 
         let workspace_root = crate::crates_resolver::find_workspace_root()
             .map_err(|e| format!("Failed to find workspace root: {}", e))?;
+
         let crates = crate::crates_resolver::get_crates_to_publish()
             .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
+
         println!("\nCrates to publish in order:");
         for crate_name in &crates {
             println!("  - {}", crate_name);
         }
+
         if self.dry_run {
             println!("\nDRY RUN: No crates will be published");
         }
@@ -143,6 +146,7 @@ impl ReleaseTarget for CratesRelease {
                 self.add_crate_owners(crate_name)?;
             }
         }
+
         if self.dry_run {
             println!("\nDry run completed successfully!");
         } else {
