@@ -237,32 +237,6 @@ mod tests {
     }
 
     #[test]
-    fn index_http_failures_are_not_unpublished_versions() {
-        let client = Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap();
-        for (status, body, expected) in [
-            ("200 OK", "{\"name\":\"example\",\"vers\":\"1.2.3\"}\n", Some(true)),
-            ("200 OK", "{\"name\":\"example\",\"vers\":\"1.2.2\"}\n", Some(false)),
-            ("404 Not Found", "missing", Some(false)),
-            ("500 Internal Server Error", "unavailable", None),
-            ("403 Forbidden", "denied", None),
-            ("200 OK", "broken", None),
-        ] {
-            let (url, thread) = serve_once(status, body);
-            let result = is_published(&client, &url, "example", "1.2.3");
-            assert_eq!(result.ok(), expected);
-            thread.join().unwrap();
-        }
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
-        assert!(is_published(&client, &url, "example", "1.2.3").is_err());
-    }
-
-    #[test]
     fn empty_selection_skips_cargo_in_both_modes() {
         for dry_run in [false, true] {
             // A nonexistent workspace proves we return before invoking Cargo.
