@@ -142,7 +142,6 @@ jobs:
 
       - name: Run release (dry-run)
         if: ${{ inputs.dry_run }}
-        # Dry-run uses a temporary Cargo home and skips uploads and owner changes.
         run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
 
       - name: Run release
