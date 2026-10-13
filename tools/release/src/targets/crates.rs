@@ -139,10 +139,7 @@ impl ReleaseTarget for CratesRelease {
             // Pace requests to respect crates.io's API guidance.
             std::thread::sleep(Duration::from_secs(1));
             if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
-                println!(
-                    "Crate {} already published on crates.io; skipping (treating as success).",
-                    crate_name
-                );
+                println!("Crate {crate_name} already published; skipping.");
             } else {
                 println!("Crate {} must be published.")
                 unpublished.push(crate_name);
