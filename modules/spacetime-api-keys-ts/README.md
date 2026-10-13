@@ -108,7 +108,7 @@ the raw key once. Only the hash and lookup prefix are stored. Deliver the key
 to its holder directly; do not log it.
 
 ```ts
-const { key } = await conn.procedures['apiKeys.createApiKey']({
+const { key } = await conn.procedures.apiKeys.createApiKey({
   name: 'Deploy Bot',
   scopesJson: JSON.stringify(['files:read', 'files:write']),
   metadataJson: JSON.stringify({ environment: 'prod' }),

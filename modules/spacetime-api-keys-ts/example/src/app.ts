@@ -150,7 +150,7 @@ function presenceRows(): PresenceEntry[] {
   );
 }
 function apiKeyRows(): ApiKeySummary[] {
-  return [...requireConn().db['api_keys.my_api_keys'].iter()];
+  return [...requireConn().db.apiKeys.myApiKeys.iter()];
 }
 
 function myRole(): string {
@@ -290,9 +290,9 @@ function registerRowCallbacks(): void {
   connection.db.worldEvent.onInsert(() => renderWorld());
   connection.db.worldEvent.onUpdate(() => renderWorld());
   connection.db.worldEvent.onDelete(() => renderWorld());
-  connection.db['api_keys.my_api_keys'].onInsert(() => renderWorld());
-  connection.db['api_keys.my_api_keys'].onUpdate(() => renderWorld());
-  connection.db['api_keys.my_api_keys'].onDelete(() => renderWorld());
+  connection.db.apiKeys.myApiKeys.onInsert(() => renderWorld());
+  connection.db.apiKeys.myApiKeys.onUpdate(() => renderWorld());
+  connection.db.apiKeys.myApiKeys.onDelete(() => renderWorld());
   connection.db.colonyPresence.onInsert(() => renderPresence());
   connection.db.colonyPresence.onUpdate(() => renderPresence());
   connection.db.colonyPresence.onDelete(() => renderPresence());
@@ -790,7 +790,7 @@ async function createKey(): Promise<void> {
   ) as HTMLInputElement | null;
   const name = input?.value.trim() || role.name;
   try {
-    const result = await requireConn().procedures['apiKeys.createApiKey']({
+    const result = await requireConn().procedures.apiKeys.createApiKey({
       name,
       scopesJson: JSON.stringify(role.scopes),
       metadataJson: JSON.stringify({ role: role.id }),
@@ -831,7 +831,7 @@ function showLink(label: string, secret: string): void {
 async function rotateKey(keyId: string): Promise<void> {
   if (!keyId) return;
   try {
-    const result = await requireConn().procedures['apiKeys.rotateApiKey']({
+    const result = await requireConn().procedures.apiKeys.rotateApiKey({
       keyId,
       expiresInSeconds: undefined,
       keyPrefix: undefined,
@@ -847,7 +847,7 @@ async function rotateKey(keyId: string): Promise<void> {
 async function revokeKey(keyId: string): Promise<void> {
   if (!keyId) return;
   try {
-    await requireConn().reducers['apiKeys.revokeApiKey']({ keyId });
+    await requireConn().reducers.apiKeys.revokeApiKey({ keyId });
     toast('Access revoked');
   } catch (err) {
     toast(errorMessage(err), 'error');

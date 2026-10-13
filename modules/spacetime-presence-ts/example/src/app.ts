@@ -471,14 +471,14 @@ function registerRowCallbacks(connection: DbConnection): void {
     };
     emitAuthState();
   };
-  connection.db['auth.my_auth_user'].onInsert(
+  connection.db.auth.myAuthUser.onInsert(
     (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db['auth.my_auth_user'].onUpdate(
+  connection.db.auth.myAuthUser.onUpdate(
     (_ctx: EventContext, _old: AuthUserRow, neu: AuthUserRow) =>
       syncUserFromRow(neu)
   );
-  connection.db['auth.my_auth_user'].onDelete(
+  connection.db.auth.myAuthUser.onDelete(
     (_ctx: EventContext, row: AuthUserRow) => {
       if (!authUser || row.userId !== authUser.userId) return;
       authUser = null;
@@ -495,7 +495,7 @@ async function bindSession(
   exp?: number
 ): Promise<void> {
   const c = requireConn();
-  await c.reducers['auth.linkConnection']({ sessionToken });
+  await c.reducers.auth.linkConnection({ sessionToken });
   if (!refreshedUser) {
     const meRes = await callJson<AuthMeResponse>('/auth/me');
     refreshedUser = meRes.user;
@@ -667,7 +667,7 @@ function installApi(): void {
     login,
     logout: async () => {
       try {
-        await conn?.reducers['auth.unlinkConnection']({});
+        await conn?.reducers.auth.unlinkConnection({});
       } catch {
         /* The reload below drops this connection either way. */
       }
@@ -688,7 +688,7 @@ function installApi(): void {
       await callJson('/auth/email/verify-request', {});
     },
     setProfile: args => {
-      return requireConn().reducers['auth.updateProfile']({
+      return requireConn().reducers.auth.updateProfile({
         name: args.name,
         image: args.image,
       });

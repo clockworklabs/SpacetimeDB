@@ -253,19 +253,19 @@ function displayNameFor(subject: string): string {
   return player?.displayName ?? `Pilot ${subject.slice(0, 6).toUpperCase()}`;
 }
 function ticketsTable(): TableEvents<LobbyTicket> {
-  return requireConn().db['lobby.my_lobby_tickets'];
+  return requireConn().db.lobby.myLobbyTickets;
 }
 function roomsTable(): TableEvents<LobbyRoom> {
-  return requireConn().db['lobby.my_lobby_rooms'];
+  return requireConn().db.lobby.myLobbyRooms;
 }
 function seatsTable(): TableEvents<LobbySeat> {
-  return requireConn().db['lobby.my_lobby_room_seats'];
+  return requireConn().db.lobby.myLobbyRoomSeats;
 }
 function ratingsTable(): TableEvents<RatingRow> {
-  return requireConn().db['lobby.my_lobby_ratings'];
+  return requireConn().db.lobby.myLobbyRatings;
 }
 function leaderboardTable(): TableEvents<RatingRow> {
-  return requireConn().db['lobby.lobby_ranked_leaderboard'];
+  return requireConn().db.lobby.lobbyRankedLeaderboard;
 }
 function shipCatalogTable(): TableEvents<ShipCatalogRow> {
   return requireConn().db.shipCatalog;
@@ -1016,7 +1016,7 @@ function registerUiHandlers(): void {
       t => t.status.tag === 'Queued'
     )) {
       try {
-        await requireConn().reducers['lobby.cancelTicket']({
+        await requireConn().reducers.lobby.cancelTicket({
           ticketId: ticket.ticketId,
         });
       } catch (err) {

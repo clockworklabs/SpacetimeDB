@@ -360,7 +360,7 @@ async function bindSession(
   }
 
   try {
-    await currentConn.reducers['auth.linkConnection']({ sessionToken: token });
+    await currentConn.reducers.auth.linkConnection({ sessionToken: token });
   } catch (err) {
     currentUser = null;
     currentExp = undefined;
@@ -412,7 +412,7 @@ async function logout(): Promise<void> {
   matchSub = null;
   if (currentConn) {
     try {
-      await currentConn.reducers['auth.unlinkConnection']({});
+      await currentConn.reducers.auth.unlinkConnection({});
     } catch {
       /* ignore */
     }
