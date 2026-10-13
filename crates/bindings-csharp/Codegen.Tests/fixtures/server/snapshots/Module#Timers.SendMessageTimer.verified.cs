@@ -57,7 +57,7 @@ partial class Timers
                         {
                             new("ScheduledId", ScheduledIdRW.GetAlgebraicType(registrar)),
                             new("ScheduledAt", ScheduledAtRW.GetAlgebraicType(registrar)),
-                            new("Text", TextRW.GetAlgebraicType(registrar))
+                            new("Text", TextRW.GetAlgebraicType(registrar)),
                         }
                     )
                 );
