@@ -118,6 +118,8 @@ fn unpublished_crates(
 }
 
 fn publish_command(workspace_root: &Path, crates: &[&CrateToPublish], dry_run: bool) -> Command {
+    // Keep all crates in one invocation so --dry-run can verify unpublished dependencies
+    // using Cargo's temporary registry; separate invocations would look for them on crates.io.
     let mut cmd = Command::new("cargo");
     cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
     for krate in crates {
