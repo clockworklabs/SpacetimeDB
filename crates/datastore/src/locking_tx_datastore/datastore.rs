@@ -4255,8 +4255,11 @@ pub(crate) mod tests {
 
     mod read_sets {
         use super::*;
-        use crate::locking_tx_datastore::{FuncCallType, ViewCallInfo};
+        use crate::locking_tx_datastore::mut_tx::{ViewReadSets, MAX_VIEW_POINTS_PER_TABLE};
+        use crate::locking_tx_datastore::{FuncCallType, ViewCallInfo, ViewReadRecorder};
         use pretty_assertions::assert_eq;
+        use spacetimedb_lib::error::TestError;
+        use spacetimedb_sats::memory_usage::MemoryUsage;
         use std::collections::HashSet;
 
         const VIEW: ViewId = ViewId(1);
@@ -4267,20 +4270,28 @@ pub(crate) mod tests {
             table_id: TableId,
             id_idx: IndexId,
             age_idx: IndexId,
+            name_age_idx: IndexId,
             other_table_id: TableId,
         }
 
-        /// `Foo(id, name, age)` indexed on `id` (unique) and `age`, with rows `(1, "a", 10)` and `(2, "b", 20)`,
-        /// plus an unindexed `Bar`.
+        /// `Foo(id, name, age)` indexed on `id` (unique), `age` and `(name, age)`,
+        /// with rows `(1, "a", 10)` and `(2, "b", 20)`, plus an unindexed `Bar`.
         fn setup() -> ResultTest<Fixture> {
             let indices = [
                 IndexSchema::for_test("Foo_id_idx_btree", BTreeAlgorithm::from(0)),
                 IndexSchema::for_test("Foo_age_idx_btree", BTreeAlgorithm::from(2)),
+                IndexSchema::for_test(
+                    "Foo_name_age_idx_btree",
+                    BTreeAlgorithm {
+                        columns: col_list![1, 2],
+                    },
+                ),
             ];
             let constraints = [ConstraintSchema::unique_for_test("Foo_id_key", 0)];
             let (datastore, mut tx, table_id) = setup_table_with_indices(indices.clone(), constraints)?;
             let id_idx = extract_index_id(&datastore, &tx, &indices[0])?;
             let age_idx = extract_index_id(&datastore, &tx, &indices[1])?;
+            let name_age_idx = extract_index_id(&datastore, &tx, &indices[2])?;
 
             let mut other = user_public_table(map_array(basic_table_schema_cols()), [], [], [], None, None);
             other.table_name = TableName::for_test("Bar");
@@ -4295,6 +4306,7 @@ pub(crate) mod tests {
                 table_id,
                 id_idx,
                 age_idx,
+                name_age_idx,
                 other_table_id,
             })
         }
@@ -4503,6 +4515,114 @@ pub(crate) mod tests {
 
             assert_eq!(stale_after_insert(&f, 10)?, HashSet::from([c]));
             Ok(())
+        }
+
+        /// Commits `call`'s read set as the reads `read` makes through a [`ViewReadRecorder`].
+        fn record_reads(
+            f: &Fixture,
+            call: &ViewCallInfo,
+            max_points_per_table: usize,
+            read: impl FnOnce(&ViewReadRecorder<'_>) -> anyhow::Result<()>,
+        ) -> ResultTest<()> {
+            let mut tx = begin_mut_tx(&f.datastore);
+            tx.with_view_reads_capped(call, max_points_per_table, read)
+                .map_err(|e| TestError { error: e.into() })?;
+            tx.replace_view_read_set(call.clone());
+            commit(&f.datastore, tx)?;
+            Ok(())
+        }
+
+        fn read_ages(f: &Fixture, rtx: &ViewReadRecorder<'_>, ages: u32) -> anyhow::Result<()> {
+            for age in 0..ages {
+                rtx.index_scan_point(f.table_id, f.age_idx, &AlgebraicValue::U32(age))?;
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn recorded_point_is_invalidated_by_its_key_even_with_no_rows() -> ResultTest<()> {
+            let f = setup()?;
+            let a = sender_call(VIEW, Identity::ZERO);
+            record_reads(&f, &a, MAX_VIEW_POINTS_PER_TABLE, |rtx| {
+                let rows = rtx.index_scan_point(f.table_id, f.age_idx, &AlgebraicValue::U32(30))?;
+                assert_eq!(rows.count(), 0);
+                Ok(())
+            })?;
+
+            assert_eq!(stale_after_insert(&f, 30)?, HashSet::from([a]));
+            assert_eq!(stale_after_insert(&f, 31)?, HashSet::new());
+            Ok(())
+        }
+
+        /// The executor probes multi-column indexes with a product key,
+        /// which must match the key `views_for_refresh` projects from written rows.
+        #[test]
+        fn recorded_multi_column_point_matches_written_rows() -> ResultTest<()> {
+            let f = setup()?;
+            let a = sender_call(VIEW, Identity::ZERO);
+            let key = |name: &str, age: u32| AlgebraicValue::product([AlgebraicValue::String(name.into()), age.into()]);
+            record_reads(&f, &a, MAX_VIEW_POINTS_PER_TABLE, |rtx| {
+                assert_eq!(
+                    rtx.index_scan_point(f.table_id, f.name_age_idx, &key("a", 10))?.count(),
+                    1
+                );
+                rtx.index_scan_point(f.table_id, f.name_age_idx, &key("new", 30))?;
+                Ok(())
+            })?;
+
+            assert_eq!(stale_after_insert(&f, 30)?, HashSet::from([a]));
+            assert_eq!(stale_after_insert(&f, 31)?, HashSet::new());
+            Ok(())
+        }
+
+        #[test]
+        fn scans_counts_and_ranges_are_recorded_as_table_scans() -> ResultTest<()> {
+            let f = setup()?;
+            let scan = sender_call(VIEW, Identity::ZERO);
+            let count = sender_call(VIEW, Identity::ONE);
+            let range = ViewCallInfo::anonymous(OTHER_VIEW);
+            record_reads(&f, &scan, MAX_VIEW_POINTS_PER_TABLE, |rtx| {
+                rtx.table_scan(f.table_id)?;
+                Ok(())
+            })?;
+            record_reads(&f, &count, MAX_VIEW_POINTS_PER_TABLE, |rtx| {
+                rtx.row_count(f.table_id);
+                Ok(())
+            })?;
+            record_reads(&f, &range, MAX_VIEW_POINTS_PER_TABLE, |rtx| {
+                let bounds = AlgebraicValue::U32(0)..AlgebraicValue::U32(5);
+                rtx.index_scan_range(f.table_id, f.age_idx, &bounds)?;
+                Ok(())
+            })?;
+
+            assert_eq!(stale_after_insert(&f, 999)?, HashSet::from([scan, count, range]));
+            Ok(())
+        }
+
+        #[test]
+        fn points_over_the_cap_are_recorded_as_a_table_scan() -> ResultTest<()> {
+            let f = setup()?;
+            let under = sender_call(VIEW, Identity::ZERO);
+            let over = sender_call(VIEW, Identity::ONE);
+            record_reads(&f, &under, 2, |rtx| read_ages(&f, rtx, 2))?;
+            record_reads(&f, &over, 2, |rtx| read_ages(&f, rtx, 3))?;
+
+            assert_eq!(stale_after_insert(&f, 999)?, HashSet::from([over]));
+            Ok(())
+        }
+
+        #[test]
+        fn heap_usage_grows_with_distinct_keys() {
+            let read_set_with = |keys: u32| {
+                let call = sender_call(VIEW, Identity::ZERO);
+                let mut read_sets = ViewReadSets::default();
+                for key in 0..keys {
+                    read_sets.insert_index_scan(TableId(1), col_list![1], AlgebraicValue::U32(key), call.clone());
+                }
+                read_sets.heap_usage()
+            };
+            let (one, many) = (read_set_with(1), read_set_with(100));
+            assert!(many > one, "100 keys ({many}) should use more than 1 key ({one})");
         }
     }
 }

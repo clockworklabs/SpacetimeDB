@@ -17,6 +17,8 @@ pub use tx::{NumDistinctValues, TxId};
 mod tx_state;
 #[cfg(any(test, feature = "test"))]
 pub use tx_state::PendingSchemaChange;
+mod view_reads;
+pub use view_reads::ViewReadRecorder;
 
 use parking_lot::{
     lock_api::{ArcRwLockReadGuard, ArcRwLockWriteGuard},

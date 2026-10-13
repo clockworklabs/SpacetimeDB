@@ -6,6 +6,7 @@ use super::{
     time::{now_timestamp, Instant},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
+    view_reads::{ViewRead, ViewReadRecorder},
     SharedWriteGuard,
 };
 use crate::traits::TxOffset;
@@ -226,6 +227,10 @@ impl ViewInstanceTxState {
     }
 }
 
+/// Deliberately high for now, so it only catches pathological fan-out.
+/// TODO: Tuned from measurements
+pub const MAX_VIEW_POINTS_PER_TABLE: usize = 100_000;
+
 /// A data structure for tracking the database rows/keys that are read by views
 #[derive(Default)]
 pub struct ViewReadSets {
@@ -237,7 +242,13 @@ pub struct ViewReadSets {
 
 impl MemoryUsage for ViewReadSets {
     fn heap_usage(&self) -> usize {
-        0 // TODO: Implement memory tracking for read sets
+        let Self {
+            tables,
+            replacements,
+            view_removals,
+            removals,
+        } = self;
+        tables.heap_usage() + replacements.heap_usage() + view_removals.heap_usage() + removals.heap_usage()
     }
 }
 
@@ -343,6 +354,16 @@ type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
 struct TableReadSet {
     table_scans: HashSet<ViewCallInfo>,
     index_reads: IndexColReadSet,
+}
+
+impl MemoryUsage for TableReadSet {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            table_scans,
+            index_reads,
+        } = self;
+        table_scans.heap_usage() + index_reads.heap_usage()
+    }
 }
 
 impl TableReadSet {
@@ -543,6 +564,56 @@ impl MutTxId {
         let cols = idx.indexed_columns().clone();
         let point = idx.key_into_algebraic_value(point);
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
+    }
+
+    /// Runs `f` against a [`ViewReadRecorder`] over this transaction,
+    /// then adds the reads it made to `call`'s read set.
+    ///
+    /// The reads are added to, not replacing, anything `call` already recorded in this transaction,
+    /// e.g. through syscalls before the view returned a query.
+    pub fn with_view_reads<R>(&mut self, call: &ViewCallInfo, f: impl FnOnce(&ViewReadRecorder<'_>) -> R) -> R {
+        self.with_view_reads_capped(call, MAX_VIEW_POINTS_PER_TABLE, f)
+    }
+
+    /// [`Self::with_view_reads`] with a custom point limit per table, for tests.
+    pub(super) fn with_view_reads_capped<R>(
+        &mut self,
+        call: &ViewCallInfo,
+        max_points_per_table: usize,
+        f: impl FnOnce(&ViewReadRecorder<'_>) -> R,
+    ) -> R {
+        let recorder = ViewReadRecorder::new(self);
+        let result = f(&recorder);
+        let reads = recorder.into_reads();
+
+        let mut points: IntMap<TableId, Vec<(IndexId, AlgebraicValue)>> = <_>::default();
+        for read in reads {
+            match read {
+                ViewRead::Table(table_id) => self.read_sets.insert_full_table_scan(table_id, call.clone()),
+                ViewRead::Point(table_id, index_id, point) => {
+                    points.entry(table_id).or_default().push((index_id, point))
+                }
+            }
+        }
+
+        for (table_id, points) in points {
+            if points.len() > max_points_per_table {
+                self.read_sets.insert_full_table_scan(table_id, call.clone());
+                continue;
+            }
+            for (index_id, point) in points {
+                match self.get_table_and_index(index_id) {
+                    Some((_, idx, _)) => {
+                        let cols = idx.index().indexed_columns().clone();
+                        self.read_sets.insert_index_scan(table_id, cols, point, call.clone());
+                    }
+                    // The index was just scanned, so this shouldn't happen, but never drop a read.
+                    None => self.read_sets.insert_full_table_scan(table_id, call.clone()),
+                }
+            }
+        }
+
+        result
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
