@@ -144,6 +144,7 @@ impl ReleaseTarget for CratesRelease {
                     crate_name
                 );
             } else {
+                println!("Crate {} must be published.")
                 unpublished.push(crate_name);
             }
         }
