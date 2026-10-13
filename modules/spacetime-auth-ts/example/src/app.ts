@@ -223,8 +223,8 @@ async function bindSession(token: string, user: AuthMe['user'], exp: number) {
   }
 
   try {
-    conn.reducers['auth.linkConnection']({ sessionToken: token });
-    const w = await conn.procedures['auth.whoami']({});
+    conn.reducers.auth.linkConnection({ sessionToken: token });
+    const w = await conn.procedures.auth.whoami({});
     currentSenderHex = w.senderIdentityHex;
   } catch (err) {
     console.warn('link_connection failed', err);
@@ -257,13 +257,13 @@ function registerRowCallbacks(connection: DbConnection): void {
   connection.db.myNotes.onUpdate(() => emitNotes());
   connection.db.myNotes.onDelete(() => emitNotes());
 
-  connection.db['auth.my_auth_user'].onInsert(
+  connection.db.auth.myAuthUser.onInsert(
     (_ctx: EventContext, row: AuthUserRow) => syncUserFromRow(row)
   );
-  connection.db['auth.my_auth_user'].onUpdate(
+  connection.db.auth.myAuthUser.onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  connection.db['auth.my_auth_user'].onDelete(
+  connection.db.auth.myAuthUser.onDelete(
     (_ctx: EventContext, row: AuthUserRow) => {
       if (!currentUser || row.userId !== currentUser.userId) return;
       currentUser = null;
@@ -306,7 +306,7 @@ async function restoreSession(): Promise<boolean> {
 async function logout() {
   if (conn) {
     try {
-      conn.reducers['auth.unlinkConnection']({});
+      conn.reducers.auth.unlinkConnection({});
     } catch {
       /* best-effort disconnect cleanup */
     }
@@ -336,7 +336,7 @@ function updateNote(args: { noteId: string; title: string; body: string }) {
 
 async function whoami() {
   if (!conn) throw new Error('not_connected');
-  const r = await conn.procedures['auth.whoami']({});
+  const r = await conn.procedures.auth.whoami({});
   currentSenderHex = r.senderIdentityHex;
   emitAuthState();
   return r;
@@ -344,12 +344,12 @@ async function whoami() {
 
 async function listMySessions() {
   if (!conn) throw new Error('not_connected');
-  return await conn.procedures['auth.listMySessions']({});
+  return await conn.procedures.auth.listMySessions({});
 }
 
 function revokeMySession(sessionId: string) {
   if (!conn) throw new Error('not_connected');
-  conn.reducers['auth.revokeMySession']({ sessionId });
+  conn.reducers.auth.revokeMySession({ sessionId });
 }
 
 async function forgotPassword(email: string) {
@@ -370,7 +370,7 @@ function oauthStart(provider: 'google' | 'github') {
 
 function setProfile(args: { name?: string; image?: string }) {
   if (!conn) throw new Error('not_connected');
-  conn.reducers['auth.updateProfile']({ name: args.name, image: args.image });
+  conn.reducers.auth.updateProfile({ name: args.name, image: args.image });
 }
 
 const authResult = authUrlState(window.location);
