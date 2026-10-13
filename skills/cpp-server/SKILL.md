@@ -41,6 +41,8 @@ Options:
 - `SPACETIMEDB_TABLE(Type, accessor, Public|Private)`: regular table
 - `SPACETIMEDB_TABLE(Type, accessor, Public|Private, true)`: event table
 
+Only server-side code such as reducers reads a `Private` table. `Public` exposes all of a table's rows to every client through subscriptions.
+
 Field constraints:
 - `FIELD_PrimaryKey(accessor, field)`: primary key
 - `FIELD_PrimaryKeyAutoInc(accessor, field)`: primary key with auto-increment (use 0 on insert)

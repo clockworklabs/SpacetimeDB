@@ -74,6 +74,8 @@ const entity = table(
 
 Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`
 
+Tables are private by default: only server-side code such as reducers and views reads them. `public: true` exposes all of a table's rows to every client through subscriptions.
+
 `ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ scoreRecord })` -> `ctx.db.scoreRecord`. Keep TypeScript identifiers and accessors camelCase. Use explicit `name: 'snake_case'` strings when you need a canonical database name that differs from the TypeScript identifier.
 
 ## Column Types

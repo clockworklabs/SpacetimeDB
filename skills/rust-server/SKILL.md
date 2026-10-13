@@ -44,6 +44,8 @@ pub struct Entity {
 
 Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, `index(...)`
 
+Tables are private by default: only server-side code such as reducers and views reads them. `public` exposes all of a table's rows to every client through subscriptions.
+
 `ctx.db` accessors use the `accessor` name (snake_case).
 
 ## Column Types

@@ -63,6 +63,8 @@ public partial struct Entity
 
 Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = nameof(ReducerFn)`, `ScheduledAt = nameof(field)`, `Event = true`
 
+Tables are private by default: only server-side code such as reducers and views reads them. `Public = true` exposes all of a table's rows to every client through subscriptions.
+
 `ctx.Db` accessors use the `Accessor` name: `ctx.Db.Entity`, `ctx.Db.ScoreRecord`.
 
 ## Column Types
