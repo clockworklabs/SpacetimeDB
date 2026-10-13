@@ -100,8 +100,36 @@ private:
         std::abort();
     }
 
+    static constexpr char route_wildcard = '*';
+
     static bool character_is_acceptable_for_route_path(char c) {
-        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '~' || c == '/';
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '~' || c == '/' ||
+               c == route_wildcard;
+    }
+
+    // True if `*` appears at most once in `path`, and only as its final character.
+    static bool wildcard_is_only_trailing(const std::string& path) {
+        std::string prefix = (!path.empty() && path.back() == route_wildcard) ? path.substr(0, path.size() - 1) : path;
+        return prefix.find(route_wildcard) == std::string::npos;
+    }
+
+    // True if two route paths can match the same request path.
+    static bool route_paths_overlap(const std::string& a, const std::string& b) {
+        const bool a_is_wildcard = !a.empty() && a.back() == route_wildcard;
+        const bool b_is_wildcard = !b.empty() && b.back() == route_wildcard;
+        const std::string a_prefix = a_is_wildcard ? a.substr(0, a.size() - 1) : std::string();
+        const std::string b_prefix = b_is_wildcard ? b.substr(0, b.size() - 1) : std::string();
+
+        if (a_is_wildcard && b_is_wildcard) {
+            return a_prefix.starts_with(b_prefix) || b_prefix.starts_with(a_prefix);
+        }
+        if (a_is_wildcard) {
+            return b.starts_with(a_prefix);
+        }
+        if (b_is_wildcard) {
+            return a.starts_with(b_prefix);
+        }
+        return a == b;
     }
 
     static void assert_valid_path(const std::string& path) {
@@ -110,8 +138,13 @@ private:
         }
         for (char c : path) {
             if (!character_is_acceptable_for_route_path(c)) {
-                fail_router_registration("Route paths may contain only ASCII lowercase letters, digits and `-_~/`: " + path);
+                fail_router_registration(
+                    "Route paths may contain only ASCII lowercase letters, digits and `-_~/*`: " + path
+                );
             }
+        }
+        if (!wildcard_is_only_trailing(path)) {
+            fail_router_registration("Route paths may contain `*` only as the final character: " + path);
         }
     }
 
@@ -134,7 +167,7 @@ private:
     }
 
     static bool routes_overlap(const RouteSpec& a, const RouteSpec& b) {
-        if (a.path != b.path) {
+        if (!route_paths_overlap(a.path, b.path)) {
             return false;
         }
         if (a.method.is<0>() || b.method.is<0>()) {
