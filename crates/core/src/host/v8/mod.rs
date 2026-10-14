@@ -528,6 +528,13 @@ impl JsMainInstance {
         self.request(ScheduledReducerRequest { params }).await
     }
 
+    pub(in crate::host) async fn finish_idc_message(
+        &self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        self.request(FinishIdcMessageRequest { msg }).await
+    }
+
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
         self.send_detached_request(
             "call_reducer",
@@ -685,6 +692,12 @@ js_main_request! {
         delivery: IdcMessageParams,
         on_success: ReducerSuccessAction,
     } => "call_idc_reducer", Result<IdcReducerCallOutcome, IdcDeliveryFailure>, CallIdcReducer
+}
+
+js_main_request! {
+    FinishIdcMessageRequest {
+        msg: crate::host::idc_actor::DeliveredMessage,
+    } => "finish_idc_message", anyhow::Result<()>, FinishIdcMessage
 }
 
 js_main_request! {
@@ -885,6 +898,10 @@ enum JsMainWorkerRequest {
     ScheduledReducer {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
+    },
+    FinishIdcMessage {
+        reply_tx: JsReplyTx<anyhow::Result<()>>,
+        msg: crate::host::idc_actor::DeliveredMessage,
     },
     /// See [`JsMainInstance::call_view`].
     CallView {
@@ -1503,6 +1520,11 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
+        JsMainWorkerRequest::FinishIdcMessage { reply_tx, msg } => {
+            handle_worker_request("finish_idc_message", reply_tx, || {
+                instance_common.finish_idc_message(msg, inst)
+            })
+        }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
             let (res, trapped) = instance_common.handle_cmd(cmd, inst);
             (res, trapped)
@@ -1715,7 +1737,11 @@ where
                     Either::Left(module) => (module.replica_ctx(), module.scheduler()),
                     Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let idc_sender = match &generation_module_or_mcc {
+                    Either::Left(module) => module.idc_sender(),
+                    Either::Right(mcc) => mcc.idc_sender.clone(),
+                };
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {

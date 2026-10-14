@@ -2909,6 +2909,16 @@ impl ModuleHost {
         Ok(())
     }
 
+    pub(super) async fn finish_idc_message(&self, msg: super::idc_actor::DeliveredMessage) -> anyhow::Result<()> {
+        call_instance!(
+            self,
+            "IDC result",
+            msg,
+            |msg, inst| inst.finish_idc_message(msg),
+            |msg, inst| inst.finish_idc_message(msg).await,
+        )?
+    }
+
     /// Processes an ordered IDC message and returns its recorded outcome.
     ///
     /// New messages are checked against the current module before running the reducer.

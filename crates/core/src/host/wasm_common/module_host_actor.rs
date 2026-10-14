@@ -415,7 +415,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
-        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone(), mcc.idc_sender.clone());
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
@@ -471,7 +471,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -634,6 +638,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (res, trapped) = self.common.call_scheduled_reducer(params, &mut self.instance);
         self.trapped = trapped;
         res
+    }
+
+    pub(in crate::host) fn finish_idc_message(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        let (result, trapped) = self.common.finish_idc_message(msg, &mut self.instance);
+        self.trapped = trapped;
+        result
     }
 }
 
@@ -1094,7 +1107,7 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResultWithTxOffset, bool) {
-        self.call_reducer_with_tx_inner(tx, params, inst, None)
+        self.call_reducer_with_tx_inner(tx, params, inst, None::<ReducerSuccessAction>)
     }
 
     pub(crate) fn call_reducer_with_success_action<I: WasmInstance>(
@@ -1102,7 +1115,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
-        on_success: ReducerSuccessAction,
+        on_success: impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         self.call_reducer_with_tx_inner(tx, params, inst, Some(on_success))
     }
@@ -1166,7 +1179,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
-        on_success: Option<ReducerSuccessAction>,
+        on_success: Option<impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>>,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
@@ -1732,6 +1745,14 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> (CallScheduledFunctionResult, bool) {
         crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
+    }
+
+    pub(in crate::host) fn finish_idc_message<I: WasmInstance>(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+        inst: &mut I,
+    ) -> (anyhow::Result<()>, bool) {
+        crate::host::idc_actor::finish_message_with_instance(&self.info.clone(), msg, self, inst)
     }
 }
 
