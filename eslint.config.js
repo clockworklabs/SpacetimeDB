@@ -66,7 +66,7 @@ export default tseslint.config(
           './tsconfig.json',
           './crates/bindings-typescript/tsconfig.json',
           './crates/bindings-typescript/test-app/tsconfig.json',
-          './spacetime-example-ui-ts/tsconfig.json',
+          './modules/spacetime-example-ui-ts/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/money-exchange-react-ts/tsconfig.json',
@@ -124,14 +124,14 @@ export default tseslint.config(
     },
   },
   {
-    files: ['spacetime-*-ts/**/example/public/ui.js'],
+    files: ['modules/spacetime-*-ts/**/example/public/ui.js'],
     languageOptions: {
       sourceType: 'script',
       globals: globals.browser,
     },
   },
   {
-    files: ['spacetime-*-ts/**/*.{ts,tsx}'],
+    files: ['modules/spacetime-*-ts/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
     },

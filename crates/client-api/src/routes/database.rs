@@ -160,6 +160,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Path(CallParams { reducer }): Path<CallParams>,
+    Query(params): Query<SqlQueryParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -168,6 +169,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     let caller_identity = auth.claims.identity;
 
     let args = FunctionArgs::Json(body);
+    let confirmed = params.confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS);
 
     let caller_auth: ConnectionAuthCtx = auth.into();
 
@@ -190,12 +192,16 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             Ok(rcr) => Ok(CallResult::Reducer(rcr)),
             Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
                 // Not a reducer — try procedure instead
-                match module
-                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
-                    .await
-                    .result
-                {
-                    Ok(res) => Ok(CallResult::Procedure(res)),
+                let ret = module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args, confirmed)
+                    .await;
+                match ret.result {
+                    Ok(res) => {
+                        if confirmed {
+                            confirm_call_offset(ret.tx_offset, module.durable_tx_offset()).await?;
+                        }
+                        Ok(CallResult::Procedure(res))
+                    }
                     Err(e) => Err(map_procedure_error(e, &reducer)),
                 }
             }
@@ -230,6 +236,21 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
+}
+
+async fn confirm_call_offset(
+    offset: Option<spacetimedb::subscription::module_subscription_manager::TransactionOffset>,
+    durable: Option<spacetimedb::host::module_host::DurableOffset>,
+) -> axum::response::Result<()> {
+    if let (Some(offset), Some(mut durable)) = (offset, durable) {
+        let offset = offset
+            .await
+            .map_err(|_| log_and_500("transaction offset unavailable; outcome unknown"))?;
+        durable.wait_for(offset).await.map_err(|_| log_and_500(
+            "transaction completed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+        ))?;
+    }
+    Ok(())
 }
 #[derive(Deserialize)]
 pub struct HttpRouteParams {
