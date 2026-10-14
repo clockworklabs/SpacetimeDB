@@ -258,9 +258,14 @@ impl FileStore for LocalFileStore {
     async fn persist(&self, spooled: Spooled) -> io::Result<()> {
         let dest = self.object_path(&spooled.hash());
         if tokio::fs::try_exists(&dest).await? {
-            // Refresh the object's age, so a reclamation pass that already chose it spares it.
             let dest = dest.clone();
             return tokio::task::spawn_blocking(move || {
+                // A concurrent persist of the same bytes may have renamed the object into place
+                // without having synced its directories yet, so sync them before reporting it durable.
+                let parent = dest.parent().expect("an object path always has a parent");
+                sync_dir(parent)?;
+                sync_dir(parent.parent().expect("the fan-out directory always has a parent"))?;
+                // Refresh the object's age, so a reclamation pass that already chose it spares it.
                 std::fs::File::options()
                     .write(true)
                     .open(&dest)?
@@ -367,7 +372,8 @@ pub struct ReclaimStats {
     pub deleted_bytes: u64,
     /// Unreferenced objects spared because they are younger than the grace period.
     pub spared_young_objects: u64,
-    /// Objects missing from the roots but named by a transaction that committed during the pass.
+    /// Objects missing from the roots but named by a transaction that committed during the pass,
+    /// or about to be named by an upload or staged file still in progress.
     pub spared_named_objects: u64,
 }
 

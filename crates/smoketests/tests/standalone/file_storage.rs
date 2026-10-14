@@ -339,6 +339,81 @@ fn test_file_storage() {
     assert!(!Regex::new("[0-9]{10,}").unwrap().is_match(&staged), "{staged}");
 }
 
+/// A body whose first half is sent at once, and whose second half waits until the test releases it.
+struct HeldBody {
+    first: Option<Vec<u8>>,
+    rest: Option<Vec<u8>>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+impl std::io::Read for HeldBody {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let chunk = match self.first.take() {
+            Some(first) => first,
+            None => match self.rest.take() {
+                Some(rest) => {
+                    let _ = self.release.recv();
+                    rest
+                }
+                None => return Ok(0),
+            },
+        };
+        buf[..chunk.len()].copy_from_slice(&chunk);
+        Ok(chunk.len())
+    }
+}
+
+/// Resetting a database while an upload's bytes arrive must not leave the new database waiting for
+/// bytes that went to the old one's store.
+#[test]
+fn test_file_storage_upload_across_a_reset() {
+    require_local_server!();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let (url, token) = (Files::new(&test).url(""), test.read_token().unwrap());
+
+    let (release, held) = std::sync::mpsc::channel();
+    let body = HeldBody {
+        first: Some(b"held ".to_vec()),
+        rest: Some(b"upload".to_vec()),
+        release: held,
+    };
+    let upload = std::thread::spawn(move || {
+        // Without a timeout, a record the new database can never confirm would hang the test.
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap()
+            .post(url)
+            .bearer_auth(token)
+            .header(reqwest::header::CONTENT_TYPE, "text/plain")
+            .body(reqwest::blocking::Body::sized(body, 11))
+            .send()
+            .map(|response| response.status())
+    });
+
+    // `allow_upload` runs before the body is read, so once it has logged the upload, the route is
+    // waiting for the second half.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !test.sql("SELECT size FROM upload_log").unwrap().contains("11") {
+        assert!(std::time::Instant::now() < deadline, "allow_upload never ran");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let database = test.database_identity.clone().expect("published");
+    test.publish().name(&database).clear(true).run().unwrap();
+    release.send(()).unwrap();
+
+    let status = upload.join().unwrap().expect("the server answers");
+    assert!(
+        status.is_server_error(),
+        "an upload spanning a reset must fail, got {status}"
+    );
+    // The new database still confirms transactions, and accepts uploads.
+    test.call("create_note", &["\"after the reset\""]).unwrap();
+    attachment_key(&test, "note");
+    let files = Files::new(&test);
+    assert_eq!(files.upload(b"new", "text/plain", true).status(), StatusCode::CREATED);
+}
+
 const VIEW_MODULE_CODE: &str = r#"
 use spacetimedb::{AnonymousViewContext, FileId, ReducerContext, SpacetimeType, Table, UploadRequest};
 

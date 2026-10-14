@@ -671,6 +671,7 @@ impl RelationalDB {
                 | SnapshotError::ReadObject { .. }
                 | SnapshotError::Serialize { .. }
                 | SnapshotError::Incomplete { .. }
+                | SnapshotError::Locked { .. }
                 | SnapshotError::NotDirectory { .. }
                 | SnapshotError::Lockfile(_)
                 | SnapshotError::Io(_) => true,

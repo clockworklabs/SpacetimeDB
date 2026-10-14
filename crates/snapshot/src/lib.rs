@@ -162,6 +162,8 @@ pub enum SnapshotError {
     },
     #[error("Refusing to reconstruct incomplete snapshot {tx_offset}: lockfile {lockfile:?} exists")]
     Incomplete { tx_offset: TxOffset, lockfile: PathBuf },
+    #[error("Snapshot {path:?} is being written or compressed, so the files it references aren't known yet")]
+    Locked { path: PathBuf },
     #[error("Refusing to reconstruct snapshot {tx_offset} with bad magic number {magic:x?}")]
     BadMagic { tx_offset: TxOffset, magic: [u8; 4] },
     #[error("Refusing to reconstruct snapshot {tx_offset} with unsupported version {version}")]
@@ -1223,7 +1225,18 @@ impl SnapshotRepository {
     /// Reclamation must keep these files, since restoring any of these snapshots restores
     /// the `st_file` rows that name them. Snapshots that have been archived elsewhere are
     /// not included.
+    ///
+    /// Fails with [`SnapshotError::Locked`] while any snapshot is being written or compressed.
+    /// Such a snapshot's manifest may be missing or partly written, and [`Self::all_snapshots`]
+    /// skips it, so its files can't be listed yet. The caller should try again later rather
+    /// than reclaim without them.
     pub fn retained_file_hashes(&self) -> Result<std::collections::HashSet<spacetimedb_lib::Hash>, SnapshotError> {
+        for entry in self.root.read_dir()? {
+            let path = entry?.path();
+            if path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)) && Lockfile::lock_path(&path).try_exists()? {
+                return Err(SnapshotError::Locked { path });
+            }
+        }
         let mut hashes = std::collections::HashSet::new();
         for tx_offset in self.all_snapshots()? {
             let (snapshot, _) = Snapshot::read_from_file(&self.snapshot_dir_path(tx_offset).snapshot_file(tx_offset))?;

@@ -322,7 +322,8 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     }
     let hash = spooled.hash();
     let size = spooled.size();
-    files.persist(spooled).await.map_err(log_and_500)?;
+    // Until the record commits, this keeps the bytes from being reclaimed.
+    let _pending = files.persist(spooled).await.map_err(log_and_500)?;
 
     // Record the file, and wait until the record is durable.
     let completed_at = Timestamp::now();
@@ -347,6 +348,18 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         Ok(current) => current,
         Err(_) => module,
     };
+    // Publishing keeps the database, but resetting replaces it, and these bytes went to the old one's
+    // store. Recording them in the new one would leave a record its store can never confirm.
+    if !module
+        .relational_db()
+        .files()
+        .is_some_and(|current| Arc::ptr_eq(current, &files))
+    {
+        return Err(error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the database was reset during the upload; retry it",
+        ));
+    }
     match module
         .insert_uploaded_file(row, upload, caller)
         .await

@@ -103,6 +103,41 @@ struct Uploads {
     persisted: HashSet<Hash>,
     /// Staged files being persisted. Each receiver becomes `true` once its file is persisted.
     in_flight: HashMap<Hash, watch::Receiver<bool>>,
+    /// Uploads whose bytes are, or are about to be, persisted but whose `st_file` rows haven't
+    /// committed, counted by hash. See [`PendingUpload`].
+    pending_uploads: HashMap<Hash, u32>,
+}
+
+/// Keeps an upload's object from being reclaimed until its `st_file` row commits or the upload is
+/// abandoned, however long that takes.
+///
+/// Between its bytes being persisted and its row committing, nothing names an upload's object, so
+/// without this only the grace period protects it, and a stall longer than that would leave a
+/// committed row naming bytes that reclamation deleted. Hold the guard until the row commits.
+pub struct PendingUpload {
+    files: Arc<DatabaseFiles>,
+    hash: Hash,
+}
+
+impl PendingUpload {
+    fn new(files: Arc<DatabaseFiles>, hash: Hash) -> Self {
+        *files.uploads.lock().pending_uploads.entry(hash).or_insert(0) += 1;
+        Self { files, hash }
+    }
+}
+
+impl Drop for PendingUpload {
+    fn drop(&mut self) {
+        let mut uploads = self.files.uploads.lock();
+        let count = uploads
+            .pending_uploads
+            .get_mut(&self.hash)
+            .expect("a pending upload is counted until it's dropped");
+        *count -= 1;
+        if *count == 0 {
+            uploads.pending_uploads.remove(&self.hash);
+        }
+    }
 }
 
 /// Removes an upload's `in_flight` entry however its task ends, so a failed upload can't
@@ -179,12 +214,18 @@ impl DatabaseFiles {
     }
 
     /// Stores a spooled upload, and returns once its bytes are durable.
-    pub async fn persist(&self, spooled: Spooled) -> std::io::Result<()> {
+    ///
+    /// The upload counts as pending, and its object can't be reclaimed, until the returned guard is
+    /// dropped. Hold it until the upload's `st_file` row has committed, or the upload is abandoned.
+    pub async fn persist(self: &Arc<Self>, spooled: Spooled) -> std::io::Result<PendingUpload> {
         let hash = spooled.hash();
+        // Count the upload before persisting, so a reclamation pass that checks the hash from now on
+        // spares the object, and one that is already deleting it finishes before the persist starts.
+        let pending = PendingUpload::new(self.clone(), hash);
         let _persisting = self.persist_lock(&hash).read().await;
         self.store.persist(spooled).await?;
         self.note_persisted(hash);
-        Ok(())
+        Ok(pending)
     }
 
     /// Records that `hash` is persisted in the store.
@@ -318,7 +359,11 @@ impl DatabaseFiles {
         grace: Duration,
         still_named: impl Fn(&Hash) -> bool,
     ) -> std::io::Result<ReclaimStats> {
-        roots.extend(self.uploads.lock().in_flight.keys().copied());
+        {
+            let uploads = self.uploads.lock();
+            roots.extend(uploads.in_flight.keys().copied());
+            roots.extend(uploads.pending_uploads.keys().copied());
+        }
         let cutoff = SystemTime::now().checked_sub(grace).unwrap_or(SystemTime::UNIX_EPOCH);
         let mut stats = ReclaimStats::default();
         for object in self.store.list().await? {
@@ -334,13 +379,14 @@ impl DatabaseFiles {
             let _reclaiming = self.persist_lock(&object.hash).write().await;
             // Forget the hash first, so a transaction that names it from now on waits for a persist,
             // which can't start until this delete is done.
-            let staged = {
+            let about_to_be_named = {
                 let mut uploads = self.uploads.lock();
                 uploads.persisted.remove(&object.hash);
-                uploads.in_flight.contains_key(&object.hash)
+                uploads.in_flight.contains_key(&object.hash) || uploads.pending_uploads.contains_key(&object.hash)
             };
-            // A transaction that committed after `roots` were gathered may name the object.
-            if staged || still_named(&object.hash) {
+            // A transaction that committed after `roots` were gathered may name the object, and an
+            // upload that started since may be about to.
+            if about_to_be_named || still_named(&object.hash) {
                 stats.spared_named_objects += 1;
                 continue;
             }
@@ -1625,6 +1671,57 @@ mod tests {
         assert_eq!(stats.deleted_objects, 0);
         assert_eq!(stats.spared_named_objects, 1);
         assert_eq!(rt.block_on(files.store().size(&hash))?, Some(10));
+        Ok(())
+    }
+
+    /// An upload's object is kept from when its bytes are persisted until its guard is dropped,
+    /// however much longer than the grace period that takes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pending_uploads_are_not_reclaimed() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = DatabaseFiles::new(
+            Arc::new(LocalFileStore::open(dir.path()).unwrap()),
+            Handle::tokio_current(),
+        );
+        let mut spool = files.store().spool().await.unwrap();
+        spool.write(b"uploading").await.unwrap();
+        let pending = files.persist(spool.finish().await.unwrap()).await.unwrap();
+        let hash = content_hash(b"uploading");
+
+        // Nothing names the object, and the grace period is over, but its row hasn't committed.
+        let stats = files.reclaim(HashSet::new(), Duration::ZERO, |_| false).await.unwrap();
+        assert_eq!(stats.deleted_objects, 0);
+        assert_eq!(files.store().size(&hash).await.unwrap(), Some(9));
+
+        // Once the upload is abandoned, the object goes.
+        drop(pending);
+        let stats = files.reclaim(HashSet::new(), Duration::ZERO, |_| false).await.unwrap();
+        assert_eq!(stats.deleted_objects, 1);
+        assert_eq!(files.store().size(&hash).await.unwrap(), None);
+    }
+
+    /// Reclamation deletes nothing while a snapshot is being written or compressed, since the files
+    /// that snapshot references can't be listed until it's done.
+    #[test]
+    fn reclamation_waits_for_locked_snapshots() -> anyhow::Result<()> {
+        let stdb = TestDB::durable_with_files()?;
+        let rt = stdb.runtime().expect("durable").clone();
+        let runtime = Handle::tokio(rt.clone());
+        let files = stdb.files().expect("files are enabled").clone();
+        wait_for_snapshot(&stdb, &rt, 1);
+        let repo = stdb.snapshot_repo().expect("snapshots are enabled");
+        let snapshot = repo.latest_snapshot()?.expect("the worker took a snapshot");
+        let orphan = content_hash(b"orphan");
+        rt.block_on(files.store().persist_bytes(orphan, Bytes::from_static(b"orphan")))?;
+
+        let snapshot_dir = stdb.path().expect("durable").snapshots().snapshot_dir(snapshot);
+        let lock = spacetimedb_fs_utils::lockfile::Lockfile::for_file(&snapshot_dir)?;
+        assert!(rt.block_on(reclaim_files(&stdb, Duration::ZERO, &runtime)).is_err());
+        assert_eq!(rt.block_on(files.store().size(&orphan))?, Some(6));
+
+        drop(lock);
+        let stats = rt.block_on(reclaim_files(&stdb, Duration::ZERO, &runtime))?;
+        assert_eq!(stats.deleted_objects, 1);
         Ok(())
     }
 
