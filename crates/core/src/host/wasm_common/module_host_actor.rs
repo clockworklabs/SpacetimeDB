@@ -61,6 +61,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
+/// Runs after a successful reducer, before views refresh. Errors roll back the transaction.
 pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
 
 pub trait WasmModule: Send + 'static {
@@ -1158,7 +1159,7 @@ impl InstanceCommon {
         // However, that does not necessarily apply to e.g., V8.
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let (status, mut reducer_return_value) = match result.call_result {
+        let (mut status, mut reducer_return_value) = match result.call_result {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
@@ -1202,7 +1203,16 @@ impl InstanceCommon {
             }
         };
 
-        // Only re-evaluate and update views if the reducer's execution was successful
+        // Views must see the hook's writes as well as the reducer's. A failure in
+        // either the hook or view execution rolls back all of these changes.
+        if matches!(status, EventStatus::Committed(_))
+            && let Some(on_success) = on_success
+            && let Err(err) = on_success(&mut tx, &reducer_return_value)
+        {
+            status = EventStatus::FailedInternal(err.to_string());
+        }
+
+        // Only re-evaluate and update views if the reducer and success hook succeeded.
         let (out, n_views_evaluated, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, inst, timestamp)
         } else {
@@ -1225,7 +1235,7 @@ impl InstanceCommon {
         let execution_budget_used = result.stats.execution_budget_used();
         let total_duration = result.stats.total_duration();
 
-        let mut event = ModuleEvent {
+        let event = ModuleEvent {
             timestamp,
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
@@ -1242,18 +1252,8 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let mut tx = out.tx;
-        // If recording the success outcome fails, roll back the reducer effects too.
-        if matches!(event.status, EventStatus::Committed(_))
-            && let Some(on_success) = on_success
-            && let Err(err) = on_success(&mut tx, &event.reducer_return_value)
-        {
-            event.status = EventStatus::FailedInternal(err.to_string());
-            event.reducer_return_value = None;
-        }
-
         let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
-            commit_and_broadcast_event(&info.subscriptions, client, event, tx);
+            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
