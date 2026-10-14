@@ -26,7 +26,6 @@
     <BaseOutputPath>bin~/</BaseOutputPath>
     <OutputPath>bin~/$(Configuration)/$(TargetFramework)/</OutputPath>
     <PackageOutputPath>bin~/$(Configuration)/</PackageOutputPath>
-    <BaseIntermediateOutputPath>obj~/godot/</BaseIntermediateOutputPath>
     <IntermediateOutputPath>obj~/godot/$(Configuration)/$(TargetFramework)/</IntermediateOutputPath>
     <UseLocalBsatnRuntime Condition="'$(UseLocalBsatnRuntime)' == ''">false</UseLocalBsatnRuntime>
   </PropertyGroup>
