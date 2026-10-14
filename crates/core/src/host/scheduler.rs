@@ -1,6 +1,4 @@
-use super::module_host::{
-    CallReducerParams, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, WeakModuleHost,
-};
+use super::module_host::{CallReducerParams, WeakModuleHost};
 use super::{FunctionArgs, ModuleHost};
 use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
@@ -13,7 +11,6 @@ use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use prometheus::IntGauge;
-use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
@@ -604,7 +601,6 @@ fn prepare_scheduled_procedure_call(
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
             let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
                 delete_scheduled_function_row(
-                    module_info,
                     db,
                     (id, invocation.row_hash),
                     Some(tx),
@@ -625,7 +621,6 @@ fn prepare_scheduled_procedure_call(
     // so we must remove the schedule row before executing.
     let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
         delete_scheduled_function_row(
-            module_info,
             db,
             (id, invocation.row_hash),
             Some(tx),
@@ -674,7 +669,6 @@ fn call_scheduled_reducer_until_done(
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
                 delete_scheduled_function_row(
-                    module_info,
                     db,
                     (id, invocation.row_hash),
                     Some(tx),
@@ -780,15 +774,7 @@ fn call_scheduled_reducer_with_tx(
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
     let reschedule = scheduled.and_then(|(id, row_hash)| {
-        delete_scheduled_function_row(
-            module_info,
-            db,
-            (id, row_hash),
-            None,
-            reschedule_from,
-            inst_common,
-            inst,
-        )
+        delete_scheduled_function_row(db, (id, row_hash), None, reschedule_from, inst_common, inst)
     });
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
@@ -806,7 +792,6 @@ fn call_scheduled_reducer_with_tx(
 /// One-shot schedules are deleted and committed immediately. Interval schedules are not
 /// deleted here; instead their `ScheduleAt` is returned to the caller as a `Reschedule`.
 fn delete_scheduled_function_row(
-    module_info: &ModuleInfo,
     db: &RelationalDB,
     (id, row_hash): (ScheduledFunctionId, Hash),
     tx: Option<MutTxId>,
@@ -815,7 +800,7 @@ fn delete_scheduled_function_row(
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
     let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, row_hash, inst_common, inst)?;
+    let schedule_at = delete_scheduled_function_row_with_tx(db, tx, id, row_hash, inst_common, inst)?;
     let ScheduleAt::Interval(dur) = schedule_at else {
         return None;
     };
@@ -865,7 +850,6 @@ fn next_interval_tick_after(last_intended_at: Timestamp, interval: TimeDuration,
 ///
 /// Interval schedules are left in place and returned to the caller for rescheduling.
 fn delete_scheduled_function_row_with_tx(
-    module_info: &ModuleInfo,
     db: &RelationalDB,
     mut tx: MutTxId,
     id: ScheduledFunctionId,
@@ -902,56 +886,11 @@ fn delete_scheduled_function_row_with_tx(
 
     let row_ptr = schedule_row.pointer();
     db.delete(&mut tx, id.table_id, [row_ptr]);
-    let (result, _) = refresh_views_then_commit_and_broadcast(tx, module_info, inst_common, inst);
+    let (result, _) = inst_common.refresh_views_then_commit_and_broadcast(tx, inst);
     if let Err(e) = result {
         log::error!("Failed to commit scheduled-row cleanup: {e:#}");
     }
     None
-}
-
-/// Refreshes stale views, commits transaction, and broadcasts subscription updates.
-pub(super) fn refresh_views_then_commit_and_broadcast(
-    tx: MutTxId,
-    module_info: &ModuleInfo,
-    inst_common: &mut InstanceCommon,
-    inst: &mut impl WasmInstance,
-) -> (anyhow::Result<()>, bool) {
-    let timestamp = Timestamp::now();
-    let (view_result, _n_evaluated, trapped) =
-        inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
-    let mut status = match view_result.outcome {
-        crate::host::module_host::ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
-        crate::host::module_host::ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
-        crate::host::module_host::ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-    };
-    if trapped && matches!(status, EventStatus::Committed(_)) {
-        status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
-    }
-
-    let failure = (!matches!(status, EventStatus::Committed(_))).then(|| format!("cleanup failed: {status:?}"));
-    let event = ModuleEvent {
-        timestamp,
-        caller_identity: module_info.database_identity,
-        caller_connection_id: None,
-        function_call: ModuleFunctionCall::default(),
-        status,
-        reducer_return_value: None,
-        //Keeping them 0 as it is internal transaction, not by reducer
-        execution_budget_used: FunctionBudget::ZERO,
-        host_execution_duration: Duration::from_millis(0),
-        request_id: None,
-        timer: None,
-    };
-
-    let result = module_info
-        .subscriptions
-        .commit_and_broadcast_event(None, event, view_result.tx)
-        .map_err(anyhow::Error::from)
-        .and_then(|_| match failure {
-            Some(error) => Err(anyhow!(error)),
-            None => Ok(()),
-        });
-    (result, trapped)
 }
 
 fn reducer_call_params_for_queued_item(

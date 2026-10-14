@@ -1691,6 +1691,55 @@ impl InstanceCommon {
         ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }
 
+    /// Refresh views for an internal transaction, then commit and broadcast its changes.
+    /// A failed refresh rolls back the transaction. The boolean reports whether the instance trapped.
+    pub(crate) fn refresh_views_then_commit_and_broadcast(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut impl WasmInstance,
+    ) -> (anyhow::Result<()>, bool) {
+        let timestamp = Timestamp::now();
+        let (view_result, _n_evaluated, trapped) =
+            self.call_views_with_tx(tx, self.info.database_identity, inst, timestamp);
+        let mut status = match view_result.outcome {
+            ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
+            ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
+        };
+        if trapped && matches!(status, EventStatus::Committed(_)) {
+            status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
+        }
+
+        // The commit helper returns Ok after rolling back a failed event.
+        // Preserve the view failure so callers do not mistake rollback for a successful commit.
+        let outcome = match &status {
+            EventStatus::Committed(_) => Ok(()),
+            status => Err(anyhow!("view refresh failed: {status:?}")),
+        };
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity: self.info.database_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status,
+            reducer_return_value: None,
+            // No reducer ran for this internal transaction.
+            execution_budget_used: FunctionBudget::ZERO,
+            host_execution_duration: Duration::ZERO,
+            request_id: None,
+            timer: None,
+        };
+
+        let result = self
+            .info
+            .subscriptions
+            .commit_and_broadcast_event(None, event, view_result.tx)
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
+            .and(outcome);
+        (result, trapped)
+    }
+
     /// Executes view calls and accumulate results.
     /// Returns early if any call traps or fails.
     fn execute_view_calls<I: WasmInstance>(
