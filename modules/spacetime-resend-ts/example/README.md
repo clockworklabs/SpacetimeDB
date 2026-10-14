@@ -13,7 +13,7 @@ Start SpacetimeDB in a separate terminal:
 spacetime start
 ```
 
-From `spacetime-resend-ts/example`, copy [.env.example](./.env.example) to `.env`.
+From `modules/spacetime-resend-ts/example`, copy [.env.example](./.env.example) to `.env`.
 
 You also need a Resend API key. In `.env`, replace `RESEND_API_KEY` with your
 key. Leave `RESEND_WEBHOOK_SECRET` empty until you set up a webhook below.

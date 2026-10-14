@@ -14,7 +14,7 @@ Start SpacetimeDB in a separate terminal:
 spacetime start
 ```
 
-From `spacetime-rate-limit-ts/example`, run:
+From `modules/spacetime-rate-limit-ts/example`, run:
 
 ```bash
 pnpm install

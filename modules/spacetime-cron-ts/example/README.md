@@ -19,7 +19,7 @@ Start SpacetimeDB in a separate terminal:
 spacetime start
 ```
 
-From `spacetime-cron-ts/example`, run:
+From `modules/spacetime-cron-ts/example`, run:
 
 ```bash
 pnpm install

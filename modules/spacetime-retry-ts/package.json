@@ -1,6 +1,6 @@
 {
-  "name": "@spacetimedb/cron",
-  "description": "Calendar and interval scheduling for SpacetimeDB TypeScript modules.",
+  "name": "@spacetimedb/retry",
+  "description": "Typed retry dispatch, exponential backoff, and attempt history for SpacetimeDB TypeScript modules.",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
@@ -11,9 +11,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./parser": {
-      "types": "./src/parser.ts",
-      "default": "./src/parser.ts"
+    "./submodule": {
+      "types": "./src/submodule.ts",
+      "default": "./src/submodule.ts"
     }
   },
   "files": [
@@ -31,44 +31,38 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       },
-      "./parser": {
-        "types": "./dist/parser.d.ts",
-        "default": "./dist/parser.js"
+      "./submodule": {
+        "types": "./dist/submodule.d.ts",
+        "default": "./dist/submodule.js"
       }
     }
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
-    "directory": "spacetime-cron-ts"
+    "directory": "modules/spacetime-retry-ts"
   },
-  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/spacetime-cron-ts#readme",
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-retry-ts#readme",
   "bugs": {
     "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
   },
   "keywords": [
     "spacetimedb",
-    "cron",
-    "scheduler",
+    "retry",
+    "backoff",
     "typescript"
   ],
-  "scripts": {
-    "format": "prettier . --write --ignore-path ../.prettierignore",
-    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
-    "typecheck": "tsc --noEmit",
-    "test": "pnpm run test:parser && pnpm run test:schedule && pnpm run test:validation && pnpm run test:registration",
-    "test:parser": "tsx scripts/test-cron-parser.ts",
-    "test:module:local": "node scripts/test-module-local.mjs",
-    "test:registration": "node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-registration.ts",
-    "test:recovery": "node scripts/test-recovery.mjs",
-    "test:schedule": "tsx scripts/test-schedule.ts",
-    "test:validation": "tsx scripts/test-validation.ts",
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
-    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../licenses/apache2.txt', 'LICENSE')\"",
-    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
+  "submodule": {
+    "category": "durable"
   },
-  "dependencies": {
-    "cron-parser": "5.5.0"
+  "scripts": {
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
+    "typecheck": "tsc --noEmit",
+    "test": "node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test.ts",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../../licenses/apache2.txt', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "peerDependencies": {
     "spacetimedb": "workspace:^"

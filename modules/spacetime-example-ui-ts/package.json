@@ -18,8 +18,8 @@
     "./styles.css": "./src/styles/index.css"
   },
   "scripts": {
-    "format": "prettier . --write --ignore-path ../.prettierignore",
-    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
