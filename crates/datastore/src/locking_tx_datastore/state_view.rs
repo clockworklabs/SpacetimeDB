@@ -6,10 +6,10 @@ use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
     StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields,
-    StOutboundMsgRow, StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
-    StTableRow, StViewFields, StViewParamFields, StViewParamRow, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID,
-    ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+    StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StScheduledFields, StScheduledRow,
+    StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
+    StViewFields, StViewParamFields, StViewParamRow, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
     ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID,
     ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
@@ -19,7 +19,6 @@ use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{col_list, ColList, TableId};
 use spacetimedb_sats::{product, AlgebraicValue};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema, ViewDefInfo};
-use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
@@ -97,20 +96,16 @@ pub trait StateView {
         .transpose()
     }
 
-    /// Find a pending delivery and its row pointer for updates or cleanup.
-    fn outbound_msg_by_stream_seq(&self, stream_id: u64, seq: u64) -> Result<Option<(RowPointer, StOutboundMsgRow)>> {
+    /// Find a pending delivery without decoding its payload.
+    fn outbound_msg_by_stream_seq(&self, stream_id: u64, seq: u64) -> Result<Option<RowRef<'_>>> {
         let key = AlgebraicValue::Product(product![stream_id, seq]);
-        self.iter_by_col_eq(
-            ST_OUTBOUND_MSG_ID,
-            col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::Seq],
-            &key,
-        )?
-        .map(|row_ref| {
-            let ptr = row_ref.pointer();
-            StOutboundMsgRow::try_from(row_ref).map(|row| (ptr, row))
-        })
-        .next()
-        .transpose()
+        Ok(self
+            .iter_by_col_eq(
+                ST_OUTBOUND_MSG_ID,
+                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::Seq],
+                &key,
+            )?
+            .next())
     }
 
     /// Look up the `st_table` row which describes `table_id`.
