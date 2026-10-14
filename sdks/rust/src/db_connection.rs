@@ -2076,6 +2076,8 @@ struct ReconnectState {
     provider: Option<Arc<dyn TokenProvider>>,
     token: Option<String>,
     attempt: u32,
+    // Incremented to invalidate results from older reconnect tasks.
+    // Only ReconnectReady messages matching this generation may be applied.
     generation: u64,
     reconnecting: bool,
     preparing_replay: bool,
