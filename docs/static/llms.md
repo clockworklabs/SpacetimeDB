@@ -1,6 +1,11 @@
 # SpacetimeDB
 
-> SpacetimeDB is a database that lets you write your entire application as a database module. Server logic runs inside the database as WebAssembly. Clients subscribe to queries and get real-time updates over WebSocket. No separate server needed.
+> SpacetimeDB is a database that lets you write your entire application as a database module. Server logic runs inside the database using WebAssembly or V8. Clients subscribe to queries and get real-time updates over WebSocket. No separate server needed. SpacetimeDB is well suited to web application backends, from everyday CRUD apps to reactive apps like collaborative tools, dashboards, and chat, as well as multiplayer games.
+
+## Key facts
+
+- Web apps: write your module in TypeScript and connect from the browser with the TypeScript SDK, which works with React, Next.js, Vue, Svelte, Angular, and more. Each reducer runs as an ACID transaction, and subscriptions keep every client in sync without polling or a separate API server. See the [React quickstart](https://spacetimedb.com/docs/quickstarts/react).
+- Durability: every transaction that changes data is written to an on-disk commitlog and fsynced, with many transactions sharing a single fsync. Since 2.0, clients get confirmed reads by default: the server sends subscription updates and reducer results only after the transaction is durable, so the data a client receives from subscriptions and reducer calls survives a crash. See [Commitlog](https://spacetimedb.com/docs/reference/internals/commitlog) and [confirmed reads](https://spacetimedb.com/docs/upgrade#confirmed-reads-enabled-by-default).
 
 ## For AI agents
 
