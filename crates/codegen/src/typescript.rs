@@ -321,9 +321,10 @@ impl Lang for TypeScript {
         // Namespace tables from submodules
         for (prefix, owning_def, table) in &ns_tables {
             let source_name = submodule_source_name(prefix, table.name.deref());
+            let accessor_key = submodule_accessor_key(owning_def, &table.accessor_name);
             let row_type = submodule_row_type_name(owning_def.accessor_path(), table.accessor_name.deref());
             let type_ref = table.product_type_ref;
-            writeln!(out, "\"{source_name}\": __table({{");
+            writeln!(out, "\"{accessor_key}\": __table({{");
             out.indent(1);
             write_table_opts(
                 owning_def,
@@ -342,9 +343,10 @@ impl Lang for TypeScript {
         // backing table name registered in the database by `create_view_with_prefix`.
         for (prefix, owning_def, view) in &ns_views {
             let source_name = submodule_source_name(prefix, view.name.deref());
+            let accessor_key = submodule_accessor_key(owning_def, &view.accessor_name);
             let row_type = submodule_row_type_name(owning_def.accessor_path(), view.accessor_name.deref());
             let type_ref = view.product_type_ref;
-            writeln!(out, "\"{source_name}\": __table({{");
+            writeln!(out, "\"{accessor_key}\": __table({{");
             out.indent(1);
             write_table_opts(
                 owning_def,
@@ -1436,28 +1438,26 @@ fn build_ns_tree<'a>(
     ns_tables: &[(NamespacePath, &'a ModuleDef, &'a TableDef)],
     ns_views: &[(NamespacePath, &'a ModuleDef, &'a ViewDef)],
 ) -> BTreeMap<String, NsTree> {
-    // Object keys follow the accessor path (`tables.myLib.x`), while the query builder keys
-    // are the canonical wire names (`__qb["my_lib.x"]`) that match the tablesSchema entries.
+    // Query builder keys are the accessor keys the tablesSchema entries are registered under.
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (prefix, owning, table) in ns_tables {
-        let source_name = submodule_source_name(prefix, table.name.deref());
+    for (_, owning, table) in ns_tables {
+        let accessor_key = submodule_accessor_key(owning, &table.accessor_name);
         let local = table.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
-                .insert(rest, source_name, local);
+                .insert(rest, accessor_key, local);
         }
     }
-    for (prefix, owning, view) in ns_views {
-        // Canonical name: must match the tablesSchema key and the DB backing table name.
-        let source_name = submodule_source_name(prefix, view.name.deref());
+    for (_, owning, view) in ns_views {
+        let accessor_key = submodule_accessor_key(owning, &view.accessor_name);
         let local = view.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
-                .insert(rest, source_name, local);
+                .insert(rest, accessor_key, local);
         }
     }
     tree

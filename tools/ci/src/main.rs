@@ -25,8 +25,16 @@ const COMMANDS: &[Command] = &[
         package: "ci-module-latest-deps",
     },
     Command {
+        path: &["portable-datastore"],
+        package: "ci-portable-datastore",
+    },
+    Command {
         path: &["smoketests"],
         package: "ci-smoketests",
+    },
+    Command {
+        path: &["sdk-tests"],
+        package: "ci-sdk-tests",
     },
     Command {
         path: &["smoketests", "check-mod-list"],
@@ -55,6 +63,10 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["typescript-test"],
         package: "ci-typescript-test",
+    },
+    Command {
+        path: &["typescript-submodules"],
+        package: "ci-typescript-submodules",
     },
     Command {
         path: &["version-upgrade-check"],

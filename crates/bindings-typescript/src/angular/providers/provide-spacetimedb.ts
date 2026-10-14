@@ -51,6 +51,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionImpl<any>>(
           identity: conn.identity,
           token: conn.token,
           connectionId: conn.connectionId,
+          connectionError: undefined,
           getConnection,
         });
       };
@@ -76,6 +77,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionImpl<any>>(
       };
 
       connectionBuilder.onConnect(onConnect);
+      connectionBuilder.onAutomaticReconnect(onConnect);
       connectionBuilder.onDisconnect(onDisconnect);
       connectionBuilder.onConnectError(onConnectError);
 

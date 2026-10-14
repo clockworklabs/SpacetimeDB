@@ -1,5 +1,8 @@
+import type { UntypedClientTable } from '../sdk/client_table';
+import { getByAccessorPath } from '../lib/accessor_path';
 import {
   onUnmounted,
+  computed,
   readonly,
   ref,
   shallowRef,
@@ -79,7 +82,13 @@ export function useTable<TableDef extends UntypedTableDef>(
   }
 
   const rows = shallowRef<readonly Prettify<Row>[]>([]);
-  const isReady = ref(false);
+  const appliedConnectionId = ref<string | null>(null);
+  const isReady = computed(
+    () =>
+      conn.isActive &&
+      appliedConnectionId.value === conn.connectionId.toHexString()
+  );
+  let subscribedConnection: ReturnType<typeof conn.getConnection> = null;
 
   let latestTransactionEvent: any = null;
   let unsubscribeFromTable: (() => void) | null = null;
@@ -89,7 +98,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     const connection = conn.getConnection();
     if (!connection) return [];
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName
+    );
     if (!table) return [];
 
     const allRows = Array.from(table.iter()) as Row[];
@@ -105,7 +117,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     const connection = conn.getConnection();
     if (!connection) return;
 
-    const table = connection.db[accessorName];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName
+    );
     if (!table) return;
 
     const onInsert = (
@@ -188,15 +203,21 @@ export function useTable<TableDef extends UntypedTableDef>(
     subscriptionHandle = connection
       .subscriptionBuilder()
       .onApplied(() => {
-        isReady.value = true;
+        appliedConnectionId.value = connection.connectionId.toHexString();
         rows.value = computeFilteredRows();
+      })
+      .onError(() => {
+        appliedConnectionId.value = null;
       })
       .subscribe(querySql);
   };
 
   watch(
-    () => conn.isActive,
-    isActive => {
+    () => [conn.getConnection(), conn.isActive, conn.connectionId] as const,
+    ([connection]) => {
+      if (connection === subscribedConnection) return;
+      subscribedConnection = connection;
+      appliedConnectionId.value = null;
       // Clean up existing listeners and subscriptions first
       if (unsubscribeFromTable) {
         unsubscribeFromTable();
@@ -207,12 +228,11 @@ export function useTable<TableDef extends UntypedTableDef>(
         subscriptionHandle = null;
       }
 
-      if (isActive) {
+      if (connection) {
         unsubscribeFromTable = setupTableListeners() || null;
         setupSubscription();
         rows.value = computeFilteredRows();
       } else {
-        isReady.value = false;
         rows.value = [];
       }
     },

@@ -51,7 +51,7 @@ partial struct TestAutoIncNotInteger
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new("AutoIncField", AutoIncFieldRW.GetAlgebraicType(registrar)),
-                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar))
+                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

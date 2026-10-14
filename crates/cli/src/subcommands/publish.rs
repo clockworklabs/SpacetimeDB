@@ -865,7 +865,7 @@ fn validate_name_and_parent<'a>(
 
 /// Determine the pretty print style based on the NO_COLOR environment variable.
 ///
-/// See: https://no-color.org
+/// See: <https://no-color.org>
 pub fn pretty_print_style_from_env() -> PrettyPrintStyle {
     match env::var("NO_COLOR") {
         Ok(_) => PrettyPrintStyle::NoColor,

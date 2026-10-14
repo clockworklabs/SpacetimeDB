@@ -24,3 +24,37 @@ export class InternalError extends Error {
     return 'InternalError';
   }
 }
+
+/** The call was not sent because the connection was not established. */
+export class DisconnectedError extends Error {
+  constructor(message: string = 'Not connected to SpacetimeDB') {
+    super(message);
+  }
+  get name(): string {
+    return 'DisconnectedError';
+  }
+}
+
+/** The connection dropped before acknowledgement; the call may have run. */
+export class UnknownCallResultError extends Error {
+  constructor(
+    message: string = 'Connection lost before the call was acknowledged; it may or may not have run'
+  ) {
+    super(message);
+  }
+  get name(): string {
+    return 'UnknownCallResultError';
+  }
+}
+
+/** The reconnect returned a different identity, ending automatic reconnection. */
+export class IdentityChangedError extends Error {
+  constructor(
+    message: string = 'Reconnected with a different identity; the token was revoked or replaced'
+  ) {
+    super(message);
+  }
+  get name(): string {
+    return 'IdentityChangedError';
+  }
+}

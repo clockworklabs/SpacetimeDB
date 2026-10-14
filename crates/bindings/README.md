@@ -262,7 +262,7 @@ fn do_nothing() {
 #[reducer]
 fn do_something(ctx: &ReducerContext) {
     // `ctx.db.{table_name}()` gets a handle to a database table.
-    let person: &person__TableHandle = ctx.db.person();
+    let person: person__TableHandle = ctx.db.person();
 
     // The following inserts a row into the table:
     let mut example_person = person.insert(Person { id: 0, name: "Joe Average".to_string() });

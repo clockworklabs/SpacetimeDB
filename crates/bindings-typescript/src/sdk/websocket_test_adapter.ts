@@ -1,7 +1,7 @@
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import { ClientMessage, ServerMessage } from './client_api/types';
-import type { WebSocketAdapter, WebSocketFactory } from './ws';
+import type { WebSocketAdapter, WebSocketArgs, WebSocketFactory } from './ws';
 import { PREFERRED_WS_PROTOCOLS, V3_WS_PROTOCOL } from './websocket_protocols';
 import {
   decodeClientMessagesV3,
@@ -10,6 +10,9 @@ import {
 
 class WebsocketTestAdapter implements WebSocketAdapter {
   protocol: string = '';
+
+  /** The arguments the connection passed to `openWebSocket`, for assertions. */
+  connectArgs?: WebSocketArgs;
 
   // WebSocket.CLOSED (3) / WebSocket.OPEN (1). Uses literals rather than the
   // `WebSocket` global, which is not defined when these tests run under Node.
@@ -51,7 +54,15 @@ class WebsocketTestAdapter implements WebSocketAdapter {
   }
 
   error(error: Error): void {
-    this.#onerror(error as unknown as ErrorEvent);
+    this.#onerror(
+      Object.assign(new Event('error'), {
+        error,
+        message: error.message,
+        filename: '',
+        lineno: 0,
+        colno: 0,
+      })
+    );
   }
 
   send(message: Uint8Array<ArrayBuffer>): void {
@@ -70,12 +81,31 @@ class WebsocketTestAdapter implements WebSocketAdapter {
   }
 
   close(): void {
+    this.serverClose(1000, 'normal closure', true);
+  }
+
+  /**
+   * Simulate a close initiated by the server or the network, with an
+   * arbitrary close code (e.g. an abnormal closure or an
+   * application-specific code such as session-expired).
+   */
+  serverClose(
+    code: number,
+    reason: string = '',
+    wasClean: boolean = false
+  ): void {
     this.closed = true;
-    this.#onclose({
-      code: 1000,
-      reason: 'normal closure',
-      wasClean: true,
-    } as CloseEvent);
+    this.#onclose(
+      Object.assign(new Event('close'), { code, reason, wasClean })
+    );
+  }
+
+  /**
+   * Mark the socket as closed without delivering any event, simulating a
+   * socket that died while the page was suspended (a "zombie" socket).
+   */
+  dieSilently(): void {
+    this.closed = true;
   }
 
   acceptConnection(): void {
@@ -98,15 +128,51 @@ class WebsocketTestAdapter implements WebSocketAdapter {
     this.#onmessage({ data: outboundData });
   }
 
-  openWebSocket: WebSocketFactory = async ({ wsProtocol }) => {
-    const negotiatedProtocol = wsProtocol.find(protocol =>
+  openWebSocket: WebSocketFactory = async args => {
+    const negotiatedProtocol = args.wsProtocol.find(protocol =>
       this.supportedProtocols.includes(protocol)
     );
     if (!negotiatedProtocol) {
       throw new Error('No compatible websocket protocol');
     }
     this.protocol = negotiatedProtocol;
+    this.connectArgs = args;
     return this;
+  };
+}
+
+/**
+ * A websocket factory that hands out a fresh {@link WebsocketTestAdapter} per
+ * connection attempt and records them all. Used to test automatic
+ * reconnection, where each attempt opens a new socket.
+ */
+export class WebsocketTestAdapterFactory {
+  /** Every adapter created so far, in creation order. */
+  sockets: WebsocketTestAdapter[] = [];
+  /**
+   * When set, the next `openWebSocket` calls reject with this error instead
+   * of producing a socket (simulating an unreachable server or a failed
+   * token exchange).
+   */
+  connectError?: Error;
+
+  /** The most recently created adapter. */
+  get current(): WebsocketTestAdapter {
+    const socket = this.sockets[this.sockets.length - 1];
+    if (!socket) {
+      throw new Error('No websocket has been opened yet');
+    }
+    return socket;
+  }
+
+  openWebSocket: WebSocketFactory = async args => {
+    if (this.connectError) {
+      throw this.connectError;
+    }
+    const adapter = new WebsocketTestAdapter();
+    await adapter.openWebSocket(args);
+    this.sockets.push(adapter);
+    return adapter;
   };
 }
 

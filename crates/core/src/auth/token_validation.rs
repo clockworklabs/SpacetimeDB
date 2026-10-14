@@ -6,7 +6,7 @@ use faststr::FastStr;
 use jsonwebtoken::decode_header;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
-use jsonwebtoken::jwk::JwkSet;
+use jsonwebtoken::jwk::{AlgorithmParameters, JwkSet};
 use jsonwebtoken::{decode, AlgorithmFamily, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use lazy_static::lazy_static;
@@ -148,9 +148,8 @@ impl TokenValidator for DecodingKey {
         validation.algorithms = match self.family() {
             AlgorithmFamily::Ec => vec![jsonwebtoken::Algorithm::ES256],
             AlgorithmFamily::Rsa => vec![jsonwebtoken::Algorithm::RS256],
-            AlgorithmFamily::Hmac => vec![jsonwebtoken::Algorithm::HS256],
-            AlgorithmFamily::Ed => {
-                // Preserve the pre-upgrade policy: SpacetimeDB only accepted ES256, RS256, and HS256 here.
+            AlgorithmFamily::Hmac | AlgorithmFamily::Ed => {
+                // Only asymmetric ES256 and RS256 signatures are accepted.
                 return Err(TokenValidationError::TokenError(JwtErrorKind::InvalidAlgorithm.into()));
             }
         };
@@ -396,6 +395,10 @@ impl TryFrom<JwkSet> for JsonWebKeySet {
     fn try_from(jwks: JwkSet) -> Result<Self, Self::Error> {
         let mut keys = Vec::with_capacity(jwks.keys.len());
         for jwk in jwks.keys {
+            // JWKS is public: shared secrets must never be used for token verification.
+            if matches!(jwk.algorithm, AlgorithmParameters::OctetKey(_)) {
+                continue;
+            }
             // `kid` is optional in both JWT headers and JWKs.
             // Use it as a fast path when present,
             // but keep JWKs without `kid` so standards-compliant providers work.
@@ -441,6 +444,81 @@ mod tests {
     use openssl::ec::{EcGroup, EcKey};
     use serde_json;
     use spacetimedb_lib::Identity;
+
+    #[tokio::test]
+    async fn reject_symmetric_tokens() -> anyhow::Result<()> {
+        use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header};
+
+        let claims = serde_json::json!({"iss": "test", "sub": "subject", "iat": 0});
+        let kp = JwtKeys::generate()?;
+        let secret = b"a shared secret long enough for HS512 signing and verification........";
+        let keys = [DecodingKey::from_secret(secret), kp.public];
+        for alg in [Algorithm::HS256, Algorithm::HS384, Algorithm::HS512] {
+            let token = jsonwebtoken::encode(&Header::new(alg), &claims, &EncodingKey::from_secret(secret))?;
+            for key in &keys {
+                let err = key.validate_token(&token).await.unwrap_err();
+                assert!(
+                    matches!(err, TokenValidationError::TokenError(err) if err.kind() == &JwtErrorKind::InvalidAlgorithm)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ignore_symmetric_jwks_keys() -> anyhow::Result<()> {
+        use super::{JsonWebKeySet, JwksValidator};
+        use jsonwebtoken::{Algorithm, EncodingKey, Header};
+
+        let kp = JwtKeys::generate()?;
+        let secret = b"a shared secret long enough for HS512 signing and verification........";
+        let symmetric_key = serde_json::json!({
+            "kty": "oct", "kid": "symmetric", "alg": "HS256",
+            "k": base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(secret)
+        });
+        let keyset: JsonWebKeySet = serde_json::from_value::<jsonwebtoken::jwk::JwkSet>(serde_json::json!({
+            "keys": [symmetric_key.clone(), to_jwk_json(&kp)?]
+        }))?
+        .try_into()?;
+        assert_eq!(keyset.keys.len(), 1);
+        assert!(keyset.key_with_id("symmetric").is_none());
+        let validator = JwksValidator {
+            issuer: "test".into(),
+            keyset,
+        };
+        let claims = serde_json::json!({"iss": "test", "sub": "subject", "iat": 0});
+        validator.validate_token(&kp.sign(&claims)?).await?;
+
+        for alg in [Algorithm::HS256, Algorithm::HS384, Algorithm::HS512] {
+            for kid in [Some("symmetric".to_owned()), None] {
+                let header = Header {
+                    kid,
+                    ..Header::new(alg)
+                };
+                let token = jsonwebtoken::encode(&header, &claims, &EncodingKey::from_secret(secret))?;
+                assert!(validator.validate_token(&token).await.is_err());
+            }
+        }
+        let symmetric_only: JsonWebKeySet =
+            serde_json::from_value::<jsonwebtoken::jwk::JwkSet>(serde_json::json!({"keys": [symmetric_key]}))?
+                .try_into()?;
+        assert!(symmetric_only.keys.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn accept_rsa_tokens() -> anyhow::Result<()> {
+        use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header};
+
+        let rsa = openssl::rsa::Rsa::generate(2048)?;
+        let private = EncodingKey::from_rsa_pem(&rsa.private_key_to_pem()?)?;
+        let public = DecodingKey::from_rsa_pem(&rsa.public_key_to_pem()?)?;
+        let claims = serde_json::json!({"iss": "test", "sub": "subject", "iat": 0});
+        let token = jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &private)?;
+        let parsed = public.validate_token(&token).await?;
+        assert_eq!(parsed.identity, Identity::from_claims("test", "subject"));
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_local_validator_checks_issuer() -> anyhow::Result<()> {
