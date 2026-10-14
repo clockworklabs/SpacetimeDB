@@ -341,10 +341,9 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     ///
     /// The strings are table names, since we may have multiple tables with the same row type.
     tables: Map<dyn Any + Send + Sync>,
-    // Erased per-table readers let reconnect synthesize removals from the live cache
-    // without extending generated DbUpdate implementations. Every reference is
-    // included, preserving overlap counts when all replayed sets are applied at once.
-    snapshotters:
+    // One synthetic delete builder per table. Auto-reconnect combines these deletes
+    // with new subscription inserts and applies them through the existing DbUpdate code.
+    synthetic_delete_builders:
         HashMap<&'static str, fn(&Self, &'static str) -> spacetimedb_client_api_messages::websocket::v2::TableUpdate>,
 
     /// Clone of the [`crate::db_connection::DbContextImpl::extra_logging`].
@@ -357,16 +356,16 @@ impl<M: SpacetimeModule> ClientCache<M> {
     pub(crate) fn new(extra_logging: Option<SharedCell<File>>) -> Self {
         Self {
             tables: Map::new(),
-            snapshotters: HashMap::default(),
+            synthetic_delete_builders: HashMap::default(),
             extra_logging,
             _module: PhantomData,
         }
     }
 
-    pub(crate) fn removal_snapshot(&self) -> Vec<spacetimedb_client_api_messages::websocket::v2::TableUpdate> {
-        self.snapshotters
+    pub(crate) fn build_synthetic_deletes(&self) -> Vec<spacetimedb_client_api_messages::websocket::v2::TableUpdate> {
+        self.synthetic_delete_builders
             .iter()
-            .map(|(&name, snapshot)| snapshot(self, name))
+            .map(|(&name, build_deletes)| build_deletes(self, name))
             .collect()
     }
 
@@ -386,7 +385,7 @@ impl<M: SpacetimeModule> ClientCache<M> {
         &mut self,
         table_name: &'static str,
     ) -> &mut TableCache<Row> {
-        self.snapshotters.entry(table_name).or_insert(|cache, name| {
+        self.synthetic_delete_builders.entry(table_name).or_insert(|cache, name| {
             use spacetimedb_client_api_messages::websocket::{common::RowSizeHint, v2};
             let mut bytes = Vec::new();
             let mut offsets = Vec::new();

@@ -399,7 +399,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 false,
             );
         }
-        let mut tables = self.cache.lock().unwrap().removal_snapshot();
+        let mut tables = self.cache.lock().unwrap().build_synthetic_deletes();
         let mut outcomes = Vec::new();
         for result in batch.results {
             let error = match result.outcome {
