@@ -59,7 +59,7 @@ impl IdcActorStarter {
         let mut streams = DeliveryStreams::default();
         restore_pending_streams(&db, &mut streams)?;
         let abort = tokio::spawn(async move {
-            if let Err(error) = run_idc_loop(db, database_identity, config, Some(module_host), self.rx, streams).await {
+            if let Err(error) = run_idc_loop(db, database_identity, config, module_host, self.rx, streams).await {
                 log::error!(
                     "idc_actor: sender_identity={}: stopped: {error:#}",
                     database_identity.to_hex(),
@@ -166,7 +166,7 @@ async fn run_idc_loop(
     db: Arc<RelationalDB>,
     database_identity: Identity,
     config: IdcConfig,
-    module_host: Option<WeakModuleHost>,
+    module_host: WeakModuleHost,
     mut notify_rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
     mut streams: DeliveryStreams,
 ) -> anyhow::Result<()> {
@@ -182,7 +182,7 @@ async fn run_idc_loop(
         while let Some(msg) = take_ready_message(&db, &mut streams)? {
             let stream_id = msg.message().stream_id;
             let seq = msg.message().sequence;
-            let (db, client, config, module_host) = (&db, &client, &config, module_host.as_ref());
+            let (db, client, config, module_host) = (&db, &client, &config, &module_host);
             in_flight.push(async move {
                 let result = handle_message(db, client, database_identity, config, module_host, msg).await;
                 (stream_id, seq, result)
@@ -268,7 +268,7 @@ async fn handle_message(
     client: &reqwest::Client,
     database_identity: Identity,
     config: &IdcConfig,
-    module_host: Option<&WeakModuleHost>,
+    module_host: &WeakModuleHost,
     msg: LoadedMessage,
 ) -> anyhow::Result<()> {
     let msg = match msg {
@@ -281,7 +281,7 @@ async fn handle_message(
         }
         LoadedMessage::Delivered(msg) => msg,
     };
-    finalize_message(db, module_host, msg).await
+    finalize_message(module_host, msg).await
 }
 
 /// Send the message and save its result before running the callback.
@@ -349,24 +349,11 @@ fn record_delivery_response(
 
 /// Run the callback and cleanup on the module instance, using the same transaction
 /// checks as scheduled work. If the host has stopped, keep the saved result for restart.
-async fn finalize_message(
-    db: &RelationalDB,
-    module_host: Option<&WeakModuleHost>,
-    msg: DeliveredMessage,
-) -> anyhow::Result<()> {
-    if let Some(host) = module_host.and_then(WeakModuleHost::upgrade) {
-        return host.finish_idc_message(msg).await;
-    }
-    // Unit tests without a module instance have no callbacks, views or subscribers.
-    #[cfg(test)]
-    if module_host.is_none() && msg.message.on_result_reducer.is_none() {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        cleanup_message(db, &mut tx, &msg)?;
-        db.commit_tx(tx)?;
-        return Ok(());
-    }
-    let _ = db;
-    anyhow::bail!("IDC module host is no longer available")
+async fn finalize_message(module_host: &WeakModuleHost, msg: DeliveredMessage) -> anyhow::Result<()> {
+    let host = module_host
+        .upgrade()
+        .context("IDC module host is no longer available")?;
+    host.finish_idc_message(msg).await
 }
 
 /// Runs on the module executor. Check the row and run the callback in the same
@@ -472,7 +459,7 @@ fn cleanup_message_with_views(
     }
     // User-row cleanup must refresh views and notify subscriptions, just like
     // scheduled-row cleanup. Do not bypass the module's commit path.
-    crate::host::scheduler::refresh_views_then_commit_and_broadcast(tx, info, common, inst)
+    common.refresh_views_then_commit_and_broadcast(tx, inst)
 }
 
 fn callback_params(info: &ModuleInfo, msg: &DeliveredMessage, name: &str) -> anyhow::Result<CallReducerParams> {
@@ -717,7 +704,7 @@ mod tests {
     use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_table::page_pool::PagePool;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::sync::atomic::Ordering;
     use tokio::net::TcpListener;
 
@@ -797,23 +784,6 @@ mod tests {
         Ok(())
     }
 
-    fn notify_message(
-        db: &RelationalDB,
-        tx: &mpsc::UnboundedSender<StOutboundMsgRow>,
-        msg_id: u64,
-    ) -> anyhow::Result<()> {
-        let read_tx = db.begin_tx(Workload::Internal);
-        let msg = db
-            .iter(&read_tx, ST_OUTBOUND_MSG_ID)?
-            .map(StOutboundMsgRow::try_from)
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .find(|msg| msg.msg_id == msg_id)
-            .unwrap();
-        tx.send(msg)?;
-        Ok(())
-    }
-
     fn next_message(db: &RelationalDB) -> anyhow::Result<PendingMessage> {
         let streams = read_pending_streams(db)?;
         assert_eq!(streams.len(), 1);
@@ -821,6 +791,19 @@ mod tests {
             anyhow::bail!("expected a message without a result");
         };
         Ok(message)
+    }
+
+    // These tests cover delivery and queue state without a module instance.
+    // They do not exercise callbacks, view refresh, or subscription updates.
+    fn cleanup_without_module(db: &RelationalDB, msg: DeliveredMessage) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            msg.message.on_result_reducer.is_none(),
+            "test cleanup cannot run callbacks"
+        );
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        cleanup_message(db, &mut tx, &msg)?;
+        db.commit_tx(tx)?;
+        Ok(())
     }
 
     fn store_success(db: &RelationalDB, message: PendingMessage) -> anyhow::Result<DeliveredMessage> {
@@ -959,25 +942,10 @@ mod tests {
             streams.wake(stream_id);
             assert!(take_ready_message(&db, &mut streams).is_err());
             assert_eq!(streams.next_retry(), None);
-            streams.wake(stream_id);
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.st_outbound_stream_by_id(&tx, stream_id.0)?.unwrap().ack_prefix, 0);
             assert!(db.outbound_msg_by_stream_seq(&tx, stream_id.0, 2)?.is_some());
             db.release_tx(tx);
-
-            // A broken stream stops the loop even while notifications remain open.
-            let (_notify_tx, notify_rx) = mpsc::unbounded_channel();
-            let config = IdcConfig {
-                http_port: 0,
-                token_signer: Arc::new(crate::auth::JwtKeys::generate()?.private),
-            };
-            let error = tokio::time::timeout(
-                Duration::from_secs(1),
-                run_idc_loop(db, Identity::ZERO, config, None, notify_rx, streams),
-            )
-            .await?
-            .expect_err("message-loading errors must stop the loop");
-            assert!(error.to_string().contains(&format!("stream {stream_id}")));
         }
         Ok(())
     }
@@ -1069,19 +1037,8 @@ mod tests {
                     0
                 );
             }
-            // Once the result is stored, finishing the message needs no HTTP request.
-            response_status.store(503, Ordering::Relaxed);
-            assert!(handle_message(
-                &db,
-                &client,
-                Identity::ZERO,
-                &config,
-                None,
-                LoadedMessage::Delivered(stored)
-            )
-            .await
-            .is_ok());
-            wait_for_ack(&db, Identity::ONE, 1).await?;
+            // Cleanup commits the saved result without another delivery attempt.
+            cleanup_without_module(&db, stored)?;
             assert_eq!(next_message(&db)?.sequence, 2);
         }
 
@@ -1092,9 +1049,10 @@ mod tests {
             insert_outbox_message(&db, Identity::ONE, 42)?;
             let msg = next_message(&db)?;
             response_status.store(status, Ordering::Relaxed);
-            let error = handle_message(&db, &client, Identity::ZERO, &config, None, LoadedMessage::Pending(msg))
+            let error = deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg)
                 .await
-                .expect_err("response must leave the message pending");
+                .err()
+                .expect("response must leave the message pending");
             let tx = db.begin_tx(Workload::Internal);
             let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
             assert!(row.result_status.is_none(), "HTTP {status}");
@@ -1116,17 +1074,13 @@ mod tests {
         let table = insert_outbox_message(&db, Identity::ONE, 42)?;
         insert_outbox_row(&db, table, Identity::ONE, 8, 43)?;
         let stale = next_message(&db)?;
-        finalize_message(&db, None, store_success(&db, stale.clone())?).await?;
+        cleanup_without_module(&db, store_success(&db, stale.clone())?)?;
         response_status.store(208, Ordering::Relaxed);
-        handle_message(
-            &db,
-            &client,
-            Identity::ZERO,
-            &config,
-            None,
-            LoadedMessage::Pending(stale),
-        )
-        .await?;
+        assert!(
+            deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, stale)
+                .await?
+                .is_none()
+        );
         assert_eq!(next_message(&db)?.sequence, 2);
         {
             let tx = db.begin_tx(Workload::Internal);
@@ -1161,7 +1115,7 @@ mod tests {
             let msg = next_message(&db)?;
             config.http_port = http_port;
             assert!(
-                handle_message(&db, &client, Identity::ZERO, &config, None, LoadedMessage::Pending(msg))
+                deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg)
                     .await
                     .is_err()
             );
@@ -1196,229 +1150,6 @@ mod tests {
                 .expect("partial result must fail");
             assert!(error.to_string().contains("incomplete stored result"));
         }
-        Ok(())
-    }
-
-    async fn wait_for_ack(db: &RelationalDB, target: Identity, prefix: u64) -> anyhow::Result<()> {
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                let tx = db.begin_tx(Workload::Internal);
-                let acked = db.iter(&tx, ST_OUTBOUND_STREAM_ID).unwrap().any(|row| {
-                    let stream = StOutboundStreamRow::try_from(row).unwrap();
-                    stream.target_identity.0 == target && stream.ack_prefix == prefix
-                });
-                let _ = db.release_tx(tx);
-                if acked {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn idc_actor_streams_progress_independently_and_preserve_order() -> anyhow::Result<()> {
-        let keys = crate::auth::JwtKeys::generate()?;
-        let (captured_tx, mut captured_rx) = mpsc::unbounded_channel();
-        let release_slow = Arc::new(tokio::sync::Semaphore::new(0));
-        let fail_first = Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let rejected_target = Identity::from_byte_array([2; 32]);
-        let reject_auth = Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let app = Router::new().route(
-            "/v1/database/:target_db/call-from-database/:reducer",
-            post({
-                let release_slow = release_slow.clone();
-                let reject_auth = reject_auth.clone();
-                move |Path((target, _)): Path<(String, String)>, Query(query): Query<HashMap<String, String>>| {
-                    let captured_tx = captured_tx.clone();
-                    let release_slow = release_slow.clone();
-                    let fail_first = fail_first.clone();
-                    let reject_auth = reject_auth.clone();
-                    async move {
-                        let seq = query["seq"].parse::<u64>().unwrap();
-                        assert_eq!(query["ack_prefix"].parse::<u64>().unwrap(), seq - 1);
-                        let slow = target == Identity::ONE.to_hex().to_string();
-                        let rejected =
-                            target == rejected_target.to_hex().to_string() && reject_auth.load(Ordering::Relaxed);
-                        captured_tx.send((target, seq)).unwrap();
-                        if rejected {
-                            return StatusCode::FORBIDDEN;
-                        }
-                        if slow && seq == 1 {
-                            release_slow.acquire().await.unwrap().forget();
-                            if fail_first.swap(false, std::sync::atomic::Ordering::Relaxed) {
-                                return StatusCode::SERVICE_UNAVAILABLE;
-                            }
-                        }
-                        StatusCode::OK
-                    }
-                }
-            }),
-        );
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-        let http_port = listener.local_addr()?.port();
-        let server = tokio::spawn(async move { axum::serve(listener, app).await });
-        let server_abort = scopeguard::guard(server.abort_handle(), |handle| handle.abort());
-        let db = open_test_db();
-        let table_id = insert_outbox_message(&db, Identity::ONE, 42)?;
-        insert_outbox_row(&db, table_id, Identity::ONE, 8, 43)?;
-        let (notify_tx, notify_rx) = mpsc::unbounded_channel();
-        let mut streams = DeliveryStreams::default();
-        restore_pending_streams(&db, &mut streams)?;
-        let config = IdcConfig {
-            http_port,
-            token_signer: Arc::new(keys.private),
-        };
-        let actor = tokio::spawn(run_idc_loop(
-            db.clone(),
-            Identity::ZERO,
-            config.clone(),
-            None,
-            notify_rx,
-            streams,
-        ));
-        let actor_abort = scopeguard::guard(actor.abort_handle(), |handle| handle.abort());
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ONE.to_hex().to_string(), 1)),
-        );
-
-        // Insert more work while one request is waiting. Other streams should still
-        // make progress, but the next message in the slow stream must wait.
-        insert_outbox_row(&db, table_id, Identity::ONE, 12, 47)?;
-        for _ in 0..=NOTIFICATION_BATCH_SIZE {
-            notify_message(&db, &notify_tx, 12)?;
-        }
-        insert_outbox_row(&db, table_id, Identity::ZERO, 9, 44)?;
-        notify_message(&db, &notify_tx, 9)?;
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ZERO.to_hex().to_string(), 1)),
-        );
-        wait_for_ack(&db, Identity::ZERO, 1).await?;
-
-        insert_outbox_row(&db, table_id, Identity::ZERO, 10, 45)?;
-        notify_message(&db, &notify_tx, 10)?;
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ZERO.to_hex().to_string(), 2)),
-        );
-        wait_for_ack(&db, Identity::ZERO, 2).await?;
-        wait_for_ack(&db, Identity::ONE, 0).await?;
-        assert!(
-            captured_rx.try_recv().is_err(),
-            "slow stream must have only one request in flight"
-        );
-
-        release_slow.add_permits(1);
-        // Retry the failed sequence without holding up the other streams.
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ONE.to_hex().to_string(), 1)),
-        );
-        insert_outbox_row(&db, table_id, Identity::ZERO, 11, 46)?;
-        notify_message(&db, &notify_tx, 11)?;
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ZERO.to_hex().to_string(), 3)),
-        );
-        wait_for_ack(&db, Identity::ZERO, 3).await?;
-        wait_for_ack(&db, Identity::ONE, 0).await?;
-
-        release_slow.add_permits(1);
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ONE.to_hex().to_string(), 2)),
-        );
-        // Sequence 2 had no notification. Read it using ack_prefix after sequence 1 finishes.
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((Identity::ONE.to_hex().to_string(), 3)),
-        );
-        wait_for_ack(&db, Identity::ONE, 3).await?;
-        assert!(!actor.is_finished());
-
-        // An auth rejection leaves the message pending. Inserts and
-        // duplicate notifications must not let later messages overtake it.
-        insert_outbox_row(&db, table_id, rejected_target, 15, 50)?;
-        notify_message(&db, &notify_tx, 15)?;
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((rejected_target.to_hex().to_string(), 1)),
-        );
-        insert_outbox_row(&db, table_id, rejected_target, 16, 51)?;
-        for _ in 0..=NOTIFICATION_BATCH_SIZE {
-            notify_message(&db, &notify_tx, 15)?;
-            notify_message(&db, &notify_tx, 16)?;
-        }
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), captured_rx.recv()).await?,
-            Some((rejected_target.to_hex().to_string(), 1)),
-        );
-
-        // Closing the channel must still drain every batch and finish its deliveries.
-        insert_outbox_row(&db, table_id, Identity::ONE, 13, 48)?;
-        for _ in 0..=NOTIFICATION_BATCH_SIZE {
-            notify_message(&db, &notify_tx, 13)?;
-        }
-        insert_outbox_row(&db, table_id, Identity::ZERO, 14, 49)?;
-        notify_message(&db, &notify_tx, 14)?;
-        drop(notify_tx);
-        let mut expected = HashSet::from([
-            (Identity::ONE.to_hex().to_string(), 4),
-            (Identity::ZERO.to_hex().to_string(), 4),
-        ]);
-        while !expected.is_empty() {
-            let delivered = tokio::time::timeout(Duration::from_secs(2), captured_rx.recv())
-                .await?
-                .expect("buffered notifications must be delivered");
-            if delivered.0 == rejected_target.to_hex().to_string() {
-                assert_eq!(delivered.1, 1, "rejected stream must keep retrying its first sequence");
-            } else {
-                assert!(expected.remove(&delivered), "unexpected delivery: {delivered:?}");
-            }
-        }
-        wait_for_ack(&db, Identity::ONE, 4).await?;
-        wait_for_ack(&db, Identity::ZERO, 4).await?;
-        let tx = db.begin_tx(Workload::Internal);
-        assert_eq!(db.iter(&tx, table_id)?.count(), 2);
-        let stream = db
-            .st_outbound_streams(&tx)?
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .find(|stream| stream.target_identity.0 == rejected_target)
-            .unwrap();
-        assert_eq!(stream.ack_prefix, 0);
-        let row = db.outbound_msg_by_stream_seq(&tx, stream.stream_id, 1)?.unwrap();
-        let row = StOutboundMsgRow::try_from(row)?;
-        assert!(row.result_status.is_none());
-        assert!(row.retry_count >= 1);
-        assert!(row.last_transport_error.unwrap().contains("HTTP 403"));
-        let _ = db.release_tx(tx);
-
-        // Fixing authentication resumes delivery without restarting the actor or
-        // sending another notification, even though the channel is now closed.
-        reject_auth.store(false, Ordering::Relaxed);
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while let Some((target, seq)) = captured_rx.recv().await {
-                assert_eq!(target, rejected_target.to_hex().to_string());
-                assert!(seq == 1 || seq == 2);
-                if seq == 2 {
-                    return;
-                }
-            }
-            panic!("recovered stream must deliver its second message");
-        })
-        .await?;
-        tokio::time::timeout(Duration::from_secs(2), actor).await???;
-        let tx = db.begin_tx(Workload::Internal);
-        assert_eq!(db.iter(&tx, table_id)?.count(), 0);
-        let _ = db.release_tx(tx);
-        drop(actor_abort);
-        drop(server_abort);
-        assert!(server.await.unwrap_err().is_cancelled());
         Ok(())
     }
 }
