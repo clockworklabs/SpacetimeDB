@@ -2650,7 +2650,7 @@ impl ModuleHost {
                     .run_sync_job(move |state| {
                         state.with_instance(move |inst| {
                             drop(timer_guard);
-                            inst.call_idc_reducer(params, on_success)
+                            inst.call_reducer_with_success_action(params, on_success)
                         })
                     })
                     .await
@@ -2658,7 +2658,9 @@ impl ModuleHost {
             ModuleHostInner::Js(host) => {
                 drop(timer_guard);
                 host.main_instance
-                    .with_instance(|inst| async move { inst.call_idc_reducer(params, on_success).await })
+                    .with_instance(
+                        |inst| async move { inst.call_reducer_with_success_action(params, on_success).await },
+                    )
                     .await
             }
         };

@@ -527,13 +527,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(in crate::host) fn call_idc_reducer(
+    pub(in crate::host) fn call_reducer_with_success_action(
         &mut self,
         params: CallReducerParams,
         on_success: ReducerSuccessAction,
     ) -> ReducerCallResultWithTxOffset {
         let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_idc_reducer(params, &mut self.instance, on_success)
+            self.common
+                .call_reducer_with_success_action(params, &mut self.instance, on_success)
         });
         self.trapped = trapped;
         res
@@ -1088,7 +1089,7 @@ impl InstanceCommon {
         self.call_reducer_with_tx_inner(tx, params, inst, None)
     }
 
-    pub(crate) fn call_idc_reducer<I: WasmInstance>(
+    pub(crate) fn call_reducer_with_success_action<I: WasmInstance>(
         &mut self,
         params: CallReducerParams,
         inst: &mut I,

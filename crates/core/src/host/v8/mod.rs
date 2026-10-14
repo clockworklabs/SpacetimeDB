@@ -507,12 +507,13 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
-    pub(in crate::host) async fn call_idc_reducer(
+    pub(in crate::host) async fn call_reducer_with_success_action(
         &self,
         params: CallReducerParams,
         on_success: ReducerSuccessAction,
     ) -> ReducerCallResultWithTxOffset {
-        self.request(CallIdcReducerRequest { params, on_success }).await
+        self.request(CallReducerWithSuccessActionRequest { params, on_success })
+            .await
     }
 
     pub(in crate::host) async fn call_scheduled_reducer(
@@ -668,10 +669,10 @@ js_main_request! {
 }
 
 js_main_request! {
-    CallIdcReducerRequest {
+    CallReducerWithSuccessActionRequest {
         params: CallReducerParams,
         on_success: ReducerSuccessAction,
-    } => "call_idc_reducer", ReducerCallResultWithTxOffset, CallIdcReducer
+    } => "call_reducer_with_success_action", ReducerCallResultWithTxOffset, CallReducerWithSuccessAction
 }
 
 js_main_request! {
@@ -862,8 +863,8 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
     },
-    /// See [`JsMainInstance::call_idc_reducer`].
-    CallIdcReducer {
+    /// See [`JsMainInstance::call_reducer_with_success_action`].
+    CallReducerWithSuccessAction {
         reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
         on_success: ReducerSuccessAction,
@@ -1474,12 +1475,12 @@ fn handle_main_worker_request(
                 call_reducer(None, params)
             })
         }
-        JsMainWorkerRequest::CallIdcReducer {
+        JsMainWorkerRequest::CallReducerWithSuccessAction {
             reply_tx,
             params,
             on_success,
         } => handle_worker_request("call_reducer", reply_tx, || {
-            instance_common.call_idc_reducer(params, inst, on_success)
+            instance_common.call_reducer_with_success_action(params, inst, on_success)
         }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
