@@ -8,4 +8,7 @@ anyhow.workspace = true
 clap.workspace = true
 ci-common = { path = "../../common" }
 duct.workspace = true
+# Spans with line numbers, so test items can be found and lines counted.
+proc-macro2 = { workspace = true, features = ["span-locations"] }
 serde_json.workspace = true
+syn = { workspace = true, features = ["visit"] }

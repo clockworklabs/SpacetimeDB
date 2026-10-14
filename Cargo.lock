@@ -958,7 +958,9 @@ dependencies = [
  "ci-common",
  "clap 4.5.50",
  "duct",
+ "proc-macro2",
  "serde_json",
+ "syn 2.0.107",
 ]
 
 [[package]]

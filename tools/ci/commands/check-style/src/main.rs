@@ -8,27 +8,34 @@
 //!
 //! ## What gets counted
 //!
-//! Counting is lexical. Comments and string literals are blanked before any
-//! token is matched, so an `assert!` inside a doc comment or an error message
-//! is not counted. Only production code is measured: `tests/`, `benches/` and
-//! `examples/` directories, `tests.rs` module files, and inline
-//! `#[cfg(test)] mod` blocks are skipped, because test code is mostly
-//! assertions and would make the assertion density look better than the
-//! production paths deserve.
+//! Each file is parsed with `syn`, and the counts come from its tokens, so an
+//! `assert!` inside a comment, a doc comment or an error message is not
+//! counted. Only production code is measured: `tests/`, `benches/` and
+//! `examples/` directories, `tests.rs` module files, and every item marked
+//! `#[cfg(test)]` are skipped, because test code is mostly assertions and
+//! would make the assertion density look better than the production paths
+//! deserve.
 //!
-//! Known imprecision: `fns` counts `fn ` tokens, so trait method signatures
-//! without a body count as functions, and `.expect(` also matches methods
-//! that happen to be named `expect`. The counts are deterministic, which is
-//! what a future ratchet needs.
+//! Known imprecision: the counts match token sequences, not types, so
+//! `.expect(` also matches methods that happen to be named `expect`. Macro
+//! bodies are only tokens to `syn`, so a `#[cfg(test)]` inside one is not
+//! seen. The counts are deterministic, which is what a future ratchet needs.
+//! To forbid any one of these patterns outright, clippy's `unwrap_used`,
+//! `disallowed_methods`, `disallowed_types` and `disallowed_macros` lints are
+//! the better tool, because they resolve names.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use ci_common::ensure_repo_root;
 use clap::Parser;
 use duct::cmd;
+use proc_macro2::{Delimiter, LineColumn, Span, TokenStream, TokenTree};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use syn::spanned::Spanned;
+use syn::visit::{self, Visit};
+use syn::{Attribute, ImplItem, Item, TraitItem};
 
 /// Report how the Deep crates measure up against docs/DEEP_DATABASE_STYLE.md.
 ///
@@ -208,15 +215,15 @@ fn is_test_path(relative: &Path) -> bool {
 // Metrics
 // =============================================================================
 
-/// A style rule measured by counting tokens in production code.
+/// A style rule measured by counting token sequences in production code.
 struct Metric {
     header: &'static str,
     /// What the column counts, and which rule in DEEP_DATABASE_STYLE.md it measures.
     legend: &'static str,
+    /// Each one is split into words by `pattern_words`.
     tokens: &'static [&'static str],
 }
 
-const FUNCTION_TOKENS: &[&str] = &["fn "];
 const ASSERT_TOKENS: &[&str] = &["assert!", "assert_eq!", "assert_ne!"];
 
 const METRICS: &[Metric] = &[
@@ -286,302 +293,302 @@ impl Counts {
     }
 }
 
-fn count_file(src: &str) -> Counts {
-    let mut counts = Counts::default();
-    for line in scan(src).iter().filter(|line| line.has_code && !line.in_test_mod) {
-        counts.lines += 1;
-        counts.functions += count_tokens(&line.code, FUNCTION_TOKENS);
-        counts.asserts += count_tokens(&line.code, ASSERT_TOKENS);
-        for (count, metric) in counts.metrics.iter_mut().zip(METRICS) {
-            *count += count_tokens(&line.code, metric.tokens);
-        }
+/// Count the production code in one source file.
+fn count_file(src: &str) -> Result<Counts> {
+    // proc-macro2's errors are not `Send`, so they cannot be wrapped as they are.
+    let tokens: TokenStream = src.parse().map_err(|error| anyhow!("{error}"))?;
+    let file: syn::File = syn::parse2(tokens.clone()).map_err(|error| anyhow!("{error}"))?;
+    let mut test_code = TestCode::default();
+    test_code.visit_file(&file);
+    let words: Vec<Word> = words(tokens)
+        .into_iter()
+        .filter(|word| !test_code.contains(word.start))
+        .collect();
+
+    let mut lines = BTreeSet::new();
+    for word in &words {
+        lines.extend(word.start.line..=word.end.line);
     }
-    counts
+    let mut counts = Counts {
+        lines: u32::try_from(lines.len())?,
+        functions: count_functions(&words),
+        asserts: count_patterns(&words, ASSERT_TOKENS),
+        metrics: [0; METRICS.len()],
+    };
+    for (count, metric) in counts.metrics.iter_mut().zip(METRICS) {
+        *count = count_patterns(&words, metric.tokens);
+    }
+    Ok(counts)
 }
 
-fn count_tokens(code: &str, tokens: &[&str]) -> u32 {
-    tokens.iter().map(|token| count_token(code, token)).sum()
-}
-
-/// Count `token` in `code` as a whole token.
-///
-/// A token that starts with an identifier character must not continue an
-/// identifier on its left, so `assert!` does not match inside
-/// `debug_assert!`. A token that ends with one must not continue on its right,
-/// so `task::spawn` does not match inside `task::spawn_blocking`. Tokens that
-/// start or end with punctuation, like `.unwrap()` or `tokio::`, need no check
-/// on that side.
-fn count_token(code: &str, token: &str) -> u32 {
-    let is_ident = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
-    let bytes = code.as_bytes();
-    let check_left = token.bytes().next().is_some_and(is_ident);
-    let check_right = token.bytes().last().is_some_and(is_ident);
+/// `fn` followed by a name: functions and methods, including trait method
+/// signatures, but not `fn(..)` pointer types.
+fn count_functions(words: &[Word]) -> u32 {
     let mut count = 0;
-    let mut from = 0;
-    while let Some(offset) = code[from..].find(token) {
-        let start = from + offset;
-        let end = start + token.len();
-        let left_ok = !check_left || start == 0 || !is_ident(bytes[start - 1]);
-        let right_ok = !check_right || end == bytes.len() || !is_ident(bytes[end]);
-        if left_ok && right_ok {
+    for pair in words.windows(2) {
+        if pair[0].text == "fn" && pair[1].text.starts_with(is_ident_char) {
             count += 1;
         }
-        from = end;
     }
     count
+}
+
+fn count_patterns(words: &[Word], patterns: &[&str]) -> u32 {
+    patterns.iter().map(|pattern| count_pattern(words, pattern)).sum()
+}
+
+/// Count the places where the words of `pattern` appear in `words`, adjacent
+/// and in order. Words are whole tokens, so `assert!` does not match inside
+/// `debug_assert!`, and `task::spawn` does not match `task::spawn_blocking`.
+fn count_pattern(words: &[Word], pattern: &str) -> u32 {
+    let pattern = pattern_words(pattern);
+    assert!(!pattern.is_empty(), "a pattern must have at least one word");
+    let mut count = 0;
+    for window in words.windows(pattern.len()) {
+        if window.iter().zip(&pattern).all(|(word, part)| word.text == *part) {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Split a pattern like `Instant::now` or `.unwrap()` into the words it
+/// matches: identifiers whole, and punctuation one character at a time, which
+/// is how proc-macro2 hands both to us.
+fn pattern_words(pattern: &str) -> Vec<&str> {
+    let mut words = Vec::new();
+    let mut ident_start = None;
+    for (index, c) in pattern.char_indices() {
+        if is_ident_char(c) {
+            ident_start.get_or_insert(index);
+            continue;
+        }
+        if let Some(start) = ident_start.take() {
+            words.push(&pattern[start..index]);
+        }
+        if !c.is_whitespace() {
+            words.push(&pattern[index..index + c.len_utf8()]);
+        }
+    }
+    if let Some(start) = ident_start {
+        words.push(&pattern[start..]);
+    }
+    words
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 /// Does the crate root declare `#![no_std]`?
 fn is_no_std(lib_root: &Path) -> Result<bool> {
     let src = fs::read_to_string(lib_root).with_context(|| format!("failed to read {}", lib_root.display()))?;
-    Ok(scan(&src).iter().any(|line| line.code.contains("#![no_std]")))
+    let file = syn::parse_file(&src).map_err(|error| anyhow!("failed to parse {}: {error}", lib_root.display()))?;
+    // A file's `attrs` are its inner attributes, the `#![...]` ones.
+    Ok(file.attrs.iter().any(|attr| attr.path().is_ident("no_std")))
 }
 
 // =============================================================================
-// Lexical scan
+// Parsing
 // =============================================================================
 
-#[derive(Clone, Copy)]
-enum ScanContext {
-    Code,
-    /// Inside a string, having just consumed a backslash.
-    ///
-    /// A separate state rather than "skip two characters", because the escaped
-    /// character may be a newline: a backslash at the end of a line continues
-    /// the string. Consuming both at once would swallow the newline and lose a
-    /// line from the count.
-    StringEscape,
-    LineComment,
-    /// Rust block comments nest, so this carries a depth.
-    BlockComment(u32),
-    String,
-    RawString(u32),
+/// One token of source as text: an identifier, a punctuation character, a
+/// literal, or one side of a delimiter.
+struct Word {
+    text: String,
+    start: LineColumn,
+    end: LineColumn,
 }
 
-struct Line {
-    /// The line with comments and string interiors blanked out.
-    code: String,
-    has_code: bool,
-    in_test_mod: bool,
+impl Word {
+    fn new(text: String, span: Span) -> Word {
+        Word {
+            text,
+            start: span.start(),
+            end: span.end(),
+        }
+    }
 }
 
-/// Split `src` into lines, blanking comments and string literals.
-///
-/// State persists across newlines because both block comments and ordinary
-/// string literals can span lines.
-fn scan(src: &str) -> Vec<Line> {
-    let chars: Vec<char> = src.chars().collect();
-    let at = |index: usize| chars.get(index).copied();
-    let mut lines = Vec::new();
-    let mut context = ScanContext::Code;
-    let mut code = String::new();
-    let mut has_code = false;
-    let mut i = 0;
+/// A token stream being flattened, and how far into it we are.
+struct Frame {
+    trees: Vec<TokenTree>,
+    next: usize,
+    /// The closing delimiter, emitted once `trees` is done.
+    close: Option<Word>,
+}
 
-    while i < chars.len() {
-        let c = chars[i];
-
-        if c == '\n' {
-            lines.push(Line {
-                code: std::mem::take(&mut code),
-                has_code,
-                in_test_mod: false,
-            });
-            has_code = false;
-            // A line comment ends at the newline. A string continuation
-            // resumes the string on the next line. Every other context
-            // carries over.
-            match context {
-                ScanContext::LineComment => context = ScanContext::Code,
-                ScanContext::StringEscape => context = ScanContext::String,
-                _ => {}
-            }
-            i += 1;
+/// Flatten `tokens` into words. Doc comments reach us as `#[doc = "..."]`
+/// attributes and are dropped, so they count as neither code nor lines.
+fn words(tokens: TokenStream) -> Vec<Word> {
+    let mut words = Vec::new();
+    // An explicit stack rather than recursion, per the deep core's habit.
+    let mut stack = vec![Frame {
+        trees: tokens.into_iter().collect(),
+        next: 0,
+        close: None,
+    }];
+    while let Some(frame) = stack.last_mut() {
+        if frame.next == frame.trees.len() {
+            words.extend(frame.close.take());
+            stack.pop();
             continue;
         }
-
-        match context {
-            ScanContext::Code => {
-                if c == '/' && at(i + 1) == Some('/') {
-                    context = ScanContext::LineComment;
-                    code.push_str("  ");
-                    i += 2;
-                } else if c == '/' && at(i + 1) == Some('*') {
-                    context = ScanContext::BlockComment(1);
-                    code.push_str("  ");
-                    i += 2;
-                } else if c == '"' {
-                    context = ScanContext::String;
-                    has_code = true;
-                    code.push(' ');
-                    i += 1;
-                } else if c == 'r' && matches!(at(i + 1), Some('"' | '#')) {
-                    // Raw string: `r"..."`, `r#"..."#`, `r##"..."##`. Anything
-                    // else starting with `r` is an identifier.
-                    let mut hashes = 0;
-                    while at(i + 1 + hashes) == Some('#') {
-                        hashes += 1;
-                    }
-                    if at(i + 1 + hashes) == Some('"') {
-                        context = ScanContext::RawString(hashes as u32);
-                        code.push(' ');
-                        i += 2 + hashes;
-                    } else {
-                        code.push(c);
-                        i += 1;
-                    }
-                    has_code = true;
-                } else if c == '\'' {
-                    // Either a char literal or a lifetime. `'a` is a lifetime;
-                    // `'a'` and `'\n'` are literals. Guessing wrong only matters
-                    // if the skipped text holds a counted token, which a char
-                    // literal cannot.
-                    has_code = true;
-                    code.push(' ');
-                    if at(i + 1) == Some('\\') {
-                        let mut j = i + 2;
-                        while j < chars.len() && chars[j] != '\'' && chars[j] != '\n' {
-                            j += 1;
-                        }
-                        i = if at(j) == Some('\'') { j + 1 } else { j };
-                    } else if at(i + 2) == Some('\'') {
-                        i += 3;
-                    } else {
-                        i += 1;
-                    }
-                } else {
-                    if !c.is_whitespace() {
-                        has_code = true;
-                    }
-                    code.push(c);
-                    i += 1;
-                }
+        let doc = doc_attribute_len(&frame.trees[frame.next..]);
+        if doc > 0 {
+            frame.next += doc;
+            continue;
+        }
+        let tree = frame.trees[frame.next].clone();
+        frame.next += 1;
+        match tree {
+            TokenTree::Group(group) => {
+                let delimiters = match group.delimiter() {
+                    Delimiter::Parenthesis => Some(("(", ")")),
+                    Delimiter::Brace => Some(("{", "}")),
+                    Delimiter::Bracket => Some(("[", "]")),
+                    // Invisible delimiters, which only macro expansion makes.
+                    Delimiter::None => None,
+                };
+                let close = delimiters.map(|(open, close)| {
+                    words.push(Word::new(open.to_owned(), group.span_open()));
+                    Word::new(close.to_owned(), group.span_close())
+                });
+                stack.push(Frame {
+                    trees: group.stream().into_iter().collect(),
+                    next: 0,
+                    close,
+                });
             }
-            ScanContext::LineComment => {
-                code.push(' ');
-                i += 1;
-            }
-            ScanContext::BlockComment(depth) => {
-                if c == '/' && at(i + 1) == Some('*') {
-                    context = ScanContext::BlockComment(depth + 1);
-                    code.push_str("  ");
-                    i += 2;
-                } else if c == '*' && at(i + 1) == Some('/') {
-                    context = if depth <= 1 {
-                        ScanContext::Code
-                    } else {
-                        ScanContext::BlockComment(depth - 1)
-                    };
-                    code.push_str("  ");
-                    i += 2;
-                } else {
-                    code.push(' ');
-                    i += 1;
-                }
-            }
-            ScanContext::StringEscape => {
-                // Exactly one character belongs to the escape. A newline here
-                // is handled above, which returns the context to `String`.
-                code.push(' ');
-                context = ScanContext::String;
-                i += 1;
-            }
-            ScanContext::String => {
-                if c == '\\' {
-                    context = ScanContext::StringEscape;
-                } else if c == '"' {
-                    context = ScanContext::Code;
-                }
-                code.push(' ');
-                i += 1;
-            }
-            ScanContext::RawString(hashes) => {
-                let mut seen = 0;
-                if c == '"' {
-                    while seen < hashes as usize && at(i + 1 + seen) == Some('#') {
-                        seen += 1;
-                    }
-                }
-                if c == '"' && seen == hashes as usize {
-                    context = ScanContext::Code;
-                    i += 1 + seen;
-                } else {
-                    i += 1;
-                }
-                code.push(' ');
-            }
+            TokenTree::Ident(ident) => words.push(Word::new(ident.to_string(), ident.span())),
+            TokenTree::Punct(punct) => words.push(Word::new(punct.as_char().to_string(), punct.span())),
+            TokenTree::Literal(literal) => words.push(Word::new(literal.to_string(), literal.span())),
         }
     }
-
-    // A last line with no trailing newline.
-    if !code.is_empty() || has_code {
-        lines.push(Line {
-            code,
-            has_code,
-            in_test_mod: false,
-        });
-    }
-
-    // Every line of the file is accounted for exactly once. A scanner that
-    // drops or duplicates lines skews every count downstream while still
-    // printing a plausible table.
-    let newlines = src.matches('\n').count();
-    assert!(
-        lines.len() == newlines || lines.len() == newlines + 1,
-        "scanned {} lines from a source with {newlines} newlines",
-        lines.len(),
-    );
-    mark_test_modules(&mut lines);
-    lines
+    words
 }
 
-/// Flag the extent of every inline `#[cfg(test)] mod ... { ... }`.
-fn mark_test_modules(lines: &mut [Line]) {
-    let mut depth: i64 = 0;
-    let mut pending_cfg_test = false;
-    let mut test_depth: Option<i64> = None;
-    // The `#[cfg(test)]` attribute line, so it is attributed to the module too.
-    let mut attribute_line: Option<usize> = None;
+/// How many tokens a doc attribute at the start of `trees` takes up: `#` and
+/// `[doc ...]`, with a `!` between them for an inner one. Zero if `trees` does
+/// not start with one.
+fn doc_attribute_len(trees: &[TokenTree]) -> usize {
+    let is_punct =
+        |tree: Option<&TokenTree>, c: char| matches!(tree, Some(TokenTree::Punct(punct)) if punct.as_char() == c);
+    if !is_punct(trees.first(), '#') {
+        return 0;
+    }
+    let bang = usize::from(is_punct(trees.get(1), '!'));
+    match trees.get(1 + bang) {
+        Some(TokenTree::Group(group))
+            if group.delimiter() == Delimiter::Bracket
+                && matches!(group.stream().into_iter().next(), Some(TokenTree::Ident(ident)) if ident == "doc") =>
+        {
+            2 + bang
+        }
+        _ => 0,
+    }
+}
 
-    for index in 0..lines.len() {
-        let is_attribute = lines[index].code.contains("#[cfg(test)]");
-        if is_attribute {
-            pending_cfg_test = true;
-            attribute_line = Some(index);
-        }
+/// The extent of every item marked `#[cfg(test)]`, collected by walking the
+/// syntax tree.
+#[derive(Default)]
+struct TestCode {
+    extents: Vec<(LineColumn, LineColumn)>,
+}
 
-        let mut opened_here = false;
-        // Walk the line so that `mod x {` and braces on the same line are
-        // handled in order.
-        let has_mod = lines[index].code.contains("mod ");
-        for c in lines[index].code.chars() {
-            if c == '{' {
-                depth += 1;
-                if pending_cfg_test && has_mod && test_depth.is_none() {
-                    test_depth = Some(depth);
-                    pending_cfg_test = false;
-                    opened_here = true;
-                }
-            } else if c == '}' {
-                if test_depth == Some(depth) {
-                    test_depth = None;
-                    lines[index].in_test_mod = true;
-                }
-                depth -= 1;
-            }
-        }
+impl TestCode {
+    fn contains(&self, at: LineColumn) -> bool {
+        self.extents.iter().any(|&(start, end)| start <= at && at < end)
+    }
 
-        if test_depth.is_some() || opened_here {
-            lines[index].in_test_mod = true;
-            if let Some(attribute) = attribute_line.filter(|_| opened_here) {
-                lines[attribute].in_test_mod = true;
-            }
+    /// Record `node` if `attrs` mark it as test code, and say whether they did.
+    fn record(&mut self, attrs: &[Attribute], node: &impl Spanned) -> bool {
+        let is_test = attrs.iter().any(is_cfg_test);
+        if is_test {
+            let span = node.span();
+            self.extents.push((span.start(), span.end()));
         }
-        // A `#[cfg(test)]` on a single item, like one test function, must not
-        // arm the next unrelated `mod`.
-        if !is_attribute && lines[index].code.contains(';') {
-            pending_cfg_test = false;
+        is_test
+    }
+}
+
+// Each method stops at a test node, because its extent already covers
+// everything inside it.
+impl<'ast> Visit<'ast> for TestCode {
+    fn visit_file(&mut self, file: &'ast syn::File) {
+        // `#![cfg(test)]` at the top makes the whole file test code.
+        if !self.record(&file.attrs, file) {
+            visit::visit_file(self, file);
         }
+    }
+
+    fn visit_item(&mut self, item: &'ast Item) {
+        if !self.record(item_attrs(item), item) {
+            visit::visit_item(self, item);
+        }
+    }
+
+    fn visit_impl_item(&mut self, item: &'ast ImplItem) {
+        if !self.record(impl_item_attrs(item), item) {
+            visit::visit_impl_item(self, item);
+        }
+    }
+
+    fn visit_trait_item(&mut self, item: &'ast TraitItem) {
+        if !self.record(trait_item_attrs(item), item) {
+            visit::visit_trait_item(self, item);
+        }
+    }
+}
+
+/// Exactly `#[cfg(test)]`. A compound condition like
+/// `#[cfg(any(test, feature = "x"))]` can be compiled outside tests, so it
+/// does not mark test code.
+fn is_cfg_test(attr: &Attribute) -> bool {
+    attr.path().is_ident("cfg") && attr.parse_args::<syn::Ident>().is_ok_and(|ident| ident == "test")
+}
+
+// syn has no common accessor for a node's attributes, so these three match on
+// every kind of item that has them.
+
+fn item_attrs(item: &Item) -> &[Attribute] {
+    match item {
+        Item::Const(item) => &item.attrs,
+        Item::Enum(item) => &item.attrs,
+        Item::ExternCrate(item) => &item.attrs,
+        Item::Fn(item) => &item.attrs,
+        Item::ForeignMod(item) => &item.attrs,
+        Item::Impl(item) => &item.attrs,
+        Item::Macro(item) => &item.attrs,
+        Item::Mod(item) => &item.attrs,
+        Item::Static(item) => &item.attrs,
+        Item::Struct(item) => &item.attrs,
+        Item::Trait(item) => &item.attrs,
+        Item::TraitAlias(item) => &item.attrs,
+        Item::Type(item) => &item.attrs,
+        Item::Union(item) => &item.attrs,
+        Item::Use(item) => &item.attrs,
+        _ => &[],
+    }
+}
+
+fn impl_item_attrs(item: &ImplItem) -> &[Attribute] {
+    match item {
+        ImplItem::Const(item) => &item.attrs,
+        ImplItem::Fn(item) => &item.attrs,
+        ImplItem::Type(item) => &item.attrs,
+        ImplItem::Macro(item) => &item.attrs,
+        _ => &[],
+    }
+}
+
+fn trait_item_attrs(item: &TraitItem) -> &[Attribute] {
+    match item {
+        TraitItem::Const(item) => &item.attrs,
+        TraitItem::Fn(item) => &item.attrs,
+        TraitItem::Type(item) => &item.attrs,
+        TraitItem::Macro(item) => &item.attrs,
+        _ => &[],
     }
 }
 
@@ -678,7 +685,7 @@ fn main() -> Result<()> {
         let mut counts = Counts::default();
         for file in &files {
             let src = fs::read_to_string(file).with_context(|| format!("failed to read {}", file.display()))?;
-            counts.add(&count_file(&src));
+            counts.add(&count_file(&src).with_context(|| format!("failed to parse {}", file.display()))?);
         }
 
         let dependencies: BTreeSet<&str> = package
@@ -711,12 +718,14 @@ fn main() -> Result<()> {
     });
 
     println!("Deep crates measured against docs/DEEP_DATABASE_STYLE.md. This is a report; nothing is enforced yet.");
-    println!("Only production code is counted: tests, benches, examples and inline #[cfg(test)] modules are skipped.");
+    println!("Only production code is counted: tests, benches, examples and items marked #[cfg(test)] are skipped.");
     println!();
     print_table(&rows);
     println!();
-    println!("lines         Non-blank, non-comment lines.");
-    println!("fns           `fn ` tokens, including trait method signatures.");
+    println!("lines         Lines with code on them. Blank lines, comments and doc comments do not count.");
+    println!(
+        "fns           `fn` followed by a name, which includes trait method signatures but not `fn(..)` pointer types."
+    );
     println!("asserts       `assert!`, `assert_eq!` and `assert_ne!`.");
     println!("asserts/fn    Asserts per function. Principle 8 targets 2.000.");
     for metric in METRICS {
@@ -757,20 +766,21 @@ fn main() -> Result<()> {
 mod tests {
     use super::*;
 
-    fn production(src: &str, tokens: &[&str]) -> u32 {
-        scan(src)
-            .iter()
-            .filter(|line| !line.in_test_mod)
-            .map(|line| count_tokens(&line.code, tokens))
-            .sum()
+    fn counts(src: &str) -> Counts {
+        count_file(src).expect("test source should parse")
+    }
+
+    fn count(src: &str, pattern: &str) -> u32 {
+        let tokens: TokenStream = src.parse().expect("test source should lex");
+        count_pattern(&words(tokens), pattern)
     }
 
     #[test]
     fn counts_asserts_but_not_debug_asserts() {
-        assert_eq!(production("fn f() { assert!(x); }\n", ASSERT_TOKENS), 1);
-        assert_eq!(production("assert_eq!(a, b);\nassert_ne!(c, d);\n", ASSERT_TOKENS), 2);
+        assert_eq!(counts("fn f() { assert!(x); }").asserts, 1);
+        assert_eq!(counts("fn f() { assert_eq!(a, b); assert_ne!(c, d); }").asserts, 2);
         assert_eq!(
-            production("debug_assert!(x);\ndebug_assert_eq!(a, b);\n", ASSERT_TOKENS),
+            counts("fn f() { debug_assert!(x); debug_assert_eq!(a, b); }").asserts,
             0
         );
     }
@@ -778,61 +788,88 @@ mod tests {
     #[test]
     fn ignores_comments_and_strings() {
         assert_eq!(
-            production("// assert!(x);\n/// assert!(x);\n/* assert!(x); */\n", ASSERT_TOKENS),
+            counts("// assert!(x);\n/// assert!(x);\n/* assert!(x); */\nfn f() {}\n").asserts,
             0
         );
-        assert_eq!(production("assert!(x); // assert!(y);\n", ASSERT_TOKENS), 1);
-        assert_eq!(production("let s = \"assert!(x);\";\n", ASSERT_TOKENS), 0);
-        assert_eq!(production("let s = r#\"assert!(x);\"#;\n", ASSERT_TOKENS), 0);
-        // A comment opener inside a string must not start a comment.
-        assert_eq!(production("let s = \"/*\";\nassert!(x);\n", ASSERT_TOKENS), 1);
-        // An escaped quote must not end the string early.
-        assert_eq!(production("let s = \"\\\" assert!(x);\";\n", ASSERT_TOKENS), 0);
+        assert_eq!(counts("fn f() { assert!(x); } // assert!(y);\n").asserts, 1);
+        assert_eq!(counts("fn f() { let s = \"assert!(x);\"; }").asserts, 0);
+        assert_eq!(counts("fn f() { let s = r#\"assert!(x);\"#; }").asserts, 0);
         // Block comments nest.
         assert_eq!(
-            production("/* a /* b */ assert!(x); */\nassert!(y);\n", ASSERT_TOKENS),
+            counts("/* a /* b */ assert!(x); */\nfn f() { assert!(y); }\n").asserts,
             1
         );
     }
 
     #[test]
-    fn string_continuation_keeps_its_line() {
-        let src = "let s = \"abc\\\n    def\";\nassert!(x);\n";
-        assert_eq!(scan(src).len(), 3);
-        assert_eq!(production(src, ASSERT_TOKENS), 1);
+    fn counts_lines_with_code() {
+        // Only the function's three lines count.
+        let src = "//! Crate docs.\n\n/// Docs.\n// A comment.\nfn f() {\n    g();\n}\n";
+        assert_eq!(counts(src).lines, 3);
+        // A string that spans lines counts every line it covers.
+        assert_eq!(counts("const S: &str = \"a\nb\";\n").lines, 2);
     }
 
     #[test]
-    fn every_line_is_accounted_for() {
-        for src in [
-            "a\nb\nc\n",
-            "a\nb\nc",
-            "",
-            "\n\n",
-            "/* a\nb */\n",
-            "let s = \"a\nb\";\n",
-            "'\\\n",
-        ] {
-            let newlines = src.matches('\n').count();
-            let lines = scan(src).len();
-            assert!(lines == newlines || lines == newlines + 1, "{src:?}: {lines} lines");
-        }
+    fn skips_test_items() {
+        let src = "\
+fn prod() {
+    assert!(a);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn t() {
+        assert!(b);
+    }
+}
+
+struct S;
+
+impl S {
+    #[cfg(test)]
+    fn check(&self) {
+        assert!(c);
+    }
+
+    fn after(&self) { assert!(d); }
+}
+
+#[cfg(test)]
+impl S {
+    fn helper(&self) { assert!(e); }
+}
+
+#[cfg(any(test, feature = \"x\"))]
+fn shared() { assert!(f); }
+";
+        let counts = counts(src);
+        // `a`, `d` and `f`, in `prod`, `after` and `shared`.
+        assert_eq!(counts.asserts, 3);
+        assert_eq!(counts.functions, 3);
     }
 
     #[test]
-    fn skips_inline_test_modules() {
-        let src = "fn prod() {\n    assert!(a);\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n        assert!(b);\n    }\n}\n\nfn after() { assert!(c); }\n";
-        assert_eq!(production(src, ASSERT_TOKENS), 2);
-        assert_eq!(production(src, FUNCTION_TOKENS), 2);
+    fn skips_test_files() {
+        assert_eq!(counts("#![cfg(test)]\nfn f() { assert!(x); }\n").asserts, 0);
     }
 
     #[test]
-    fn tokens_respect_identifier_boundaries() {
-        assert_eq!(count_token("let fnord = 1; myfn (x)", "fn "), 0);
-        assert_eq!(count_token("pub async fn f() {}", "fn "), 1);
-        assert_eq!(count_token("x: usize, y: usize_like, z: Vec<usize>", "usize"), 2);
-        assert_eq!(count_token("task::spawn(a); task::spawn_blocking(b)", "task::spawn"), 1);
-        assert_eq!(count_token("a.unwrap(); b.unwrap_or(c)", ".unwrap()"), 1);
+    fn counts_functions_but_not_fn_pointers() {
+        assert_eq!(
+            counts("fn f(callback: fn(u32) -> u32) {}\ntrait T { fn g(&self); }\n").functions,
+            2
+        );
+    }
+
+    #[test]
+    fn patterns_match_whole_tokens() {
+        assert_eq!(count("x: usize, y: usize_like, z: Vec<usize>", "usize"), 2);
+        assert_eq!(count("task::spawn(a); task::spawn_blocking(b)", "task::spawn"), 1);
+        assert_eq!(count("a.unwrap(); b.unwrap_or(c); d . unwrap ( )", ".unwrap()"), 2);
+        assert_eq!(count("Instant :: now()", "Instant::now"), 1);
+        assert_eq!(count("debug_assert!(x)", "assert!"), 0);
     }
 
     #[test]
