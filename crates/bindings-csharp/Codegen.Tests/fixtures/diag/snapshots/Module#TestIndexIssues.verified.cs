@@ -54,7 +54,7 @@ partial struct TestIndexIssues
                         new(
                             "SecondaryIndexingColumn",
                             SecondaryIndexingColumnRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );

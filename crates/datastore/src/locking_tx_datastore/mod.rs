@@ -7,7 +7,10 @@ pub use mut_tx::{FuncCallType, IndexScanPointOrRange, MutTxId, ViewCallInfo, Vie
 pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};
 pub mod delete_table;
+#[cfg(feature = "durability")]
 mod replay;
+mod time;
+#[cfg(feature = "durability")]
 pub use replay::{apply_history, ApplyHistoryCounters, ErrorBehavior, Replay};
 mod tx;
 pub use tx::{NumDistinctValues, TxId};

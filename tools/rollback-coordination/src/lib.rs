@@ -231,7 +231,12 @@ mod tests {
     }
 
     fn git(path: &Path, args: &[&str]) {
-        let status = Command::new("git").args(args).current_dir(path).status().unwrap();
+        let status = Command::new("git")
+            .args(["-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"])
+            .args(args)
+            .current_dir(path)
+            .status()
+            .unwrap();
         assert!(status.success(), "git {args:?} failed");
     }
 

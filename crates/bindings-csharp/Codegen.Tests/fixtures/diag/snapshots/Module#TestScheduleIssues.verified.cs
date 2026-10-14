@@ -65,7 +65,7 @@ partial struct TestScheduleIssues
                         new(
                             "ScheduleAtCorrectType",
                             ScheduleAtCorrectTypeRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );
