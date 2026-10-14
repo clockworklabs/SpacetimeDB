@@ -2,7 +2,7 @@ import type { ProductType } from '../lib/algebraic_type';
 import type { ReducerSchema } from '../lib/reducer_schema';
 import type { ParamsObj } from '../lib/reducers';
 import { RowBuilder, type InferTypeOfParams } from '../lib/type_builders';
-import type { CamelCase } from '../lib/type_util';
+import type { CamelCase, NestAccessors } from '../lib/type_util';
 import { toCamelCase } from '../lib/util';
 import type { SubscriptionEventContextInterface } from './event_context';
 import type { UntypedRemoteModule } from './spacetime_module';
@@ -14,21 +14,18 @@ export type SubscriptionEventCallback<
 // Utility: detect 'any'
 type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
 
-// Loose shape that allows all three families even when key names are unknown
-type ReducersViewLoose = {
-  // call: camelCase(name)
-  [k: string]: (params: any) => Promise<void>;
-};
+// Loose shape that allows all three families even when key names are unknown.
+type ReducersViewLoose = { readonly [k: string]: any };
 
 export type ReducersView<RemoteModule> = IfAny<
   RemoteModule,
   ReducersViewLoose,
   RemoteModule extends UntypedRemoteModule
-    ? {
+    ? NestAccessors<{
         [K in RemoteModule['reducers'][number] as K['accessorName']]: (
           params: InferTypeOfParams<K['params']>
         ) => Promise<void>;
-      }
+      }>
     : never
 >;
 

@@ -1699,6 +1699,7 @@ mod tests {
             primary_key.map(ColId::from),
             false,
             None,
+            None,
         )))
     }
 

@@ -1,5 +1,6 @@
 ---
 slug: /webassembly-abi
+description: Low-level specification of how WebAssembly modules talk to the SpacetimeDB host. Most users should use the module SDKs instead.
 ---
 
 # Module ABI Reference

@@ -6,6 +6,7 @@ use spacetimedb_testing::modules::{
 };
 use std::{
     future::Future,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -21,6 +22,10 @@ fn init() {
 }
 
 async fn read_logs(module: &ModuleHandle) -> Vec<String> {
+    read_logs_allowing_warnings(module, &[]).await
+}
+
+async fn read_logs_allowing_warnings(module: &ModuleHandle, expected_warnings: &[&str]) -> Vec<String> {
     module
         .read_log(None)
         .await
@@ -28,7 +33,9 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
         .split('\n')
         .map(|line| {
             let record: LoggerRecord = serde_json::from_str(line).unwrap();
-            if matches!(record.level, LogLevel::Panic | LogLevel::Error | LogLevel::Warn) {
+            if matches!(record.level, LogLevel::Panic | LogLevel::Error)
+                || (matches!(record.level, LogLevel::Warn) && !expected_warnings.contains(&record.message.as_str()))
+            {
                 panic!("Found an error-like log line: {line}");
             }
             record.message
@@ -40,6 +47,13 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
 
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
+
+fn emcc_is_available() -> bool {
+    Command::new("emcc")
+        .arg("--version")
+        .status()
+        .is_ok_and(|status| status.success())
+}
 
 fn test_calling_a_reducer_in_module(module_name: &'static str) {
     init();
@@ -95,8 +109,166 @@ fn test_calling_a_reducer() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_a_reducer_csharp() {
     test_calling_a_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_root_selected_at_publish() {
+    init();
+
+    // Build the dependency first, then reuse its managed DLL without rebuilding or changing its project.
+    let dependency = CompiledModule::compile("root-selection-dependency-cs", CompilationMode::Debug);
+    dependency.with_module_async(DEFAULT_CONFIG, |module| async move {
+        module
+            .call_reducer_binary("dependency_entry", &product![])
+            .await
+            .unwrap();
+        assert!(module.read_log(None).await.contains("dependency published as root"));
+    });
+
+    // Both assemblies contain generated host entrypoint declarations. Only the published root's
+    // declarations must become native exports; otherwise publishing produces duplicate symbols.
+    CompiledModule::compile("root-selection-consumer-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            module.call_reducer_binary("consumer_entry", &product![]).await.unwrap();
+            assert!(module.read_log(None).await.contains("consumer published as root"));
+            module
+                .call_reducer_binary("dependency_entry", &product![])
+                .await
+                .unwrap();
+            assert!(module.read_log(None).await.contains("dependency published as root"));
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_cross_namespace_calls() {
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // Mirror test_submodule_in_module: enter the root through the websocket API,
+            // then delegate to exported library callbacks using the same context object.
+            module
+                .send_reducer_and_recv_update(
+                    r#"{"CallReducer":{"reducer":"add_auth_user","args":"[12]","request_id":0,"flags":0}}"#.to_string(),
+                    0,
+                )
+                .await
+                .unwrap();
+            let warning = "HTTP routes declared in submodule 'MyAuth' are ignored. Define HTTP routes in the root module instead.";
+            assert!(module.read_log(None).await.contains(warning));
+            assert_eq!(read_logs_allowing_warnings(&module, &[warning]).await, ["Auth users: 1"]);
+            assert_eq!(
+                module.call_procedure_with_args("count_auth_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(1)
+            );
+            assert_eq!(
+                module.call_http_route_get("/root-auth-count").await.unwrap().as_ref(),
+                b"1"
+            );
+
+            // Mounted routes must not leak into the root HTTP router.
+            assert!(module
+                .client
+                .module()
+                .info
+                .module_def
+                .match_http_route(&spacetimedb_lib::http::Method::Get, "/auth-count")
+                .is_none());
+            // Dependencies in public still contribute routes and use root dispatch.
+            assert_eq!(module.call_http_route_get("/extra-hello").await.unwrap().as_ref(), b"public");
+            assert_eq!(
+                module
+                    .call_procedure_with_args("class.count_users", "[]")
+                    .await
+                    .unwrap(),
+                AlgebraicValue::U64(0)
+            );
+            assert_eq!(
+                module.call_procedure_with_args("count_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(1),
+                "delegation must not also insert into the root or Audit table"
+            );
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_canonical_name_resolution() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_schema::def::ModuleDef;
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            // Derive expected names with the actual host validator, not a second test-side converter.
+            for accessor in ["MyHTTP2Auth", "public", ""] {
+                for root_none in [false, true] {
+                    for child_none in [false, true] {
+                        for (source, explicit) in [
+                            ("HTTP2ReducerTick", None),
+                            ("__my__XMLParser99", None),
+                            ("already_snake_case", None),
+                            ("SourceName", Some("ExplicitNAME")),
+                        ] {
+                            let mut root = RawModuleDefV10Builder::new();
+                            root.set_case_conversion_policy(if root_none {
+                                CaseConversionPolicy::None
+                            } else {
+                                CaseConversionPolicy::SnakeCase
+                            });
+                            let mut child = RawModuleDefV10Builder::new();
+                            child.set_case_conversion_policy(if child_none {
+                                CaseConversionPolicy::None
+                            } else {
+                                CaseConversionPolicy::SnakeCase
+                            });
+                            let named = !accessor.is_empty() && accessor != "public";
+                            let target = if named { &mut child } else { &mut root };
+                            target.add_reducer(source, spacetimedb_lib::ProductType::unit());
+                            if let Some(name) = explicit {
+                                let mut names = ExplicitNames::default();
+                                names.insert_function(source, name);
+                                target.add_explicit_names(names);
+                            }
+                            if named {
+                                root.add_submodule(accessor, child.finish());
+                            }
+                            let schema: ModuleDef = root.finish().try_into().unwrap();
+                            let expected = schema.all_reducers_with_prefix()[0].2.name.to_string();
+                            let args = serde_json::json!([
+                                accessor,
+                                null,
+                                source,
+                                explicit.map(|name| serde_json::json!({"some": name})),
+                                root_none,
+                                child_none
+                            ])
+                            .to_string();
+                            assert_eq!(
+                                module
+                                    .call_procedure_with_args("resolve_schedule_name", &args)
+                                    .await
+                                    .unwrap(),
+                                AlgebraicValue::String(expected.into()),
+                                "{args}"
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    );
 }
 
 #[test]
@@ -108,6 +280,10 @@ fn test_calling_a_reducer_typescript() {
 #[test]
 #[serial]
 fn test_calling_a_reducer_cpp() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_a_reducer_in_module("module-test-cpp");
 }
 
@@ -185,6 +361,10 @@ fn test_nonrepeating_scheduled_reducer() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_nonrepeating_scheduled_reducer_csharp() {
     test_nonrepeating_scheduled_reducer_in_module("module-test-cs");
 }
@@ -404,6 +584,10 @@ fn test_calling_bench_db_circles_rust() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_bench_db_circles_csharp() {
     test_calling_bench_db_circles::<Csharp>();
 }
@@ -416,6 +600,10 @@ fn test_calling_bench_db_circles_typescript() {
 #[test]
 #[serial]
 fn test_calling_bench_db_circles_cpp() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_bench_db_circles::<Cpp>();
 }
 
@@ -445,6 +633,10 @@ fn test_calling_bench_db_ia_loop_rust() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_bench_db_ia_loop_csharp() {
     test_calling_bench_db_ia_loop::<Csharp>();
 }
@@ -457,6 +649,10 @@ fn test_calling_bench_db_ia_loop_typescript() {
 #[test]
 #[serial]
 fn test_calling_bench_db_ia_loop_cpp() {
+    if !emcc_is_available() {
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_bench_db_ia_loop::<Cpp>();
 }
 

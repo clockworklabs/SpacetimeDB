@@ -131,7 +131,7 @@ fn init_template_with_dotnet_version(
     Ok((tmpdir, project_path))
 }
 
-/// Updates a `[dependencies]` entry in a `Cargo.toml` to use a local path.
+/// Updates dependency entries in a `Cargo.toml` to use a local path.
 fn update_cargo_toml_dependency(cargo_toml_path: &Path, package_name: &str, local_path: &Path) -> Result<()> {
     if !cargo_toml_path.exists() {
         return Ok(());
@@ -142,21 +142,30 @@ fn update_cargo_toml_dependency(cargo_toml_path: &Path, package_name: &str, loca
         .parse()
         .with_context(|| format!("Failed to parse {:?}", cargo_toml_path))?;
 
-    let deps = match cargo_data.get_mut("dependencies") {
-        Some(d) => d,
-        None => return Ok(()),
-    };
-
-    if deps.get(package_name).is_none() {
-        return Ok(());
-    }
-
     // Use a normalized path string that is accepted by Cargo on all platforms.
     let path_str = normalize_dependency_path(local_path);
+    for section in ["dependencies", "dev-dependencies"] {
+        let Some(deps) = cargo_data.get_mut(section).and_then(toml::Value::as_table_mut) else {
+            continue;
+        };
+        let Some(dependency) = deps.get_mut(package_name) else {
+            continue;
+        };
 
-    let mut table = toml::value::Table::new();
-    table.insert("path".to_string(), toml::Value::String(path_str));
-    deps[package_name] = toml::Value::Table(table);
+        let dependency = match dependency {
+            toml::Value::Table(table) => table,
+            dependency => {
+                *dependency = toml::Value::Table(toml::value::Table::new());
+                dependency.as_table_mut().unwrap()
+            }
+        };
+        dependency.remove("workspace");
+        dependency.remove("git");
+        dependency.remove("branch");
+        dependency.remove("tag");
+        dependency.remove("rev");
+        dependency.insert("path".to_string(), toml::Value::String(path_str.clone()));
+    }
 
     let new_content =
         toml::to_string_pretty(&cargo_data).with_context(|| format!("Failed to serialize {:?}", cargo_toml_path))?;

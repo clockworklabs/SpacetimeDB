@@ -146,6 +146,25 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
+    #[error("table {table} is assigned in multiple outboxes")]
+    DuplicateOutbox { table: Identifier },
+    #[error("outbox table {table} must not be an event table")]
+    OutboxEventTable { table: Identifier },
+    #[error("outbox table {table} must not be a scheduled table")]
+    OutboxScheduledTable { table: Identifier },
+    #[error("outbox table {table} must have a primary key")]
+    OutboxMissingPrimaryKey { table: Identifier },
+    #[error("outbox table {table} primary key must be u64, found {found}")]
+    OutboxInvalidPrimaryKey {
+        table: Identifier,
+        found: PrettyAlgebraicType,
+    },
+    #[error("outbox table {table} must have exactly one non-primary-key identity target column")]
+    OutboxTargetColumnMissing { table: Identifier },
+    #[error("outbox table {table} must not have multiple non-primary-key identity target columns")]
+    OutboxTargetColumnAmbiguous { table: Identifier },
+    #[error("outbox table {table} argument column {column} does not exist")]
+    OutboxArgumentColumnNotFound { table: Identifier, column: ColId },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
     #[error("HTTP handler name {name} is used for multiple HTTP handlers")]
@@ -165,6 +184,8 @@ pub enum ValidationError {
     DuplicateLifeCycle { lifecycle: Lifecycle },
     #[error("table {table} is assigned in multiple schedules")]
     DuplicateSchedule { table: Identifier },
+    #[error("scheduled table {table} must not be an event table")]
+    ScheduledEventTable { table: Identifier },
     #[error("table {} corresponding to schedule {} not found", table_name, schedule_name)]
     MissingScheduleTable {
         table_name: RawIdentifier,
@@ -183,6 +204,15 @@ pub enum ValidationError {
     LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
     #[error("submodule namespace `{namespace}` is {len} bytes, which exceeds the 63-byte limit")]
     NamespaceTooLong { namespace: RawIdentifier, len: usize },
+    #[error(
+        "naming conflict between {kind} `{name}` and submodule namespace `{namespace}`; \
+         a {kind} cannot share its accessor name with a namespace mounted in the same module"
+    )]
+    NamespaceNameConflict {
+        kind: &'static str,
+        name: RawIdentifier,
+        namespace: RawIdentifier,
+    },
     #[error("invalid environment declaration: {0}")]
     Environment(#[from] spacetimedb_lib::environment::EnvironmentSchemaError),
     #[error("submodule {namespace:?} cannot declare environment variables")]

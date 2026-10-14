@@ -29,6 +29,7 @@ import { DbConnection } from './module_bindings';
 const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
+    .withAutomaticReconnect()
     .build();
 ```
 
@@ -41,6 +42,7 @@ using SpacetimeDB;
 var conn = DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
+    .WithAutomaticReconnect()
     .Build();
 ```
 
@@ -84,6 +86,7 @@ To connect to a database hosted on MainCloud:
 const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
+    .withAutomaticReconnect()
     .build();
 ```
 
@@ -94,6 +97,7 @@ const conn = DbConnection.builder()
 var conn = DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
+    .WithAutomaticReconnect()
     .Build();
 ```
 
@@ -132,6 +136,7 @@ const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
     .withToken("your_auth_token_here")
+    .withAutomaticReconnect()
     .build();
 ```
 
@@ -142,6 +147,7 @@ const conn = DbConnection.builder()
 var conn = DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
+    .WithAutomaticReconnect()
     .WithToken("your_auth_token_here")
     .Build();
 ```
@@ -245,17 +251,29 @@ const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 const conn = DbConnection.builder()
     .withUri(HOST)
     .withDatabaseName(DB_NAME)
+    .withToken(localStorage.getItem(TOKEN_KEY) ?? undefined)
+    .withAutomaticReconnect()
     .onConnect((conn, identity, token) => {
         console.log(`Connected! Identity: ${identity.toHexString()}`);
         // Save token for reconnection — keyed per server/database
         localStorage.setItem(TOKEN_KEY, token);
     })
-    .onConnectError((_ctx, error) => {
-        console.error(`Connection failed:`, error);
+    .onAutomaticReconnect((_conn, identity, token) => {
+        console.log(`Reconnected! Identity: ${identity.toHexString()}`);
+        localStorage.setItem(TOKEN_KEY, token);
     })
-    .onDisconnect(() => {
-        console.log('Disconnected from SpacetimeDB');
-    });
+    .onConnectError((_ctx, error, attempt, delayMs) => {
+        console.error('Connection failed:', error);
+        if (attempt !== undefined) console.log(`Retry ${attempt} in ${delayMs} ms`);
+    })
+    .onDisconnect((_ctx, error, attempt, delayMs) => {
+        if (attempt !== undefined) {
+            console.log(`Connection lost; retry ${attempt} in ${delayMs} ms`, error);
+        } else {
+            console.log('Connection ended', error);
+        }
+    })
+    .build();
 ```
 
 </TabItem>
@@ -265,24 +283,34 @@ const conn = DbConnection.builder()
 var conn = DbConnection.Builder()
     .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
+    .WithAutomaticReconnect()
     .OnConnect((conn, identity, token) =>
     {
         Console.WriteLine($"Connected! Identity: {identity}");
         // Save token for reconnection
     })
-    .OnConnectError((error) =>
+    .OnAutomaticReconnect((conn, identity, token) =>
+    {
+        Console.WriteLine($"Reconnected! Identity: {identity}");
+        // Save the retained or refreshed token
+    })
+    .OnConnectError((error, next) =>
     {
         Console.WriteLine($"Connection failed: {error}");
-    })
-    .OnDisconnect((conn, error) =>
-    {
-        if (error != null)
+        if (next is { } retry)
         {
-            Console.WriteLine($"Disconnected with error: {error}");
+            Console.WriteLine($"Retry {retry.Attempt} in {retry.Delay.TotalMilliseconds} ms");
+        }
+    })
+    .OnDisconnect((conn, error, next) =>
+    {
+        if (next is { } retry)
+        {
+            Console.WriteLine($"Connection lost; retry {retry.Attempt} in {retry.Delay.TotalMilliseconds} ms: {error}");
         }
         else
         {
-            Console.WriteLine("Disconnected normally");
+            Console.WriteLine($"Connection ended: {error}");
         }
     })
     .Build();
@@ -397,13 +425,40 @@ Conn->Disconnect();
 
 ### Reconnection Behavior
 
-:::note[Reconnection behavior]
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
 
-Lower-level `DbConnection` objects do not reconnect themselves. If you create a `DbConnection` directly and the connection is interrupted, create a new `DbConnection` to re-establish connectivity. We recommend implementing reconnection logic in your application if reliable connectivity is critical.
+Enable `.withAutomaticReconnect()` to recover after an established connection drops. The SDK retains the connection, cached rows, subscription handles, and callbacks, then restores subscriptions automatically. While `isReconnecting` is `true`, cache reads return the last known data.
 
-The TypeScript React, Solid, and Svelte providers manage their connections through the SDK's shared connection manager. While a provider is mounted, that manager automatically rebuilds unexpectedly closed connections with exponential backoff and re-checks connection liveness when the page becomes visible, regains focus, returns online, or is restored from the back-forward cache.
+Register subscriptions and row callbacks in `onConnect`, which runs only once, or once after `build()`. Successful recovery invokes `onAutomaticReconnect(conn, identity, token)` before subscription replay; wait for subscription `onApplied` callbacks when you need refreshed data. Save authentication tokens in both connection callbacks.
 
-:::
+`onDisconnect` and `onConnectError` report the upcoming retry attempt and delay, or `undefined` when no retry is scheduled. Initial connection failures are not retried, and `disconnect()` stops recovery. For expiring credentials, combine `.withToken(initialToken)` with `.withTokenProvider(() => auth.getAccessToken())` to refresh tokens when needed before reconnect attempts.
+
+React, Solid, and Svelte providers enable automatic reconnect through their shared connection manager. Vue and Angular require `.withAutomaticReconnect()` on the provider's builder. Without automatic reconnect, create a new connection after a connection loss. See the [TypeScript reference](./00700-typescript-reference.md#method-withautomaticreconnect) for backoff options, pending-call behavior, and server requirements.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Enable `.WithAutomaticReconnect()` to recover after an established connection drops. The SDK retains the connection, cached rows, subscription handles, and callbacks, then restores subscriptions in one batch. While `IsReconnecting` is true, cache reads return the last known data. **Keep calling `FrameTick()` during outages, even while `IsActive` is false.** Unity's `SpacetimeDBNetworkManager` handles this automatically.
+
+Register subscriptions and row callbacks in `OnConnect`, which runs only once, or once after `Build()`. Successful recovery invokes `OnAutomaticReconnect(conn, identity, token)` before subscription replay; wait for subscription `OnApplied` callbacks when you need refreshed data. Save authentication tokens in both connection callbacks.
+
+The `OnDisconnect((conn, error, next) => ...)` and `OnConnectError((error, next) => ...)` overloads report the upcoming retry's `Attempt` and `Delay`, or `null` when no retry is scheduled. Initial connection failures are not retried, and `Disconnect()` stops recovery. For expiring credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())` to refresh tokens when needed before reconnect attempts.
+
+Without automatic reconnect, create a new connection after a connection loss. See the [C# reference](./00600-csharp-reference.md#method-withautomaticreconnect) for backoff options, token-provider requirements, and pending-call behavior.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+Automatic reconnect support is coming soon. For now, implement reconnection in your application: create a new connection and restore subscriptions after a connection loss.
+
+</TabItem>
+<TabItem value="unreal" label="Unreal">
+
+Automatic reconnect support for the Unreal C++ SDK is coming soon. For now, implement reconnection in your application: create a new connection and restore subscriptions after a connection loss.
+
+</TabItem>
+</Tabs>
 
 ## Connection Identity
 

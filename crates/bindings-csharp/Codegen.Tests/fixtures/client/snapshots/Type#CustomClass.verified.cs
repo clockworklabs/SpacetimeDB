@@ -48,7 +48,7 @@ partial struct CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.I
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
-                    new("StringField", StringFieldRW.GetAlgebraicType(registrar))
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 

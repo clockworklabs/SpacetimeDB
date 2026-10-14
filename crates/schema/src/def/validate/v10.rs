@@ -7,7 +7,7 @@ use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_lib::http::character_is_acceptable_for_route_path;
 use spacetimedb_primitives::ReducerId;
-use spacetimedb_sats::{Typespace, WithTypespace};
+use spacetimedb_sats::{AlgebraicType, Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
     check_function_names_are_unique, check_scheduled_functions_exist, convert, generate_schedule_name,
@@ -15,10 +15,11 @@ use crate::def::validate::v9::{
 };
 use crate::def::*;
 use crate::error::ValidationError;
-use crate::identifier::NamespacePath;
+use crate::identifier::{NamespacePath, NamespacedIdentifier};
+use crate::reducer_name::ReducerName;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -220,6 +221,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         })
         .unwrap_or_else(|| Ok(Vec::new()));
 
+    let raw_outboxes = def.outboxes().cloned().unwrap_or_default();
+
     // Validate lifecycle reducers - they reference reducers by name
     let lifecycle_validations = reducers
         .as_ref()
@@ -288,6 +291,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
+                attach_outboxes_to_tables(&mut tables, raw_outboxes)?;
+
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
                 attach_view_primary_keys(&mut views, view_primary_keys)?;
@@ -313,6 +318,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules, environment) =
         (tables_types_reducers_procedures_views, submodules, environment)
             .combine_errors()
+            .and_then(|(defs, submodules, environment)| {
+                let (tables, _, reducers, procedures, views, _) = &defs;
+                check_names_do_not_conflict_with_namespaces(tables, reducers, procedures, views, &submodules)?;
+                Ok((defs, submodules, environment))
+            })
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
@@ -462,6 +472,59 @@ fn validate_submodules(
     }
 
     ValidationErrors::add_extra_errors(Ok(map), errors)
+}
+
+/// Reject any table, view, reducer or procedure whose accessor name is also the accessor
+/// name of a submodule mounted in this module.
+///
+/// Generated client bindings expose both under the same key (`conn.reducers.auth` for the
+/// reducer, `conn.reducers.auth.login` for the namespace), so one would shadow the other.
+/// Only accessor names can collide this way. Canonical names can't. On the wire a function
+/// `auth` and a namespace's functions `auth.*` are distinct, and `validate_submodules` already
+/// rejects two namespaces with the same canonical name.
+///
+/// `validate` runs this at every level of the module tree, so a submodule's own functions
+/// are checked against the namespaces it mounts in turn.
+fn check_names_do_not_conflict_with_namespaces(
+    tables: &IdentifierMap<TableDef>,
+    reducers: &IndexMap<Identifier, ReducerDef>,
+    procedures: &IndexMap<Identifier, ProcedureDef>,
+    views: &IndexMap<Identifier, ViewDef>,
+    submodules: &IndexMap<Identifier, ModuleDef>,
+) -> Result<()> {
+    let namespaces: HashMap<&str, &Identifier> = submodules
+        .values()
+        .filter_map(|submodule| submodule.mount_accessor_name())
+        .map(|accessor| (&**accessor, accessor))
+        .collect();
+    if namespaces.is_empty() {
+        return Ok(());
+    }
+
+    let mut errors = vec![];
+    let mut check = |kind: &'static str, accessor_name: &Identifier| {
+        if let Some(namespace) = namespaces.get(&**accessor_name) {
+            errors.push(ValidationError::NamespaceNameConflict {
+                kind,
+                name: accessor_name.as_raw().clone(),
+                namespace: namespace.as_raw().clone(),
+            });
+        }
+    };
+    for table in tables.values() {
+        check("table", &table.accessor_name);
+    }
+    for view in views.values() {
+        check("view", &view.accessor_name);
+    }
+    for reducer in reducers.values() {
+        check("reducer", reducer.accessor_name.local());
+    }
+    for procedure in procedures.values() {
+        check("procedure", &procedure.accessor_name);
+    }
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -745,6 +808,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_access,
             is_event,
             accessor_name: identifier(raw_table_name)?,
+            outbox: None,
         })
     }
 
@@ -1100,7 +1164,103 @@ fn attach_schedules_to_tables(
             .into());
         }
 
+        if table.is_event {
+            return Err(ValidationError::ScheduledEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
         table.schedule = Some(schedule);
+    }
+
+    Ok(())
+}
+
+fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxes: Vec<RawOutboxDefV10>) -> Result<()> {
+    for outbox in outboxes {
+        let table_ident = identifier(outbox.table_name.clone())?;
+        let raw_table_name = outbox.table_name.clone();
+        let table = tables
+            .values_mut()
+            .find(|table| table.accessor_name == table_ident)
+            .ok_or_else(|| ValidationError::TableNotFound {
+                table: raw_table_name.clone(),
+            })?;
+
+        if table.outbox.is_some() {
+            return Err(ValidationError::DuplicateOutbox {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+        if table.is_event {
+            return Err(ValidationError::OutboxEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+        if table.schedule.is_some() {
+            return Err(ValidationError::OutboxScheduledTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        let primary_key = table
+            .primary_key
+            .ok_or_else(|| ValidationError::OutboxMissingPrimaryKey {
+                table: table.name.clone(),
+            })?;
+        let primary_key_ty = &table.columns[primary_key.idx()].ty;
+        if *primary_key_ty != AlgebraicType::U64 {
+            return Err(ValidationError::OutboxInvalidPrimaryKey {
+                table: table.name.clone(),
+                found: primary_key_ty.clone().into(),
+            }
+            .into());
+        }
+
+        let Some(target_col) = table.columns.get(outbox.target_column.idx()) else {
+            return Err(ValidationError::OutboxTargetColumnMissing {
+                table: table.name.clone(),
+            }
+            .into());
+        };
+        if target_col.col_id == primary_key || !(target_col.ty == AlgebraicType::U256 || target_col.ty.is_identity()) {
+            return Err(ValidationError::OutboxTargetColumnMissing {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        for arg_column in &outbox.arg_columns {
+            if table.columns.get(arg_column.idx()).is_none() {
+                return Err(ValidationError::OutboxArgumentColumnNotFound {
+                    table: table.name.clone(),
+                    column: *arg_column,
+                }
+                .into());
+            }
+        }
+
+        table.outbox = Some(OutboxDef {
+            remote_reducer: ReducerName::new(
+                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(outbox.remote_reducer.into_inner()))
+                    .map_err(|error| ValidationError::IdentifierError { error })?,
+            ),
+            target_column: outbox.target_column,
+            arg_columns: outbox.arg_columns,
+            on_result_reducer: outbox
+                .on_result_reducer
+                .map(|name| {
+                    NamespacedIdentifier::new(&RawNamespacedIdentifier::new(name.into_inner()))
+                        .map(ReducerName::new)
+                        .map_err(|error| ErrorStream::from(ValidationError::IdentifierError { error }))
+                })
+                .transpose()?,
+            signature_hash: outbox.signature_hash,
+        });
     }
 
     Ok(())
@@ -1549,6 +1709,82 @@ mod tests {
     }
 
     #[test]
+    fn outbox_flows_from_module_def_to_table_schema() {
+        use crate::schema::{Schema, TableSchema};
+        use spacetimedb_primitives::TableId;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox(
+            "outbound_pings",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Option::<&str>::None,
+            "test-signature",
+        );
+
+        let module: ModuleDef = builder.finish().try_into().expect("valid outbox module");
+        let table = module.table("outbound_pings").expect("outbox table exists");
+        let outbox = table.outbox.as_ref().expect("TableDef carries outbox metadata");
+        assert_eq!(&outbox.remote_reducer[..], "receive_ping");
+        assert_eq!(outbox.target_column, ColId(1));
+        assert_eq!(outbox.arg_columns, vec![ColId(2)]);
+        assert_eq!(outbox.signature_hash, "test-signature");
+
+        let schema = TableSchema::from_module_def(&module, table, (), TableId::SENTINEL);
+        let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
+        assert_eq!(&outbox.remote_reducer[..], "receive_ping");
+        assert_eq!(outbox.target_column, ColId(1));
+    }
+
+    #[test]
+    fn outbox_rejects_event_table() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_event(true)
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox(
+            "outbound_pings",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Option::<&str>::None,
+            "test-signature",
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::OutboxEventTable { table } => {
+            table == &expect_identifier("outbound_pings")
+        });
+    }
+
+    #[test]
     fn invalid_product_type_ref() {
         let mut builder = RawModuleDefV10Builder::new();
 
@@ -1829,6 +2065,91 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateName { name } => {
             &name[..] == "my_auth"
         });
+    }
+
+    /// A function or table cannot share its accessor name with a namespace mounted beside it,
+    /// since generated client bindings would expose both under the same key.
+    #[test]
+    fn names_conflicting_with_submodule_namespaces_are_rejected() {
+        let conflict = |kind: &str, result: Result<ModuleDef>| {
+            expect_error_matching!(
+                result,
+                ValidationError::NamespaceNameConflict { kind: k, name, namespace } => {
+                    *k == kind && &name[..] == "auth" && &namespace[..] == "auth"
+                }
+            );
+        };
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.add_reducer("auth", ProductType::unit());
+        conflict("reducer", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.add_procedure("auth", ProductType::unit(), AlgebraicType::unit());
+        conflict("procedure", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        let row = root.add_algebraic_type([], "Row", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        root.add_view(
+            "auth",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(row)),
+        );
+        conflict("view", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.build_table_with_new_type("auth", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        conflict("table", root.finish().try_into());
+    }
+
+    /// The conflict is on accessor names. A function whose canonical name happens to match a
+    /// namespace's canonical name is fine: the two are distinct on the wire.
+    #[test]
+    fn canonical_names_matching_a_namespace_are_allowed() {
+        // Reducer `myAuth` canonicalizes to `my_auth`, which is also the canonical form of the
+        // `authLib` namespace once pinned, but the accessor names `myAuth` and `authLib` differ.
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("authLib", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("authLib", "my_auth");
+        root.add_explicit_names(explicit);
+        root.add_reducer("myAuth", ProductType::unit());
+        let def: ModuleDef = root
+            .finish()
+            .try_into()
+            .expect("canonical name overlap should validate");
+
+        assert!(def.submodules().contains_key("my_auth"));
+        assert!(def.reducer_by_name("my_auth").is_some());
+        assert!(def.reducer_by_name("my_auth.clean_expired_sessions").is_some());
+    }
+
+    /// The check applies at every level: a submodule's own functions are checked against the
+    /// namespaces it mounts.
+    #[test]
+    fn names_conflicting_with_nested_submodule_namespaces_are_rejected() {
+        let mut middle = RawModuleDefV10Builder::new();
+        middle.add_submodule("audit", sessions_submodule());
+        middle.add_reducer("audit", ProductType::unit());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", middle.finish());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(
+            result,
+            ValidationError::NamespaceNameConflict { kind, name, namespace } => {
+                *kind == "reducer" && &name[..] == "audit" && &namespace[..] == "audit"
+            }
+        );
     }
 
     /// Nested mounts carry both paths through every level.
