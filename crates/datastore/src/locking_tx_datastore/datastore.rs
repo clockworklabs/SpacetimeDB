@@ -3125,6 +3125,7 @@ pub(crate) mod tests {
         assert_eq!(stream_rows[0].next_seq, 3);
         assert_eq!(stream_rows[0].ack_prefix, 0);
 
+        let stream_id = stream_rows[0].stream_id;
         let mut outbound_rows = tx
             .iter(ST_OUTBOUND_MSG_ID)?
             .map(StOutboundMsgRow::try_from)
@@ -3135,6 +3136,21 @@ pub(crate) mod tests {
             outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
             vec![10, 11]
         );
+
+        // Reads in a write transaction include uncommitted rows and isolate each stream.
+        let row = to_vec(&product![20u64, Identity::ZERO]).unwrap();
+        let row_ptr = datastore.insert_mut_tx(&mut tx, table_id, &row)?.1.pointer();
+        let other = tx.record_outbox_insert(table_id, row_ptr)?;
+        assert_ne!(stream_id, other.stream_id);
+        assert_eq!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap().1.msg_id, 10);
+        assert_eq!(tx.outbound_msg_by_stream_seq(other.stream_id, 1)?.unwrap().1.msg_id, 20);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 3)?.is_none());
+
+        // The same helpers work after commit through a read-only transaction.
+        datastore.commit_mut_tx(tx)?;
+        let tx = begin_tx(&datastore);
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?.unwrap().next_seq, 3);
+        assert_eq!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.unwrap().1.msg_id, 11);
 
         Ok(())
     }

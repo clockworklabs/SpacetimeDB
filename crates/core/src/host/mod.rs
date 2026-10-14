@@ -12,6 +12,7 @@ use spacetimedb_schema::def::ModuleDef;
 
 mod disk_storage;
 mod host_controller;
+pub mod idc_actor;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
@@ -29,6 +30,7 @@ pub use host_controller::{
     HostController, HostRuntimeConfig, InitialEnvironmentSource, MigratePlanResult, ModuleHostWithBootstrap,
     ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
 };
+pub use idc_actor::IdcConfig;
 pub use module_host::{
     IdcDeliveryFailure, IdcReducerCallOutcome, InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError,
     ReducerCallError, UpdateDatabaseResult,

@@ -3571,25 +3571,24 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Read the stable IDC message id from the user-visible outbox row.
-    fn outbox_message_id(outbox_table_id: TableId, schema: &TableSchema, row_ref: RowRef<'_>) -> Result<u64> {
-        let msg_col = schema
+    /// Return the user-table column that stores the stable IDC message id.
+    fn outbox_message_id_col(outbox_table_id: TableId, schema: &TableSchema) -> Result<ColId> {
+        Ok(schema
             .primary_key
-            .ok_or_else(|| anyhow::anyhow!("outbox table {outbox_table_id:?} must have a primary key"))?;
-        Ok(row_ref.read_col::<u64>(msg_col)?)
+            .ok_or_else(|| anyhow::anyhow!("outbox table {outbox_table_id:?} must have a primary key"))?)
     }
 
-    /// Read the receiver database identity from the user-visible outbox row.
-    fn outbox_target_identity(
-        outbox_table_id: TableId,
-        schema: &TableSchema,
-        row_ref: RowRef<'_>,
-    ) -> Result<IdentityViaU256> {
-        let target_col = schema
+    /// Return the user-table column that stores the receiver database identity.
+    fn outbox_target_identity_col(outbox_table_id: TableId, schema: &TableSchema) -> Result<ColId> {
+        Ok(schema
             .outbox
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("table {outbox_table_id:?} is not an outbox table"))?
-            .target_column;
+            .target_column)
+    }
+
+    /// Read the receiver database identity from the user-visible outbox row.
+    fn outbox_target_identity(row_ref: RowRef<'_>, target_col: ColId) -> Result<IdentityViaU256> {
         let AlgebraicValue::Product(identity) = row_ref.read_col::<AlgebraicValue>(target_col)? else {
             return Err(anyhow::anyhow!("outbox target column must be an Identity").into());
         };
@@ -3600,22 +3599,20 @@ impl MutTxId {
     }
 
     /// Read the message id and receiver identity from the user-visible outbox row.
-    fn read_outbox_msg_id_and_target_identity(
-        &self,
-        outbox_table_id: TableId,
-        row_ptr: RowPointer,
-    ) -> Result<(u64, IdentityViaU256)> {
+    fn read_outbox_message(&self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<(u64, IdentityViaU256)> {
         let schema = self.schema_for_table(outbox_table_id)?;
+        let msg_col = Self::outbox_message_id_col(outbox_table_id, &schema)?;
+        let target_col = Self::outbox_target_identity_col(outbox_table_id, &schema)?;
         let row_ref = self
             .get(outbox_table_id, row_ptr)?
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, outbox_table_id.0))?;
-        let msg_id = Self::outbox_message_id(outbox_table_id, &schema, row_ref)?;
-        let target_identity = Self::outbox_target_identity(outbox_table_id, &schema, row_ref)?;
+        let msg_id = row_ref.read_col::<u64>(msg_col)?;
+        let target_identity = Self::outbox_target_identity(row_ref, target_col)?;
         Ok((msg_id, target_identity))
     }
 
-    /// Find the stream row for this outbox table and receiver.
-    fn st_outbound_stream_row(
+    /// Find the sender-side stream for this outbox table and receiver.
+    fn st_outbound_stream(
         &self,
         outbox_table_id: TableId,
         target_identity: IdentityViaU256,
@@ -3634,17 +3631,17 @@ impl MutTxId {
         .transpose()
     }
 
-    /// Return whether this outbox row is already queued for delivery.
-    fn st_outbound_msg_exists(&self, stream_id: u64, msg_id: u64) -> Result<bool> {
+    /// Find the pending delivery for this outbox row.
+    fn st_outbound_msg(&self, stream_id: u64, msg_id: u64) -> Result<Option<StOutboundMsgRow>> {
         let msg_key = AlgebraicValue::Product(product![stream_id, msg_id]);
-        Ok(self
-            .iter_by_col_eq(
-                ST_OUTBOUND_MSG_ID,
-                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
-                &msg_key,
-            )?
-            .next()
-            .is_some())
+        self.iter_by_col_eq(
+            ST_OUTBOUND_MSG_ID,
+            col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
+            &msg_key,
+        )?
+        .map(StOutboundMsgRow::try_from)
+        .next()
+        .transpose()
     }
 
     /// Reserve the next sequence number for this outbox table and receiver.
@@ -3652,7 +3649,7 @@ impl MutTxId {
     /// `stream` is the existing stream row for this `(outbox_table_id, target_identity)`.
     /// Pass `None` when reserving the first sequence number for a new stream.
     ///
-    /// Creates the stream row for the first message.
+    /// Existing streams are replaced because system table rows are updated by delete + insert here.
     fn advance_st_outbound_stream(
         &mut self,
         outbox_table_id: TableId,
@@ -3682,17 +3679,76 @@ impl MutTxId {
     }
 
     /// Retain the queued message until the IDC actor sends it and observes the result.
-    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<()> {
+    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<StOutboundMsgRow> {
+        let row = StOutboundMsgRow {
+            stream_id,
+            msg_id,
+            seq,
+            retry_count: 0,
+            last_transport_error: None,
+            result_status: None,
+            result_payload: None,
+        };
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &row)?;
+        Ok(row)
+    }
+
+    pub fn record_outbound_idc_transport_error(&mut self, stream_id: u64, seq: u64, reason: String) -> Result<()> {
+        let Some((ptr, mut current)) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        current.retry_count = current.retry_count.saturating_add(1);
+        current.last_transport_error = Some(reason);
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &current)?;
+        Ok(())
+    }
+
+    pub fn record_outbound_idc_result(
+        &mut self,
+        stream_id: u64,
+        seq: u64,
+        result_status: StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        let Some((ptr, mut current)) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        current.last_transport_error = None;
+        current.result_status = Some(result_status);
+        current.result_payload = Some(result_payload);
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &current)?;
+        Ok(())
+    }
+
+    pub fn ack_outbound_idc_msg(&mut self, stream_id: u64, seq: u64) -> Result<()> {
+        let Some((ptr, _)) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+
+        let stream = self.st_outbound_stream_by_id(stream_id)?;
+        let Some(stream) = stream else {
+            return Ok(());
+        };
+        let (outbox_table_id, target_identity, next_seq, ack_prefix) = {
+            self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &stream.clone().into())?;
+            (
+                stream.outbox_table_id,
+                stream.target_identity,
+                stream.next_seq,
+                stream.ack_prefix.max(seq),
+            )
+        };
         self.insert_via_serialize_bsatn(
-            ST_OUTBOUND_MSG_ID,
-            &StOutboundMsgRow {
+            ST_OUTBOUND_STREAM_ID,
+            &StOutboundStreamRow {
                 stream_id,
-                msg_id,
-                seq,
-                retry_count: 0,
-                last_transport_error: None,
-                result_status: None,
-                result_payload: None,
+                outbox_table_id,
+                target_identity,
+                next_seq,
+                ack_prefix,
             },
         )?;
         Ok(())
@@ -3702,18 +3758,19 @@ impl MutTxId {
     ///
     /// Module code writes only the user outbox table. This mirrors that insert into
     /// system tables so the host IDC actor can send messages outside the reducer tx.
+    /// Returns the pending message for notifying the actor without another index lookup.
     #[cold]
     #[inline(never)]
-    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<()> {
-        let (msg_id, target_identity) = self.read_outbox_msg_id_and_target_identity(outbox_table_id, row_ptr)?;
-        let stream = self.st_outbound_stream_row(outbox_table_id, target_identity)?;
+    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<StOutboundMsgRow> {
+        let (msg_id, target_identity) = self.read_outbox_message(outbox_table_id, row_ptr)?;
+        let stream = self.st_outbound_stream(outbox_table_id, target_identity)?;
 
         // Check before advancing the stream so idempotent calls do not burn sequence numbers
         // or duplicate sends.
         if let Some(stream) = &stream
-            && self.st_outbound_msg_exists(stream.stream_id, msg_id)?
+            && let Some(row) = self.st_outbound_msg(stream.stream_id, msg_id)?
         {
-            return Ok(());
+            return Ok(row);
         }
         let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity, stream)?;
         self.insert_st_outbound_msg(stream_id, msg_id, seq)
