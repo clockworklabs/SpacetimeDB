@@ -696,6 +696,7 @@ fn read_next_ordered_message(db: &RelationalDB, stream_id: StreamId) -> anyhow::
     let row = db
         .outbound_msg_by_stream_seq(&tx, stream_id.0, seq)?
         .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} is missing pending sequence {seq}"))?;
+    let row = StOutboundMsgRow::try_from(row)?;
     load_pending_message(db, tx, &stream, row).map(Some)
 }
 
@@ -1077,7 +1078,8 @@ mod tests {
                 let row = db
                     .outbound_msg_by_stream_seq(&tx, first.stream_id.0, first.sequence)?
                     .unwrap();
-                db.delete_by_rel(&mut tx, ST_OUTBOUND_MSG_ID, [row.into()]);
+                let ptr = row.pointer();
+                db.delete(&mut tx, ST_OUTBOUND_MSG_ID, [ptr]);
             } else {
                 db.delete_by_rel(&mut tx, table, [first.outbox_row]);
             }
@@ -1311,9 +1313,10 @@ mod tests {
             insert_outbox_message(&db, Identity::ONE, 42)?;
             let message = next_message(&db)?;
             let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-            let mut row = db
+            let row = db
                 .outbound_msg_by_stream_seq(&tx, message.stream_id.0, message.sequence)?
                 .unwrap();
+            let mut row = StOutboundMsgRow::try_from(row)?;
             db.delete_by_rel(&mut tx, ST_OUTBOUND_MSG_ID, [row.clone().into()]);
             row.result_status = result_status;
             row.result_payload = result_payload;
@@ -1552,6 +1555,7 @@ mod tests {
             .unwrap();
         assert_eq!(stream.ack_prefix, 0);
         let row = db.outbound_msg_by_stream_seq(&tx, stream.stream_id, 1)?.unwrap();
+        let row = StOutboundMsgRow::try_from(row)?;
         assert!(row.result_status.is_none());
         assert!(row.retry_count >= 1);
         assert!(row.last_transport_error.unwrap().contains("HTTP 403"));

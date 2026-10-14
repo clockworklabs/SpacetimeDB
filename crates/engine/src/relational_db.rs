@@ -22,8 +22,8 @@ use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
 };
 use spacetimedb_datastore::system_tables::{
-    system_tables, StModuleRow, StOutboundMsgRow, StOutboundStreamRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID,
-    ST_OUTBOUND_STREAM_ID, ST_VIEW_SUB_ID,
+    system_tables, StModuleRow, StOutboundStreamRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_OUTBOUND_STREAM_ID,
+    ST_VIEW_SUB_ID,
 };
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
@@ -1575,13 +1575,13 @@ impl RelationalDB {
     }
 
     /// Find a pending delivery by stream and sequence.
-    pub fn outbound_msg_by_stream_seq(
+    pub fn outbound_msg_by_stream_seq<'a>(
         &self,
-        tx: &impl StateView,
+        tx: &'a impl StateView,
         stream_id: u64,
         seq: u64,
-    ) -> Result<Option<StOutboundMsgRow>, DBError> {
-        Ok(tx.outbound_msg_by_stream_seq(stream_id, seq)?.map(|(_, row)| row))
+    ) -> Result<Option<RowRef<'a>>, DBError> {
+        Ok(tx.outbound_msg_by_stream_seq(stream_id, seq)?)
     }
 
     /// Find the user outbox row by its message id.
