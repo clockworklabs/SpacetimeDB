@@ -55,7 +55,7 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new("Unique1", Unique1RW.GetAlgebraicType(registrar)),
-                        new("Unique2", Unique2RW.GetAlgebraicType(registrar))
+                        new("Unique2", Unique2RW.GetAlgebraicType(registrar)),
                     }
                 )
             );

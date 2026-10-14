@@ -1252,6 +1252,9 @@ pub struct CallProcedureParams {
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
+    /// Inherited from the calling connection/request.
+    /// Scheduled procedures default to true.
+    pub confirmed_reads: bool,
 }
 
 impl CallProcedureParams {
@@ -1270,6 +1273,7 @@ impl CallProcedureParams {
             timer: None,
             procedure_id,
             args,
+            confirmed_reads: true,
         }
     }
 }
@@ -2740,10 +2744,17 @@ impl ModuleHost {
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
+        confirmed_reads: bool,
     ) -> CallProcedureReturn {
         let res = async {
-            let call =
-                self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            let call = self.prepare_procedure_call(
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_name,
+                args,
+                confirmed_reads,
+            )?;
             self.call_procedure_with_params(&call.name, call.params)
                 .await
                 .map_err(Into::into)
@@ -2766,13 +2777,19 @@ impl ModuleHost {
         args: FunctionArgs,
         target: ProcedureResultTarget,
     ) -> Result<(), BroadcastError> {
-        let PreparedProcedureCall { name, params } =
-            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
-                Ok(value) => value,
-                Err(err) => {
-                    return self.send_procedure_error(procedure_name, timer, target, err);
-                }
-            };
+        let PreparedProcedureCall { name, params } = match self.prepare_procedure_call(
+            caller_identity,
+            caller_connection_id,
+            timer,
+            procedure_name,
+            args,
+            target.sender.config.confirmed_reads,
+        ) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.send_procedure_error(procedure_name, timer, target, err);
+            }
+        };
         let procedure_name = name;
 
         let guard_procedure_name = procedure_name.clone();
@@ -2947,9 +2964,11 @@ impl ModuleHost {
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
+        confirmed_reads: bool,
     ) -> Result<PreparedProcedureCall, ProcedureCallError> {
-        let (procedure_def, params) =
+        let (procedure_def, mut params) =
             self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+        params.confirmed_reads = confirmed_reads;
         Ok(PreparedProcedureCall {
             name: procedure_def.name.to_string(),
             params,
@@ -2988,6 +3007,7 @@ impl ModuleHost {
                 timer,
                 procedure_id,
                 args,
+                confirmed_reads: true,
             },
         ))
     }

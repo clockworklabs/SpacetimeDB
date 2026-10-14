@@ -34,9 +34,9 @@ use crate::{
         ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_FILE_ID, ST_FILE_IDX, ST_FILE_STAGED_ID,
         ST_FILE_STAGED_IDX, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_IDX, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_IDX,
         ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID,
-        ST_OUTBOUND_STREAM_IDX, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_UPLOAD_ID, ST_UPLOAD_IDX,
-        ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
-        ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_OUTBOUND_STREAM_IDX, ST_OUTBOX_ID, ST_OUTBOX_IDX, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_UPLOAD_ID,
+        ST_UPLOAD_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID,
+        ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -400,6 +400,7 @@ impl CommittedState {
         self.create_table(ST_OUTBOUND_MSG_ID, schemas[ST_OUTBOUND_MSG_IDX].clone());
         self.create_table(ST_INBOUND_STREAM_ID, schemas[ST_INBOUND_STREAM_IDX].clone());
         self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
+        self.create_table(ST_OUTBOX_ID, schemas[ST_OUTBOX_IDX].clone());
         self.create_table(ST_FILE_ID, schemas[ST_FILE_IDX].clone());
         self.create_table(ST_FILE_STAGED_ID, schemas[ST_FILE_STAGED_IDX].clone());
         self.create_table(ST_UPLOAD_ID, schemas[ST_UPLOAD_IDX].clone());
@@ -878,6 +879,11 @@ impl CommittedState {
             TableAlterPrimaryKey(table_id, old_pk) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.primary_key = old_pk.and_then(|cl| cl.as_singleton()));
+            }
+            // A table's outbox metadata changed. Change back to the old one.
+            TableAlterOutbox(table_id, old_outbox) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.set_outbox(old_outbox);
             }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,

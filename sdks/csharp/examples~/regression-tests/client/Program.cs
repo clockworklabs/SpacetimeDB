@@ -22,6 +22,7 @@ const ulong EXPECTED_TEST_EVENT_VALUE = 42;
 
 DbConnection db = null!;
 uint waiting = 0;
+var procedureTests = new Queue<Action>();
 var runComplete = false;
 var mainPhaseScheduled = false;
 var mainUnsubscribeStarted = false;
@@ -1120,6 +1121,20 @@ void ExecProceduralViewPkOnUpdate()
         .Subscribe();
 }
 
+void QueueProcedureTest<T>(
+    string name,
+    Action<ProcedureCallback<T>> call,
+    ProcedureCallback<T> check
+)
+{
+    procedureTests.Enqueue(() =>
+    {
+        Log.Debug($"Calling {name}");
+        waiting++;
+        call(check);
+    });
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     ValidateWhereSubscription(context);
@@ -1370,9 +1385,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling InsertWithTxRollback");
-    waiting++;
-    context.Procedures.InsertWithTxRollback(
+    QueueProcedureTest(
+        "InsertWithTxRollback",
+        context.Procedures.InsertWithTxRollback,
         (IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
         {
             if (result.IsSuccess)
@@ -1393,9 +1408,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling InsertWithTxRollbackResult");
-    waiting++;
-    context.Procedures.InsertWithTxRollbackResult(
+    QueueProcedureTest(
+        "InsertWithTxRollbackResult",
+        context.Procedures.InsertWithTxRollbackResult,
         (
             IProcedureEventContext ctx,
             ProcedureCallbackResult<Result<ReturnStruct, string>> result
@@ -1419,9 +1434,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling InsertWithTxPanic");
-    waiting++;
-    context.Procedures.InsertWithTxPanic(
+    QueueProcedureTest(
+        "InsertWithTxPanic",
+        context.Procedures.InsertWithTxPanic,
         (IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
         {
             try
@@ -1442,9 +1457,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling DanglingTxWarning");
-    waiting++;
-    context.Procedures.DanglingTxWarning(
+    QueueProcedureTest(
+        "DanglingTxWarning",
+        context.Procedures.DanglingTxWarning,
         (IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
         {
             try
@@ -1467,9 +1482,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling InsertWithTxCommit");
-    waiting++;
-    context.Procedures.InsertWithTxCommit(
+    QueueProcedureTest(
+        "InsertWithTxCommit",
+        context.Procedures.InsertWithTxCommit,
         (IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
         {
             try
@@ -1491,9 +1506,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling InsertWithTxRetry");
-    waiting++;
-    context.Procedures.InsertWithTxRetry(
+    QueueProcedureTest(
+        "InsertWithTxRetry",
+        context.Procedures.InsertWithTxRetry,
         (IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
         {
             try
@@ -1515,9 +1530,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling TxContextCapabilities");
-    waiting++;
-    context.Procedures.TxContextCapabilities(
+    QueueProcedureTest(
+        "TxContextCapabilities",
+        context.Procedures.TxContextCapabilities,
         (IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
         {
             try
@@ -1550,9 +1565,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling AuthenticationCapabilities");
-    waiting++;
-    context.Procedures.AuthenticationCapabilities(
+    QueueProcedureTest(
+        "AuthenticationCapabilities",
+        context.Procedures.AuthenticationCapabilities,
         (IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
         {
             try
@@ -1588,9 +1603,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling SubscriptionEventOffset");
-    waiting++;
-    context.Procedures.SubscriptionEventOffset(
+    QueueProcedureTest(
+        "SubscriptionEventOffset",
+        context.Procedures.SubscriptionEventOffset,
         (IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
         {
             try
@@ -1625,11 +1640,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
-    Log.Debug("Calling DocumentationGapChecks with valid parameters");
-    waiting++;
-    context.Procedures.DocumentationGapChecks(
-        42,
-        "test-input",
+    QueueProcedureTest(
+        "DocumentationGapChecks with valid parameters",
+        callback => context.Procedures.DocumentationGapChecks(42, "test-input", callback),
         (IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
         {
             try
@@ -1675,11 +1688,9 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     );
 
     // Test error handling with invalid parameters
-    Log.Debug("Calling DocumentationGapChecks with invalid parameters (should fail)");
-    waiting++;
-    context.Procedures.DocumentationGapChecks(
-        0,
-        "",
+    QueueProcedureTest(
+        "DocumentationGapChecks with invalid parameters (should fail)",
+        callback => context.Procedures.DocumentationGapChecks(0, "", callback),
         (IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
         {
             try
@@ -1739,7 +1750,15 @@ RegressionTestHarness.FrameTickUntilComplete(
     {
         if (mainPhaseScheduled && !mainUnsubscribeStarted && waiting == 0)
         {
-            StartMainUnsubscribe();
+            // These procedures share MyTable and require a fixed execution order.
+            if (procedureTests.TryDequeue(out var next))
+            {
+                next();
+            }
+            else
+            {
+                StartMainUnsubscribe();
+            }
         }
 
         return runComplete && waiting == 0;

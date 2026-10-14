@@ -5,10 +5,10 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
-    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
-    StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboxFields, StOutboxRow,
+    StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
+    StTableFields, StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOX_ID,
     ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
 };
 use anyhow::anyhow;
@@ -264,6 +264,16 @@ pub trait StateView {
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => false,
             Err(e) => return Err(e),
         };
+
+        // During restore from snapshots produced before IDC outboxes existed,
+        // `st_outbox` is missing until `migrate_system_tables` runs.
+        // Treat that as "no outbox metadata" while reconstructing raw schemas.
+        let outbox = match self.iter_by_col_eq(ST_OUTBOX_ID, StOutboxFields::TableId, value_eq) {
+            Ok(mut iter) => iter.next().map(StOutboxRow::try_from).transpose()?.map(Into::into),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => None,
+            Err(e) => return Err(e),
+        };
+
         // During restore from snapshots produced before `st_table_accessor` existed,
         // this system table is missing until `migrate_system_tables` runs.
         // Handle that here so schema reconstruction can proceed during restore.
@@ -294,6 +304,7 @@ pub trait StateView {
             table_primary_key,
             is_event,
             table_alias,
+            outbox,
         ))
     }
 

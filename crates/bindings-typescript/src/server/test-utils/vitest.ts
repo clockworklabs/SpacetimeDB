@@ -1,15 +1,23 @@
-import type { Plugin } from 'vite';
+import type { Plugin, UserConfig } from 'vite';
 
 export function spacetimedbModuleTestPlugin(): Plugin {
   return {
     name: 'spacetimedb-module-test',
     enforce: 'pre',
+    // The SDK imports `spacetime:sys` itself, not just the module under test.
+    // Vitest hands dependencies in node_modules straight to Node's loader,
+    // which never consults this plugin and rejects the scheme, so the SDK
+    // has to be inlined to go through Vite instead.
+    config() {
+      return {
+        test: { server: { deps: { inline: ['spacetimedb'] } } },
+      } as UserConfig;
+    },
+    // Every ABI version resolves to the one stub below, which exports the
+    // union of their functions. A new version then needs only its new
+    // functions added there, not another case here.
     resolveId(id) {
-      if (
-        id === 'spacetime:sys@2.0' ||
-        id === 'spacetime:sys@2.1' ||
-        id === 'spacetime:sys@2.2'
-      ) {
+      if (id.startsWith('spacetime:sys@2.')) {
         return '\0spacetimedb-module-test-sys';
       }
       return null;

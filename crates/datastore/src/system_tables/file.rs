@@ -16,11 +16,11 @@
 use super::*;
 use spacetimedb_lib::FileId;
 
-pub const ST_FILE_ID: TableId = TableId(26);
+pub const ST_FILE_ID: TableId = TableId(27);
 pub const ST_FILE_NAME: &str = "st_file";
-pub const ST_FILE_STAGED_ID: TableId = TableId(27);
+pub const ST_FILE_STAGED_ID: TableId = TableId(28);
 pub const ST_FILE_STAGED_NAME: &str = "st_file_staged";
-pub const ST_UPLOAD_ID: TableId = TableId(28);
+pub const ST_UPLOAD_ID: TableId = TableId(29);
 pub const ST_UPLOAD_NAME: &str = "st_upload";
 
 st_fields_enum!(enum StFileFields {

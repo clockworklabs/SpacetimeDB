@@ -115,6 +115,10 @@ fn link_sync_stub_for_async_function(
     name: &'static str,
 ) -> anyhow::Result<()> {
     match name {
+        "procedure_commit_mut_tx" => {
+            // Preserve the ordinary commit error for accidental use in a reducer.
+            linker.func_wrap(module, name, WasmInstanceEnv::procedure_commit_mut_tx_sync)?;
+        }
         "procedure_sleep_until" => {
             linker.func_wrap(module, name, procedure_sleep_until_sync_stub)?;
         }
@@ -770,6 +774,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             store
                 .data_mut()
                 .start_funcall(op.name().clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+        store.data_mut().set_procedure_confirmed_reads(op.confirmed_reads);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

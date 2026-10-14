@@ -82,6 +82,8 @@ public interface ITableView<View, T>
 
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
+    static virtual string LookupName => tableName;
+
     // These are static helpers that codegen can use.
 
     private class RawTableIter(FFI.TableId tableId) : RawTableIterBase<T>
@@ -96,7 +98,7 @@ public interface ITableView<View, T>
     private static readonly Lazy<FFI.TableId> tableId_ =
         new(() =>
         {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
+            var name_bytes = System.Text.Encoding.UTF8.GetBytes(View.LookupName);
             FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
             return out_;
         });

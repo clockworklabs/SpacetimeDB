@@ -65,6 +65,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-typescript-test",
     },
     Command {
+        path: &["typescript-submodules"],
+        package: "ci-typescript-submodules",
+    },
+    Command {
         path: &["version-upgrade-check"],
         package: "ci-version-upgrade-check",
     },
