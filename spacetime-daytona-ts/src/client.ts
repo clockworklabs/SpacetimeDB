@@ -464,6 +464,38 @@ export function client<Tx extends HostTx>(config: DaytonaConfig<Tx>) {
         checkAt: tx.timestamp,
       });
     },
+    getCommandOutput(
+      ctx: Procedure<Tx>,
+      apiKey: string,
+      input: { owner: string; executionId: bigint }
+    ): { output: string; truncated: boolean } {
+      const { execution, sandbox } = ctx.withTx(tx => {
+        const execution = db(tx).execution.id.find(input.executionId);
+        if (!execution) fail('execution_not_found');
+        const sandbox = owned(tx, input.owner, execution.sandboxId);
+        if (!execution.finishedAt || !execution.commandId)
+          fail('output_not_ready');
+        if (
+          !sandbox.remoteId ||
+          sandbox.deleteRequested ||
+          sandbox.state.tag === 'Deleted'
+        )
+          fail('sandbox_not_ready');
+        return { execution, sandbox };
+      });
+      try {
+        const service = api(ctx.http, apiKey, config.toolboxOrigins);
+        const remote = service.sandbox(sandbox.remoteId!);
+        verify(ctx, sandbox, remote);
+        return service.output(
+          service.toolbox(remote),
+          execution.sessionId,
+          execution.commandId!
+        );
+      } catch (error) {
+        throw new SenderError(errorCode(error));
+      }
+    },
     reconcile(ctx: Procedure<Tx>, apiKey: string): void {
       if (!ctx.sender.equals(ctx.databaseIdentity)) fail('scheduler_only');
       const service = api(ctx.http, apiKey, config.toolboxOrigins);

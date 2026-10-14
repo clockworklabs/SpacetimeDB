@@ -138,6 +138,17 @@ try {
   poll(2);
   assert.equal(rows('SELECT exitCode FROM daytona.execution')[0][0][1], 0);
   assert.equal(rows('SELECT submits FROM remote')[0][0], 1);
+  assert.match(call('output', [1, false]), /Total: 25/);
+  call('output', [1, true], true);
+  call('mode', ['logs_unavailable']);
+  call('output', [1, false], true);
+  assert.equal(
+    rows('SELECT submits FROM remote')[0][0],
+    1,
+    'log failures never resubmit'
+  );
+  call('mode', ['normal']);
+  assert.match(call('output', [1, false]), /Total: 25/);
 
   call('mode', ['lost_reply']);
   call('run', ['lost', 'exit 7']);
@@ -166,6 +177,7 @@ try {
   call('remove');
   poll(3);
   assert.equal(rows('SELECT removed FROM remote')[0][0], true);
+  call('output', [1, false], true);
   call('mode', ['lost_create']);
   call('create', ['lost-create']);
   poll(2);
@@ -242,6 +254,7 @@ try {
       checks: [
         'deduplication',
         'ownership',
+        'output, output ownership, retry, and deletion',
         'scheduler guard',
         'one active command',
         'zero/nonzero exits',

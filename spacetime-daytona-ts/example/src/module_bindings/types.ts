@@ -13,6 +13,12 @@ import {
 export const CanManage = __t.object("CanManage", {});
 export type CanManage = __Infer<typeof CanManage>;
 
+export const CommandOutput = __t.object("CommandOutput", {
+  output: __t.string(),
+  truncated: __t.bool(),
+});
+export type CommandOutput = __Infer<typeof CommandOutput>;
+
 // The tagged union or sum type for the algebraic type `DaytonaExecutionState`.
 export const DaytonaExecutionState = __t.enum("DaytonaExecutionState", {
   Queued: __t.unit(),

@@ -9,7 +9,7 @@ export interface Http {
       body?: string;
       timeout?: TimeDuration;
     }
-  ): { status: number; json(): unknown };
+  ): { status: number; json(): unknown; text(): string };
 }
 
 export class ProviderError extends Error {
@@ -83,7 +83,7 @@ export function api(
     url: string,
     method = 'GET',
     body?: object,
-    readBody = true
+    format: 'json' | 'text' | 'none' = 'json'
   ): unknown {
     let response: ReturnType<Http['fetch']>;
     try {
@@ -91,6 +91,7 @@ export function api(
         method,
         headers: {
           Authorization: `Bearer ${key}`,
+          Accept: format === 'text' ? 'text/plain' : 'application/json',
           'Content-Type': 'application/json',
         },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -102,10 +103,10 @@ export function api(
     if (response.status < 200 || response.status >= 300) {
       throw new ProviderError(`http_${response.status}`, response.status);
     }
-    if (!readBody || method === 'DELETE' || response.status === 204)
+    if (format === 'none' || method === 'DELETE' || response.status === 204)
       return undefined;
     try {
-      return response.json();
+      return format === 'text' ? response.text() : response.json();
     } catch {
       throw new ProviderError('invalid_response');
     }
@@ -182,7 +183,7 @@ export function api(
       );
     },
     createSession(base: string, sessionId: string) {
-      request(toolbox(base, '/process/session'), 'POST', { sessionId }, false);
+      request(toolbox(base, '/process/session'), 'POST', { sessionId }, 'none');
     },
     session(base: string, sessionId: string) {
       const result = object(
@@ -218,6 +219,23 @@ export function api(
           )
         )
       );
+    },
+    output(base: string, sessionId: string, commandId: string) {
+      const output = request(
+        toolbox(
+          base,
+          `/process/session/${encodeURIComponent(sessionId)}/command/${encodeURIComponent(commandId)}/logs`
+        ),
+        'GET',
+        undefined,
+        'text'
+      );
+      if (typeof output !== 'string')
+        throw new ProviderError('invalid_response');
+      return {
+        output: output.slice(0, 16_384),
+        truncated: output.length > 16_384,
+      };
     },
   };
 }

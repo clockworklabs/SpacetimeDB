@@ -73,6 +73,15 @@ export const deleteSandbox = spacetimedb.reducer(
     daytonaClient.deleteSandbox(ctx, { owner: owner(ctx), ...args });
   }
 );
+export const getCommandOutput = spacetimedb.procedure(
+  { executionId: t.u64() },
+  t.object('CommandOutput', { output: t.string(), truncated: t.bool() }),
+  (ctx, { executionId }) =>
+    daytonaClient.getCommandOutput(ctx, ctx.env.DAYTONA_API_KEY, {
+      owner: ctx.withTx(owner),
+      executionId,
+    })
+);
 export const reconcileDaytona = spacetimedb.procedure(
   { onSchedule: daytonaTick },
   { tick: daytonaTick.rowType },

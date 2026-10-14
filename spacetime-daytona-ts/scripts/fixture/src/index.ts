@@ -92,7 +92,7 @@ function provider(ctx: ProcedureCtx<Schema>): Http {
           string
         >;
         const result = (
-          data: object,
+          data: object | string,
           status = 200,
           lost = false,
           hold = false
@@ -145,6 +145,10 @@ function provider(ctx: ProcedureCtx<Schema>): Http {
         const sessionId = decodeURIComponent(parts[5]);
         const commands = state.sessions[sessionId];
         if (!commands) return result({}, 404);
+        if (path.endsWith('/logs')) {
+          if (row.mode === 'logs_unavailable') return result({}, 503);
+          return result('Total: 25\n');
+        }
         if (path.endsWith('/exec')) {
           if (row.mode === 'before_send') return result({}, 200, true);
           row.submits++;
@@ -178,7 +182,14 @@ function provider(ctx: ProcedureCtx<Schema>): Http {
         }
       }
       if (outcome.lost) throw new Error('simulated lost response');
-      return { status: outcome.status, json: () => outcome.data };
+      return {
+        status: outcome.status,
+        json: () => outcome.data,
+        text: () =>
+          typeof outcome.data === 'string'
+            ? outcome.data
+            : JSON.stringify(outcome.data),
+      };
     },
   };
 }
@@ -187,6 +198,25 @@ export const reconcile = db.procedure(t.unit(), ctx => {
   sandbox.reconcile(ctx, 'fixture');
   return {};
 });
+
+export const output = db.procedure(
+  { executionId: t.u64(), otherOwner: t.bool() },
+  t.object('CommandOutput', { output: t.string(), truncated: t.bool() }),
+  (ctx, { executionId, otherOwner }) =>
+    sandbox.getCommandOutput(
+      {
+        sender: ctx.sender,
+        databaseIdentity: ctx.databaseIdentity,
+        withTx: body => ctx.withTx(body),
+        http: provider(ctx),
+      },
+      'fixture',
+      {
+        owner: otherOwner ? 'another-owner' : ctx.sender.toHexString(),
+        executionId,
+      }
+    )
+);
 
 // Only this test module advances due times and substitutes the remote service.
 export const poll = db.procedure(t.unit(), ctx => {

@@ -40,6 +40,7 @@ import GrantAccessReducer from "./grant_access_reducer";
 import RunCommandReducer from "./run_command_reducer";
 
 // Import all procedure arg schemas
+import * as GetCommandOutputProcedure from "./get_command_output_procedure";
 
 // Import all table schema definitions
 import CanManageRow from "./can_manage_table";
@@ -83,6 +84,7 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("get_command_output", GetCommandOutputProcedure.params, GetCommandOutputProcedure.returnType),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */

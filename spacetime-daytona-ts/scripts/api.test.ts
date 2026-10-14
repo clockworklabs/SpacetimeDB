@@ -2,6 +2,47 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { api, ProviderError, type Http } from '../src/api.js';
 
+function response(body: unknown, status = 200) {
+  return {
+    status,
+    json: () => body,
+    text: () => (typeof body === 'string' ? body : JSON.stringify(body)),
+  };
+}
+
+test('command output reads plain text, accepts empty logs, and limits returned text', () => {
+  let body = '';
+  const service = api(
+    {
+      fetch: (url, options) => {
+        assert.equal(
+          url,
+          'https://proxy.app.daytona.io/toolbox/id/process/session/s%2F1/command/c%2F1/logs'
+        );
+        assert.equal(options?.method, 'GET');
+        assert.equal(options?.headers?.Accept, 'text/plain');
+        return {
+          status: 200,
+          text: () => body,
+          json: () => {
+            throw new Error('Logs are plain text');
+          },
+        };
+      },
+    },
+    'key'
+  );
+  const logs = () =>
+    service.output('https://proxy.app.daytona.io/toolbox/id', 's/1', 'c/1');
+  assert.deepEqual(logs(), { output: '', truncated: false });
+  body = 'Total: 42\nTraceback: bad input\n';
+  assert.equal(logs().output, 'Total: 42\nTraceback: bad input\n');
+  body = 'x'.repeat(20_000);
+  assert.deepEqual(logs(), { output: 'x'.repeat(16_384), truncated: true });
+  body = '{"output":"This is user output, not a response envelope"}';
+  assert.equal(logs().output, body);
+});
+
 test('sandbox creation sets the lifetime and access restrictions', () => {
   const http: Http = {
     fetch: (url, options) => {
@@ -17,10 +58,7 @@ test('sandbox creation sets the lifetime and access restrictions', () => {
         autoStopInterval: 0,
         autoDeleteInterval: 0,
       });
-      return {
-        status: 201,
-        json: () => ({ id: 'remote', state: 'creating', labels: {} }),
-      };
+      return response({ id: 'remote', state: 'creating', labels: {} }, 201);
     },
   };
   assert.equal(
@@ -38,6 +76,7 @@ test('provider errors do not expose response text or credentials', () => {
   const http: Http = {
     fetch: () => ({
       status: 429,
+      text: () => 'secret',
       json: () => {
         throw new Error('secret');
       },
@@ -71,7 +110,7 @@ test('transport failure is an unknown outcome and is not retried', () => {
 
 test('a completed zero exit code differs from a running command', () => {
   let body: unknown = { id: 'cmd', command: 'exit 0' };
-  const http: Http = { fetch: () => ({ status: 200, json: () => body }) };
+  const http: Http = { fetch: () => response(body) };
   const service = api(http, 'key');
   const url = 'https://proxy.app.daytona.io/toolbox/id';
   assert.equal(service.command(url, 'session', 'cmd').exitCode, undefined);
@@ -88,7 +127,7 @@ test('toolbox URLs cannot redirect credentials to an unapproved origin', () => {
   const http: Http = {
     fetch: () => {
       requests++;
-      return { status: 200, json: () => ({}) };
+      return response({});
     },
   };
   const service = api(http, 'key');
@@ -115,7 +154,7 @@ test('async submission sends the documented fields and accepts only a command ID
         command: "sh -c 'exit 0'",
         runAsync: true,
       });
-      return { status: 200, json: () => ({ cmdId: 'cmd' }) };
+      return response({ cmdId: 'cmd' });
     },
   };
   assert.equal(

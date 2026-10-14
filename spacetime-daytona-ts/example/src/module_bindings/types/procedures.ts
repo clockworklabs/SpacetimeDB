@@ -6,3 +6,7 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as GetCommandOutputProcedure from "../get_command_output_procedure";
+
+export type GetCommandOutputArgs = __Infer<typeof GetCommandOutputProcedure.params>;
+export type GetCommandOutputResult = __Infer<typeof GetCommandOutputProcedure.returnType>;

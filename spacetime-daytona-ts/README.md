@@ -111,7 +111,16 @@ Both tables are private. Host views can read `ctx.db.daytona.sandbox` and
 - `Unknown` means the result is not established. It does not mean the command failed.
 - `deleteRequested` blocks new commands. Wait for `Deleted` before treating cleanup as complete.
 
-For command output, use [Daytona's session logs](https://www.daytona.io/docs/en/process-code-execution/).
+Call `getCommandOutput(ctx, apiKey, { owner, executionId })` from an authorized
+host procedure to read a completed command's combined output. Derive `owner`
+from the caller, as with reducers. The method verifies sandbox ownership before
+contacting Daytona and returns `{ output, truncated }`. It does not run commands
+or change their state. See the [example procedure](./example/spacetimedb/src/index.ts).
+
+The returned text is limited to 16,384 characters. This limits the value returned
+to the caller; the provider's full log response is still downloaded. Output is
+fetched on demand and is not stored in SpacetimeDB. It becomes unavailable when
+the sandbox is deleted. A failed output request can be retried independently.
 
 ## Failure handling
 
@@ -167,7 +176,7 @@ tests. Set `SPACETIME_BIN` to the matching CLI path if needed. The suite starts 
 isolated server, tests against a simulated provider, and removes its temporary
 data afterward. It does not create a paid Daytona sandbox.
 
-Live provider verification is separate: follow the example, run `exit 0` and
-`exit 7`, delete the sandbox, and confirm its removal in Daytona.
+Live provider verification is separate: follow the example walkthrough, check
+successful and failed scripts, delete the sandbox, and confirm its removal in Daytona.
 
 Licensed under Apache-2.0.
