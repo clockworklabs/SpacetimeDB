@@ -4255,7 +4255,7 @@ pub(crate) mod tests {
 
     mod read_sets {
         use super::*;
-        use crate::locking_tx_datastore::mut_tx::{ViewReadSets, MAX_VIEW_POINTS_PER_TABLE};
+        use crate::locking_tx_datastore::mut_tx::{ViewDependency, ViewReadSets, MAX_VIEW_POINTS_PER_TABLE};
         use crate::locking_tx_datastore::{FuncCallType, ViewCallInfo, ViewReadRecorder};
         use pretty_assertions::assert_eq;
         use spacetimedb_lib::error::TestError;
@@ -4609,6 +4609,59 @@ pub(crate) mod tests {
 
             assert_eq!(stale_after_insert(&f, 999)?, HashSet::from([over]));
             Ok(())
+        }
+
+        fn read_set_for(call: &ViewCallInfo, keys: impl IntoIterator<Item = u32>) -> ViewReadSets {
+            let mut read_sets = ViewReadSets::default();
+            read_sets.insert_full_table_scan(TableId(1), call.clone());
+            for key in keys {
+                read_sets.insert_index_scan(TableId(1), col_list![1], AlgebraicValue::U32(key), call.clone());
+            }
+            read_sets
+        }
+
+        fn dependencies_for(call: &ViewCallInfo, keys: impl IntoIterator<Item = u32>) -> Vec<ViewDependency> {
+            let points = keys
+                .into_iter()
+                .map(|key| (call.clone(), TableId(1), Some((col_list![1], AlgebraicValue::U32(key)))));
+            [(call.clone(), TableId(1), None)].into_iter().chain(points).collect()
+        }
+
+        /// Asserts that `tables` and `by_call` each hold exactly `expected`, with no duplicates.
+        fn assert_dependencies(read_sets: &ViewReadSets, expected: impl IntoIterator<Item = ViewDependency>) {
+            let expected = expected.into_iter().collect::<HashSet<_>>();
+            let (in_tables, in_by_call) = read_sets.dependencies();
+            for found in [in_tables, in_by_call] {
+                assert_eq!(found.len(), expected.len());
+                assert_eq!(found.into_iter().collect::<HashSet<_>>(), expected);
+            }
+        }
+
+        #[test]
+        fn repeated_reads_and_merges_store_each_dependency_once() {
+            let a = sender_call(VIEW, Identity::ZERO);
+            let mut committed = ViewReadSets::default();
+            for _ in 0..3 {
+                committed.merge(read_set_for(&a, [7, 7, 8]));
+            }
+            assert_dependencies(&committed, dependencies_for(&a, [7, 8]));
+        }
+
+        #[test]
+        fn replacing_read_sets_keeps_only_the_latest_dependencies() {
+            let calls = (0..5u8)
+                .map(|n| sender_call(VIEW, Identity::from_byte_array([n; 32])))
+                .collect::<Vec<_>>();
+            let mut committed = ViewReadSets::default();
+            for round in 0..3 {
+                for call in &calls {
+                    let mut tx = read_set_for(call, round * 10..round * 10 + 4);
+                    tx.replace_view_read_set(call.clone());
+                    committed.merge(tx);
+                }
+            }
+            // Each call keeps its table scan and exactly the 4 keys from the last round.
+            assert_dependencies(&committed, calls.iter().flat_map(|call| dependencies_for(call, 20..24)));
         }
 
         #[test]

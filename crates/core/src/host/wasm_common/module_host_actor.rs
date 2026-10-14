@@ -215,22 +215,18 @@ pub(crate) fn run_query_for_view(
         }
     }
 
-    let op = FuncCallType::View(call_info.clone());
     let mut metrics = ExecutionMetrics::default();
     let mut rows = Vec::new();
 
     let params = ExecutionParams::from_auth(&auth);
 
     for plan in plans {
-        // Track read sets for all tables involved in this plan.
-        // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
-        for table_id in plan.table_ids() {
-            tx.record_table_scan(&op, table_id);
-        }
-
-        plan.base_plan().execute(&*tx, &params, &mut metrics, &mut |row| {
-            rows.push(row.to_product_value());
-            Ok(())
+        // Record the plan's reads, so only writes that affect them refresh this view.
+        tx.with_view_reads(call_info, |rtx| {
+            plan.base_plan().execute(rtx, &params, &mut metrics, &mut |row| {
+                rows.push(row.to_product_value());
+                Ok(())
+            })
         })?;
     }
 
@@ -2308,6 +2304,199 @@ mod tests {
         }
         let _ = db.rollback_mut_tx(tx);
         Ok(())
+    }
+
+    /// Read sets recorded for query-builder views: which writes make a materialized view call stale.
+    mod query_view_read_sets {
+        use super::*;
+        use crate::host::wasm_common::module_host_actor::run_query_for_view;
+        use spacetimedb_lib::db::auth::StAccess;
+        use spacetimedb_primitives::{col_list, TableId, ViewId};
+        use spacetimedb_sats::{product, ProductValue};
+        use std::collections::HashSet;
+
+        struct Fixture {
+            db: TestDB,
+            membership: TableId,
+            item: TableId,
+            team: TableId,
+        }
+
+        /// `membership(owner, grp)` indexed on `owner`, `item(id, grp)` indexed on `grp`,
+        /// and `team(id)` with a unique index on `id`.
+        /// Owner 1 is in group 1 and owner 2 in group 2, and each group has one item.
+        fn setup() -> anyhow::Result<Fixture> {
+            let db = TestDB::in_memory()?;
+            let membership = db.create_table_for_test(
+                "membership",
+                &[("owner", AlgebraicType::U32), ("grp", AlgebraicType::U32)],
+                &[0.into()],
+            )?;
+            let item = db.create_table_for_test(
+                "item",
+                &[("id", AlgebraicType::U32), ("grp", AlgebraicType::U32)],
+                &[1.into()],
+            )?;
+            let team = db.create_table_for_test_with_the_works(
+                "team",
+                &[("id", AlgebraicType::U32)],
+                &[col_list![0]],
+                &[col_list![0]],
+                StAccess::Public,
+            )?;
+            let mut tx = begin_mut_tx(&db);
+            for row in [product![1u32, 1u32], product![2u32, 2u32]] {
+                tx.insert_via_serialize_bsatn(membership, &row)?;
+            }
+            for row in [product![10u32, 1u32], product![20u32, 2u32]] {
+                tx.insert_via_serialize_bsatn(item, &row)?;
+            }
+            db.commit_tx(tx)?;
+            Ok(Fixture {
+                db,
+                membership,
+                item,
+                team,
+            })
+        }
+
+        fn call(n: u8) -> ViewCallInfo {
+            ViewCallInfo::sender(ViewId(1), Identity::from_byte_array([n; 32]))
+        }
+
+        fn item_row_type() -> ProductType {
+            ProductType::from_iter([("id", AlgebraicType::U32), ("grp", AlgebraicType::U32)])
+        }
+
+        fn commit_insert(f: &Fixture, table_id: TableId, row: ProductValue) -> anyhow::Result<()> {
+            let mut tx = begin_mut_tx(&f.db);
+            tx.insert_via_serialize_bsatn(table_id, &row)?;
+            f.db.commit_tx(tx)?;
+            Ok(())
+        }
+
+        /// Runs `query` for `call` and commits its read set, as a view refresh does.
+        fn materialize(
+            f: &Fixture,
+            call: &ViewCallInfo,
+            query: &str,
+            row_type: &ProductType,
+        ) -> anyhow::Result<Vec<ProductValue>> {
+            let mut tx = begin_mut_tx(&f.db);
+            let rows = run_query_for_view(&mut tx, query, row_type, call, f.db.database_identity())?;
+            tx.replace_view_read_set(call.clone());
+            f.db.commit_tx(tx)?;
+            Ok(rows)
+        }
+
+        fn materialize_my_items(f: &Fixture, owner: u8) -> anyhow::Result<(ViewCallInfo, Vec<ProductValue>)> {
+            let call = call(owner);
+            let query =
+                format!("SELECT i.* FROM membership AS m JOIN item AS i ON m.grp = i.grp WHERE m.owner = {owner}");
+            let rows = materialize(f, &call, &query, &item_row_type())?;
+            Ok((call, rows))
+        }
+
+        /// Returns the view calls that inserting `row` makes stale, then rolls the insert back.
+        fn stale_after_insert(
+            f: &Fixture,
+            table_id: TableId,
+            row: ProductValue,
+        ) -> anyhow::Result<HashSet<ViewCallInfo>> {
+            let mut tx = begin_mut_tx(&f.db);
+            tx.insert_via_serialize_bsatn(table_id, &row)?;
+            let stale = tx.views_for_refresh().cloned().collect();
+            let _ = f.db.rollback_mut_tx(tx);
+            Ok(stale)
+        }
+
+        #[test]
+        fn writes_refresh_only_the_view_calls_that_read_them() -> anyhow::Result<()> {
+            let f = setup()?;
+            let (a, rows) = materialize_my_items(&f, 1)?;
+            assert_eq!(rows, vec![product![10u32, 1u32]]);
+            let (b, _) = materialize_my_items(&f, 2)?;
+
+            assert_eq!(
+                stale_after_insert(&f, f.item, product![11u32, 1u32])?,
+                HashSet::from([a.clone()])
+            );
+            assert_eq!(stale_after_insert(&f, f.item, product![30u32, 3u32])?, HashSet::new());
+
+            // Joining group 2 makes `a` stale, and once refreshed, `a` also reads group 2.
+            assert_eq!(
+                stale_after_insert(&f, f.membership, product![1u32, 2u32])?,
+                HashSet::from([a.clone()])
+            );
+            commit_insert(&f, f.membership, product![1u32, 2u32])?;
+            materialize_my_items(&f, 1)?;
+            assert_eq!(
+                stale_after_insert(&f, f.item, product![21u32, 2u32])?,
+                HashSet::from([a, b])
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn views_that_start_empty_refresh_when_their_first_row_arrives() -> anyhow::Result<()> {
+            let f = setup()?;
+
+            // Owner 3 has no memberships.
+            let (no_memberships, rows) = materialize_my_items(&f, 3)?;
+            assert!(rows.is_empty());
+            assert_eq!(
+                stale_after_insert(&f, f.membership, product![3u32, 1u32])?,
+                HashSet::from([no_memberships])
+            );
+
+            // Owner 4 is in group 7, which has no items.
+            commit_insert(&f, f.membership, product![4u32, 7u32])?;
+            let (no_items, rows) = materialize_my_items(&f, 4)?;
+            assert!(rows.is_empty());
+            assert_eq!(
+                stale_after_insert(&f, f.item, product![70u32, 7u32])?,
+                HashSet::from([no_items])
+            );
+
+            // A probe of a unique index that finds no team.
+            let no_team = call(5);
+            let query = "SELECT t.* FROM membership AS m JOIN team AS t ON m.grp = t.id WHERE m.owner = 1";
+            let team_row_type = ProductType::from_iter([("id", AlgebraicType::U32)]);
+            assert!(materialize(&f, &no_team, query, &team_row_type)?.is_empty());
+            assert_eq!(
+                stale_after_insert(&f, f.team, product![1u32])?,
+                HashSet::from([no_team])
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn leaving_a_group_stops_refreshes_from_it() -> anyhow::Result<()> {
+            let f = setup()?;
+            materialize_my_items(&f, 1)?;
+
+            let mut tx = begin_mut_tx(&f.db);
+            f.db.delete_by_rel(&mut tx, f.membership, [product![1u32, 1u32]]);
+            f.db.commit_tx(tx)?;
+            let (_, rows) = materialize_my_items(&f, 1)?;
+            assert!(rows.is_empty());
+
+            assert_eq!(stale_after_insert(&f, f.item, product![11u32, 1u32])?, HashSet::new());
+            Ok(())
+        }
+
+        #[test]
+        fn filters_without_an_index_depend_on_the_whole_table() -> anyhow::Result<()> {
+            let f = setup()?;
+            let a = call(1);
+            materialize(&f, &a, "SELECT * FROM item WHERE id = 10", &item_row_type())?;
+
+            assert_eq!(
+                stale_after_insert(&f, f.item, product![99u32, 9u32])?,
+                HashSet::from([a])
+            );
+            Ok(())
+        }
     }
 
     #[test]

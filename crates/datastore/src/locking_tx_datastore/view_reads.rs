@@ -2,42 +2,59 @@ use super::mut_tx::{IndexScanPoint, IndexScanRanged, MutTxId};
 use super::state_view::IterMutTx;
 use core::cell::RefCell;
 use core::ops::RangeBounds;
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::query::Delta;
 use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
-/// A read made by a view's query, to be recorded in the view's read set.
-#[derive(PartialEq, Eq, Hash)]
-pub(super) enum ViewRead {
-    Table(TableId),
-    Point(TableId, IndexId, AlgebraicValue),
+/// The tables and index keys a view's query read.
+#[derive(Default)]
+pub(super) struct ViewReads {
+    pub tables: IntSet<TableId>,
+    pub points: IntMap<TableId, HashSet<(IndexId, AlgebraicValue)>>,
 }
 
-/// A [`Datastore`] over a [`MutTxId`] that remembers what the query executor reads,
-/// so a view's read set can be derived from the reads its query actually made.
+/// A [`Datastore`] that records the tables and index keys a view's query reads.
 ///
-/// Reads are recorded when the scan starts, so lookups that find no rows are still recorded.
+/// Reads are recorded when a scan starts, so a lookup that finds no rows is still recorded.
+/// A table with more than `max_points_per_table` distinct keys is recorded as a full table scan.
 pub struct ViewReadRecorder<'a> {
     tx: &'a MutTxId,
-    reads: RefCell<HashSet<ViewRead>>,
+    max_points_per_table: usize,
+    reads: RefCell<ViewReads>,
 }
 
 impl<'a> ViewReadRecorder<'a> {
-    pub(super) fn new(tx: &'a MutTxId) -> Self {
+    pub(super) fn new(tx: &'a MutTxId, max_points_per_table: usize) -> Self {
         Self {
             tx,
+            max_points_per_table,
             reads: <_>::default(),
         }
     }
 
-    pub(super) fn into_reads(self) -> HashSet<ViewRead> {
+    pub(super) fn into_reads(self) -> ViewReads {
         self.reads.into_inner()
     }
 
-    fn record(&self, read: ViewRead) {
-        self.reads.borrow_mut().insert(read);
+    fn record_table(&self, table_id: TableId) {
+        let mut reads = self.reads.borrow_mut();
+        reads.points.remove(&table_id);
+        reads.tables.insert(table_id);
+    }
+
+    fn record_point(&self, table_id: TableId, index_id: IndexId, point: &AlgebraicValue) {
+        let mut reads = self.reads.borrow_mut();
+        if reads.tables.contains(&table_id) {
+            return;
+        }
+        let points = reads.points.entry(table_id).or_default();
+        points.insert((index_id, point.clone()));
+        if points.len() > self.max_points_per_table {
+            reads.points.remove(&table_id);
+            reads.tables.insert(table_id);
+        }
     }
 }
 
@@ -58,12 +75,12 @@ impl Datastore for ViewReadRecorder<'_> {
         Self: 'b;
 
     fn row_count(&self, table_id: TableId) -> u64 {
-        self.record(ViewRead::Table(table_id));
+        self.record_table(table_id);
         self.tx.row_count(table_id)
     }
 
     fn table_scan<'b>(&'b self, table_id: TableId) -> anyhow::Result<Self::TableIter<'b>> {
-        self.record(ViewRead::Table(table_id));
+        self.record_table(table_id);
         self.tx.table_scan(table_id)
     }
 
@@ -73,9 +90,8 @@ impl Datastore for ViewReadRecorder<'_> {
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> anyhow::Result<Self::RangeIndexIter<'b>> {
-        // The planner never emits range scans yet (`IndexProbe::Range`),
-        // so ranges are conservatively recorded as full table scans.
-        self.record(ViewRead::Table(table_id));
+        // The planner doesn't emit range scans yet, so record a full table scan.
+        self.record_table(table_id);
         Datastore::index_scan_range(self.tx, table_id, index_id, range)
     }
 
@@ -85,7 +101,7 @@ impl Datastore for ViewReadRecorder<'_> {
         index_id: IndexId,
         point: &AlgebraicValue,
     ) -> anyhow::Result<Self::PointIndexIter<'b>> {
-        self.record(ViewRead::Point(table_id, index_id, point.clone()));
+        self.record_point(table_id, index_id, point);
         Datastore::index_scan_point(self.tx, table_id, index_id, point)
     }
 }

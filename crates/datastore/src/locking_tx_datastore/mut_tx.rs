@@ -6,7 +6,7 @@ use super::{
     time::{now_timestamp, Instant},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
-    view_reads::{ViewRead, ViewReadRecorder},
+    view_reads::{ViewReadRecorder, ViewReads},
     SharedWriteGuard,
 };
 use crate::traits::TxOffset;
@@ -227,28 +227,53 @@ impl ViewInstanceTxState {
     }
 }
 
-/// Deliberately high for now, so it only catches pathological fan-out.
-/// TODO: Tuned from measurements
-pub const MAX_VIEW_POINTS_PER_TABLE: usize = 100_000;
+/// The most index keys a view may record on one table before the table is recorded as a full table scan.
+/// This bounds read-set memory and refresh cost for views that fan out.
+pub const MAX_VIEW_POINTS_PER_TABLE: usize = 1_000;
 
 /// A data structure for tracking the database rows/keys that are read by views
 #[derive(Default)]
 pub struct ViewReadSets {
     tables: IntMap<TableId, TableReadSet>,
+    /// The dependencies of each call. Used to remove a call's read set without scanning `tables`.
+    by_call: HashMap<ViewCallInfo, HashSet<ReadKey>>,
     replacements: HashSet<ViewCallInfo>,
     view_removals: HashSet<ViewId>,
     removals: HashSet<ViewCallInfo>,
+}
+
+#[cfg(test)]
+pub(super) type ViewDependency = (ViewCallInfo, TableId, Option<(ColList, AlgebraicValue)>);
+
+#[derive(PartialEq, Eq, Hash)]
+enum ReadKey {
+    Table(TableId),
+    Point(TableId, ColList, AlgebraicValue),
+}
+
+impl MemoryUsage for ReadKey {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::Table(_) => 0,
+            Self::Point(_, cols, key) => cols.heap_usage() + key.heap_usage(),
+        }
+    }
 }
 
 impl MemoryUsage for ViewReadSets {
     fn heap_usage(&self) -> usize {
         let Self {
             tables,
+            by_call,
             replacements,
             view_removals,
             removals,
         } = self;
-        tables.heap_usage() + replacements.heap_usage() + view_removals.heap_usage() + removals.heap_usage()
+        tables.heap_usage()
+            + by_call.heap_usage()
+            + replacements.heap_usage()
+            + view_removals.heap_usage()
+            + removals.heap_usage()
     }
 }
 
@@ -271,7 +296,8 @@ impl ViewReadSets {
 
     /// Record that a view performs a full scan of this table
     pub fn insert_full_table_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
-        self.tables.entry(table_id).or_default().insert_table_scan(call);
+        self.tables.entry(table_id).or_default().insert_table_scan(call.clone());
+        self.by_call.entry(call).or_default().insert(ReadKey::Table(table_id));
     }
 
     /// Record that `call` was successfully materialized in this transaction.
@@ -288,6 +314,7 @@ impl ViewReadSets {
             readset.remove_view(view_id);
             !readset.is_empty()
         });
+        self.by_call.retain(|call, _| call.view_id != view_id);
     }
 
     /// On commit, removes keys for `call` from the committed read set.
@@ -302,10 +329,19 @@ impl ViewReadSets {
 
     /// Removes keys for exactly `call` from the read set.
     fn remove_view_call(&mut self, call: &ViewCallInfo) {
-        self.tables.retain(|_, readset| {
-            readset.remove_view_call(call);
-            !readset.is_empty()
-        });
+        let Some(keys) = self.by_call.remove(call) else {
+            return;
+        };
+        for key in keys {
+            let (ReadKey::Table(table_id) | ReadKey::Point(table_id, ..)) = key;
+            let Some(readset) = self.tables.get_mut(&table_id) else {
+                continue;
+            };
+            readset.remove_read(call, key);
+            if readset.is_empty() {
+                self.tables.remove(&table_id);
+            }
+        }
     }
 
     /// Merge or union read sets together
@@ -325,12 +361,50 @@ impl ViewReadSets {
         for (table_id, rs) in readset.tables {
             self.tables.entry(table_id).or_default().merge(rs);
         }
+
+        for (call, keys) in readset.by_call {
+            self.by_call.entry(call).or_default().extend(keys);
+        }
     }
 
     /// Record that a view reads a specific index key
     pub fn insert_index_scan(&mut self, table_id: TableId, cols: ColList, proj: AlgebraicValue, call: ViewCallInfo) {
         let table_readset = self.tables.entry(table_id).or_default();
-        table_readset.insert_index_scan(cols, proj, call);
+        table_readset.insert_index_scan(cols.clone(), proj.clone(), call.clone());
+        self.by_call
+            .entry(call)
+            .or_default()
+            .insert(ReadKey::Point(table_id, cols, proj));
+    }
+
+    /// Returns the (call, dependency) pairs in `tables` and in `by_call`, which should be the same.
+    /// A dependency is a table plus, for an index read, its columns and key.
+    #[cfg(test)]
+    pub(super) fn dependencies(&self) -> (Vec<ViewDependency>, Vec<ViewDependency>) {
+        let mut in_tables = Vec::new();
+        for (&table_id, t) in &self.tables {
+            in_tables.extend(t.table_scans.iter().map(|call| (call.clone(), table_id, None)));
+            for (cols, keys) in &t.index_reads {
+                for (key, calls) in keys {
+                    in_tables.extend(
+                        calls
+                            .iter()
+                            .map(|call| (call.clone(), table_id, Some((cols.clone(), key.clone())))),
+                    );
+                }
+            }
+        }
+        let in_by_call = self
+            .by_call
+            .iter()
+            .flat_map(|(call, keys)| {
+                keys.iter().map(|key| match key {
+                    ReadKey::Table(table_id) => (call.clone(), *table_id, None),
+                    ReadKey::Point(table_id, cols, key) => (call.clone(), *table_id, Some((cols.clone(), key.clone()))),
+                })
+            })
+            .collect();
+        (in_tables, in_by_call)
     }
 
     /// Returns the views that index seek on the given row pointer
@@ -417,17 +491,27 @@ impl TableReadSet {
         });
     }
 
-    /// Removes keys for exactly `call` from the read set.
-    fn remove_view_call(&mut self, call: &ViewCallInfo) {
-        self.table_scans.retain(|candidate| candidate != call);
-
-        self.index_reads.retain(|_cols, key_map| {
-            key_map.retain(|_key, views| {
-                views.retain(|candidate| candidate != call);
-                !views.is_empty()
-            });
-            !key_map.is_empty()
-        });
+    /// Removes one dependency of `call` from this table's read set.
+    fn remove_read(&mut self, call: &ViewCallInfo, key: ReadKey) {
+        match key {
+            ReadKey::Table(_) => {
+                self.table_scans.remove(call);
+            }
+            ReadKey::Point(_, cols, key) => {
+                let Some(key_map) = self.index_reads.get_mut(&cols) else {
+                    return;
+                };
+                if let Some(calls) = key_map.get_mut(&key) {
+                    calls.remove(call);
+                    if calls.is_empty() {
+                        key_map.remove(&key);
+                    }
+                }
+                if key_map.is_empty() {
+                    self.index_reads.remove(&cols);
+                }
+            }
+        }
     }
 
     /// Merge (union) another table read set into this one
@@ -475,8 +559,9 @@ pub struct MutTxId {
 
 // Grew by one word when `ReducerName` became fully qualified: it now holds a
 // `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
+// Grew by 32 bytes for `ViewReadSets::by_call`.
 // One per transaction, not per row.
-static_assert_size!(MutTxId, 576);
+static_assert_size!(MutTxId, 608);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -566,41 +651,25 @@ impl MutTxId {
         self.read_sets.insert_index_scan(table_id, cols, point, view.clone());
     }
 
-    /// Runs `f` against a [`ViewReadRecorder`] over this transaction,
-    /// then adds the reads it made to `call`'s read set.
-    ///
-    /// The reads are added to, not replacing, anything `call` already recorded in this transaction,
-    /// e.g. through syscalls before the view returned a query.
+    /// Runs `f` with a [`ViewReadRecorder`] and adds the reads it made to `call`'s read set.
     pub fn with_view_reads<R>(&mut self, call: &ViewCallInfo, f: impl FnOnce(&ViewReadRecorder<'_>) -> R) -> R {
         self.with_view_reads_capped(call, MAX_VIEW_POINTS_PER_TABLE, f)
     }
 
-    /// [`Self::with_view_reads`] with a custom point limit per table, for tests.
     pub(super) fn with_view_reads_capped<R>(
         &mut self,
         call: &ViewCallInfo,
         max_points_per_table: usize,
         f: impl FnOnce(&ViewReadRecorder<'_>) -> R,
     ) -> R {
-        let recorder = ViewReadRecorder::new(self);
+        let recorder = ViewReadRecorder::new(self, max_points_per_table);
         let result = f(&recorder);
-        let reads = recorder.into_reads();
 
-        let mut points: IntMap<TableId, Vec<(IndexId, AlgebraicValue)>> = <_>::default();
-        for read in reads {
-            match read {
-                ViewRead::Table(table_id) => self.read_sets.insert_full_table_scan(table_id, call.clone()),
-                ViewRead::Point(table_id, index_id, point) => {
-                    points.entry(table_id).or_default().push((index_id, point))
-                }
-            }
+        let ViewReads { tables, points } = recorder.into_reads();
+        for table_id in tables {
+            self.read_sets.insert_full_table_scan(table_id, call.clone());
         }
-
         for (table_id, points) in points {
-            if points.len() > max_points_per_table {
-                self.read_sets.insert_full_table_scan(table_id, call.clone());
-                continue;
-            }
             for (index_id, point) in points {
                 match self.get_table_and_index(index_id) {
                     Some((_, idx, _)) => {
