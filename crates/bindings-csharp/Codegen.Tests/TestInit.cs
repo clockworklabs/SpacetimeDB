@@ -2,6 +2,7 @@ namespace SpacetimeDB.Codegen.Tests;
 
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -72,7 +73,13 @@ static class TestInit
                 // Write location only when we don't have the source code snippet to make snapshots more stable.
                 writer.WriteMember(diag, diag.Location, nameof(diag.Location));
             }
-            writer.WriteMember(diag, diag.GetMessage(), "Message");
+            // Roslyn embeds source paths in messages for ambiguous symbols.
+            var message = Regex.Replace(
+                diag.GetMessage(),
+                @"(?<=\[)[^\]\r\n]+(?=\(\d+\)\])",
+                match => match.Value.Replace('\\', '/')
+            );
+            writer.WriteMember(diag, message, "Message");
             writer.WriteMember(diag, diag.Severity, nameof(diag.Severity));
             writer.WriteMember(diag, diag.Descriptor, nameof(diag.Descriptor));
             writer.WriteEndObject();
