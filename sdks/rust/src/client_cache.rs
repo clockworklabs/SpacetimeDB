@@ -385,27 +385,29 @@ impl<M: SpacetimeModule> ClientCache<M> {
         &mut self,
         table_name: &'static str,
     ) -> &mut TableCache<Row> {
-        self.synthetic_delete_builders.entry(table_name).or_insert(|cache, name| {
-            use spacetimedb_client_api_messages::websocket::{common::RowSizeHint, v2};
-            let mut bytes = Vec::new();
-            let mut offsets = Vec::new();
-            if let Some(table) = cache.get_table::<Row>(name) {
-                for (bsatn, entry) in &table.entries {
-                    for _ in 0..entry.ref_count {
-                        offsets.push(bytes.len() as u64);
-                        bytes.extend_from_slice(bsatn);
+        self.synthetic_delete_builders
+            .entry(table_name)
+            .or_insert(|cache, name| {
+                use spacetimedb_client_api_messages::websocket::{common::RowSizeHint, v2};
+                let mut bytes = Vec::new();
+                let mut offsets = Vec::new();
+                if let Some(table) = cache.get_table::<Row>(name) {
+                    for (bsatn, entry) in &table.entries {
+                        for _ in 0..entry.ref_count {
+                            offsets.push(bytes.len() as u64);
+                            bytes.extend_from_slice(bsatn);
+                        }
                     }
                 }
-            }
-            v2::TableUpdate {
-                table_name: name.into(),
-                rows: vec![v2::TableUpdateRows::PersistentTable(v2::PersistentTableRows {
-                    inserts: v2::BsatnRowList::default(),
-                    deletes: v2::BsatnRowList::new(RowSizeHint::RowOffsets(offsets.into()), bytes.into()),
-                })]
-                .into(),
-            }
-        });
+                v2::TableUpdate {
+                    table_name: name.into(),
+                    rows: vec![v2::TableUpdateRows::PersistentTable(v2::PersistentTableRows {
+                        inserts: v2::BsatnRowList::default(),
+                        deletes: v2::BsatnRowList::new(RowSizeHint::RowOffsets(offsets.into()), bytes.into()),
+                    })]
+                    .into(),
+                }
+            });
         self.tables
             .entry::<HashMap<&'static str, TableCache<Row>>>()
             .or_default()
