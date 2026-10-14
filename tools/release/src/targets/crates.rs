@@ -147,11 +147,6 @@ impl CratesRelease {
 
 impl ReleaseTarget for CratesRelease {
     fn release(&self) -> Result<(), String> {
-        if self.dry_run {
-            println!("cargo release crates --dry-run is currently not supported. See TODO in workflow file.");
-            return Ok(());
-        }
-
         println!("Finding crates to publish to crates.io...");
 
         // Get the workspace root and manifest map
@@ -172,6 +167,7 @@ impl ReleaseTarget for CratesRelease {
 
         if self.dry_run {
             println!("\nDRY RUN: No crates will be published");
+            return Ok(());
         }
 
         println!("\nStarting publish process...");

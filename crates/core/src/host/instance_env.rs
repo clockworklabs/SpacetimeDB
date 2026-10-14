@@ -7,6 +7,7 @@ use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
+use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -57,6 +58,8 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    /// Whether this invocation must confirm transactions before returning to module code.
+    pub procedure_confirmed_reads: bool,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -243,6 +246,7 @@ impl InstanceEnv {
             environment_call_active: false,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            procedure_confirmed_reads: true,
         }
     }
 
@@ -253,6 +257,7 @@ impl InstanceEnv {
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
     pub fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
+        self.procedure_confirmed_reads = true;
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
@@ -472,8 +477,13 @@ impl InstanceEnv {
                 },
             )?;
 
-        if insert_flags.is_scheduler_table {
-            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        if insert_flags.has_post_write_work() {
+            if insert_flags.is_scheduler_table {
+                self.schedule_row(stdb, tx, table_id, row_ptr)?;
+            }
+            if insert_flags.is_outbox_table {
+                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+            }
         }
 
         // Note, we update the metric for bytes written after the insert.
@@ -554,8 +564,13 @@ impl InstanceEnv {
                 },
             )?;
 
-        if update_flags.is_scheduler_table {
-            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        if update_flags.has_post_write_work() {
+            if update_flags.is_scheduler_table {
+                self.schedule_row(stdb, tx, table_id, row_ptr)?;
+            }
+            if update_flags.is_outbox_table {
+                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+            }
         }
         tx.metrics.bytes_written += buffer.len();
         tx.metrics.rows_updated += 1;
@@ -946,6 +961,38 @@ impl InstanceEnv {
     /// After a procedure has finished, take its known last tx offset, if any.
     pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
         self.procedure_last_tx_offset.take()
+    }
+
+    /// Owns no transaction locks or reference to the environment. Keep the offset
+    /// available for the eventual response, even after this wait completes.
+    pub(super) fn procedure_confirmation(&mut self) -> impl Future<Output = anyhow::Result<()>> + use<> {
+        let confirmation: anyhow::Result<_> = (|| {
+            if !self.procedure_confirmed_reads {
+                return Ok(None);
+            }
+            let Some(durable) = self.relational_db().durable_tx_offset() else {
+                return Ok(None); // In-memory database.
+            };
+            let mut tx_offset = self
+                .procedure_last_tx_offset
+                .take()
+                .context("missing committed transaction offset")?;
+            // The commit resolves this receiver when its read guard is released,
+            // before returning. Never suspend while that guard is held.
+            let offset = tx_offset
+                .try_recv()
+                .context("committed transaction offset was not resolved")?;
+            self.procedure_last_tx_offset = Some(from_tx_offset(offset));
+            Ok(Some((offset, durable)))
+        })();
+        async move {
+            if let Some((offset, mut durable)) = confirmation? {
+                durable.wait_for(offset).await.context(
+                    "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+                )?;
+            }
+            Ok(())
+        }
     }
 
     /// Perform an HTTP request.
@@ -1507,6 +1554,67 @@ mod test {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
         Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+    }
+
+    struct PendingDurability(tokio::sync::watch::Receiver<Option<u64>>);
+
+    impl spacetimedb_durability::Durability for PendingDurability {
+        type TxData = crate::db::relational_db::Txdata;
+
+        fn append_tx(&self, _: spacetimedb_durability::PreparedTx<Self::TxData>) {}
+
+        fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
+            self.0.clone().into()
+        }
+
+        fn close(&self) -> spacetimedb_durability::Close {
+            Box::pin(std::future::ready(*self.0.borrow()))
+        }
+    }
+
+    #[test]
+    fn procedure_confirmation_waits_without_blocking_transactions() -> Result<()> {
+        use crate::db::relational_db::Persistence;
+        use std::pin::pin;
+
+        let runtime = tokio::runtime::Runtime::new()?;
+        let (durable, rx) = tokio::sync::watch::channel(None);
+        let persistence = Persistence::new(
+            PendingDurability(rx),
+            || Ok(Default::default()),
+            None,
+            spacetimedb_runtime::Handle::tokio(runtime.handle().clone()),
+        );
+        let db = Arc::new(TestDB::open_db(
+            spacetimedb_durability::EmptyHistory::new(),
+            Some(persistence),
+            None,
+            0,
+        )?);
+        let (table, _) = create_table_with_index(&db)?;
+        let (mut env, _subscription_runtime) = instance_env(db.clone())?;
+        env.start_mutable_tx()?;
+        env.insert(table, &mut bsatn_row(6)?)?;
+        env.commit_mutable_tx()?;
+        let confirmation = env.procedure_confirmation();
+        let offset = env.take_procedure_tx_offset().unwrap().try_recv()?;
+        durable.send_replace(Some(offset - 1));
+
+        runtime.block_on(async {
+            let mut confirmation = pin!(confirmation);
+            assert!(futures::poll!(&mut confirmation).is_pending());
+
+            // A second transaction can commit while confirmation is pending.
+            let mut tx = db
+                .try_begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure)
+                .expect("confirmation must release transaction locks");
+            db.insert(&mut tx, table, &bsatn_row(7)?)?;
+            db.commit_tx(tx)?;
+            assert!(futures::poll!(&mut confirmation).is_pending());
+
+            durable.send_replace(Some(offset));
+            confirmation.await
+        })
     }
 
     #[test]

@@ -144,14 +144,23 @@ class TestAuthImpl {
 export type TestAuth = TestAuthImpl;
 export const TestAuth = TestAuthImpl;
 
+/**
+ * What a test HTTP responder returns: the response's status, headers and
+ * version, plus its body, which `Response.text()`, `.json()` and `.bytes()`
+ * then read. Omitting `body` gives an empty one.
+ */
+export type TestHttpResponse = HttpResponse & {
+  body?: string | Uint8Array;
+};
+
+export type TestHttpResponder<S extends UntypedSchemaDef> = (
+  test: ModuleTestHarness<S>,
+  req: HttpRequest,
+  body: Uint8Array
+) => TestHttpResponse;
+
 export interface ProcedureContextBuilder<S extends UntypedSchemaDef> {
-  http(
-    responder: (
-      test: ModuleTestHarness<S>,
-      req: HttpRequest,
-      body: Uint8Array
-    ) => HttpResponse
-  ): this;
+  http(responder: TestHttpResponder<S>): this;
   hooks(hooks: ProcedureTestHooks<S>): this;
   build(): ProcedureCtx<S>;
 }
@@ -335,13 +344,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
   makeProcedureContext(
     auth: TestAuth,
     hooks: ProcedureTestHooks<S>,
-    responder:
-      | ((
-          test: ModuleTestHarness<S>,
-          req: HttpRequest,
-          body: Uint8Array
-        ) => HttpResponse)
-      | undefined
+    responder: TestHttpResponder<S> | undefined
   ): ProcedureCtx<S> {
     const sender = this.#sender(auth);
     const procedureSeed = this.rng[nextSeed]();
@@ -422,26 +425,14 @@ class ProcedureContextBuilderImpl<S extends UntypedSchemaDef>
   implements ProcedureContextBuilder<S>
 {
   #hooks = new ProcedureTestHooks<S>();
-  #responder:
-    | ((
-        test: ModuleTestHarness<S>,
-        req: HttpRequest,
-        body: Uint8Array
-      ) => HttpResponse)
-    | undefined;
+  #responder: TestHttpResponder<S> | undefined;
 
   constructor(
     private readonly test: ModuleTestHarnessImpl<S>,
     private readonly auth: TestAuth
   ) {}
 
-  http(
-    responder: (
-      test: ModuleTestHarness<S>,
-      req: HttpRequest,
-      body: Uint8Array
-    ) => HttpResponse
-  ): this {
+  http(responder: TestHttpResponder<S>): this {
     this.#responder = responder;
     return this;
   }
@@ -520,13 +511,7 @@ function makeDbView<S extends UntypedSchemaDef>(
 
 function makeHttpClient<S extends UntypedSchemaDef>(
   test: ModuleTestHarness<S>,
-  responder:
-    | ((
-        test: ModuleTestHarness<S>,
-        req: HttpRequest,
-        body: Uint8Array
-      ) => HttpResponse)
-    | undefined
+  responder: TestHttpResponder<S> | undefined
 ): HttpClient {
   const encoder = new TextEncoder();
   return freeze({
@@ -549,7 +534,7 @@ function makeHttpClient<S extends UntypedSchemaDef>(
             ? encoder.encode(init.body)
             : new Uint8Array(init.body as any);
       const response = responder(test, request, body);
-      return new SyncResponse(null, {
+      return new SyncResponse(response.body ?? null, {
         status: response.code,
         statusText: '',
         headers: deserializeHeaders(response.headers),
