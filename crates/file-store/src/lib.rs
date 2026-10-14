@@ -367,6 +367,8 @@ pub struct ReclaimStats {
     pub deleted_bytes: u64,
     /// Unreferenced objects spared because they are younger than the grace period.
     pub spared_young_objects: u64,
+    /// Objects missing from the roots but named by a transaction that committed during the pass.
+    pub spared_named_objects: u64,
 }
 
 /// Deletes every object that isn't in `roots` and is older than `grace`.

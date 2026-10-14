@@ -268,10 +268,13 @@ impl DatabaseFiles {
             }
             let in_flight = {
                 let uploads = self.uploads.lock();
-                if uploads.persisted.contains(&hash) {
-                    return true;
+                match uploads.in_flight.get(&hash) {
+                    // Wait for a persist under way even if the hash is known to be persisted: it is what
+                    // refreshes the object's age, and the object may be about to be reclaimed.
+                    Some(done) => Some(done.clone()),
+                    None if uploads.persisted.contains(&hash) => return true,
+                    None => None,
                 }
-                uploads.in_flight.get(&hash).cloned()
             };
             if let Some(mut done) = in_flight {
                 let finished = tokio::select! {
@@ -305,7 +308,16 @@ impl DatabaseFiles {
     /// `roots` must hold every hash that `st_file` rows name and that retained snapshots list.
     /// Staged files still being persisted are added here. Objects persisted within `grace` are spared,
     /// which covers uploads whose `st_file` row hasn't committed yet.
-    pub async fn reclaim(&self, mut roots: HashSet<Hash>, grace: Duration) -> std::io::Result<ReclaimStats> {
+    ///
+    /// `roots` can be stale by the time an object is deleted, since transactions keep committing.
+    /// So each object is checked again just before it is deleted, with `still_named`, which reports
+    /// whether the current `st_file` names a hash.
+    pub async fn reclaim(
+        &self,
+        mut roots: HashSet<Hash>,
+        grace: Duration,
+        still_named: impl Fn(&Hash) -> bool,
+    ) -> std::io::Result<ReclaimStats> {
         roots.extend(self.uploads.lock().in_flight.keys().copied());
         let cutoff = SystemTime::now().checked_sub(grace).unwrap_or(SystemTime::UNIX_EPOCH);
         let mut stats = ReclaimStats::default();
@@ -320,7 +332,18 @@ impl DatabaseFiles {
             // Check and delete with persists excluded, so an object persisted again in the meantime
             // is either seen as young here or written afresh after the delete.
             let _reclaiming = self.persist_lock(&object.hash).write().await;
-            self.uploads.lock().persisted.remove(&object.hash);
+            // Forget the hash first, so a transaction that names it from now on waits for a persist,
+            // which can't start until this delete is done.
+            let staged = {
+                let mut uploads = self.uploads.lock();
+                uploads.persisted.remove(&object.hash);
+                uploads.in_flight.contains_key(&object.hash)
+            };
+            // A transaction that committed after `roots` were gathered may name the object.
+            if staged || still_named(&object.hash) {
+                stats.spared_named_objects += 1;
+                continue;
+            }
             if self.store.delete_if_older_than(&object.hash, cutoff).await? {
                 stats.deleted_objects += 1;
                 stats.deleted_bytes += object.size;
@@ -671,13 +694,21 @@ impl Gate {
 
     fn register(self: &Arc<Self>, files: &Arc<DatabaseFiles>, runtime: &Handle, offset: TxOffset, txdata: &Txdata) {
         let (hashes, staged) = inserted_files(txdata);
+        // A staged file waits for its own persist even when the store is known to have its hash,
+        // because a reclamation pass that began before this transaction committed may be about to
+        // delete the object, and the persist is what puts it back or refreshes its age.
+        let mut pending: Vec<Hash> = Vec::new();
         for (hash, bytes) in staged {
             files.persist_staged(hash, bytes);
+            if !pending.contains(&hash) {
+                pending.push(hash);
+            }
         }
-        let pending: Vec<Hash> = hashes
-            .into_iter()
-            .filter(|hash| !files.is_known_persisted(hash))
-            .collect();
+        for hash in hashes {
+            if !pending.contains(&hash) && !files.is_known_persisted(&hash) {
+                pending.push(hash);
+            }
+        }
 
         let mut state = self.state.lock();
         debug_assert!(
@@ -834,7 +865,22 @@ pub async fn reclaim_files(db: &Arc<RelationalDB>, grace: Duration, runtime: &Ha
             move || reclamation_roots(&db)
         })
         .await?;
-    Ok(files.reclaim(roots, grace).await?)
+    Ok(files.reclaim(roots, grace, |hash| file_is_named(db, hash)).await?)
+}
+
+/// Whether any `st_file` row in `db`'s committed state names `hash`, deleted rows included.
+///
+/// Errs on the side of `true`, so that a failed lookup spares the object.
+fn file_is_named(db: &RelationalDB, hash: &Hash) -> bool {
+    let named = db.with_read_only(Workload::Internal, |tx| -> Result<bool, DBError> {
+        let key: AlgebraicValue = hash.to_u256().into();
+        let mut rows = tx.iter_by_col_eq(ST_FILE_ID, StFileFields::ContentHash, &key)?;
+        Ok(rows.next().is_some())
+    });
+    named.unwrap_or_else(|e| {
+        log::warn!("failed to check whether {hash} is still named, so sparing it: {e}");
+        true
+    })
 }
 
 /// Deletes the `st_file_staged` rows of `hashes`, whose bytes are now persisted.
@@ -1513,6 +1559,69 @@ mod tests {
         assert_eq!(size(b"live"), Some(4));
         assert_eq!(size(b"snapshotted"), Some(11), "a retained snapshot still lists it");
         assert_eq!(size(b"deleted"), None);
+        Ok(())
+    }
+
+    /// A staged file waits for its own persist even when its hash is known to be persisted, because a
+    /// reclamation pass that began before the transaction committed may be about to delete the object.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn staged_files_wait_for_their_own_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Handle::tokio_current();
+        let store = Arc::new(HeldStore {
+            inner: LocalFileStore::open(dir.path()).unwrap(),
+            released: Semaphore::new(1),
+        });
+        let files = DatabaseFiles::new(store.clone(), runtime.clone());
+        files.settle_startup();
+        let hash = content_hash(b"hello");
+        files.persist_staged(hash, Bytes::from_static(b"hello"));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !files.is_known_persisted(&hash) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the first persist should finish");
+
+        let inner = ManualDurability::new();
+        let gated = FileGatedDurability::new(inner.clone(), files.clone(), runtime);
+        let mut confirmed = gated.durable_tx_offset();
+        gated.append_tx(tx(0, &[b"hello"], &[b"hello"]));
+        inner.make_durable(0);
+        settle().await;
+        assert_eq!(confirmed.last_seen(), None, "confirmed before its own persist finished");
+
+        store.released.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(5), confirmed.wait_for(0))
+            .await
+            .expect("the persist should finish")
+            .unwrap();
+    }
+
+    /// Reclamation checks each object against the current `st_file` just before deleting it, because a
+    /// transaction may have named the object after the pass gathered its roots.
+    #[test]
+    fn reclamation_spares_objects_named_after_its_roots_were_gathered() -> anyhow::Result<()> {
+        let stdb = TestDB::durable_with_files()?;
+        let rt = stdb.runtime().expect("durable").clone();
+        let files = stdb.files().expect("files are enabled").clone();
+        wait_for_snapshot(&stdb, &rt, 1);
+
+        // The pass gathers its roots before the file exists.
+        let stale_roots = reclamation_roots(&stdb)?;
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        create_file(&mut tx, b"named late", None, Timestamp::now())?;
+        let (offset, ..) = stdb.commit_tx(tx)?.expect("consumes an offset");
+        rt.block_on(async { stdb.durable_tx_offset().expect("durable").wait_for(offset).await })?;
+        let hash = content_hash(b"named late");
+        assert!(!stale_roots.contains(&hash));
+
+        // With no grace period, only the check against `st_file` saves it.
+        let stats = rt.block_on(files.reclaim(stale_roots, Duration::ZERO, |hash| file_is_named(&stdb, hash)))?;
+        assert_eq!(stats.deleted_objects, 0);
+        assert_eq!(stats.spared_named_objects, 1);
+        assert_eq!(rt.block_on(files.store().size(&hash))?, Some(10));
         Ok(())
     }
 
