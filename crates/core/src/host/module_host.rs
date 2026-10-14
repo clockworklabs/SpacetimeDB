@@ -78,6 +78,9 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
+/// Maximum duration of a transaction durability confirmation wait.
+pub const TRANSACTION_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
     pub tables: SmallVec<[DatabaseTableUpdate; 1]>,

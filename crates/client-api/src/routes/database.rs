@@ -35,6 +35,7 @@ use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::{
     ClientConnectedError, DurabilityExited, DurableOffset, TransactionOffset, UpdateEnvironmentResult,
+    TRANSACTION_CONFIRMATION_TIMEOUT,
 };
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
@@ -257,12 +258,22 @@ async fn confirm_call_offset(
     durable: Option<spacetimedb::host::module_host::DurableOffset>,
 ) -> axum::response::Result<()> {
     if let (Some(offset), Some(mut durable)) = (offset, durable) {
-        let offset = offset
-            .await
-            .map_err(|_| log_and_500("transaction offset unavailable; outcome unknown"))?;
-        durable.wait_for(offset).await.map_err(|_| log_and_500(
-            "transaction completed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
-        ))?;
+        timeout(TRANSACTION_CONFIRMATION_TIMEOUT, async {
+            let offset = offset
+                .await
+                .map_err(|_| log_and_500("transaction offset unavailable; outcome unknown"))?;
+            durable.wait_for(offset).await.map_err(|_| log_and_500(
+                "transaction completed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+            ))?;
+            Ok::<_, ErrorResponse>(())
+        })
+        .await
+        .map_err(|_| {
+            ErrorResponse::from((
+                StatusCode::GATEWAY_TIMEOUT,
+                "durability confirmation timed out; outcome unknown, do not retry without deduplication",
+            ))
+        })??;
     }
     Ok(())
 }
@@ -2006,6 +2017,27 @@ mod tests {
                 Some(rx.clone().into())
             ));
             assert!(matches!(futures::poll!(res), std::task::Poll::Ready(Ok(_))));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn call_confirmation_times_out_with_live_senders() {
+        use spacetimedb::subscription::module_subscription_manager::from_tx_offset;
+        use std::pin::pin;
+
+        let (_sender, pending_offset) = oneshot::channel();
+        let (_durable, rx) = tokio::sync::watch::channel(None);
+        for offset in [from_tx_offset(7), pending_offset] {
+            let mut confirmation = pin!(confirm_call_offset(Some(offset), Some(rx.clone().into())));
+            assert!(futures::poll!(&mut confirmation).is_pending());
+            tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT + Duration::from_millis(1)).await;
+            let std::task::Poll::Ready(Err(error)) = futures::poll!(confirmation) else {
+                panic!("confirmation must time out even while its senders are alive");
+            };
+            let response = Err::<(), _>(error).into_response();
+            assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+            let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+            assert!(std::str::from_utf8(&body).unwrap().contains("outcome unknown"));
         }
     }
 

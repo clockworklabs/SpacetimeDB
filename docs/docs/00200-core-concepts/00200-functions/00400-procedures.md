@@ -175,7 +175,7 @@ WebSocket procedures inherit the connection's setting.
 HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
 Disabling confirmation skips the wait, so state may be lost after a crash.
 
-If confirmation fails after commit, the procedure stops with an internal error.
+If confirmation fails or times out after five seconds, the procedure stops with an internal error.
 The callback is not retried, and committed transactions are not rolled back.
 
 </TabItem>
@@ -237,7 +237,7 @@ WebSocket procedures inherit the connection's setting.
 HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
 Disabling confirmation skips the wait, so state may be lost after a crash.
 
-If confirmation fails after commit, the procedure stops with an internal error.
+If confirmation fails or times out after five seconds, the procedure stops with an internal error.
 The callback is not retried, and committed transactions are not rolled back.
 
 </TabItem>
@@ -291,7 +291,7 @@ WebSocket procedures inherit the connection's setting.
 HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
 Disabling confirmation skips the wait, so state may be lost after a crash.
 
-If confirmation fails after commit, the procedure stops with an internal error.
+If confirmation fails or times out after five seconds, the procedure stops with an internal error.
 The callback is not retried, and committed transactions are not rolled back.
 
 </TabItem>
@@ -350,7 +350,7 @@ WebSocket procedures inherit the connection's setting.
 HTTP procedure calls accept the `confirmed` query parameter (default `true`); scheduled procedures and module HTTP handlers default to confirmed reads.
 Disabling confirmation skips the wait, so state may be lost after a crash.
 
-If confirmation fails after commit, the procedure stops with an internal error.
+If confirmation fails or times out after five seconds, the procedure stops with an internal error.
 The callback is not retried, and committed transactions are not rolled back.
 
 </TabItem>
