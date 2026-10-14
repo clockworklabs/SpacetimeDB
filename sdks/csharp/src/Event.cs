@@ -108,7 +108,8 @@ namespace SpacetimeDB
     public partial record Status : TaggedEnum<(
         Unit Committed,
         string Failed,
-        Unit OutOfEnergy
+        Unit OutOfEnergy,
+        Unit UnknownResult
     )>;
 
     public record ReducerEvent<R>(
@@ -144,6 +145,7 @@ namespace SpacetimeDB
     public interface ISubscriptionHandle
     {
         void OnApplied(ISubscriptionEventContext ctx);
+        void RebindQuerySetId(QuerySetId id);
         void OnError(IErrorContext ctx);
         void OnEnded(ISubscriptionEventContext ctx);
     }
@@ -201,6 +203,12 @@ namespace SpacetimeDB
             {
                 return state is SubscriptionState.Active;
             }
+        }
+
+        void ISubscriptionHandle.RebindQuerySetId(QuerySetId id)
+        {
+            queryId = id;
+            state = new SubscriptionState.Pending(new());
         }
 
         void ISubscriptionHandle.OnApplied(ISubscriptionEventContext ctx)
@@ -282,7 +290,7 @@ namespace SpacetimeDB
             {
                 Log.Warn("Unsubscribing from a query that was never submitted to the server does nothing.");
             }
-            else if (state is SubscriptionState.Active)
+            else if (state is SubscriptionState.Active || conn.IsReconnecting)
             {
                 conn.Unsubscribe(queryId);
             }

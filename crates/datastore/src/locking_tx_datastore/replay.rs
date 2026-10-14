@@ -1201,6 +1201,7 @@ mod tests {
             None,
             false,
             None,
+            None,
         );
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
 

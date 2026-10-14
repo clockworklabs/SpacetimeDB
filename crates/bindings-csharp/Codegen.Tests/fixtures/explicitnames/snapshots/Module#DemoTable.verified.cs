@@ -48,7 +48,7 @@ partial struct DemoTable : System.IEquatable<DemoTable>, SpacetimeDB.BSATN.IStru
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new("Id", IdRW.GetAlgebraicType(registrar)),
-                    new("Value", ValueRW.GetAlgebraicType(registrar))
+                    new("Value", ValueRW.GetAlgebraicType(registrar)),
                 }
             ));
 

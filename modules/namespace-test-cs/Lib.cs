@@ -1,0 +1,180 @@
+using SpacetimeDB;
+
+[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+[assembly: Namespace(typeof(AuditLib.Marker), Accessor = "class")]
+
+namespace NamespaceRoot;
+
+[Table(Accessor = "User", Public = true)]
+public partial struct User
+{
+    [PrimaryKey]
+    public uint Id;
+}
+
+[SpacetimeDB.Type]
+public partial struct AuthSummary
+{
+    public uint Score;
+}
+
+public static partial class Functions
+{
+    // Compare the runtime resolver with host validation, including naming policies
+    // that differ from this fixture's own policy, without publishing extra modules.
+    [Procedure]
+    public static string ResolveScheduleName(
+        ProcedureContext ctx,
+        string accessor,
+        string? namespaceName,
+        string sourceName,
+        string? functionName,
+        bool rootNone,
+        bool childNone
+    ) =>
+        new SpacetimeDB.Internal.NamespaceRegistry(
+            "root",
+            rootNone ? CaseConversionPolicy.None : CaseConversionPolicy.SnakeCase,
+            accessor.Length == 0
+                ? []
+                :
+                [
+                    (
+                        "dependency",
+                        accessor,
+                        namespaceName,
+                        childNone ? CaseConversionPolicy.None : CaseConversionPolicy.SnakeCase
+                    ),
+                ]
+        ).ResolveFunction(accessor.Length == 0 ? "root" : "dependency", sourceName, functionName);
+
+    [Reducer]
+    public static void AddAuthUser(ReducerContext ctx, uint id)
+    {
+        AuthLib.Functions.Add(ctx, id);
+        Log.Info($"Auth users: {AuthLib.Functions.Count(ctx)}");
+    }
+
+    [Procedure]
+    public static ulong CountAuthUsers(ProcedureContext ctx) => AuthLib.Functions.CountUsers(ctx);
+
+    [HttpHandler]
+    public static HttpResponse RootAuthCount(HandlerContext ctx, HttpRequest request) =>
+        AuthLib.Functions.AuthCount(ctx, request);
+
+    [HttpRouter]
+    public static Router Routes() =>
+        Router.New().Get("/root-auth-count", SpacetimeDB.Handlers.RootAuthCount);
+
+#pragma warning disable STDB_UNSTABLE
+    [ClientVisibilityFilter]
+    public static readonly Filter ProtectedRows = new Filter.Sql(
+        "SELECT * FROM auth_data.protected_row WHERE owner = :sender"
+    );
+#pragma warning restore STDB_UNSTABLE
+
+    // Test setup deliberately permits writing for either client; RLS restricts reads, not reducers.
+    [Reducer]
+    public static void WriteProtectedRow(ReducerContext ctx, uint id, Identity owner, uint value)
+    {
+        var row = new AuthLib.ProtectedRow
+        {
+            Id = id,
+            Owner = owner,
+            Value = value,
+        };
+        if (ctx.Db.MyAuth.ProtectedRow.Id.Find(id) is null)
+        {
+            ctx.Db.MyAuth.ProtectedRow.Insert(row);
+        }
+        else
+        {
+            ctx.Db.MyAuth.ProtectedRow.Id.Update(row);
+        }
+    }
+
+    [Reducer]
+    public static void Exercise(ReducerContext ctx)
+    {
+        if (
+            !ReferenceEquals(ctx.Db.User.Id, ctx.Db.User.Id)
+            || !ReferenceEquals(ctx.Db.MyAuth.User.Id, ctx.Db.MyAuth.User.Id)
+            || !ReferenceEquals(ctx.Db.MyAuth.User.ByScore, ctx.Db.MyAuth.User.ByScore)
+            || ReferenceEquals(ctx.Db.User.Id, ctx.Db.MyAuth.User.Id)
+            || ReferenceEquals(ctx.Db.MyAuth.User.Id, ctx.Db.@class.User.Id)
+        )
+        {
+            throw new Exception("Index handles must be reused within, but not across, table scopes.");
+        }
+
+        ctx.Db.User.Insert(new User { Id = 2 });
+        AuthLib.Functions.Insert(ctx, 2);
+        ctx.Db.MyAuth.User.Insert(new AuthLib.User { Id = 3, Score = 43 });
+        ctx.Db.@class.User.Insert(new AuditLib.User { Id = 4, Message = "consumer" });
+        if (
+            ctx.Db.User.Count != 1
+            || AuthLib.Functions.Count(ctx) != 2
+            || ctx.Db.@class.User.Count != 1
+            || ctx.Db.ExtraRow.Count != 1
+        )
+        {
+            throw new Exception("Namespace counts are not isolated.");
+        }
+
+        var row = ctx.Db.MyAuth.User.Id.Find(2)!.Value;
+        row.Score = 99;
+        ctx.Db.MyAuth.User.Id.Update(row);
+        if (ctx.Db.MyAuth.User.ByScore.Filter(99u).Single().Id != 2)
+        {
+            throw new Exception("Mounted index lookup failed.");
+        }
+
+        if (!ctx.Db.MyAuth.User.Id.Delete(3) || ctx.Db.MyAuth.User.Count != 1)
+        {
+            throw new Exception("Mounted unique deletion failed.");
+        }
+
+        Log.Info("namespace composition works");
+    }
+
+    [Procedure]
+    public static ulong CountUsers(ProcedureContext ctx) =>
+        ctx.WithTx(tx => tx.Db.User.Count + tx.Db.MyAuth.User.Count + tx.Db.@class.User.Count);
+
+    [Procedure]
+    public static uint WriteAcrossNamespaces(ProcedureContext ctx, uint id, bool fail) =>
+        ctx.WithTx(tx =>
+        {
+            tx.Db.User.Insert(new User { Id = id });
+            AuthLib.Functions.Insert(tx, id);
+            tx.Db.@class.User.Insert(new AuditLib.User { Id = id, Message = "procedure" });
+            if (fail)
+            {
+                throw new Exception("cross-namespace procedure rollback");
+            }
+
+            return tx.Db.MyAuth.User.Id.Find(id)!.Value.Score;
+        });
+
+    [View(Accessor = "Users", Public = true)]
+    public static User? Users(ViewContext ctx) => ctx.Db.User.Id.Find(2);
+
+    [View(Accessor = "QueryUsers", Public = true)]
+    public static IQuery<User> QueryUsers(AnonymousViewContext ctx) =>
+        ctx.From.User().LeftSemijoin(ctx.From.MyAuth.User(), (root, auth) => root.Id.Eq(auth.Id));
+
+    [View(Accessor = "QueryUsersRight", Public = true)]
+    public static IQuery<User> QueryUsersRight(ViewContext ctx) =>
+        AuthLib.Functions.Query(ctx).RightSemijoin(ctx.From.User(), (auth, root) => auth.Id.Eq(root.Id));
+
+    [View(Accessor = "QueryExtra", Public = true)]
+    public static IQuery<ExtraLib.ExtraRow> QueryExtra(AnonymousViewContext ctx) =>
+        ctx.From.ExtraRow().Where(row => row.Id.Eq(7u));
+
+    [View(Accessor = "AuthUsers", Public = true)]
+    public static List<AuthSummary> AuthUsers(ViewContext ctx) =>
+        ctx
+            .Db.MyAuth.User.ByScore.Filter(99u)
+            .Select(row => new AuthSummary { Score = row.Score })
+            .ToList();
+}

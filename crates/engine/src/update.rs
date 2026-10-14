@@ -4,12 +4,15 @@ use anyhow::Context;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
+use spacetimedb_datastore::system_tables::{
+    StOutboundStreamFields, StOutboundStreamRow, StViewFields, StViewRow, ST_OUTBOUND_STREAM_ID, ST_VIEW_ID,
+};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
+use spacetimedb_sats::bsatn::to_vec;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -593,6 +596,19 @@ fn auto_migrate_database(
                 log!(logger, "Changing primary key for table `{table_name}`");
                 stdb.alter_table_primary_key(tx, &table_name, table_def.primary_key)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeOutbox(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan
+                    .new
+                    .find_table(table_name_key)
+                    .ok_or_else(|| anyhow::anyhow!("ChangeOutbox: table `{table_name}` not found in new module def"))?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+                let outbox = TableSchema::from_module_def(owning_def, table_def, (), table_id).outbox;
+
+                log!(logger, "Changing outbox metadata for table `{table_name}`");
+                stdb.alter_table_outbox(tx, table_id, outbox)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
             }
@@ -619,15 +635,21 @@ fn auto_migrate_database(
                     .new
                     .find_table(table_name_key)
                     .ok_or_else(|| anyhow::anyhow!("AddColumns: table `{table_name}` not found in new module def"))?;
-                let table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
-                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, table_id);
+                let old_table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, old_table_id);
 
                 let default_values: Vec<AlgebraicValue> = table_def
                     .columns
                     .iter()
                     .filter_map(|col_def| col_def.default_value.clone())
                     .collect();
-                stdb.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?;
+                let new_table_id =
+                    stdb.add_columns_to_table_mut_tx(tx, old_table_id, column_schemas, default_values)?;
+                // Adding columns recreates the table with a new id, so preserve
+                // any IDC stream rows keyed by the previous outbox table id.
+                if table_def.outbox.is_some() {
+                    rewrite_outbound_stream_outbox_table_id(stdb, tx, old_table_id, new_table_id)?;
+                }
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
                 log!(logger, "Disconnecting all users");
@@ -640,6 +662,43 @@ fn auto_migrate_database(
 
     log::info!("Database update complete");
     Ok(res)
+}
+
+/// Preserve durable IDC stream state when an outbox table is recreated during migration.
+///
+/// Destructive table changes allocate a new table id, but `st_outbound_stream`
+/// is keyed by the outbox table id and receiver identity. Rewrite those rows to
+/// the new table id so existing streams keep their stable stream ids, sequence
+/// cursors, and ack prefixes.
+fn rewrite_outbound_stream_outbox_table_id(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    old_table_id: TableId,
+    new_table_id: TableId,
+) -> anyhow::Result<()> {
+    if old_table_id == new_table_id {
+        return Ok(());
+    }
+
+    let stream_id_index = stdb
+        .index_id_from_name_mut(tx, "st_outbound_stream_stream_id_idx_btree")?
+        .context("st_outbound_stream stream_id index not found")?;
+    let streams = stdb
+        .iter_by_col_eq_mut(
+            tx,
+            ST_OUTBOUND_STREAM_ID,
+            StOutboundStreamFields::OutboxTableId,
+            &old_table_id.into(),
+        )?
+        .map(StOutboundStreamRow::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for mut stream in streams {
+        stream.outbox_table_id = new_table_id;
+        stdb.update(tx, ST_OUTBOUND_STREAM_ID, stream_id_index, &to_vec(&stream)?)?;
+    }
+
+    Ok(())
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -737,20 +796,55 @@ mod test {
         tests_utils::{begin_mut_tx, insert, TestDB},
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
-    use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
+    use spacetimedb_datastore::system_tables::{
+        IdentityViaU256, StOutboundStreamRow, ST_EVENT_TABLE_ID, ST_OUTBOUND_STREAM_ID,
+    };
     use spacetimedb_lib::{
         db::raw_def::{
             v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
-            v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
+            v9::{btree, direct, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
         },
         Identity,
     };
+    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType};
     use spacetimedb_schema::auto_migrate::ponder_migrate;
 
     struct TestLogger;
     impl UpdateLogger for TestLogger {
         fn info(&self, _: &str) {}
+    }
+
+    #[test]
+    fn rewrite_outbound_stream_outbox_table_id_preserves_stream_state() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let mut tx = begin_mut_tx(&stdb);
+        let old_table_id = TableId(100);
+        let new_table_id = TableId(101);
+
+        let stream = StOutboundStreamRow {
+            stream_id: 1,
+            outbox_table_id: old_table_id,
+            target_identity: IdentityViaU256(Identity::ONE),
+            next_seq: 7,
+            ack_prefix: 3,
+        };
+        stdb.insert(&mut tx, ST_OUTBOUND_STREAM_ID, &to_vec(&stream)?)?;
+
+        rewrite_outbound_stream_outbox_table_id(&stdb, &mut tx, old_table_id, new_table_id)?;
+
+        let rows = stdb
+            .iter_mut(&tx, ST_OUTBOUND_STREAM_ID)?
+            .map(StOutboundStreamRow::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(
+            rows,
+            [StOutboundStreamRow {
+                outbox_table_id: new_table_id,
+                ..stream
+            }]
+        );
+        Ok(())
     }
 
     #[test]
@@ -929,6 +1023,147 @@ mod test {
         assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, None);
         assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, Some(index_id));
         assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_db_add_outbox_requires_manual_migration() -> anyhow::Result<()> {
+        fn module_def(outbox: bool) -> ModuleDef {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "outbound_pings",
+                    ProductType::from([
+                        ("msg_id", U64),
+                        ("target", AlgebraicType::identity()),
+                        ("payload", AlgebraicType::String),
+                    ]),
+                    true,
+                )
+                .with_auto_inc_primary_key(0)
+                .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+                .finish();
+
+            if outbox {
+                builder.add_outbox(
+                    "outbound_pings",
+                    "receive_ping",
+                    ColId(1),
+                    [ColId(2)],
+                    Option::<&str>::None,
+                    "test-signature",
+                );
+            }
+
+            builder
+                .finish()
+                .try_into()
+                .expect("builder should create a valid database definition")
+        }
+
+        let old = module_def(false);
+        let new = module_def(true);
+
+        assert!(ponder_migrate(&old, &new).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_db_add_column_and_change_outbox_on_result() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        fn module_def(with_extra_column: bool, on_result: Option<&'static str>) -> ModuleDef {
+            let columns = if with_extra_column {
+                ProductType::from([
+                    ("msg_id", U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                    ("priority", AlgebraicType::U32),
+                ])
+            } else {
+                ProductType::from([
+                    ("msg_id", U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ])
+            };
+
+            let mut builder = RawModuleDefV10Builder::new();
+            let table = builder
+                .build_table_with_new_type("outbound_pings", columns, true)
+                .with_auto_inc_primary_key(0)
+                .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree");
+            let table = if with_extra_column {
+                table.with_default_column_value(3, AlgebraicValue::U32(0))
+            } else {
+                table
+            };
+            table.finish();
+
+            builder.add_outbox(
+                "outbound_pings",
+                "receive_ping",
+                ColId(1),
+                [ColId(2)],
+                on_result,
+                "test-signature",
+            );
+
+            builder
+                .finish()
+                .try_into()
+                .expect("builder should create a valid database definition")
+        }
+
+        let old = module_def(false, None);
+        let new = module_def(true, Some("on_ping_result"));
+        let root = NamespacePath::root();
+        let table_name = Identifier::new_unsafe_assume_valid("outbound_pings".into());
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let MigratePlan::Auto(plan) = ponder_migrate(&old, &new)? else {
+            panic!("expected automatic migration");
+        };
+        assert!(
+            plan.steps.contains(&AutoMigrateStep::AddColumns((&root, &table_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+        assert!(
+            plan.steps
+                .contains(&AutoMigrateStep::ChangeOutbox((&root, &table_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+
+        let mut tx = begin_mut_tx(&stdb);
+        let res = update_database(&stdb, &mut tx, auth_ctx, MigratePlan::Auto(plan), &TestLogger)?;
+        assert!(matches!(res, UpdateResult::RequiresClientDisconnect));
+
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "outbound_pings")?
+            .expect("there should be a table named outbound_pings");
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert_eq!(schema.columns.len(), 4);
+        let outbox = schema.outbox.as_ref().expect("outbox metadata should be present");
+        assert_eq!(outbox.on_result_reducer.as_deref(), Some("on_ping_result"));
+
+        let row = to_vec(&product![
+            0u64,
+            IdentityViaU256(Identity::ONE),
+            "after-combined-migration",
+            1u32
+        ])?;
+        let (_, _, insert_flags) = stdb.insert(&mut tx, table_id, &row)?;
+        assert!(insert_flags.is_outbox_table);
 
         Ok(())
     }
