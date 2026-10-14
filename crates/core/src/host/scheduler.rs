@@ -902,17 +902,20 @@ fn delete_scheduled_function_row_with_tx(
 
     let row_ptr = schedule_row.pointer();
     db.delete(&mut tx, id.table_id, [row_ptr]);
-    refresh_views_then_commit_and_broadcast(tx, module_info, inst_common, inst);
+    let (result, _) = refresh_views_then_commit_and_broadcast(tx, module_info, inst_common, inst);
+    if let Err(e) = result {
+        log::error!("Failed to commit scheduled-row cleanup: {e:#}");
+    }
     None
 }
 
 /// Refreshes stale views, commits transaction, and broadcasts subscription updates.
-fn refresh_views_then_commit_and_broadcast(
+pub(super) fn refresh_views_then_commit_and_broadcast(
     tx: MutTxId,
     module_info: &ModuleInfo,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
-) {
+) -> (anyhow::Result<()>, bool) {
     let timestamp = Timestamp::now();
     let (view_result, _n_evaluated, trapped) =
         inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
@@ -925,6 +928,7 @@ fn refresh_views_then_commit_and_broadcast(
         status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
     }
 
+    let failure = (!matches!(status, EventStatus::Committed(_))).then(|| format!("cleanup failed: {status:?}"));
     let event = ModuleEvent {
         timestamp,
         caller_identity: module_info.database_identity,
@@ -939,12 +943,15 @@ fn refresh_views_then_commit_and_broadcast(
         timer: None,
     };
 
-    if let Err(e) = module_info
+    let result = module_info
         .subscriptions
         .commit_and_broadcast_event(None, event, view_result.tx)
-    {
-        log::error!("Failed to broadcast deletion event: {e:#}");
-    }
+        .map_err(anyhow::Error::from)
+        .and_then(|_| match failure {
+            Some(error) => Err(anyhow!(error)),
+            None => Ok(()),
+        });
+    (result, trapped)
 }
 
 fn reducer_call_params_for_queued_item(
