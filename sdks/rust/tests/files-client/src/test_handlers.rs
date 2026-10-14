@@ -5,8 +5,9 @@
 
 use crate::module_bindings::*;
 
-use anyhow::{anyhow, bail, ensure, Context};
-use spacetimedb_sdk::{DbContext, Error, FileRef, Table};
+use anyhow::{anyhow, ensure, Context};
+use futures::TryStreamExt as _;
+use spacetimedb_sdk::{DbContext, FileRef, Files, Table, UploadError, UploadOptions};
 use std::sync::mpsc;
 use std::time::Duration;
 use test_counter::server_url;
@@ -74,12 +75,23 @@ fn outcome(
     recv(&rx, "the reducer's outcome")?.map_err(|e| anyhow!("the reducer call failed: {e}"))
 }
 
-fn status(result: Result<impl std::fmt::Debug, Error>) -> anyhow::Result<u16> {
-    match result {
-        Err(Error::FileRequest {
-            status: Some(status), ..
-        }) => Ok(status),
-        other => bail!("expected a failed file request, got {other:?}"),
+/// Downloads the file, or `range` of it, or returns `None` if there's nothing to download.
+async fn download(
+    files: &Files,
+    file: FileRef,
+    range: Option<std::ops::Range<u64>>,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    let Some(stream) = files.download(file, range).await? else {
+        return Ok(None);
+    };
+    let chunks: Vec<_> = stream.try_collect().await?;
+    Ok(Some(chunks.concat()))
+}
+
+fn typed(content_type: &str) -> UploadOptions {
+    UploadOptions {
+        content_type: Some(content_type.into()),
+        ..Default::default()
     }
 }
 
@@ -88,48 +100,55 @@ async fn exec_upload_and_download(db_name: &str) -> anyhow::Result<()> {
     let files = conn.files();
 
     let contents = b"hello, files";
-    let uploaded = files.upload("text/plain", &contents[..]).await?;
-    ensure!(uploaded.size == contents.len() as u64, "wrong size {}", uploaded.size);
+    let uploaded = files.upload(&contents[..], typed("text/plain")).await?;
 
     // A client passes the reference to a reducer, which stores it.
-    let result = outcome(|cb| conn.reducers.attach_then("greeting".into(), uploaded.file_ref, cb))?;
+    let result = outcome(|cb| conn.reducers.attach_then("greeting".into(), uploaded, cb))?;
     result.map_err(|e| anyhow!("attach failed: {e}"))?;
     let document = recv(&inserted, "the document")?;
     // The generated row type holds a `FileRef`, not a `u256`.
     let file: FileRef = document.file;
-    ensure!(file == uploaded.file_ref, "the row holds a different reference");
+    ensure!(file == uploaded, "the row holds a different reference");
     ensure!(document.size == contents.len() as u64);
 
     // Any subscriber can download it.
-    ensure!(files.download(file).await? == contents[..], "wrong contents");
-    ensure!(files.download_range(file, 7..12).await? == b"files"[..], "wrong range");
-    let metadata = files.metadata(file).await?;
-    ensure!(metadata.file_ref == file);
-    ensure!(metadata.size == contents.len() as u64);
-    ensure!(metadata.content_hash == uploaded.content_hash);
-    ensure!(metadata.content_type.as_deref() == Some("text/plain"));
+    let whole = download(&files, file, None).await?;
+    ensure!(whole.as_deref() == Some(&contents[..]), "wrong contents {whole:?}");
+    let range = download(&files, file, Some(7..12)).await?;
+    ensure!(range.as_deref() == Some(&b"files"[..]), "wrong range {range:?}");
+    let metadata = files.metadata(file).await?.context("the file has metadata")?;
+    ensure!(metadata.file_ref() == file);
+    ensure!(metadata.size() == contents.len() as u64);
+    ensure!(metadata.content_hash() == spacetimedb_sdk::__codegen::__lib::file::content_hash(contents));
+    ensure!(metadata.content_type().as_deref() == Some("text/plain"));
+    let url = files.url(file);
     ensure!(
-        files.url(file).starts_with(server_url()) && files.url(file).ends_with(&file.to_string()),
-        "unexpected URL {}",
-        files.url(file)
+        url.as_str().starts_with(server_url()) && url.path().ends_with(&file.to_string()),
+        "unexpected URL {url}"
     );
 
     // Retrying with the same idempotency key returns the same file. The anonymous connection
     // authenticates with the token the server issued it.
-    let first = files.upload_idempotent("text/plain", &b"once"[..], "key-1").await?;
-    let retry = files.upload_idempotent("text/plain", &b"once"[..], "key-1").await?;
-    ensure!(first.file_ref == retry.file_ref, "the retry created another file");
+    let keyed = || UploadOptions {
+        content_type: Some("text/plain".into()),
+        idempotency_key: Some("key-1".into()),
+    };
+    let first = files.upload(&b"once"[..], keyed()).await?;
+    let retry = files.upload(&b"once"[..], keyed()).await?;
+    ensure!(first == retry, "the retry created another file");
 
     // A reference whose read secret is wrong finds nothing.
-    let forged = FileRef::new(file.id(), file.read_secret() ^ 1);
-    ensure!(status(files.download(forged).await)? == 404);
+    let forged = FileRef::new(file.id_unchecked(), file.read_secret() ^ 1);
+    ensure!(download(&files, forged, None).await?.is_none());
+    ensure!(files.metadata(forged).await?.is_none());
     let result = outcome(|cb| conn.reducers.attach_then("forged".into(), forged, cb))?;
     ensure!(result.is_err(), "the module accepted a forged reference");
 
-    // Once deleted, the file's metadata is gone.
+    // Once deleted, the file's metadata is gone, but history keeps its bytes downloadable.
     let result = outcome(|cb| conn.reducers.remove_then("greeting".into(), cb))?;
     result.map_err(|e| anyhow!("remove failed: {e}"))?;
-    ensure!(status(files.metadata(file).await)? == 404);
+    ensure!(files.metadata(file).await?.is_none());
+    ensure!(download(&files, file, None).await?.as_deref() == Some(&contents[..]));
 
     conn.disconnect()?;
     Ok(())
@@ -141,12 +160,13 @@ async fn exec_reducer_created_files(db_name: &str) -> anyhow::Result<()> {
     let result = outcome(|cb| conn.reducers.write_note_then("note".into(), text.into(), cb))?;
     result.map_err(|e| anyhow!("write_note failed: {e}"))?;
     let document = recv(&inserted, "the note")?;
-    let downloaded = conn
-        .files()
-        .download(document.file)
+    let downloaded = download(&conn.files(), document.file, None)
         .await
         .context("downloading the note")?;
-    ensure!(downloaded == text.as_bytes(), "wrong contents {downloaded:?}");
+    ensure!(
+        downloaded.as_deref() == Some(text.as_bytes()),
+        "wrong contents {downloaded:?}"
+    );
     conn.disconnect()?;
     Ok(())
 }
@@ -154,8 +174,11 @@ async fn exec_reducer_created_files(db_name: &str) -> anyhow::Result<()> {
 async fn exec_rejected_uploads(db_name: &str) -> anyhow::Result<()> {
     let (conn, _inserted) = connect(db_name)?;
     // The module's allow_upload reducer refuses this content type.
-    let result = conn.files().upload("application/x-forbidden", &b"no"[..]).await;
-    ensure!(status(result)? == 403);
+    let result = conn.files().upload(&b"no"[..], typed("application/x-forbidden")).await;
+    ensure!(
+        matches!(result, Err(UploadError::Rejected { .. })),
+        "expected a rejection, got {result:?}"
+    );
     conn.disconnect()?;
     Ok(())
 }

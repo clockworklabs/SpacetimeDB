@@ -897,7 +897,7 @@ pub mod raw {
     #[link(wasm_import_module = "spacetime_10.7")]
     unsafe extern "C" {
         /// Creates a file from `bytes[..bytes_len]` in the current transaction,
-        /// and writes its `FileRef`, as a 32-byte little-endian `u256`, to `out`.
+        /// and writes its `FileId`, as a 16-byte little-endian `u128`, to `out`.
         ///
         /// `content_type[..content_type_len]` is the file's UTF-8 content type,
         /// or there is none if `content_type` is NULL.
@@ -912,33 +912,34 @@ pub mod raw {
             bytes_len: usize,
             content_type: *const u8,
             content_type_len: usize,
-            out: *mut [u8; 32],
+            out: *mut [u8; 16],
         ) -> u16;
 
-        /// Creates a new file that shares the bytes of the file `source` names,
-        /// and writes its `FileRef` to `out`.
+        /// Creates a new file that shares the bytes of the live file whose `FileId` is the
+        /// little-endian `u128` at `source`, and writes the new file's `FileId` to `out`.
         ///
         /// # Errors
         ///
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
-        /// - `NO_SUCH_FILE`, when `source` doesn't name a live file.
+        /// - `NO_SUCH_FILE`, when `source` isn't a live file.
         /// - `FILES_UNAVAILABLE`, when the database doesn't support File Storage.
-        pub fn file_copy(source: *const [u8; 32], out: *mut [u8; 32]) -> u16;
+        pub fn file_copy(source: *const [u8; 16], out: *mut [u8; 16]) -> u16;
 
-        /// Deletes the file `file_ref` names, writing 1 to `out` if there was one and 0 otherwise.
+        /// Deletes the live file whose `FileId` is the little-endian `u128` at `file_id`,
+        /// writing 1 to `out` if there was one and 0 otherwise.
         ///
         /// # Errors
         ///
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
-        pub fn file_delete(file_ref: *const [u8; 32], out: *mut u8) -> u16;
+        pub fn file_delete(file_id: *const [u8; 16], out: *mut u8) -> u16;
 
-        /// Writes to `out` a source of the BSATN-encoded `FileMetadata` of the live file
-        /// `file_ref` names, or `BytesSource::INVALID` if there is none.
+        /// Writes to `out` a source of the BSATN-encoded `FileMetadata` of the live file whose
+        /// `FileId` is the little-endian `u128` at `file_id`, or `BytesSource::INVALID` if there is none.
         ///
         /// # Errors
         ///
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
-        pub fn file_metadata(file_ref: *const [u8; 32], out: *mut BytesSource) -> u16;
+        pub fn file_metadata(file_id: *const [u8; 16], out: *mut BytesSource) -> u16;
 
         /// Writes to `out` the `FileRef` of the live file whose `FileId` is the
         /// little-endian `u128` at `file_id`.
@@ -1274,23 +1275,23 @@ mod native_link_stubs {
         _bytes_len: usize,
         _content_type: *const u8,
         _content_type_len: usize,
-        _out: *mut [u8; 32],
+        _out: *mut [u8; 16],
     ) -> u16 {
         NOT_IN_TRANSACTION
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn file_copy(_source: *const [u8; 32], _out: *mut [u8; 32]) -> u16 {
+    pub extern "C" fn file_copy(_source: *const [u8; 16], _out: *mut [u8; 16]) -> u16 {
         NOT_IN_TRANSACTION
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn file_delete(_file_ref: *const [u8; 32], _out: *mut u8) -> u16 {
+    pub extern "C" fn file_delete(_file_id: *const [u8; 16], _out: *mut u8) -> u16 {
         NOT_IN_TRANSACTION
     }
 
     #[unsafe(no_mangle)]
-    pub extern "C" fn file_metadata(_file_ref: *const [u8; 32], out: *mut BytesSource) -> u16 {
+    pub extern "C" fn file_metadata(_file_id: *const [u8; 16], out: *mut BytesSource) -> u16 {
         if !out.is_null() {
             // SAFETY: The pointer is provided by the safe wrapper and points to a
             // BytesSource output slot when non-null.
@@ -1883,30 +1884,30 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
     }
 }
 
-/// Creates a file from `bytes` in the current transaction, returning its `FileRef`
-/// as a 32-byte little-endian `u256`.
+/// Creates a file from `bytes` in the current transaction, returning its `FileId`
+/// as a 16-byte little-endian `u128`.
 #[inline]
-pub fn file_create(bytes: &[u8], content_type: Option<&str>) -> Result<[u8; 32]> {
+pub fn file_create(bytes: &[u8], content_type: Option<&str>) -> Result<[u8; 16]> {
     let (content_type, content_type_len) = content_type.map_or((ptr::null(), 0), |ty| (ty.as_ptr(), ty.len()));
     unsafe { call(|out| raw::file_create(bytes.as_ptr(), bytes.len(), content_type, content_type_len, out)) }
 }
 
-/// Creates a new file that shares `source`'s bytes, returning its `FileRef`.
+/// Creates a new file that shares the bytes of the live file `source`, returning the new file's `FileId`.
 #[inline]
-pub fn file_copy(source: [u8; 32]) -> Result<[u8; 32]> {
+pub fn file_copy(source: [u8; 16]) -> Result<[u8; 16]> {
     unsafe { call(|out| raw::file_copy(&source, out)) }
 }
 
-/// Deletes the file `file_ref` names. Returns whether there was one.
+/// Deletes the live file `file_id`. Returns whether there was one.
 #[inline]
-pub fn file_delete(file_ref: [u8; 32]) -> Result<bool> {
-    unsafe { call(|out| raw::file_delete(&file_ref, out)) }.map(|deleted: u8| deleted != 0)
+pub fn file_delete(file_id: [u8; 16]) -> Result<bool> {
+    unsafe { call(|out| raw::file_delete(&file_id, out)) }.map(|deleted: u8| deleted != 0)
 }
 
-/// Returns a source of the BSATN-encoded `FileMetadata` of the live file `file_ref` names, if any.
+/// Returns a source of the BSATN-encoded `FileMetadata` of the live file `file_id`, if any.
 #[inline]
-pub fn file_metadata(file_ref: [u8; 32]) -> Result<Option<raw::BytesSource>> {
-    let source = unsafe { call(|out| raw::file_metadata(&file_ref, out))? };
+pub fn file_metadata(file_id: [u8; 16]) -> Result<Option<raw::BytesSource>> {
+    let source = unsafe { call(|out| raw::file_metadata(&file_id, out))? };
     Ok((source != raw::BytesSource::INVALID).then_some(source))
 }
 

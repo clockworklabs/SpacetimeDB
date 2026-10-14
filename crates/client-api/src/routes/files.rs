@@ -257,7 +257,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     // Decide before reading the body. The file's ID is fixed now, so `allow_upload` can record it.
     let file_ref = engine_files::mint_file_ref();
     let request = UploadRequest {
-        file_id: file_ref.id(),
+        file_id: file_ref.id_unchecked(),
         sender,
         size: declared_size,
         content_type: content_type.clone(),
@@ -329,11 +329,11 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
     let upload = keyed.map(|(sender, idempotency_key)| StUploadRow {
         sender: IdentityViaU256(sender),
         idempotency_key,
-        file_id: file_ref.id(),
+        file_id: file_ref.id_unchecked(),
         completed_at: TimestampViaI64(completed_at),
     });
     let row = StFileRow {
-        file_id: file_ref.id(),
+        file_id: file_ref.id_unchecked(),
         read_secret: file_ref.read_secret(),
         content_hash: hash,
         size,
@@ -626,11 +626,11 @@ pub async fn metadata<S: ControlStateDelegate + NodeDelegate>(
     let row = find_file(&db, &file_ref, Lookup::Live).await?;
     let metadata = row.metadata();
     Ok(axum::Json(serde_json::json!({
-        "file_ref": metadata.file_ref.to_string(),
-        "size": metadata.size,
-        "content_hash": metadata.content_hash.to_hex().to_string(),
-        "created_at": metadata.created_at.to_string(),
-        "content_type": metadata.content_type,
+        "file_ref": metadata.file_ref().to_string(),
+        "size": metadata.size(),
+        "content_hash": metadata.content_hash().to_hex().to_string(),
+        "created_at": metadata.created_at().to_string(),
+        "content_type": metadata.content_type(),
     }))
     .into_response())
 }

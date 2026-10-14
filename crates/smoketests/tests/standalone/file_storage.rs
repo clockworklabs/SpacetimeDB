@@ -55,11 +55,13 @@ pub fn attach_uploads(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn create_note(ctx: &ReducerContext, text: String) -> Result<(), String> {
-    let file = ctx.files().create(text.as_bytes(), Some("text/plain")).map_err(|e| e.to_string())?;
-    let meta = ctx.files().metadata(file).ok_or("a new file has metadata")?;
-    if meta.size != text.len() as u64 {
+    let size = text.len() as u64;
+    let id = ctx.files().create(text.into_bytes(), Some("text/plain".into())).map_err(|e| e.to_string())?;
+    let meta = ctx.files().metadata(id).ok_or("a new file has metadata")?;
+    if meta.size() != size {
         return Err("wrong size".into());
     }
+    let file = meta.file_ref();
     ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name: "note".into() });
     Ok(())
 }
@@ -67,7 +69,9 @@ pub fn create_note(ctx: &ReducerContext, text: String) -> Result<(), String> {
 #[spacetimedb::reducer]
 pub fn copy_note(ctx: &ReducerContext) -> Result<(), String> {
     let note = ctx.db.attachment().iter().find(|a| a.name == "note").ok_or("no note")?;
-    let file = ctx.files().copy(note.file).map_err(|e| e.to_string())?;
+    // The note came from this module's own table, so its ID needs no check.
+    let id = ctx.files().copy(note.file.id_unchecked()).map_err(|e| e.to_string())?;
+    let file = ctx.files().reference(id).ok_or("the copy exists")?;
     ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name: "copy".into() });
     Ok(())
 }
@@ -75,7 +79,7 @@ pub fn copy_note(ctx: &ReducerContext) -> Result<(), String> {
 #[spacetimedb::reducer]
 pub fn delete_named(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let row = ctx.db.attachment().iter().find(|a| a.name == name).ok_or("no such attachment")?;
-    if !ctx.files().delete(row.file).map_err(|e| e.to_string())? {
+    if !ctx.files().delete(row.file.id_unchecked()).map_err(|e| e.to_string())? {
         return Err("the file was already gone".into());
     }
     ctx.db.attachment().id().delete(row.id);
@@ -367,9 +371,8 @@ pub fn uploaded_file(ctx: &AnonymousViewContext) -> Vec<UploadedFile> {
         .upload_log()
         .kind()
         .filter(0u8)
-        .filter_map(|upload| ctx.files().reference(upload.file))
-        .filter_map(|file| ctx.files().metadata(file))
-        .map(|meta| UploadedFile { size: meta.size, content_type: meta.content_type })
+        .filter_map(|upload| ctx.files().metadata(upload.file))
+        .map(|meta| UploadedFile { size: meta.size(), content_type: meta.content_type() })
         .collect()
 }
 "#;

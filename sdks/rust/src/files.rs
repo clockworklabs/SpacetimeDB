@@ -5,25 +5,31 @@
 //! reducer, which stores it in a table like any other value:
 //!
 //! ```ignore
-//! let uploaded = conn.files().upload("image/png", bytes).await?;
-//! conn.reducers.set_avatar(uploaded.file_ref)?;
+//! let options = UploadOptions { content_type: Some("image/png".into()), ..Default::default() };
+//! let avatar = conn.files().upload(bytes, options).await?;
+//! conn.reducers.set_avatar(avatar)?;
 //! ```
 //!
 //! Rows that hold a `FileRef` reach subscribers as usual, and any of them can download the file.
+//! Clients can't create files from bytes, copy them, or delete them; only modules can.
 
 use crate::db_connection::SharedCell;
 use crate::error::InternalError;
+use bytes::Bytes;
 use http::uri::{Scheme, Uri};
 use spacetimedb_lib::file::FileRef;
-use spacetimedb_lib::Hash;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
+
+pub use url::Url;
 
 /// A handle for uploading and downloading the files of the database a connection is connected to.
 ///
 /// Get one with `DbConnection::files`. It's cheap to clone, and it authenticates as the connection
 /// does, including with the token the server issued if the connection was anonymous.
 ///
-/// Uploading and downloading aren't yet supported in browsers.
+/// Browsers can build URLs, but uploading and downloading aren't supported there yet.
 #[derive(Clone)]
 pub struct Files {
     /// `http(s)://host/v1/database/:name_or_identity/files`.
@@ -33,14 +39,100 @@ pub struct Files {
     client: reqwest::Client,
 }
 
-/// What an upload created.
+/// How to serve a file from its URL.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServeOptions {
+    /// Serve the file as an attachment with this name, so browsers download it.
+    pub download_name: Option<String>,
+    /// Serve the file with this content type instead of the one it was stored with.
+    pub content_type: Option<String>,
+}
+
+/// How to upload a file.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UploadOptions {
+    /// The file's content type, which the gateway serves it with. Nothing verifies it.
+    pub content_type: Option<String>,
+    /// Names this upload across retries. The SDK generates one when absent;
+    /// pass one explicitly to recover an upload after a restart.
+    pub idempotency_key: Option<String>,
+}
+
+/// The bytes of an upload.
+///
+/// Uploads are retried, so the body is held in memory rather than streamed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UploadedFile {
-    /// The reference to pass to reducers that store the file.
-    pub file_ref: FileRef,
-    pub size: u64,
-    /// The BLAKE3 hash of the file's contents.
-    pub content_hash: Hash,
+pub struct UploadBody(Bytes);
+
+impl From<Bytes> for UploadBody {
+    fn from(bytes: Bytes) -> Self {
+        Self(bytes)
+    }
+}
+
+impl From<Vec<u8>> for UploadBody {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(bytes.into())
+    }
+}
+
+impl From<&'static [u8]> for UploadBody {
+    fn from(bytes: &'static [u8]) -> Self {
+        Self(Bytes::from_static(bytes))
+    }
+}
+
+impl From<String> for UploadBody {
+    fn from(text: String) -> Self {
+        Self(text.into())
+    }
+}
+
+impl From<&'static str> for UploadBody {
+    fn from(text: &'static str) -> Self {
+        Self(Bytes::from_static(text.as_bytes()))
+    }
+}
+
+/// A file's bytes as they arrive.
+pub type ByteStream = Pin<Box<dyn futures::Stream<Item = Result<Bytes, FilesError>> + Send>>;
+
+/// Why a file request failed.
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum FilesError {
+    /// The request didn't complete, for example because the connection dropped.
+    #[error("the file request failed: {message}")]
+    Request { message: String },
+    /// The server refused the request.
+    #[error("the server responded {status}: {message}")]
+    Status { status: u16, message: String },
+    /// The server's response couldn't be understood.
+    #[error("the server's file response was malformed: {message}")]
+    Malformed { message: String },
+}
+
+/// Why an upload failed.
+#[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum UploadError {
+    /// The module's `allow_upload` reducer refused the upload.
+    #[error("the upload was refused: {message}")]
+    Rejected { message: String },
+    /// The connection has no identity to upload as.
+    #[error("the upload needs an identity: {message}")]
+    Unauthorized { message: String },
+    /// The file is too large, or the database already has too many uploads in progress.
+    #[error("the upload is too large or the database is too busy: {message}")]
+    TooLarge { message: String },
+    /// The database is rate limiting uploads.
+    #[error("the upload was rate limited: {message}")]
+    RateLimited {
+        retry_after: Option<Duration>,
+        message: String,
+    },
+    #[error(transparent)]
+    Files(#[from] FilesError),
 }
 
 impl Files {
@@ -57,6 +149,7 @@ impl Files {
             .ok_or_else(|| InternalError::new(format!("the URI `{host}` has no host")))?;
         let path = host.path().trim_end_matches('/');
         let base = format!("{scheme}://{authority}{path}/v1/database/{database_name}/files");
+        Url::parse(&base).map_err(|e| InternalError::new(format!("`{base}` is not a valid URL")).with_cause(e))?;
         Ok(Self {
             base: base.into(),
             token: Arc::new(StdMutex::new(token)),
@@ -73,67 +166,89 @@ impl Files {
         }
     }
 
-    /// The URL from which anyone holding `file` can download it, for example in a browser.
+    /// The URL from which anyone holding `file_ref` can download the file, for example in a browser.
     ///
-    /// The reference carries the file's read secret, so the URL needs no other credentials.
-    pub fn url(&self, file: FileRef) -> String {
-        format!("{}/{file}", self.base)
+    /// This is computed locally. The reference carries the file's read secret, so the URL needs no
+    /// other credentials. It points to the database's HTTP API, which serves the file from object
+    /// storage, not to object storage itself.
+    pub fn url(&self, file_ref: FileRef) -> Url {
+        // `base` was checked when the handle was made, and a reference is 64 hex digits.
+        Url::parse(&format!("{}/{file_ref}", self.base)).expect("a file URL is a valid URL")
+    }
+
+    /// The file's URL with presentation options, such as a download name or content type.
+    pub fn url_with(&self, file_ref: FileRef, options: ServeOptions) -> Url {
+        let mut url = self.url(file_ref);
+        {
+            let mut query = url.query_pairs_mut();
+            if let Some(name) = &options.download_name {
+                query.append_pair("download", name);
+            }
+            if let Some(content_type) = &options.content_type {
+                query.append_pair("type", content_type);
+            }
+        }
+        if url.query() == Some("") {
+            url.set_query(None);
+        }
+        url
     }
 }
 
 /// Requests over HTTP, which browsers don't support yet.
 #[cfg(not(feature = "browser"))]
 mod native {
-    use super::{Files, UploadedFile};
-    use crate::error::{Error, InternalError};
-    use spacetimedb_lib::file::{FileMetadata, FileRef};
+    use super::*;
+    use futures::TryStreamExt as _;
+    use spacetimedb_lib::file::FileMetadata;
     use spacetimedb_lib::{Hash, Timestamp};
+    use std::ops::Range;
 
-    /// Turns a failed request into an [`Error::FileRequest`].
-    fn request_failed(err: reqwest::Error) -> Error {
-        Error::FileRequest {
-            status: err.status().map(|s| s.as_u16()),
+    /// How many times an upload is attempted before its error is returned. Every attempt carries
+    /// the same idempotency key, so retries never create a second file.
+    const UPLOAD_ATTEMPTS_MAX: u32 = 4;
+
+    /// The pause before the first retry, doubled before each later one.
+    const UPLOAD_RETRY_DELAY_INITIAL: Duration = Duration::from_millis(250);
+
+    fn request_failed(err: reqwest::Error) -> FilesError {
+        FilesError::Request {
             message: err.to_string(),
         }
     }
 
-    /// Fails with the server's explanation unless `response` succeeded.
-    async fn check(response: reqwest::Response) -> crate::Result<reqwest::Response> {
-        let status = response.status();
-        if status.is_success() {
-            return Ok(response);
+    fn malformed(what: &str) -> FilesError {
+        FilesError::Malformed {
+            message: format!("bad or missing `{what}`"),
         }
-        let message = response.text().await.unwrap_or_default();
-        Err(Error::FileRequest {
-            status: Some(status.as_u16()),
-            message,
-        })
     }
 
-    fn malformed(what: &str) -> Error {
-        InternalError::new(format!("the server's file response has a malformed `{what}`")).into()
+    /// The status and explanation of a failed response.
+    async fn failure(response: reqwest::Response) -> (u16, Option<Duration>, String) {
+        let status = response.status().as_u16();
+        let retry_after = response
+            .headers()
+            .get(http::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
+            .map(Duration::from_secs);
+        (status, retry_after, response.text().await.unwrap_or_default())
     }
 
-    fn field<'a>(json: &'a serde_json::Value, name: &str) -> crate::Result<&'a serde_json::Value> {
+    fn field<'a>(json: &'a serde_json::Value, name: &str) -> Result<&'a serde_json::Value, FilesError> {
         json.get(name).ok_or_else(|| malformed(name))
     }
 
-    fn parse_file_ref(json: &serde_json::Value) -> crate::Result<FileRef> {
+    fn parse_file_ref(json: &serde_json::Value) -> Result<FileRef, FilesError> {
         field(json, "file_ref")?
             .as_str()
             .and_then(|s| s.parse().ok())
             .ok_or_else(|| malformed("file_ref"))
     }
 
-    fn parse_size(json: &serde_json::Value) -> crate::Result<u64> {
-        field(json, "size")?.as_u64().ok_or_else(|| malformed("size"))
-    }
-
-    fn parse_hash(json: &serde_json::Value) -> crate::Result<Hash> {
-        field(json, "content_hash")?
-            .as_str()
-            .and_then(|s| Hash::from_hex(s).ok())
-            .ok_or_else(|| malformed("content_hash"))
+    /// A key that names one upload across its retries.
+    fn new_idempotency_key() -> String {
+        format!("{:032x}", rand::random::<u128>())
     }
 
     impl Files {
@@ -144,81 +259,119 @@ mod native {
             }
         }
 
-        /// Uploads `bytes` as a new file, and returns once the file is durable.
+        /// Uploads a new file, and returns its reference once its bytes are verified and durable
+        /// and its `st_file` record is stored.
         ///
-        /// The module's `allow_upload` lifecycle reducer decides whether to accept it.
-        /// Nothing checks that `content_type` describes the contents.
-        pub async fn upload(&self, content_type: &str, bytes: impl Into<bytes::Bytes>) -> crate::Result<UploadedFile> {
-            self.upload_with(content_type, bytes.into(), None).await
+        /// The module's `allow_upload` lifecycle reducer decides whether to accept it, before any
+        /// bytes are sent. Failed attempts are retried with the same idempotency key, so they never
+        /// create a second file.
+        pub async fn upload(
+            &self,
+            body: impl Into<UploadBody>,
+            options: UploadOptions,
+        ) -> Result<FileRef, UploadError> {
+            let UploadBody(bytes) = body.into();
+            let key = options.idempotency_key.unwrap_or_else(new_idempotency_key);
+            let mut delay = UPLOAD_RETRY_DELAY_INITIAL;
+            let mut attempt = 1;
+            loop {
+                match self.upload_once(&bytes, options.content_type.as_deref(), &key).await {
+                    Err(UploadAttempt::Retry(error)) if attempt < UPLOAD_ATTEMPTS_MAX => {
+                        log::warn!("upload attempt {attempt} failed, retrying in {delay:?}: {error}");
+                        tokio::time::sleep(delay).await;
+                        delay *= 2;
+                        attempt += 1;
+                    }
+                    Err(UploadAttempt::Retry(error) | UploadAttempt::Fail(error)) => return Err(error),
+                    Ok(file_ref) => return Ok(file_ref),
+                }
+            }
         }
 
-        /// Like [`Self::upload`], but safe to retry: every attempt with the same `idempotency_key`
-        /// creates at most one file, and they all return it.
-        ///
-        /// The server remembers keys for a day. It requires the connection to have an identity.
-        pub async fn upload_idempotent(
+        async fn upload_once(
             &self,
-            content_type: &str,
-            bytes: impl Into<bytes::Bytes>,
-            idempotency_key: &str,
-        ) -> crate::Result<UploadedFile> {
-            self.upload_with(content_type, bytes.into(), Some(idempotency_key))
-                .await
-        }
-
-        async fn upload_with(
-            &self,
-            content_type: &str,
-            bytes: bytes::Bytes,
-            idempotency_key: Option<&str>,
-        ) -> crate::Result<UploadedFile> {
+            bytes: &Bytes,
+            content_type: Option<&str>,
+            key: &str,
+        ) -> Result<FileRef, UploadAttempt> {
             let mut request = self
                 .client
                 .post(&*self.base)
-                .header(http::header::CONTENT_TYPE, content_type)
-                .body(bytes);
-            if let Some(key) = idempotency_key {
-                request = request.header("idempotency-key", key);
+                .header("idempotency-key", key)
+                .body(bytes.clone());
+            if let Some(content_type) = content_type {
+                request = request.header(http::header::CONTENT_TYPE, content_type);
             }
-            let response = check(self.authorize(request).send().await.map_err(request_failed)?).await?;
-            let json: serde_json::Value = response.json().await.map_err(request_failed)?;
-            Ok(UploadedFile {
-                file_ref: parse_file_ref(&json)?,
-                size: parse_size(&json)?,
-                content_hash: parse_hash(&json)?,
+            let response = self
+                .authorize(request)
+                .send()
+                .await
+                .map_err(|e| UploadAttempt::Retry(request_failed(e).into()))?;
+            if response.status().is_success() {
+                let json: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| UploadAttempt::Retry(request_failed(e).into()))?;
+                return parse_file_ref(&json).map_err(|e| UploadAttempt::Fail(e.into()));
+            }
+            let (status, retry_after, message) = failure(response).await;
+            Err(match status {
+                401 => UploadAttempt::Fail(UploadError::Unauthorized { message }),
+                403 => UploadAttempt::Fail(UploadError::Rejected { message }),
+                413 => UploadAttempt::Fail(UploadError::TooLarge { message }),
+                429 => UploadAttempt::Fail(UploadError::RateLimited { retry_after, message }),
+                // An earlier attempt with this key is still running, or the server had a problem.
+                409 | 500..=599 => UploadAttempt::Retry(FilesError::Status { status, message }.into()),
+                _ => UploadAttempt::Fail(FilesError::Status { status, message }.into()),
             })
         }
 
-        /// Downloads the whole file.
-        pub async fn download(&self, file: FileRef) -> crate::Result<bytes::Bytes> {
-            let response = self.client.get(self.url(file)).send().await.map_err(request_failed)?;
-            check(response).await?.bytes().await.map_err(request_failed)
-        }
-
-        /// Downloads the bytes of the file in `range`, which must lie within the file.
-        pub async fn download_range(&self, file: FileRef, range: std::ops::Range<u64>) -> crate::Result<bytes::Bytes> {
-            if range.is_empty() {
-                return Ok(bytes::Bytes::new());
+        /// Returns the file's bytes, or the `range` of them, including after the file is deleted.
+        ///
+        /// `None` if the reference is unknown or its secret is wrong, or the bytes have been reclaimed.
+        pub async fn download(
+            &self,
+            file_ref: FileRef,
+            range: Option<Range<u64>>,
+        ) -> Result<Option<ByteStream>, FilesError> {
+            let mut request = self.client.get(self.url(file_ref));
+            if let Some(range) = range {
+                if range.is_empty() {
+                    return Ok(Some(Box::pin(futures::stream::empty())));
+                }
+                request = request.header(http::header::RANGE, format!("bytes={}-{}", range.start, range.end - 1));
             }
-            let response = self
-                .client
-                .get(self.url(file))
-                .header(http::header::RANGE, format!("bytes={}-{}", range.start, range.end - 1))
-                .send()
-                .await
-                .map_err(request_failed)?;
-            check(response).await?.bytes().await.map_err(request_failed)
+            let response = request.send().await.map_err(request_failed)?;
+            if response.status() == http::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            if !response.status().is_success() {
+                let (status, _, message) = failure(response).await;
+                return Err(FilesError::Status { status, message });
+            }
+            Ok(Some(Box::pin(response.bytes_stream().map_err(request_failed))))
         }
 
-        /// Returns the file's metadata, or an error with status 404 once the file is deleted.
-        pub async fn metadata(&self, file: FileRef) -> crate::Result<FileMetadata> {
-            let response = self
-                .client
-                .get(format!("{}/metadata", self.url(file)))
-                .send()
-                .await
-                .map_err(request_failed)?;
-            let json: serde_json::Value = check(response).await?.json().await.map_err(request_failed)?;
+        /// The file's metadata, or `None` once it has been deleted, or if it never existed.
+        ///
+        /// Unlike [`Self::download`], it reads the live record, so it returns `None` as soon as the
+        /// deletion commits, even while the bytes remain downloadable.
+        pub async fn metadata(&self, file_ref: FileRef) -> Result<Option<FileMetadata>, FilesError> {
+            let url = format!("{}/metadata", self.url(file_ref));
+            let response = self.client.get(url).send().await.map_err(request_failed)?;
+            if response.status() == http::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            if !response.status().is_success() {
+                let (status, _, message) = failure(response).await;
+                return Err(FilesError::Status { status, message });
+            }
+            let json: serde_json::Value = response.json().await.map_err(request_failed)?;
+            let content_hash = field(&json, "content_hash")?
+                .as_str()
+                .and_then(|s| Hash::from_hex(s).ok())
+                .ok_or_else(|| malformed("content_hash"))?;
+            let size = field(&json, "size")?.as_u64().ok_or_else(|| malformed("size"))?;
             let created_at = field(&json, "created_at")?
                 .as_str()
                 .and_then(|s| Timestamp::parse_from_rfc3339(s).ok())
@@ -227,14 +380,21 @@ mod native {
                 serde_json::Value::Null => None,
                 value => Some(value.as_str().ok_or_else(|| malformed("content_type"))?.to_owned()),
             };
-            Ok(FileMetadata {
-                file_ref: parse_file_ref(&json)?,
-                content_hash: parse_hash(&json)?,
-                size: parse_size(&json)?,
+            Ok(Some(FileMetadata::new(
+                parse_file_ref(&json)?,
+                content_hash,
+                size,
                 created_at,
                 content_type,
-            })
+            )))
         }
+    }
+
+    /// The outcome of one failed upload attempt.
+    enum UploadAttempt {
+        /// Worth retrying with the same key.
+        Retry(UploadError),
+        Fail(UploadError),
     }
 }
 
@@ -242,15 +402,13 @@ mod native {
 mod tests {
     use super::*;
 
-    fn base(uri: &str) -> String {
-        Files::new(&uri.parse().unwrap(), "quickstart", None)
-            .unwrap()
-            .base
-            .to_string()
+    fn files(uri: &str) -> Files {
+        Files::new(&uri.parse().unwrap(), "quickstart", None).unwrap()
     }
 
     #[test]
     fn urls_follow_the_connection_uri() {
+        let base = |uri: &str| files(uri).base.to_string();
         assert_eq!(
             base("ws://localhost:3000"),
             "http://localhost:3000/v1/database/quickstart/files"
@@ -267,5 +425,21 @@ mod tests {
             base("localhost:3000"),
             "http://localhost:3000/v1/database/quickstart/files"
         );
+    }
+
+    #[test]
+    fn urls_carry_serving_options() {
+        let files = files("ws://localhost:3000");
+        let file_ref = FileRef::new(spacetimedb_lib::FileId(1), 2);
+        let plain = files.url(file_ref);
+        assert_eq!(plain.query(), None);
+        assert!(plain.path().ends_with(&file_ref.to_string()));
+        let options = ServeOptions {
+            download_name: Some("cat photo.png".into()),
+            content_type: Some("image/png".into()),
+        };
+        let url = files.url_with(file_ref, options);
+        assert_eq!(url.query(), Some("download=cat+photo.png&type=image%2Fpng"));
+        assert_eq!(files.url_with(file_ref, ServeOptions::default()), plain);
     }
 }

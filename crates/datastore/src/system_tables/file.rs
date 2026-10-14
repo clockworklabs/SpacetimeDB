@@ -61,13 +61,13 @@ impl StFileRow {
     }
 
     pub fn metadata(&self) -> spacetimedb_lib::FileMetadata {
-        spacetimedb_lib::FileMetadata {
-            file_ref: self.file_ref(),
-            content_hash: self.content_hash,
-            size: self.size,
-            created_at: self.created_at.0,
-            content_type: self.content_type.clone(),
-        }
+        spacetimedb_lib::FileMetadata::new(
+            self.file_ref(),
+            self.content_hash,
+            self.size,
+            self.created_at.0,
+            self.content_type.clone(),
+        )
     }
 }
 

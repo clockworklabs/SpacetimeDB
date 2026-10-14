@@ -2622,6 +2622,7 @@ version = "2.12.0"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "futures",
  "spacetimedb-sdk",
  "test-counter",
  "tokio",
@@ -9068,6 +9069,7 @@ dependencies = [
  "native-tls",
  "once_cell",
  "prometheus",
+ "rand 0.9.2",
  "reqwest",
  "serde_json",
  "shlex",
@@ -9082,6 +9084,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.27.0",
  "tokio-tungstenite-wasm",
+ "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

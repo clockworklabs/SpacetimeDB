@@ -398,7 +398,7 @@ pub fn servable_file_row_for_ref(
     state: &impl StateView,
     file_ref: FileRef,
 ) -> Result<Option<StFileRow>, DatastoreError> {
-    Ok(any_file_row(state, file_ref.id())?
+    Ok(any_file_row(state, file_ref.id_unchecked())?
         .map(|(_, row)| row)
         .filter(|row| row.read_secret == file_ref.read_secret()))
 }
@@ -517,7 +517,7 @@ pub fn create_file(
     insert_file_row(
         tx,
         &StFileRow {
-            file_id: file_ref.id(),
+            file_id: file_ref.id_unchecked(),
             read_secret: file_ref.read_secret(),
             content_hash,
             size: bytes.len() as u64,
@@ -530,16 +530,16 @@ pub fn create_file(
 }
 
 /// Creates a new file that shares `source`'s bytes and content type, or returns `None` if `source`
-/// doesn't name a live file.
-pub fn copy_file(tx: &mut MutTx, source: FileRef, created_at: Timestamp) -> Result<Option<FileRef>, DBError> {
-    let Some(source) = live_file_row_for_ref(tx, source)? else {
+/// isn't a live file.
+pub fn copy_file(tx: &mut MutTx, source: FileId, created_at: Timestamp) -> Result<Option<FileRef>, DBError> {
+    let Some(source) = live_file_row(tx, source)? else {
         return Ok(None);
     };
     let file_ref = mint_file_ref();
     insert_file_row(
         tx,
         &StFileRow {
-            file_id: file_ref.id(),
+            file_id: file_ref.id_unchecked(),
             read_secret: file_ref.read_secret(),
             created_at: TimestampViaI64(created_at),
             ..source
@@ -548,15 +548,15 @@ pub fn copy_file(tx: &mut MutTx, source: FileRef, created_at: Timestamp) -> Resu
     Ok(Some(file_ref))
 }
 
-/// Deletes the live file `file_ref` names. Returns whether there was one.
+/// Deletes the live file `id`. Returns whether there was one.
 ///
 /// The row stays, marked with this transaction's offset, so the bytes stay retained for as long as
 /// history from before the deletion can be reverted to. See [`purge_deleted_files`].
-pub fn delete_file(db: &RelationalDB, tx: &mut MutTx, file_ref: FileRef) -> Result<bool, DBError> {
-    let Some((pointer, row)) = any_file_row(tx, file_ref.id())? else {
+pub fn delete_file(db: &RelationalDB, tx: &mut MutTx, id: FileId) -> Result<bool, DBError> {
+    let Some((pointer, row)) = any_file_row(tx, id)? else {
         return Ok(false);
     };
-    if !row.is_live() || row.read_secret != file_ref.read_secret() {
+    if !row.is_live() {
         return Ok(false);
     }
     let deleted_at_offset = Some(tx.next_tx_offset());
@@ -1099,7 +1099,7 @@ mod tests {
     fn file_row(contents: &[u8]) -> StFileRow {
         let file_ref = mint_file_ref();
         StFileRow {
-            file_id: file_ref.id(),
+            file_id: file_ref.id_unchecked(),
             read_secret: file_ref.read_secret(),
             content_hash: content_hash(contents),
             size: contents.len() as u64,
@@ -1389,7 +1389,7 @@ mod tests {
         let row = row.expect("the file exists");
         assert_eq!(row.content_hash, hash);
         assert_eq!(row.content_type.as_deref(), Some("text/plain"));
-        let forged = FileRef::new(file_ref.id(), file_ref.read_secret() ^ 1);
+        let forged = FileRef::new(file_ref.id_unchecked(), file_ref.read_secret() ^ 1);
         assert!(stdb
             .with_read_only(Workload::ForTests, |tx| servable_file_row_for_ref(tx, forged))?
             .is_none());
@@ -1463,12 +1463,13 @@ mod tests {
         let now = Timestamp::now();
         let (original, copy) = stdb.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
             let original = create_file(tx, b"shared", None, now)?;
-            let copy = copy_file(tx, original, now)?.expect("the original exists");
+            let copy = copy_file(tx, original.id_unchecked(), now)?.expect("the original exists");
             Ok((original, copy))
         })?;
-        assert_ne!(original.id(), copy.id());
+        assert_ne!(original.id_unchecked(), copy.id_unchecked());
 
-        let deleted = stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original))?;
+        let deleted =
+            stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original.id_unchecked()))?;
         assert!(deleted);
         let (live, servable, copy_row) = stdb.with_read_only(Workload::ForTests, |tx| -> Result<_, DBError> {
             Ok((
@@ -1485,15 +1486,17 @@ mod tests {
             content_hash(b"shared")
         );
         // Deleting it again finds nothing live.
-        assert!(!stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original))?);
+        assert!(!stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, original.id_unchecked()))?);
         // Nor can a deleted file be copied.
         assert!(stdb
-            .with_auto_commit(Workload::ForTests, |tx| copy_file(tx, original, now))?
+            .with_auto_commit(Workload::ForTests, |tx| copy_file(tx, original.id_unchecked(), now))?
             .is_none());
 
-        // Deleting with the wrong secret does nothing.
-        let forged = FileRef::new(copy.id(), copy.read_secret() ^ 1);
-        assert!(!stdb.with_auto_commit(Workload::ForTests, |tx| delete_file(&stdb, tx, forged))?);
+        // A reference with the wrong secret finds nothing.
+        let forged = FileRef::new(copy.id_unchecked(), copy.read_secret() ^ 1);
+        assert!(stdb
+            .with_read_only(Workload::ForTests, |tx| live_file_row_for_ref(tx, forged))?
+            .is_none());
         Ok(())
     }
 
@@ -1532,8 +1535,8 @@ mod tests {
             unreachable!()
         };
         let deleted_at = commit_and_confirm(&|tx| {
-            assert!(delete_file(&stdb, tx, snapshotted)?);
-            assert!(delete_file(&stdb, tx, deleted)?);
+            assert!(delete_file(&stdb, tx, snapshotted.id_unchecked())?);
+            assert!(delete_file(&stdb, tx, deleted.id_unchecked())?);
             Ok(())
         })?;
         rt.block_on(

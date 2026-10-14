@@ -68,8 +68,11 @@ impl FileRef {
         Self { id, read_secret }
     }
 
-    /// The file this reference names.
-    pub const fn id(&self) -> FileId {
+    /// The file this reference names, without checking the secret.
+    ///
+    /// Use it for references a module read from its own tables. A reference a client sent may carry
+    /// any secret, so check it with `ctx.files().id(file_ref)` instead.
+    pub const fn id_unchecked(&self) -> FileId {
         self.id
     }
 
@@ -154,13 +157,53 @@ pub fn content_hash(bytes: &[u8]) -> Hash {
 #[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct FileMetadata {
-    pub file_ref: FileRef,
+    file_ref: FileRef,
+    content_hash: Hash,
+    size: u64,
+    created_at: Timestamp,
+    content_type: Option<String>,
+}
+
+impl FileMetadata {
+    #[doc(hidden)]
+    pub fn new(
+        file_ref: FileRef,
+        content_hash: Hash,
+        size: u64,
+        created_at: Timestamp,
+        content_type: Option<String>,
+    ) -> Self {
+        Self {
+            file_ref,
+            content_hash,
+            size,
+            created_at,
+            content_type,
+        }
+    }
+
+    /// The file's reference, which grants read access, so authorize the requester before disclosing it.
+    pub fn file_ref(&self) -> FileRef {
+        self.file_ref
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
     /// The BLAKE3 hash of the file's contents.
-    pub content_hash: Hash,
-    pub size: u64,
-    pub created_at: Timestamp,
+    pub fn content_hash(&self) -> Hash {
+        self.content_hash
+    }
+
+    pub fn created_at(&self) -> Timestamp {
+        self.created_at
+    }
+
     /// The content type the uploader or module declared. Nothing verifies it.
-    pub content_type: Option<String>,
+    pub fn content_type(&self) -> Option<String> {
+        self.content_type.clone()
+    }
 }
 
 /// What the `#[reducer(allow_upload)]` lifecycle reducer learns about an upload before any bytes

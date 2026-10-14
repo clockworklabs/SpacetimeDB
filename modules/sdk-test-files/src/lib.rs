@@ -22,15 +22,16 @@ pub fn check_upload(_ctx: &ReducerContext, upload: UploadRequest) -> Result<(), 
     Ok(())
 }
 
-/// Names a file a client uploaded. Fails for a reference that names no file.
+/// Names a file a client uploaded. Fails unless the reference's secret is right.
 #[spacetimedb::reducer]
 pub fn attach(ctx: &ReducerContext, name: String, file: FileRef) -> Result<(), String> {
-    let metadata = ctx.files().metadata(file).ok_or("no such file")?;
+    let id = ctx.files().id(file).ok_or("no such file")?;
+    let metadata = ctx.files().metadata(id).ok_or("no such file")?;
     ctx.db.document().insert(Document {
         id: 0,
         name,
         file,
-        size: metadata.size,
+        size: metadata.size(),
     });
     Ok(())
 }
@@ -38,15 +39,17 @@ pub fn attach(ctx: &ReducerContext, name: String, file: FileRef) -> Result<(), S
 /// Creates a text file.
 #[spacetimedb::reducer]
 pub fn write_note(ctx: &ReducerContext, name: String, text: String) -> Result<(), String> {
-    let file = ctx
+    let size = text.len() as u64;
+    let id = ctx
         .files()
-        .create(text.as_bytes(), Some("text/plain"))
+        .create(text.into_bytes(), Some("text/plain".into()))
         .map_err(|e| e.to_string())?;
+    let file = ctx.files().reference(id).ok_or("the new file exists")?;
     ctx.db.document().insert(Document {
         id: 0,
         name,
         file,
-        size: text.len() as u64,
+        size,
     });
     Ok(())
 }
@@ -55,7 +58,10 @@ pub fn write_note(ctx: &ReducerContext, name: String, text: String) -> Result<()
 #[spacetimedb::reducer]
 pub fn remove(ctx: &ReducerContext, name: String) -> Result<(), String> {
     let document = ctx.db.document().name().find(&name).ok_or("no such document")?;
-    ctx.files().delete(document.file).map_err(|e| e.to_string())?;
+    // The reference came from this module's own table, so its ID needs no check.
+    ctx.files()
+        .delete(document.file.id_unchecked())
+        .map_err(|e| e.to_string())?;
     ctx.db.document().id().delete(document.id);
     Ok(())
 }

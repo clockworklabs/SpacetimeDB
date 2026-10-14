@@ -13,6 +13,7 @@ test-counter = { path = "../test-counter" }
 anyhow.workspace = true
 env_logger.workspace = true
 tokio.workspace = true
+futures.workspace = true
 
 [lints]
 workspace = true

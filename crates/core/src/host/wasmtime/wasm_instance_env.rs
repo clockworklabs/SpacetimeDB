@@ -1587,7 +1587,7 @@ impl WasmInstanceEnv {
     }
 
     /// Creates a file from the `bytes_len` bytes at `bytes_ptr`, in the current transaction,
-    /// and writes its `FileRef` to `out[..32]`.
+    /// and writes its `FileId` to `out[..16]`.
     ///
     /// `content_type_ptr[..content_type_len]` is the file's UTF-8 content type,
     /// or there is none if `content_type_ptr` is NULL.
@@ -1607,7 +1607,7 @@ impl WasmInstanceEnv {
         bytes_len: u32,
         content_type_ptr: WasmPtr<u8>,
         content_type_len: u32,
-        out: WasmPtr<spacetimedb_lib::FileRef>,
+        out: WasmPtr<spacetimedb_lib::FileId>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::FileCreate, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
@@ -1623,52 +1623,53 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Creates a new file that shares the bytes of the file `source[..32]` names,
-    /// and writes its `FileRef` to `out[..32]`.
+    /// Creates a new file that shares the bytes of the live file whose `FileId` is `source[..16]`,
+    /// and writes the new file's `FileId` to `out[..16]`.
     ///
     /// # Errors
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
-    /// - `NO_SUCH_FILE`, when `source` doesn't name a live file.
+    /// - `NO_SUCH_FILE`, when `source` isn't a live file.
     /// - `FILES_UNAVAILABLE`, when the database doesn't support File Storage.
     pub fn file_copy(
         caller: Caller<'_, Self>,
-        source: WasmPtr<spacetimedb_lib::FileRef>,
-        out: WasmPtr<spacetimedb_lib::FileRef>,
+        source: WasmPtr<spacetimedb_lib::FileId>,
+        out: WasmPtr<spacetimedb_lib::FileId>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::FileCopy, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let source = spacetimedb_lib::FileRef::read_from(mem, source)?;
+            let source = spacetimedb_lib::FileId::read_from(mem, source)?;
             Ok(env.instance_env.file_copy(source)?)
         })
     }
 
-    /// Deletes the file `file_ref[..32]` names, and writes 1 to `out` if there was one, else 0.
+    /// Deletes the live file whose `FileId` is `file_id[..16]`, and writes 1 to `out` if there was
+    /// one, else 0.
     ///
     /// The file's bytes stay downloadable until reclamation finds nothing retained references them.
     pub fn file_delete(
         caller: Caller<'_, Self>,
-        file_ref: WasmPtr<spacetimedb_lib::FileRef>,
+        file_id: WasmPtr<spacetimedb_lib::FileId>,
         out: WasmPtr<u8>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::FileDelete, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let file_ref = spacetimedb_lib::FileRef::read_from(mem, file_ref)?;
-            Ok(env.instance_env.file_delete(file_ref)? as u8)
+            let id = spacetimedb_lib::FileId::read_from(mem, file_id)?;
+            Ok(env.instance_env.file_delete(id)? as u8)
         })
     }
 
     /// Writes to `out` a `BytesSource` holding the BSATN-encoded `FileMetadata` of the live file
-    /// `file_ref[..32]` names, or `BytesSource::INVALID` if there is none.
+    /// whose `FileId` is `file_id[..16]`, or `BytesSource::INVALID` if there is none.
     pub fn file_metadata(
         caller: Caller<'_, Self>,
-        file_ref: WasmPtr<spacetimedb_lib::FileRef>,
+        file_id: WasmPtr<spacetimedb_lib::FileId>,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::FileMetadata, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let file_ref = spacetimedb_lib::FileRef::read_from(mem, file_ref)?;
-            match env.instance_env.file_metadata(file_ref)? {
+            let id = spacetimedb_lib::FileId::read_from(mem, file_id)?;
+            match env.instance_env.file_metadata(id)? {
                 None => Ok(0u32),
                 Some(metadata) => {
                     let bytes = spacetimedb_sats::bsatn::to_vec(&metadata).context("serializing file metadata")?;
@@ -1686,12 +1687,12 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_FILE`, when there is no such file.
     pub fn file_reference(
         caller: Caller<'_, Self>,
-        file_id: WasmPtr<u8>,
+        file_id: WasmPtr<spacetimedb_lib::FileId>,
         out: WasmPtr<spacetimedb_lib::FileRef>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::FileReference, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let id = spacetimedb_lib::FileId(u128::from_le_bytes(*mem.deref_array(file_id)?));
+            let id = spacetimedb_lib::FileId::read_from(mem, file_id)?;
             Ok(env.instance_env.file_reference(id)?)
         })
     }

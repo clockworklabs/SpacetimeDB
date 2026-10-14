@@ -657,14 +657,14 @@ impl InstanceEnv {
         Ok(stdb.delete_by_rel(tx, table_id, relation))
     }
 
-    /// Creates a file from `bytes` in the current transaction.
+    /// Creates a file from `bytes` in the current transaction, and returns its ID.
     ///
     /// The bytes are staged in the transaction, and so in the commitlog, until the host persists them.
     pub fn file_create(
         &self,
         bytes: &[u8],
         content_type: Option<String>,
-    ) -> Result<spacetimedb_lib::FileRef, NodesError> {
+    ) -> Result<spacetimedb_lib::FileId, NodesError> {
         use crate::db::files::MAX_CREATED_FILE_BYTES;
         if bytes.len() > MAX_CREATED_FILE_BYTES {
             return Err(NodesError::FileTooLarge {
@@ -685,35 +685,37 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
         let file_ref = crate::db::files::create_file(tx, bytes, content_type, self.start_time)?;
         tx.metrics.bytes_written += bytes.len();
-        Ok(file_ref)
+        Ok(file_ref.id_unchecked())
     }
 
-    /// Creates a new file that shares `source`'s bytes.
-    pub fn file_copy(&self, source: spacetimedb_lib::FileRef) -> Result<spacetimedb_lib::FileRef, NodesError> {
+    /// Creates a new file that shares the bytes of the live file `source`, and returns its ID.
+    pub fn file_copy(&self, source: spacetimedb_lib::FileId) -> Result<spacetimedb_lib::FileId, NodesError> {
         if self.relational_db().files().is_none() {
             return Err(NodesError::FilesUnavailable);
         }
         let tx = &mut *self.get_tx()?;
-        crate::db::files::copy_file(tx, source, self.start_time)?.ok_or(NodesError::NoSuchFile)
+        let copy = crate::db::files::copy_file(tx, source, self.start_time)?.ok_or(NodesError::NoSuchFile)?;
+        Ok(copy.id_unchecked())
     }
 
-    /// Deletes the file `file_ref` names. Returns whether there was one.
-    pub fn file_delete(&self, file_ref: spacetimedb_lib::FileRef) -> Result<bool, NodesError> {
+    /// Deletes the live file `id`. Returns whether there was one.
+    pub fn file_delete(&self, id: spacetimedb_lib::FileId) -> Result<bool, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
-        Ok(crate::db::files::delete_file(stdb, tx, file_ref)?)
+        Ok(crate::db::files::delete_file(stdb, tx, id)?)
     }
 
-    /// The metadata of the live file `file_ref` names, if any.
+    /// The metadata of the live file `id`, if any. It contains the file's reference, so the module
+    /// must authorize the requester before disclosing it.
     pub fn file_metadata(
         &self,
-        file_ref: spacetimedb_lib::FileRef,
+        id: spacetimedb_lib::FileId,
     ) -> Result<Option<spacetimedb_lib::FileMetadata>, NodesError> {
         use spacetimedb_datastore::system_tables::ST_FILE_ID;
         let tx = &mut *self.get_tx()?;
         // A view that reads a file's metadata must be re-evaluated when files change.
         tx.record_table_scan(&self.func_type, ST_FILE_ID);
-        let row = crate::db::files::live_file_row_for_ref(&*tx, file_ref).map_err(DBError::from)?;
+        let row = crate::db::files::live_file_row(&*tx, id).map_err(DBError::from)?;
         Ok(row.map(|row| row.metadata()))
     }
 

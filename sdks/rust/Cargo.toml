@@ -44,6 +44,7 @@ log.workspace = true
 once_cell.workspace = true
 prometheus.workspace = true
 serde_json.workspace = true
+url.workspace = true
 
 getrandom = { version = "0.3.4", features = ["wasm_js"], optional = true }
 gloo-console = { version = "0.3.0", optional = true }
@@ -61,6 +62,7 @@ home.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 reqwest.workspace = true
+rand.workspace = true
 # native-tls 0.2.17 fails to compile with Rust 1.93.0 due non-exhaustive
 # matching in upstream code. Pin until upstream ships a compatible release.
 native-tls = "=0.2.14"

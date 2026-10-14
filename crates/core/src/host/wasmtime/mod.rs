@@ -271,6 +271,19 @@ impl WasmPointee for spacetimedb_lib::FileRef {
     }
 }
 
+/// A `FileId` crosses the ABI as its 16-byte little-endian `u128`.
+impl WasmPointee for spacetimedb_lib::FileId {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.0.to_le_bytes();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self(u128::from_le_bytes(*mem.deref_array(ptr)?)))
+    }
+}
+
 impl WasmPointee for spacetimedb_lib::ConnectionId {
     type Pointer = u32;
     fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {

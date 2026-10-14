@@ -30,7 +30,7 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
-pub use files::{Files, UploadedFile};
+pub use files::{ByteStream, Files, FilesError, ServeOptions, UploadBody, UploadError, UploadOptions, Url};
 pub use table::{EventTable, Table, TableAccessor, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;

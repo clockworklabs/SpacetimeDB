@@ -16,9 +16,14 @@
 //! ```
 //!
 //! Reducers can also create small files directly with [`Files::create`].
+//!
+//! The files API takes [`FileId`]s. A [`FileRef`] that a client sends may carry any secret, so a
+//! reducer checks it with [`Files::id`] before acting on it. Inside the module, the module is the
+//! authority: possessing a valid reference is not, by itself, permission to copy or delete a file.
 
 use crate::rt::read_bytes_source_into;
-use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ViewContext};
+use crate::{sys, AnonymousViewContext, Identity, IterBuf, ReducerContext, ViewContext};
+use bytes::Bytes;
 use core::fmt;
 
 pub use spacetimedb_lib::file::content_hash;
@@ -66,12 +71,29 @@ impl From<sys::Errno> for FileError {
     }
 }
 
-fn to_bytes(file_ref: FileRef) -> [u8; 32] {
-    file_ref.to_u256().to_le_bytes()
+fn ref_from_bytes(bytes: [u8; 32]) -> FileRef {
+    FileRef::from_u256(spacetimedb_lib::sats::u256::from_le_bytes(bytes))
 }
 
-fn from_bytes(bytes: [u8; 32]) -> FileRef {
-    FileRef::from_u256(spacetimedb_lib::sats::u256::from_le_bytes(bytes))
+/// The download URL of a file, as a path on the host that serves this database.
+///
+/// A module doesn't know the address clients reach the host at, so the path starts at `/v1`.
+/// Client SDKs build absolute URLs with `conn.files().url(file_ref)`.
+pub trait FileUrl {
+    fn url(&self) -> String;
+}
+
+impl FileUrl for FileRef {
+    fn url(&self) -> String {
+        let database = Identity::from_byte_array(sys::identity());
+        format!("/v1/database/{}/files/{self}", database.to_hex())
+    }
+}
+
+impl FileUrl for FileMetadata {
+    fn url(&self) -> String {
+        self.file_ref().url()
+    }
 }
 
 /// File Storage within the current transaction, from [`ReducerContext::files`].
@@ -88,32 +110,47 @@ impl ReducerContext {
 }
 
 impl Files<'_> {
-    /// Creates a file from `bytes`, owned by a new row of `st_file`.
+    /// Creates a file from `bytes`, owned by a new row of `st_file`, and returns its ID.
     ///
+    /// Call [`Self::reference`] to get a [`FileRef`] when disclosing the file.
     /// The bytes travel through the commitlog with this transaction, so they are limited to 16 MiB.
     /// Clients that read with confirmed reads see the new file only once its bytes are persisted.
-    pub fn create(&self, bytes: impl AsRef<[u8]>, content_type: Option<&str>) -> Result<FileRef, FileError> {
-        Ok(from_bytes(sys::file_create(bytes.as_ref(), content_type)?))
+    pub fn create(&self, bytes: impl Into<Bytes>, content_type: Option<String>) -> Result<FileId, FileError> {
+        let bytes = bytes.into();
+        Ok(FileId(u128::from_le_bytes(sys::file_create(
+            &bytes,
+            content_type.as_deref(),
+        )?)))
     }
 
-    /// Creates a new file that shares `source`'s bytes and content type.
+    /// The file's ID, if `file_ref`'s secret matches a live file.
+    ///
+    /// `None` if the reference is forged or the file has been deleted. Use it on references from
+    /// clients. A reference the module read from its own tables can use [`FileRef::id_unchecked`].
+    pub fn id(&self, file_ref: FileRef) -> Option<FileId> {
+        id(file_ref)
+    }
+
+    /// The live metadata of the file `id`, without fetching its bytes.
+    ///
+    /// It contains the file's reference, so authorize the requester before disclosing it.
+    pub fn metadata(&self, id: FileId) -> Option<FileMetadata> {
+        metadata(id)
+    }
+
+    /// Creates a new file that shares `source`'s bytes and content type, and returns its ID.
     ///
     /// The copy has its own ID and read secret, and lives until it is deleted,
     /// whatever happens to `source`.
-    pub fn copy(&self, source: FileRef) -> Result<FileRef, FileError> {
-        Ok(from_bytes(sys::file_copy(to_bytes(source))?))
+    pub fn copy(&self, source: FileId) -> Result<FileId, FileError> {
+        Ok(FileId(u128::from_le_bytes(sys::file_copy(source.0.to_le_bytes())?)))
     }
 
-    /// Deletes the file `file_ref` names. Returns `false` if there was none.
+    /// Deletes the live file `id`. Returns `false` if there was none.
     ///
     /// Deleting a file doesn't revoke downloads of bytes that history still retains.
-    pub fn delete(&self, file_ref: FileRef) -> Result<bool, FileError> {
-        Ok(sys::file_delete(to_bytes(file_ref))?)
-    }
-
-    /// The live metadata of the file `file_ref` names, without fetching its bytes.
-    pub fn metadata(&self, file_ref: FileRef) -> Option<FileMetadata> {
-        metadata(file_ref)
+    pub fn delete(&self, id: FileId) -> Result<bool, FileError> {
+        Ok(sys::file_delete(id.0.to_le_bytes())?)
     }
 
     /// Resolves a file's ID to its reference.
@@ -152,9 +189,16 @@ impl AnonymousViewContext {
 }
 
 impl ReadonlyFiles<'_> {
-    /// The live metadata of the file `file_ref` names, without fetching its bytes.
-    pub fn metadata(&self, file_ref: FileRef) -> Option<FileMetadata> {
-        metadata(file_ref)
+    /// The file's ID, if `file_ref`'s secret matches a live file. See [`Files::id`].
+    pub fn id(&self, file_ref: FileRef) -> Option<FileId> {
+        id(file_ref)
+    }
+
+    /// The live metadata of the file `id`, without fetching its bytes.
+    ///
+    /// It contains the file's reference, so authorize the requester before disclosing it.
+    pub fn metadata(&self, id: FileId) -> Option<FileMetadata> {
+        metadata(id)
     }
 
     /// Resolves a file's ID to its reference.
@@ -166,8 +210,13 @@ impl ReadonlyFiles<'_> {
     }
 }
 
-fn metadata(file_ref: FileRef) -> Option<FileMetadata> {
-    let source = sys::file_metadata(to_bytes(file_ref))
+fn id(file_ref: FileRef) -> Option<FileId> {
+    let id = file_ref.id_unchecked();
+    (reference(id) == Some(file_ref)).then_some(id)
+}
+
+fn metadata(id: FileId) -> Option<FileMetadata> {
+    let source = sys::file_metadata(id.0.to_le_bytes())
         .unwrap_or_else(|errno| panic!("failed to read file metadata: {errno}"))?;
     let mut buf = IterBuf::take();
     read_bytes_source_into(source, &mut buf);
@@ -176,7 +225,7 @@ fn metadata(file_ref: FileRef) -> Option<FileMetadata> {
 
 fn reference(id: FileId) -> Option<FileRef> {
     match sys::file_reference(id.0.to_le_bytes()) {
-        Ok(bytes) => Some(from_bytes(bytes)),
+        Ok(bytes) => Some(ref_from_bytes(bytes)),
         Err(sys::Errno::NO_SUCH_FILE) => None,
         Err(errno) => panic!("failed to resolve a file ID: {errno}"),
     }
