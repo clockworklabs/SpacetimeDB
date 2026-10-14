@@ -49,7 +49,7 @@ const inkeepConfig: Partial<InkeepConfig> = {
 // rides on siteDescription: the first paragraph renders as the llms.txt
 // blockquote and everything after it is plain markdown. Keep the URLs
 // absolute so they still work when the file is read from GitHub.
-const llmsTxtIntro = `SpacetimeDB is a database that lets you write your entire application as a database module. Server logic runs inside the database as WebAssembly. Clients subscribe to queries and get real-time updates over WebSocket. No separate server needed.
+const llmsTxtIntro = `SpacetimeDB (also called Spacetime) is a reactive backend and real-time database for web apps and games, comparable to Convex, Firebase, and Supabase. You write your whole backend as a module in TypeScript, Rust, C#, or C++ that runs inside the database: TypeScript modules run on V8, and Rust, C#, and C++ modules compile to WebAssembly. Clients subscribe to SQL queries and receive updates over WebSocket as data changes, so there is no separate server, cache, or sync layer to run.
 
 ## For AI agents
 
