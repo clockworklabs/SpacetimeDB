@@ -1,3 +1,5 @@
+#[cfg(feature = "execution")]
+use super::view_reads::{ViewReadRecorder, ViewReads};
 use super::{
     committed_state::{CommitTableForInsertion, CommittedState},
     datastore::{Result, TxMetrics},
@@ -6,7 +8,6 @@ use super::{
     time::{now_timestamp, Instant},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
-    view_reads::{ViewReadRecorder, ViewReads},
     SharedWriteGuard,
 };
 use crate::traits::TxOffset;
@@ -229,6 +230,7 @@ impl ViewInstanceTxState {
 
 /// The most index keys a view may record on one table before the table is recorded as a full table scan.
 /// This bounds read-set memory and refresh cost for views that fan out.
+#[cfg(feature = "execution")]
 pub const MAX_VIEW_POINTS_PER_TABLE: usize = 1_000;
 
 /// A data structure for tracking the database rows/keys that are read by views
@@ -334,13 +336,20 @@ impl ViewReadSets {
         };
         for key in keys {
             let (ReadKey::Table(table_id) | ReadKey::Point(table_id, ..)) = key;
-            let Some(readset) = self.tables.get_mut(&table_id) else {
-                continue;
+            let removed = match self.tables.get_mut(&table_id) {
+                Some(readset) => {
+                    let removed = readset.remove_read(call, key);
+                    if readset.is_empty() {
+                        self.tables.remove(&table_id);
+                    }
+                    removed
+                }
+                None => false,
             };
-            readset.remove_read(call, key);
-            if readset.is_empty() {
-                self.tables.remove(&table_id);
-            }
+            debug_assert!(
+                removed,
+                "`by_call` has a dependency of {call:?} on {table_id:?} missing from `tables`"
+            );
         }
     }
 
@@ -492,17 +501,17 @@ impl TableReadSet {
     }
 
     /// Removes one dependency of `call` from this table's read set.
-    fn remove_read(&mut self, call: &ViewCallInfo, key: ReadKey) {
+    /// Returns whether `call` had that dependency.
+    fn remove_read(&mut self, call: &ViewCallInfo, key: ReadKey) -> bool {
         match key {
-            ReadKey::Table(_) => {
-                self.table_scans.remove(call);
-            }
+            ReadKey::Table(_) => self.table_scans.remove(call),
             ReadKey::Point(_, cols, key) => {
                 let Some(key_map) = self.index_reads.get_mut(&cols) else {
-                    return;
+                    return false;
                 };
+                let mut removed = false;
                 if let Some(calls) = key_map.get_mut(&key) {
-                    calls.remove(call);
+                    removed = calls.remove(call);
                     if calls.is_empty() {
                         key_map.remove(&key);
                     }
@@ -510,6 +519,7 @@ impl TableReadSet {
                 if key_map.is_empty() {
                     self.index_reads.remove(&cols);
                 }
+                removed
             }
         }
     }
@@ -652,10 +662,12 @@ impl MutTxId {
     }
 
     /// Runs `f` with a [`ViewReadRecorder`] and adds the reads it made to `call`'s read set.
+    #[cfg(feature = "execution")]
     pub fn with_view_reads<R>(&mut self, call: &ViewCallInfo, f: impl FnOnce(&ViewReadRecorder<'_>) -> R) -> R {
         self.with_view_reads_capped(call, MAX_VIEW_POINTS_PER_TABLE, f)
     }
 
+    #[cfg(feature = "execution")]
     pub(super) fn with_view_reads_capped<R>(
         &mut self,
         call: &ViewCallInfo,
