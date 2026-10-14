@@ -1,5 +1,6 @@
 use crate::auth::idc::IdcTokenSigner;
-use crate::db::relational_db::{RelationalDB, Tx, TxOffset};
+use crate::db::relational_db::{RelationalDB, Tx};
+use crate::host::idc::{DeliveryStreams, StreamId};
 use crate::host::module_host::WeakModuleHost;
 use crate::host::module_host::{CallReducerParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
@@ -16,15 +17,10 @@ use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{Hash, Identity, ProductValue, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::reducer_name::ReducerName;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt::Display;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
-// Retry delays start at 100 ms and double up to 30 seconds.
-const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
 const NOTIFICATION_BATCH_SIZE: usize = 16;
 
 pub type IdcActorSender = mpsc::UnboundedSender<StOutboundMsgRow>;
@@ -60,7 +56,7 @@ impl IdcActorStarter {
         config: IdcConfig,
         module_host: WeakModuleHost,
     ) -> anyhow::Result<IdcActor> {
-        let mut streams = StreamMap::new();
+        let mut streams = DeliveryStreams::default();
         restore_pending_streams(&db, &mut streams)?;
         let abort = tokio::spawn(async move {
             if let Err(error) = run_idc_loop(db, database_identity, config, Some(module_host), self.rx, streams).await {
@@ -134,92 +130,6 @@ impl LoadedMessage {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-struct StreamId(u64);
-
-impl Display for StreamId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// Allows one message per stream to run through delivery, callback, and cleanup.
-/// TODO(idc): Support pipelining
-struct OrderedStream {
-    /// The sequence being processed, or `None` between attempts.
-    active_seq: Option<u64>,
-    /// Earliest time a failed attempt may retry.
-    blocked_until: Option<Instant>,
-    /// Delay after the next failed attempt. Resets when cleanup succeeds.
-    backoff: Duration,
-}
-
-impl OrderedStream {
-    fn new() -> Self {
-        Self {
-            active_seq: None,
-            blocked_until: None,
-            backoff: INITIAL_BACKOFF,
-        }
-    }
-
-    /// Returns whether another attempt can start. While a message is active,
-    /// insert notifications must not start another attempt for the same stream.
-    fn is_ready(&self) -> bool {
-        self.active_seq.is_none() && self.blocked_until.is_none_or(|until| Instant::now() >= until)
-    }
-
-    /// Marks this sequence as active until the attempt finishes or fails.
-    fn start(&mut self, seq: u64) {
-        assert!(
-            self.is_ready(),
-            "ordered stream must be ready before starting a message"
-        );
-        self.active_seq = Some(seq);
-    }
-
-    /// Allows the next message to start after cleanup commits. Resets the retry delay.
-    fn finish(&mut self, seq: u64) {
-        assert_eq!(self.active_seq, Some(seq), "completion must match the active sequence");
-        self.active_seq = None;
-        self.blocked_until = None;
-        self.backoff = INITIAL_BACKOFF;
-    }
-
-    /// Ends the failed attempt and waits before retrying the same sequence.
-    fn retry(&mut self, seq: u64) {
-        assert_eq!(self.active_seq, Some(seq), "retry must match the active sequence");
-        // The attempt has ended. Leaving it active would prevent retrying even
-        // after the backoff expires.
-        self.active_seq = None;
-        self.blocked_until = Some(Instant::now() + self.backoff);
-        self.backoff = (self.backoff * 2).min(MAX_BACKOFF);
-    }
-}
-
-type StreamMap = HashMap<StreamId, OrderedStream>;
-
-/// Stream IDs waiting for a database lookup, with at most one entry per stream.
-#[derive(Default)]
-struct ReadyStreams {
-    queue: VecDeque<StreamId>,
-    queued: HashSet<StreamId>,
-}
-
-impl ReadyStreams {
-    fn push(&mut self, stream_id: StreamId) {
-        if self.queued.insert(stream_id) {
-            self.queue.push_back(stream_id);
-        }
-    }
-
-    fn pop(&mut self) -> Option<StreamId> {
-        let stream_id = self.queue.pop_front()?;
-        self.queued.remove(&stream_id);
-        Some(stream_id)
-    }
-}
-
 fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         // The local proxy handles routing. A redirect is not an IDC result.
@@ -258,24 +168,18 @@ async fn run_idc_loop(
     config: IdcConfig,
     module_host: Option<WeakModuleHost>,
     mut notify_rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
-    mut streams: StreamMap,
+    mut streams: DeliveryStreams,
 ) -> anyhow::Result<()> {
     let client = http_client();
     let mut in_flight = FuturesUnordered::new();
-    let mut ready = ReadyStreams::default();
     let mut notifications = Vec::with_capacity(NOTIFICATION_BATCH_SIZE);
     let mut notifications_open = true;
-    // Startup has already found the pending streams. Queue their IDs and read
-    // each message when its stream gets a turn.
-    for &stream_id in streams.keys() {
-        ready.push(stream_id);
-    }
 
     loop {
         // Start ready messages. Each future includes delivery, callback, and cleanup.
         // Stopping the actor drops these futures, but cannot cancel work already
         // running on the receiver or a callback already submitted to the local host.
-        while let Some(msg) = take_ready_message(&db, &mut streams, &mut ready)? {
+        while let Some(msg) = take_ready_message(&db, &mut streams)? {
             let stream_id = msg.message().stream_id;
             let seq = msg.message().sequence;
             let (db, client, config, module_host) = (&db, &client, &config, module_host.as_ref());
@@ -285,28 +189,21 @@ async fn run_idc_loop(
             });
         }
 
-        let next_retry = next_stream_retry(&streams);
+        let next_retry = streams.next_retry();
 
         tokio::select! {
             // Start the next message after cleanup succeeds. Retry failed attempts after backoff.
             Some((stream_id, seq, result)) = in_flight.next(), if !in_flight.is_empty() => {
-                let state = streams
-                    .get_mut(&stream_id)
-                    .expect("in-flight stream has delivery state");
                 match result {
                     Ok(()) => {
-                        // Add stream_id back to queue as ready, so that `take_read_message`
-                        // can check for next message
-                        state.finish(seq);
-                        ready.push(stream_id);
+                        streams.finish(stream_id, seq);
                     }
                     Err(error) => {
+                        let delay = streams.retry(stream_id, seq);
                         log::warn!(
-                            "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {:?}: {error:#}",
+                            "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {delay:?}: {error:#}",
                             database_identity.to_hex(),
-                            state.backoff,
                         );
-                        state.retry(seq);
                     }
                 }
             },
@@ -319,11 +216,7 @@ async fn run_idc_loop(
                 // Zero means the channel is closed and drained.
                 notifications_open = count != 0;
                 for msg in notifications.drain(..) {
-                    let stream_id = StreamId(msg.stream_id);
-                    let state = streams.entry(stream_id).or_insert_with(OrderedStream::new);
-                    if state.is_ready() {
-                        ready.push(stream_id);
-                    }
+                    streams.wake(StreamId(msg.stream_id));
                 }
             },
 
@@ -333,7 +226,7 @@ async fn run_idc_loop(
                 tokio::time::sleep(delay).await;
                 Some(stream_id)
             }, if next_retry.is_some() => {
-                ready.push(stream_id);
+                streams.wake(stream_id);
             },
 
             // The notification channel is drained and no deliveries or retries remain.
@@ -349,41 +242,19 @@ async fn run_idc_loop(
     Ok(())
 }
 
-/// Find the next stream to retry and how long it needs to wait.
-fn next_stream_retry(streams: &StreamMap) -> Option<(StreamId, Duration)> {
-    streams
-        .iter()
-        .filter(|(_, state)| state.active_seq.is_none())
-        .filter_map(|(&stream_id, state)| state.blocked_until.map(|deadline| (stream_id, deadline)))
-        .min_by_key(|(_, deadline)| *deadline)
-        .map(|(stream_id, deadline)| (stream_id, deadline.saturating_duration_since(Instant::now())))
-}
-
 /// Take the next ready message and mark its stream as active until processing finishes.
-fn take_ready_message(
-    db: &RelationalDB,
-    streams: &mut StreamMap,
-    ready: &mut ReadyStreams,
-) -> anyhow::Result<Option<LoadedMessage>> {
-    while let Some(stream_id) = ready.pop() {
-        let state = streams
-            .get_mut(&stream_id)
-            .with_context(|| format!("ready stream has delivery state"))?;
-
-        if !state.is_ready() {
-            continue;
-        }
-
+fn take_ready_message(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<Option<LoadedMessage>> {
+    while let Some(stream_id) = streams.pop_ready() {
         match read_next_ordered_message(db, stream_id)
             .with_context(|| format!("failed to read next message for stream {stream_id}"))?
         {
             Some(msg) => {
-                state.start(msg.message().sequence);
+                streams.start(stream_id, msg.message().sequence);
                 return Ok(Some(msg));
             }
             None => {
                 // There is no work left. A later insert adds the stream back.
-                streams.remove(&stream_id);
+                streams.remove_idle(stream_id);
             }
         }
     }
@@ -653,9 +524,9 @@ fn cleanup_message(db: &RelationalDB, tx: &mut MutTxId, delivered: &DeliveredMes
 }
 
 /// Restore pending streams at startup without loading message bodies.
-fn restore_pending_streams(db: &RelationalDB, streams: &mut StreamMap) -> anyhow::Result<()> {
+fn restore_pending_streams(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<()> {
     for stream_id in read_pending_streams(db)? {
-        streams.entry(stream_id).or_insert_with(OrderedStream::new);
+        streams.wake(stream_id);
     }
     Ok(())
 }
@@ -846,7 +717,7 @@ mod tests {
     use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_table::page_pool::PagePool;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::sync::atomic::Ordering;
     use tokio::net::TcpListener;
 
@@ -1084,13 +955,11 @@ mod tests {
                 db.delete_by_rel(&mut tx, table, [first.outbox_row]);
             }
             db.commit_tx(tx)?;
-            let mut streams = StreamMap::from([(stream_id, OrderedStream::new())]);
-            let mut ready = ReadyStreams::default();
-            ready.push(stream_id);
-            assert!(take_ready_message(&db, &mut streams, &mut ready).is_err());
-            assert!(streams[&stream_id].active_seq.is_none());
-            assert!(streams[&stream_id].blocked_until.is_none());
-            assert_eq!(streams[&stream_id].backoff, INITIAL_BACKOFF);
+            let mut streams = DeliveryStreams::default();
+            streams.wake(stream_id);
+            assert!(take_ready_message(&db, &mut streams).is_err());
+            assert_eq!(streams.next_retry(), None);
+            streams.wake(stream_id);
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.st_outbound_stream_by_id(&tx, stream_id.0)?.unwrap().ack_prefix, 0);
             assert!(db.outbound_msg_by_stream_seq(&tx, stream_id.0, 2)?.is_some());
@@ -1351,38 +1220,6 @@ mod tests {
 
     #[tokio::test]
     async fn idc_actor_streams_progress_independently_and_preserve_order() -> anyhow::Result<()> {
-        // Retry the earliest deadline first. Skip streams that are still running.
-        let now = Instant::now();
-        let mut streams = StreamMap::new();
-        for (stream_id, deadline) in [(StreamId(1), now), (StreamId(2), now - INITIAL_BACKOFF)] {
-            streams.insert(
-                stream_id,
-                OrderedStream {
-                    blocked_until: Some(deadline),
-                    ..OrderedStream::new()
-                },
-            );
-        }
-        streams.insert(StreamId(3), OrderedStream::new());
-        assert_eq!(next_stream_retry(&streams), Some((StreamId(2), Duration::ZERO)));
-        streams.get_mut(&StreamId(2)).unwrap().start(1);
-        assert_eq!(next_stream_retry(&streams), Some((StreamId(1), Duration::ZERO)));
-        streams.get_mut(&StreamId(1)).unwrap().start(1);
-        assert!(!streams[&StreamId(1)].is_ready());
-        assert_eq!(next_stream_retry(&streams), None);
-        streams.get_mut(&StreamId(1)).unwrap().retry(1);
-        assert_eq!(streams[&StreamId(1)].active_seq, None);
-        assert_eq!(streams[&StreamId(1)].backoff, INITIAL_BACKOFF * 2);
-        assert!(!streams[&StreamId(1)].is_ready());
-        assert_eq!(next_stream_retry(&streams).unwrap().0, StreamId(1));
-        streams.get_mut(&StreamId(1)).unwrap().blocked_until = Some(now);
-        assert!(streams[&StreamId(1)].is_ready());
-        streams.get_mut(&StreamId(1)).unwrap().start(1);
-        streams.get_mut(&StreamId(1)).unwrap().finish(1);
-        assert!(streams[&StreamId(1)].is_ready());
-        assert_eq!(streams[&StreamId(1)].backoff, INITIAL_BACKOFF);
-        assert_eq!(next_stream_retry(&streams), None);
-
         let keys = crate::auth::JwtKeys::generate()?;
         let (captured_tx, mut captured_rx) = mpsc::unbounded_channel();
         let release_slow = Arc::new(tokio::sync::Semaphore::new(0));
@@ -1428,7 +1265,7 @@ mod tests {
         let table_id = insert_outbox_message(&db, Identity::ONE, 42)?;
         insert_outbox_row(&db, table_id, Identity::ONE, 8, 43)?;
         let (notify_tx, notify_rx) = mpsc::unbounded_channel();
-        let mut streams = StreamMap::new();
+        let mut streams = DeliveryStreams::default();
         restore_pending_streams(&db, &mut streams)?;
         let config = IdcConfig {
             http_port,
