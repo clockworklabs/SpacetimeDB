@@ -1637,7 +1637,9 @@ impl From<TimestampViaI64> for AlgebraicValue {
 /// SpacetimeDB module associated with the database:
 ///
 /// * `database_identity` is the [`Identity`] of the database.
-/// * `owner_identity` is the [`Identity`] of the owner of the database.
+/// * `owner_identity` is the [`Identity`] of the owner of the database when it is initialized.
+///    this field is deprecated and should not be used. Current ownership is tracked in the
+///    control database.
 /// * `program_kind` is the [`ModuleKind`] (currently always [`ModuleKind::WASM`]).
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
 /// * `program_bytes` are the raw bytes of the (compiled) module.
@@ -1650,6 +1652,7 @@ impl From<TimestampViaI64> for AlgebraicValue {
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
     pub database_identity: IdentityViaU256,
+    #[deprecated(note = "Current ownership is tracked by the control database")]
     pub owner_identity: IdentityViaU256,
     pub program_kind: ModuleKind,
     pub program_hash: Hash,

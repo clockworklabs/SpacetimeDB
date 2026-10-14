@@ -238,10 +238,11 @@ impl RelationalDB {
     ///
     ///   The [`Identity`] of the database's owner.
     ///
-    ///   An error is returned if the database already exists, but has a
-    ///   different owner.
     ///   If it is a new database, the identity is stored in the database's
     ///   system tables upon calling [`Self::set_initialized`].
+    ///   The stored value is only guaranteed to be correct at initialization.
+    ///   Current ownership is tracked in the control database which may change
+    ///   over time.
     ///
     /// - `history`
     ///
@@ -349,14 +350,6 @@ impl RelationalDB {
                     "mismatched database identity: {} != {}",
                     meta.database_identity,
                     database_identity
-                )
-                .into());
-            }
-            if meta.owner_identity != owner_identity {
-                return Err(anyhow!(
-                    "mismatched owner identity: {} != {}",
-                    meta.owner_identity,
-                    owner_identity
                 )
                 .into());
             }
@@ -487,14 +480,13 @@ impl RelationalDB {
         // Probably a bug: the database is already initialized.
         // Ignore if it would be a no-op.
         if let Some(meta) = self.inner.metadata_mut_tx(tx)? {
-            if program.hash == meta.program_hash
-                && self.database_identity == meta.database_identity
-                && self.owner_identity == meta.owner_identity
-            {
+            if program.hash == meta.program_hash && self.database_identity == meta.database_identity {
                 return Ok(());
             }
             return Err(anyhow!("database {} already initialized", self.database_identity).into());
         }
+
+        #[allow(deprecated)]
         let row = StModuleRow {
             database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
@@ -4384,6 +4376,50 @@ mod tests {
     #[test]
     fn load_1_2_quickstart_without_snapshot_test() -> ResultTest<()> {
         load_1_2_data(false)
+    }
+
+    /// Ownership of a database may be transferred, so opening an existing database
+    /// with an owner different from the one recorded in `st_module` must succeed,
+    /// and the supplied owner must take precedence.
+    fn open_with_different_owner(use_snapshot: bool) -> ResultTest<()> {
+        let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/v1.2/replicas");
+        let tempdir = copy_fixture_dir(&data_dir);
+
+        let dir = ReplicaDir::from_path_unchecked(tempdir.path().join("replicas/22000001"));
+
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+        // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
+        let _rt = rt.enter();
+
+        let db_identity = Identity::from_hex("c2006c1c2ede44b44e9835dfe00e3e1edc3bc67024b504cb6a3b8491db5d98a3")?;
+        let stored_owner = Identity::from_hex("c2001c551217385bdeba5f1e1b5b19a28910852a94ce43428508e7a098760cea")?;
+        let new_owner = Identity::ONE;
+        let (db, _) = TestDB::open_existing_durable(
+            &dir,
+            rt.handle().clone(),
+            22000001,
+            db_identity,
+            new_owner,
+            use_snapshot,
+        )?;
+
+        assert_eq!(db.owner_identity(), new_owner);
+        let meta = db.metadata()?.expect("database should be initialized");
+        #[allow(deprecated)]
+        let meta_owner = meta.owner_identity;
+        assert_eq!(meta_owner, stored_owner);
+
+        Ok(())
+    }
+
+    #[test]
+    fn open_with_different_owner_from_snapshot() -> ResultTest<()> {
+        open_with_different_owner(true)
+    }
+
+    #[test]
+    fn open_with_different_owner_without_snapshot() -> ResultTest<()> {
+        open_with_different_owner(false)
     }
 
     /// This tests adding a new system table st_connection_credentials, which was not in 1.2.

@@ -1091,6 +1091,7 @@ impl Locking {
 /// Construct a [`Metadata`] from the given [`RowRef`],
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
+    #[allow(deprecated)]
     Ok(Metadata {
         database_identity: read_identity_from_col(row, StModuleFields::DatabaseIdentity)?,
         owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,

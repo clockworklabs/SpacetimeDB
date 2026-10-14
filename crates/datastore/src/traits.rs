@@ -497,7 +497,9 @@ pub trait MutTx {
 pub struct Metadata {
     /// The stable [`Identity`] of the database.
     pub database_identity: Identity,
-    /// The identity of the database's owner.
+    /// The identity of the database's owner as of initialization.
+    /// The control database is the source of truth for current ownership.
+    #[deprecated(note = "Current ownership is tracked by the control database")]
     pub owner_identity: Identity,
     /// The hash of the binary module set for the database.
     pub program_hash: Hash,
