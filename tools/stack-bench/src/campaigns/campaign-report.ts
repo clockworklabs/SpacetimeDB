@@ -1216,15 +1216,10 @@ function replaceFile(path: string, text: string): void {
 export interface GeneratedCampaignReport { report: CampaignReport; reportPath: string;
   htmlPath: string; exportManifestPath: string; relativeOutput: string }
 
-export function generateCampaignReport(directory: string,
-  { output: requestedOutput }: { output?: string } = {},
-): GeneratedCampaignReport {
-  let output = requestedOutput ?? join(resolve(directory), 'report');
+export function readCampaignReport(directory: string) {
   const { plan, state, paths } = inspectCampaign(directory,
     { requireCurrentInputs: false, allowRelocatedEvidence: true });
   if (state.status === 'running') throw new Error('cannot report while a campaign attempt is running');
-  output = campaignChildPath(paths.root, output, 'report output');
-  const outputRelative = relative(paths.root, output);
   const report = buildCampaignReport(plan, state, (attempt, execution) => {
     const run = readArtifactPayload(join(paths.root, execution.output, ARTIFACT_FILE.run),
       { expectedKind: 'benchmark_run' });
@@ -1256,6 +1251,15 @@ export function generateCampaignReport(directory: string,
       };
     } catch { return null; }
   });
+  return { plan, state, paths, report };
+}
+
+export function generateCampaignReport(directory: string,
+  { output: requestedOutput }: { output?: string } = {},
+): GeneratedCampaignReport {
+  const { plan, state, paths, report } = readCampaignReport(directory);
+  const output = campaignChildPath(paths.root, requestedOutput ?? join(resolve(directory), 'report'), 'report output');
+  const outputRelative = relative(paths.root, output);
   mkdirSync(output, { recursive: true });
   // The manifest is written last, so it only ever describes this generation's files.
   const exportManifestPath = join(output, 'export-manifest.json');

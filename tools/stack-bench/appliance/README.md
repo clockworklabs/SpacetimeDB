@@ -480,6 +480,38 @@ campaign report <campaign-directory>
 - `report` rebuilds `report/report.json` and `report/report.html` from retained
   evidence.
 
+### Upload to StackBench
+
+After rebuilding the controller with the publish command, report a finished,
+frozen dependency campaign. Then use one destination:
+
+```sh
+campaign report campaigns/campaign-001
+campaign publish campaigns/campaign-001 --suite ecommerce-1 --out upload.json
+campaign publish campaigns/campaign-001 --suite ecommerce-1 --to https://stackbench.org
+```
+
+`--out` writes a new upload file and refuses to replace an existing file.
+`--to` needs `STACKBENCH_UPLOAD_KEY` in the publishing process. For the appliance,
+pass it only to that invocation with `docker compose run --rm -e STACKBENCH_UPLOAD_KEY
+controller campaign publish ...`, using the normal Compose file and setup environment.
+Keep the key out of campaign manifests and coding-agent environments.
+
+The site must have a suite with the matching feature catalog hash and selected
+feature total. Uploads are private until an admin publishes them. Qualification
+status is retained and does not block an upload. Invalid attempts retain their
+outcome and exclusion reason. Unknown cost stays null; a cost upper bound keeps
+its status. Features blocked by prerequisites remain in the total.
+
+Publishing checks the saved report against current retained evidence. Changed
+evidence needs another `campaign report`. Active control or unfinished attempts
+block publication. HTTP uploads use HTTPS, with loopback HTTP allowed for local
+development. Redirects are rejected. The limits are 10 MiB and 10,000 attempts.
+
+The version 1 site groups results by stack, agent, model and effort within a
+suite. Use separate suites for experimental conditions that must not be averaged.
+The runner retains the full report and its hash. Publishing does not change it.
+
 Stop interrupts active attempts. A stopped sequential attempt remains invalid.
 Running the same trial again starts only pending attempts; it does not restart
 the interrupted attempt. Resume starts scheduled dependency work.

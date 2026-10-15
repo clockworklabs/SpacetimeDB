@@ -10,6 +10,7 @@ import { executeCampaign, inspectCampaign, reconcileCampaign }
   from '../src/campaigns/campaign-runner.js';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js';
 import { exportCampaignReport, generateCampaignReport } from '../src/campaigns/campaign-report.js';
+import { publishCampaign } from '../src/campaigns/campaign-publish.js';
 import { grantCampaignDependencyRepairs }
   from '../src/campaigns/campaign-progression-grant.js';
 import { requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
@@ -83,6 +84,7 @@ export type CampaignArgs =
   | { command: 'inspect'; directory: string }
   | { command: 'report'; directory: string }
   | { command: 'export'; directory: string; output: string }
+  | { command: 'publish'; directory: string; suite: string; output?: string; to?: string }
   | { command: 'stop'; directory: string }
   | { command: 'audit'; directory: string }
   | { command: 'grant-repairs'; directory: string; attemptId: string; grantId: string;
@@ -199,6 +201,21 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
   if (command === 'export' && path && rest.length === 2 && rest[0] === '--out' && rest[1]) {
     return { command, directory: resolve(path), output: resolve(rest[1]) };
   }
+  if (command === 'publish') {
+    const options = new Map<string, string>();
+    for (let i = 0; i < rest.length; i += 2) {
+      const flag = rest[i]; const value = rest[i + 1];
+      if (!flag || !['--suite', '--out', '--to'].includes(flag) || !value
+        || value.startsWith('--') || options.has(flag)) throw new Error('invalid publish options');
+      options.set(flag, value);
+    }
+    const suite = options.get('--suite');
+    if (!path || !suite || options.has('--out') === options.has('--to')) {
+      throw new Error('publish requires <directory> --suite <slug> and exactly one of --out or --to');
+    }
+    return { command, directory: resolve(path), suite,
+      ...(options.has('--out') ? { output: resolve(options.get('--out')!) } : { to: options.get('--to')! }) };
+  }
   if (command === 'grant-time' && path) {
     const options = new Map<string, string>();
     for (let i = 0; i < rest.length; i += 2) {
@@ -263,6 +280,7 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
     + '| trial|run|resume|reconcile <campaign.json> --out <directory> '
     + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> [--prepare-only] '
     + '| status <directory> [--full] | inspect|report|audit|stop <directory> | export <directory> --out <new-directory> '
+    + '| publish <directory> --suite <slug> (--to <site-origin> | --out <new-file>) '
     + '| grant-repairs <directory> --attempt <id> --grant-id <id> --level <N> '
     + '--feature <id> [--feature <id> ...] --repairs <N> '
     + '| grant-time <directory> --attempt <id> --grant-id <id> --minutes <N> '
@@ -303,6 +321,10 @@ async function main() {
   }
   if (args.command === 'export') {
     console.log(exportCampaignReport(args.directory, args.output));
+    return;
+  }
+  if (args.command === 'publish') {
+    console.log(JSON.stringify(await publishCampaign(args.directory, args), null, 2));
     return;
   }
   if (args.command === 'stop') {

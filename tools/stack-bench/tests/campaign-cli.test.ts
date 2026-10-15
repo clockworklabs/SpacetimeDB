@@ -5,6 +5,17 @@ import { auditCompletedReferenceCampaign, campaignStateSummary, parseCampaignArg
   validateResumeCampaignState } from '../commands/campaign-cli.js';
 import { SAFE_RESULT_NAME } from '../src/runtime/operational-paths.js';
 
+test('publish requires a suite and exactly one destination', () => {
+  const args = (...flags: string[]) => parseCampaignArgs(['node', 'campaign', 'publish', 'results/finished', ...flags]);
+  assert.equal(args('--suite', 'ecommerce-1', '--out', 'upload.json').command, 'publish');
+  assert.equal(args('--suite', 'ecommerce-1', '--to', 'http://localhost:5175').command, 'publish');
+  for (const flags of [[], ['--out', 'upload.json'], ['--suite', 'x'],
+    ['--suite', 'x', '--to', 'https://stackbench.org', '--out', 'upload.json'],
+    ['--suite', 'x', '--suite', 'y', '--out', 'upload.json']]) {
+    assert.throws(() => args(...flags), /publish/);
+  }
+});
+
 test('campaign commands print a compact result and retain failed attempt details', () => {
   const plan = { id: 'campaign', version: '1.0.0', contentSha256: 'a'.repeat(64) };
   const state = {

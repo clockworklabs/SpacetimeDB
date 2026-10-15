@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "suite": "fixture-suite",
+  "campaignId": "dependency-model-free-proof",
+  "campaignSha256": "4f576f6c51a196f3f3236ae9f932493f801928c5dbcc83bc9620c258a029fcd4",
+  "reportSha256": "521a7e225b25e2ba89bcf05949c3278c0ef336aaf7d924dd80ea6a292aa54aad",
+  "catalogSha256": "408ae959709e0960285a88a16ac50f31663185b259b908381827e50cd4b93465",
+  "gradingStatus": "pending",
+  "mode": "dependency",
+  "frozen": true,
+  "finished": true,
+  "attempts": [
+    {
+      "attemptId": "dependency-model-free-proof-r1-c1-a1-stub",
+      "stack": "stub",
+      "agent": "deterministic",
+      "model": "deterministic-stall",
+      "effort": "default",
+      "repetition": 1,
+      "status": "completed",
+      "outcome": "app_failure",
+      "featuresPassed": 0,
+      "featuresTotal": 2,
+      "costUsd": null,
+      "costStatus": "unknown",
+      "startedAt": "2026-10-14T12:00:00.000Z",
+      "completedAt": "2026-10-14T12:00:00.000Z",
+      "excluded": false,
+      "excludedReason": null
+    },
+    {
+      "attemptId": "dependency-model-free-proof-r2-c1-a1-stub",
+      "stack": "stub",
+      "agent": "deterministic",
+      "model": "deterministic-stall",
+      "effort": "default",
+      "repetition": 2,
+      "status": "invalid",
+      "outcome": "harness_failure",
+      "featuresPassed": null,
+      "featuresTotal": 2,
+      "costUsd": null,
+      "costStatus": "unknown",
+      "startedAt": "2026-10-14T12:00:00.000Z",
+      "completedAt": "2026-10-14T12:00:00.000Z",
+      "excluded": true,
+      "excludedReason": "harness_failure: attempt process exited 1"
+    }
+  ]
+}
