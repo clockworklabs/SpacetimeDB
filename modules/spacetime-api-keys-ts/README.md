@@ -9,11 +9,13 @@ you cannot retrieve it later.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/api-keys spacetimedb
+npm install @spacetimedb/api-keys spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -96,7 +98,7 @@ const fileId = await conn.procedures.uploadWithApiKey({
 ```
 
 Scope matching supports exact scopes, `*`, and prefix wildcards like
-`files:*`. The complete [Colony host module](./example/spacetimedb/) shows
+`files:*`. The complete [Colony host module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-api-keys-ts/example/spacetimedb) shows
 scoped HTTP routes and one-time key delivery.
 
 ## API
@@ -147,7 +149,7 @@ Package entrypoints:
 - `@spacetimedb/api-keys` exports `errors` and the host helpers.
 - `@spacetimedb/api-keys/submodule` supplies the submodule namespace,
   `install`, helpers, operations, and views for host applications.
-- [`spacetimedb/`](./spacetimedb/) publishes the submodule as a standalone
+- [`spacetimedb/`](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-api-keys-ts/spacetimedb) publishes the submodule as a standalone
   database.
 
 ## Tables and views
@@ -186,4 +188,4 @@ pnpm run typecheck
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

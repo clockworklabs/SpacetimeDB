@@ -14,7 +14,10 @@ import {
   gridRow,
 } from '../rows.js';
 
-export const grid = table({ name: 'grid', public: false }, gridRow);
+const gridOptions = { name: 'grid', public: false };
+export const grid: ReturnType<
+  typeof table<typeof gridRow, typeof gridOptions>
+> = table(gridOptions, gridRow);
 
 const byGridCell = {
   accessor: 'byGridCell',
@@ -22,27 +25,42 @@ const byGridCell = {
   columns: ['gridId', 'x', 'y'],
 } as const;
 
-export const cellState = table(
-  { name: 'cell_state', public: false, indexes: [byGridCell] },
-  cellStateRow
-);
+const cellStateOptions = {
+  name: 'cell_state',
+  public: false,
+  indexes: [byGridCell],
+};
+export const cellState: ReturnType<
+  typeof table<typeof cellStateRow, typeof cellStateOptions>
+> = table(cellStateOptions, cellStateRow);
 
-export const gridEntity = table(
-  { name: 'grid_entity', public: false, indexes: [byGridCell] },
-  gridEntityRow
-);
+const gridEntityOptions = {
+  name: 'grid_entity',
+  public: false,
+  indexes: [byGridCell],
+};
+export const gridEntity: ReturnType<
+  typeof table<typeof gridEntityRow, typeof gridEntityOptions>
+> = table(gridEntityOptions, gridEntityRow);
 
-export const entityPath = table(
-  { name: 'entity_path', public: false },
-  entityPathRow
-);
+const entityPathOptions = { name: 'entity_path', public: false };
+export const entityPath: ReturnType<
+  typeof table<typeof entityPathRow, typeof entityPathOptions>
+> = table(entityPathOptions, entityPathRow);
 
-export const spacetimedb = schema({
+const tables: {
+  grid: typeof grid;
+  cellState: typeof cellState;
+  gridEntity: typeof gridEntity;
+  entityPath: typeof entityPath;
+} = {
   grid,
   cellState,
   gridEntity,
   entityPath,
-});
+};
+export const spacetimedb: ReturnType<typeof schema<typeof tables>> =
+  schema(tables);
 export default spacetimedb;
 
 export type Schema = InferSchema<typeof spacetimedb>;

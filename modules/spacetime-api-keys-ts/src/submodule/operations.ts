@@ -1,5 +1,14 @@
 import { Timestamp } from 'spacetimedb';
-import { Range, SenderError, type Infer } from 'spacetimedb/server';
+import {
+  Range,
+  SenderError,
+  type Infer,
+  type ArrayBuilder,
+  type ProcedureExport,
+  type ReducerExport,
+  type ViewCtx,
+  type ViewExport,
+} from 'spacetimedb/server';
 import {
   ApiKeyStatus,
   apiKey,
@@ -495,37 +504,44 @@ export function rotateApiKeyInTx(
   return toCreateResult(updated, key);
 }
 
-export const createApiKey = spacetimedb.procedure(
-  {
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
-  apiKeyCreateResult,
-  (ctx, args) =>
-    ctx.withTx(tx =>
-      createApiKeyInTx(tx, {
-        ownerSubject: ctx.sender.toHexString(),
-        name: args.name,
-        scopesJson: args.scopesJson,
-        metadataJson: args.metadataJson,
-        expiresInSeconds: args.expiresInSeconds,
-        keyPrefix: args.keyPrefix,
-      })
-    )
+const createApiKeyArgs = {
+  name: t.string(),
+  scopesJson: t.string(),
+  metadataJson: t.option(t.string()),
+  expiresInSeconds: t.option(t.u32()),
+  keyPrefix: t.option(t.string()),
+};
+export const createApiKey: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof createApiKeyArgs,
+  typeof apiKeyCreateResult
+> = spacetimedb.procedure(createApiKeyArgs, apiKeyCreateResult, (ctx, args) =>
+  ctx.withTx(tx =>
+    createApiKeyInTx(tx, {
+      ownerSubject: ctx.sender.toHexString(),
+      name: args.name,
+      scopesJson: args.scopesJson,
+      metadataJson: args.metadataJson,
+      expiresInSeconds: args.expiresInSeconds,
+      keyPrefix: args.keyPrefix,
+    })
+  )
 );
 
-export const createApiKeyForSubject = spacetimedb.procedure(
-  {
-    ownerSubject: t.string(),
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
+const createApiKeyForSubjectArgs = {
+  ownerSubject: t.string(),
+  name: t.string(),
+  scopesJson: t.string(),
+  metadataJson: t.option(t.string()),
+  expiresInSeconds: t.option(t.u32()),
+  keyPrefix: t.option(t.string()),
+};
+export const createApiKeyForSubject: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof createApiKeyForSubjectArgs,
+  typeof apiKeyCreateResult
+> = spacetimedb.procedure(
+  createApiKeyForSubjectArgs,
   apiKeyCreateResult,
   (ctx, args) =>
     ctx.withTx(tx => {
@@ -534,108 +550,124 @@ export const createApiKeyForSubject = spacetimedb.procedure(
     })
 );
 
-export const rotateApiKey = spacetimedb.procedure(
-  {
-    keyId: t.string(),
-    expiresInSeconds: t.option(t.u32()),
-    keyPrefix: t.option(t.string()),
-  },
-  apiKeyCreateResult,
-  (ctx, args) =>
-    ctx.withTx(tx =>
-      rotateApiKeyInTx(tx, {
-        keyId: args.keyId,
-        ownerSubject: ctx.sender.toHexString(),
-        expiresInSeconds: args.expiresInSeconds,
-        keyPrefix: args.keyPrefix,
-      })
-    )
-);
-
-export const revokeApiKey = spacetimedb.reducer(
-  { keyId: t.string() },
-  (ctx, args) => {
-    revokeApiKeyInTx(ctx, {
+const rotateApiKeyArgs = {
+  keyId: t.string(),
+  expiresInSeconds: t.option(t.u32()),
+  keyPrefix: t.option(t.string()),
+};
+export const rotateApiKey: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof rotateApiKeyArgs,
+  typeof apiKeyCreateResult
+> = spacetimedb.procedure(rotateApiKeyArgs, apiKeyCreateResult, (ctx, args) =>
+  ctx.withTx(tx =>
+    rotateApiKeyInTx(tx, {
       keyId: args.keyId,
       ownerSubject: ctx.sender.toHexString(),
+      expiresInSeconds: args.expiresInSeconds,
+      keyPrefix: args.keyPrefix,
+    })
+  )
+);
+
+const revokeApiKeyArgs = { keyId: t.string() };
+export const revokeApiKey: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof revokeApiKeyArgs
+> = spacetimedb.reducer(revokeApiKeyArgs, (ctx, args) => {
+  revokeApiKeyInTx(ctx, {
+    keyId: args.keyId,
+    ownerSubject: ctx.sender.toHexString(),
+  });
+});
+
+const revokeApiKeyForSubjectArgs = {
+  keyId: t.string(),
+  ownerSubject: t.string(),
+};
+export const revokeApiKeyForSubject: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof revokeApiKeyForSubjectArgs
+> = spacetimedb.reducer(revokeApiKeyForSubjectArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  revokeApiKeyInTx(ctx, args);
+});
+
+const setApiKeysConfigArgs = {
+  /** Required on the first call. Generate it outside the module. */
+  secret: t.option(t.string()),
+  usageRetentionSeconds: t.option(t.u32()),
+};
+export const setApiKeysConfig: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof setApiKeysConfigArgs
+> = spacetimedb.reducer(setApiKeysConfigArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  const existing = ctx.db.apiKeyConfig.singleton.find(true);
+  const secret = args.secret ?? existing?.secret;
+  if (secret === undefined) throwSenderError(errors.secretRequired);
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throwSenderError(errors.invalidSecret);
+  }
+  const usageRetentionSeconds =
+    args.usageRetentionSeconds ??
+    existing?.usageRetentionSeconds ??
+    DEFAULT_USAGE_RETENTION_SECONDS;
+  if (
+    usageRetentionSeconds < MIN_USAGE_RETENTION_SECONDS ||
+    usageRetentionSeconds > MAX_EXPIRATION_SECONDS
+  ) {
+    throwSenderError(errors.invalidUsageRetention);
+  }
+  const row = {
+    singleton: true,
+    secret,
+    counter: existing?.counter ?? 0n,
+    usageRetentionSeconds,
+    updatedAt: ctx.timestamp,
+  };
+  if (existing) ctx.db.apiKeyConfig.singleton.update(row);
+  else ctx.db.apiKeyConfig.insert(row);
+});
+
+const addApiKeysAdminArgs = { identity: t.identity() };
+export const addApiKeysAdmin: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof addApiKeysAdminArgs
+> = spacetimedb.reducer(addApiKeysAdminArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  if (ctx.db.apiKeyAdminIdentity.identity.find(args.identity) == null) {
+    ctx.db.apiKeyAdminIdentity.insert({
+      identity: args.identity,
+      addedAt: ctx.timestamp,
     });
   }
-);
+});
 
-export const revokeApiKeyForSubject = spacetimedb.reducer(
-  { keyId: t.string(), ownerSubject: t.string() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    revokeApiKeyInTx(ctx, args);
+const removeApiKeysAdminArgs = { identity: t.identity() };
+export const removeApiKeysAdmin: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof removeApiKeysAdminArgs
+> = spacetimedb.reducer(removeApiKeysAdminArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  const row = ctx.db.apiKeyAdminIdentity.identity.find(args.identity);
+  if (!row) return;
+  if (ctx.db.apiKeyAdminIdentity.count() <= 1n) {
+    throwSenderError(errors.cannotRemoveLastAdmin);
   }
-);
+  ctx.db.apiKeyAdminIdentity.delete(row);
+});
 
-export const setApiKeysConfig = spacetimedb.reducer(
-  {
-    /** Required on the first call. Generate it outside the module. */
-    secret: t.option(t.string()),
-    usageRetentionSeconds: t.option(t.u32()),
-  },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const existing = ctx.db.apiKeyConfig.singleton.find(true);
-    const secret = args.secret ?? existing?.secret;
-    if (secret === undefined) throwSenderError(errors.secretRequired);
-    if (secret.length < MIN_SECRET_LENGTH) {
-      throwSenderError(errors.invalidSecret);
-    }
-    const usageRetentionSeconds =
-      args.usageRetentionSeconds ??
-      existing?.usageRetentionSeconds ??
-      DEFAULT_USAGE_RETENTION_SECONDS;
-    if (
-      usageRetentionSeconds < MIN_USAGE_RETENTION_SECONDS ||
-      usageRetentionSeconds > MAX_EXPIRATION_SECONDS
-    ) {
-      throwSenderError(errors.invalidUsageRetention);
-    }
-    const row = {
-      singleton: true,
-      secret,
-      counter: existing?.counter ?? 0n,
-      usageRetentionSeconds,
-      updatedAt: ctx.timestamp,
-    };
-    if (existing) ctx.db.apiKeyConfig.singleton.update(row);
-    else ctx.db.apiKeyConfig.insert(row);
-  }
-);
-
-export const addApiKeysAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (ctx.db.apiKeyAdminIdentity.identity.find(args.identity) == null) {
-      ctx.db.apiKeyAdminIdentity.insert({
-        identity: args.identity,
-        addedAt: ctx.timestamp,
-      });
-    }
-  }
-);
-
-export const removeApiKeysAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const row = ctx.db.apiKeyAdminIdentity.identity.find(args.identity);
-    if (!row) return;
-    if (ctx.db.apiKeyAdminIdentity.count() <= 1n) {
-      throwSenderError(errors.cannotRemoveLastAdmin);
-    }
-    ctx.db.apiKeyAdminIdentity.delete(row);
-  }
-);
-
+const apiKeysSweepArgs: { arg: typeof apiKeySweepTick.rowType } = {
+  arg: apiKeySweepTick.rowType,
+};
 /** Deletes a bounded batch of usage rows older than the retention window. */
-export const apiKeysSweep = spacetimedb.reducer(
+export const apiKeysSweep: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof apiKeysSweepArgs
+> = spacetimedb.reducer(
   { onSchedule: apiKeySweepTick },
-  { arg: apiKeySweepTick.rowType },
+  apiKeysSweepArgs,
   ctx => {
     const retention =
       ctx.db.apiKeyConfig.singleton.find(true)?.usageRetentionSeconds ??
@@ -653,9 +685,13 @@ export const apiKeysSweep = spacetimedb.reducer(
   }
 );
 
-export const myApiKeys = spacetimedb.view(
+const myApiKeysResult: ArrayBuilder<typeof apiKeySummary> =
+  t.array(apiKeySummary);
+export const myApiKeys: ViewExport<
+  (ctx: ViewCtx<typeof spacetimedb.schemaType>) => Infer<typeof myApiKeysResult>
+> = spacetimedb.view(
   { name: 'my_api_keys', public: true },
-  t.array(apiKeySummary),
+  myApiKeysResult,
   ctx => {
     const subject = ctx.sender.toHexString();
     return takeRows(ctx.db.apiKey.ownerSubject.filter(subject), 500).map(
@@ -664,9 +700,15 @@ export const myApiKeys = spacetimedb.view(
   }
 );
 
-export const apiKeysAdmin = spacetimedb.view(
+const apiKeysAdminResult: ArrayBuilder<typeof apiKeySummary> =
+  t.array(apiKeySummary);
+export const apiKeysAdmin: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof apiKeysAdminResult>
+> = spacetimedb.view(
   { name: 'api_keys_admin', public: true },
-  t.array(apiKeySummary),
+  apiKeysAdminResult,
   (ctx: ViewModuleCtx) => {
     if (!isAdmin(ctx)) return [];
     const rows = takeRows(
@@ -677,9 +719,15 @@ export const apiKeysAdmin = spacetimedb.view(
   }
 );
 
-export const apiKeyUsageAdmin = spacetimedb.view(
+const apiKeyUsageAdminResult: ArrayBuilder<typeof apiKeyUsageSummary> =
+  t.array(apiKeyUsageSummary);
+export const apiKeyUsageAdmin: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof apiKeyUsageAdminResult>
+> = spacetimedb.view(
   { name: 'api_key_usage_admin', public: true },
-  t.array(apiKeyUsageSummary),
+  apiKeyUsageAdminResult,
   (ctx: ViewModuleCtx) => {
     if (!isAdmin(ctx)) return [];
     return takeRows(

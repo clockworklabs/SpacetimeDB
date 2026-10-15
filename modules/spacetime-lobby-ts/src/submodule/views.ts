@@ -1,4 +1,10 @@
-import { Range } from 'spacetimedb/server';
+import {
+  Range,
+  type ArrayBuilder,
+  type Infer,
+  type ViewCtx,
+  type ViewExport,
+} from 'spacetimedb/server';
 import {
   RoomStatus,
   TicketStatus,
@@ -83,9 +89,15 @@ function take<T>(rows: Iterable<T>, limit: number): T[] {
   return out;
 }
 
-export const myLobbyTickets = spacetimedb.view(
+const myLobbyTicketsResult: ArrayBuilder<typeof lobbyQueueTicket.rowType> =
+  t.array(lobbyQueueTicket.rowType);
+export const myLobbyTickets: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof myLobbyTicketsResult>
+> = spacetimedb.view(
   { name: 'my_lobby_tickets', public: true },
-  t.array(lobbyQueueTicket.rowType),
+  myLobbyTicketsResult,
   ctx =>
     newestRows(
       ctx.db.lobbyQueueTicket.bySubject.filter(subjectForSender(ctx)),
@@ -93,9 +105,15 @@ export const myLobbyTickets = spacetimedb.view(
     )
 );
 
-export const myLobbyRatings = spacetimedb.view(
+const myLobbyRatingsResult: ArrayBuilder<typeof rankedRatingRow> =
+  t.array(rankedRatingRow);
+export const myLobbyRatings: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof myLobbyRatingsResult>
+> = spacetimedb.view(
   { name: 'my_lobby_ratings', public: true },
-  t.array(rankedRatingRow),
+  myLobbyRatingsResult,
   ctx =>
     selectTopRows(
       ctx.db.lobbySubjectRating.bySubject.filter(subjectForSender(ctx)),
@@ -114,9 +132,15 @@ export const myLobbyRatings = spacetimedb.view(
       .sort((a, b) => a.pool.localeCompare(b.pool))
 );
 
-export const myLobbyRoomSeats = spacetimedb.view(
+const myLobbyRoomSeatsResult: ArrayBuilder<typeof lobbyRoomSeat.rowType> =
+  t.array(lobbyRoomSeat.rowType);
+export const myLobbyRoomSeats: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof myLobbyRoomSeatsResult>
+> = spacetimedb.view(
   { name: 'my_lobby_room_seats', public: true },
-  t.array(lobbyRoomSeat.rowType),
+  myLobbyRoomSeatsResult,
   ctx =>
     newestRowsBy(
       ctx.db.lobbyRoomSeat.bySubject.filter(subjectForSender(ctx)),
@@ -125,9 +149,16 @@ export const myLobbyRoomSeats = spacetimedb.view(
     )
 );
 
-export const myLobbyRooms = spacetimedb.view(
+const myLobbyRoomsResult: ArrayBuilder<typeof lobbyRoom.rowType> = t.array(
+  lobbyRoom.rowType
+);
+export const myLobbyRooms: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof myLobbyRoomsResult>
+> = spacetimedb.view(
   { name: 'my_lobby_rooms', public: true },
-  t.array(lobbyRoom.rowType),
+  myLobbyRoomsResult,
   ctx => {
     const subject = subjectForSender(ctx);
     const seen = new Set<string>();
@@ -147,9 +178,15 @@ export const myLobbyRooms = spacetimedb.view(
   }
 );
 
-export const lobbyQueueSummary = spacetimedb.view(
+const lobbyQueueSummaryResult: ArrayBuilder<typeof queueSummaryRow> =
+  t.array(queueSummaryRow);
+export const lobbyQueueSummary: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof lobbyQueueSummaryResult>
+> = spacetimedb.view(
   { name: 'lobby_queue_summary', public: true },
-  t.array(queueSummaryRow),
+  lobbyQueueSummaryResult,
   ctx => {
     const summary = new Map<
       string,
@@ -190,9 +227,15 @@ export const lobbyQueueSummary = spacetimedb.view(
   }
 );
 
-export const lobbyRankedLeaderboard = spacetimedb.view(
+const lobbyRankedLeaderboardResult: ArrayBuilder<typeof rankedRatingRow> =
+  t.array(rankedRatingRow);
+export const lobbyRankedLeaderboard: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof lobbyRankedLeaderboardResult>
+> = spacetimedb.view(
   { name: 'lobby_ranked_leaderboard', public: true },
-  t.array(rankedRatingRow),
+  lobbyRankedLeaderboardResult,
   ctx =>
     take(
       ctx.db.lobbySubjectRating.byLeaderboardOrder.filter(new Range()),
@@ -208,9 +251,15 @@ export const lobbyRankedLeaderboard = spacetimedb.view(
     }))
 );
 
-export const lobbyAdminTickets = spacetimedb.view(
+const lobbyAdminTicketsResult: ArrayBuilder<typeof lobbyQueueTicket.rowType> =
+  t.array(lobbyQueueTicket.rowType);
+export const lobbyAdminTickets: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof lobbyAdminTicketsResult>
+> = spacetimedb.view(
   { name: 'lobby_admin_tickets', public: true },
-  t.array(lobbyQueueTicket.rowType),
+  lobbyAdminTicketsResult,
   ctx =>
     isAdmin(ctx)
       ? newestRows(
@@ -220,9 +269,16 @@ export const lobbyAdminTickets = spacetimedb.view(
       : []
 );
 
-export const lobbyAdminRooms = spacetimedb.view(
+const lobbyAdminRoomsResult: ArrayBuilder<typeof lobbyRoom.rowType> = t.array(
+  lobbyRoom.rowType
+);
+export const lobbyAdminRooms: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof lobbyAdminRoomsResult>
+> = spacetimedb.view(
   { name: 'lobby_admin_rooms', public: true },
-  t.array(lobbyRoom.rowType),
+  lobbyAdminRoomsResult,
   ctx =>
     isAdmin(ctx)
       ? newestRows(
@@ -232,15 +288,28 @@ export const lobbyAdminRooms = spacetimedb.view(
       : []
 );
 
-export const lobbyAdminRoomSeats = spacetimedb.view(
+const lobbyAdminRoomSeatsResult: ArrayBuilder<typeof lobbyRoomSeat.rowType> =
+  t.array(lobbyRoomSeat.rowType);
+export const lobbyAdminRoomSeats: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof lobbyAdminRoomSeatsResult>
+> = spacetimedb.view(
   { name: 'lobby_admin_room_seats', public: true },
-  t.array(lobbyRoomSeat.rowType),
+  lobbyAdminRoomSeatsResult,
   ctx => (isAdmin(ctx) ? take(ctx.db.lobbyRoomSeat.iter(), 1000) : [])
 );
 
-export const lobbyAdminMatchResults = spacetimedb.view(
+const lobbyAdminMatchResultsResult: ArrayBuilder<
+  typeof lobbyMatchResult.rowType
+> = t.array(lobbyMatchResult.rowType);
+export const lobbyAdminMatchResults: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof lobbyAdminMatchResultsResult>
+> = spacetimedb.view(
   { name: 'lobby_admin_match_results', public: true },
-  t.array(lobbyMatchResult.rowType),
+  lobbyAdminMatchResultsResult,
   ctx =>
     isAdmin(ctx)
       ? selectTopRows(

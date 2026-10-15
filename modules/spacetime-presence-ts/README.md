@@ -10,11 +10,13 @@ separate lists for rooms or groups and control who sees them.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/presence spacetimedb
+npm install @spacetimedb/presence spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -60,7 +62,7 @@ export default spacetimedb;
 `isRoomMember` and `roomIdsFor` stand for the host's own authorization. The
 subject can be any stable ID; applications with account authentication can
 use a verified session's user ID instead of the identity. See the
-[Presence Chat host module](./example/spacetimedb/) for authenticated
+[Presence Chat host module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-presence-ts/example/spacetimedb) for authenticated
 subjects, typing scopes, and bounded cleanup.
 
 After generating bindings, send heartbeats through the host operation and
@@ -108,7 +110,7 @@ Package entrypoints:
   definitions.
 - `@spacetimedb/presence/submodule` exports the submodule namespace,
   `install`, operations, and helpers.
-- [`spacetimedb/`](./spacetimedb/) publishes the submodule as a standalone
+- [`spacetimedb/`](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-presence-ts/spacetimedb) publishes the submodule as a standalone
   database.
 
 ## Testing
@@ -120,4 +122,4 @@ pnpm run typecheck
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

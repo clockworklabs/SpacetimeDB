@@ -11,11 +11,13 @@ won.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/lobby spacetimedb
+npm install @spacetimedb/lobby spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -55,7 +57,7 @@ export const findDuel = spacetimedb.reducer({}, ctx => {
 });
 ```
 
-See the [Starclash host module](./example/spacetimedb/) for profile mapping,
+See the [Starclash host module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-lobby-ts/example/spacetimedb) for profile mapping,
 matchmaking, match results, and caller-scoped views.
 
 After generating bindings, a client joins through the host operation and reads
@@ -77,7 +79,7 @@ conn
 
 ### Publish Lobby as the database
 
-[`spacetimedb/`](./spacetimedb/) publishes the submodule as a standalone
+[`spacetimedb/`](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-lobby-ts/spacetimedb) publishes the submodule as a standalone
 database with its client reducers, views, and administrator operations.
 
 ## API
@@ -177,4 +179,4 @@ pnpm run typecheck
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

@@ -9,11 +9,13 @@ move it.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/grid spacetimedb
+npm install @spacetimedb/grid spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -52,7 +54,7 @@ The submodule treats owner values as opaque strings. Host operations must map
 the authenticated caller to that string before calling helpers such as
 `createGrid` or `moveEntity`. Grid tables are private, so the host also
 exposes the rows each caller may see through its own views. See the
-[Grid Tactics host module](./example/spacetimedb/)
+[Grid Tactics host module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-grid-ts/example/spacetimedb)
 for an authenticated boundary and scoped views.
 
 The generated client calls the host operations:
@@ -221,4 +223,4 @@ pnpm run typecheck
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

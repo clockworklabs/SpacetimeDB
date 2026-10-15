@@ -89,7 +89,7 @@
     "postpack": "node -e \"require('node:fs').unlinkSync('LICENSE')\""
   },
   "peerDependencies": {
-    "spacetimedb": "workspace:^"
+    "spacetimedb": "^2.12.0"
   },
   "devDependencies": {
     "eslint": "^9.17.0",

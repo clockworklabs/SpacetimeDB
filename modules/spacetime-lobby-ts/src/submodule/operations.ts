@@ -1,5 +1,11 @@
 import { Timestamp } from 'spacetimedb';
-import { Range, SenderError, type Infer } from 'spacetimedb/server';
+import {
+  Range,
+  SenderError,
+  type Infer,
+  type ProcedureExport,
+  type ReducerExport,
+} from 'spacetimedb/server';
 import {
   RoomStatus,
   SeatStatus,
@@ -607,136 +613,150 @@ function sweep(ctx: WriteCtx): void {
   }
 }
 
-export const joinQueue = spacetimedb.reducer(
-  {
-    pool: t.string(),
-    matchSize: t.u32(),
-    attributesJson: t.option(t.string()),
-    ttlSeconds: t.option(t.u32()),
-  },
-  (ctx, args) => {
-    joinQueueForSubject(ctx, { ...args, subject: ctx.sender.toHexString() });
-  }
-);
+const joinQueueArgs = {
+  pool: t.string(),
+  matchSize: t.u32(),
+  attributesJson: t.option(t.string()),
+  ttlSeconds: t.option(t.u32()),
+};
+export const joinQueue: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof joinQueueArgs
+> = spacetimedb.reducer(joinQueueArgs, (ctx, args) => {
+  joinQueueForSubject(ctx, { ...args, subject: ctx.sender.toHexString() });
+});
 
-export const cancelTicket = spacetimedb.reducer(
-  { ticketId: t.string() },
-  (ctx, args) => {
-    cancelTicketForSubject(ctx, {
-      ticketId: args.ticketId,
-      subject: ctx.sender.toHexString(),
-    });
-  }
-);
+const cancelTicketArgs = { ticketId: t.string() };
+export const cancelTicket: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof cancelTicketArgs
+> = spacetimedb.reducer(cancelTicketArgs, (ctx, args) => {
+  cancelTicketForSubject(ctx, {
+    ticketId: args.ticketId,
+    subject: ctx.sender.toHexString(),
+  });
+});
 
-export const joinRoom = spacetimedb.reducer(
-  { roomId: t.u64() },
-  (ctx, args) => {
-    joinRoomForSubject(ctx, {
-      roomId: args.roomId,
-      subject: ctx.sender.toHexString(),
-    });
-  }
-);
+const joinRoomArgs = { roomId: t.u64() };
+export const joinRoom: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof joinRoomArgs
+> = spacetimedb.reducer(joinRoomArgs, (ctx, args) => {
+  joinRoomForSubject(ctx, {
+    roomId: args.roomId,
+    subject: ctx.sender.toHexString(),
+  });
+});
 
-export const leaveRoom = spacetimedb.reducer(
-  { roomId: t.u64() },
-  (ctx, args) => {
-    leaveRoomForSubject(ctx, {
-      roomId: args.roomId,
-      subject: ctx.sender.toHexString(),
-    });
-  }
-);
+const leaveRoomArgs = { roomId: t.u64() };
+export const leaveRoom: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof leaveRoomArgs
+> = spacetimedb.reducer(leaveRoomArgs, (ctx, args) => {
+  leaveRoomForSubject(ctx, {
+    roomId: args.roomId,
+    subject: ctx.sender.toHexString(),
+  });
+});
 
-export const setRating = spacetimedb.reducer(
-  {
-    pool: t.string(),
-    subject: t.string(),
-    rating: t.i32(),
-  },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const pool = normalizeName(args.pool, errors.invalidPool, MAX_POOL_LENGTH);
-    const subject = normalizeName(
-      args.subject,
-      errors.invalidSubject,
-      MAX_SUBJECT_LENGTH
-    );
-    if (args.rating < MIN_RATING || args.rating > MAX_RATING) {
-      fail(errors.invalidRating);
-    }
-    const existing = getOrCreateRating(ctx, pool, subject);
-    ctx.db.lobbySubjectRating.ratingId.update({
-      ...existing,
-      rating: args.rating,
-      ratingOrder: BigInt(-args.rating),
-      updatedAt: ctx.timestamp,
-    });
+const setRatingArgs = {
+  pool: t.string(),
+  subject: t.string(),
+  rating: t.i32(),
+};
+export const setRating: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof setRatingArgs
+> = spacetimedb.reducer(setRatingArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  const pool = normalizeName(args.pool, errors.invalidPool, MAX_POOL_LENGTH);
+  const subject = normalizeName(
+    args.subject,
+    errors.invalidSubject,
+    MAX_SUBJECT_LENGTH
+  );
+  if (args.rating < MIN_RATING || args.rating > MAX_RATING) {
+    fail(errors.invalidRating);
   }
-);
+  const existing = getOrCreateRating(ctx, pool, subject);
+  ctx.db.lobbySubjectRating.ratingId.update({
+    ...existing,
+    rating: args.rating,
+    ratingOrder: BigInt(-args.rating),
+    updatedAt: ctx.timestamp,
+  });
+});
 
-export const updateConfig = spacetimedb.reducer(
-  {
-    defaultTicketTtlSeconds: t.u32(),
-    maxMatchSize: t.u32(),
-    readyTimeoutSeconds: t.u32(),
-    retentionSeconds: t.u32(),
-  },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (
-      args.defaultTicketTtlSeconds < 1 ||
-      args.defaultTicketTtlSeconds > MAX_TTL_SECONDS ||
-      args.maxMatchSize < 1 ||
-      args.maxMatchSize > MAX_MATCH_SIZE ||
-      args.readyTimeoutSeconds < 1 ||
-      args.retentionSeconds < 1
-    ) {
-      fail(errors.invalidConfig);
-    }
-    ctx.db.lobbyConfig.singleton.update({
-      ...getConfig(ctx),
-      ...args,
-      updatedAt: ctx.timestamp,
-    });
+const updateConfigArgs = {
+  defaultTicketTtlSeconds: t.u32(),
+  maxMatchSize: t.u32(),
+  readyTimeoutSeconds: t.u32(),
+  retentionSeconds: t.u32(),
+};
+export const updateConfig: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof updateConfigArgs
+> = spacetimedb.reducer(updateConfigArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  if (
+    args.defaultTicketTtlSeconds < 1 ||
+    args.defaultTicketTtlSeconds > MAX_TTL_SECONDS ||
+    args.maxMatchSize < 1 ||
+    args.maxMatchSize > MAX_MATCH_SIZE ||
+    args.readyTimeoutSeconds < 1 ||
+    args.retentionSeconds < 1
+  ) {
+    fail(errors.invalidConfig);
   }
-);
+  ctx.db.lobbyConfig.singleton.update({
+    ...getConfig(ctx),
+    ...args,
+    updatedAt: ctx.timestamp,
+  });
+});
 
-export const addLobbyAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (ctx.db.lobbyAdminIdentity.identity.find(args.identity) != null) return;
-    ctx.db.lobbyAdminIdentity.insert({
-      identity: args.identity,
-      addedAt: ctx.timestamp,
-    });
+const addLobbyAdminArgs = { identity: t.identity() };
+export const addLobbyAdmin: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof addLobbyAdminArgs
+> = spacetimedb.reducer(addLobbyAdminArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  if (ctx.db.lobbyAdminIdentity.identity.find(args.identity) != null) return;
+  ctx.db.lobbyAdminIdentity.insert({
+    identity: args.identity,
+    addedAt: ctx.timestamp,
+  });
+});
+
+const removeLobbyAdminArgs = { identity: t.identity() };
+export const removeLobbyAdmin: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof removeLobbyAdminArgs
+> = spacetimedb.reducer(removeLobbyAdminArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  const row = ctx.db.lobbyAdminIdentity.identity.find(args.identity);
+  if (!row) return;
+  if (ctx.db.lobbyAdminIdentity.count() <= 1n) {
+    fail(errors.cannotRemoveLastAdmin);
   }
-);
+  ctx.db.lobbyAdminIdentity.delete(row);
+});
 
-export const removeLobbyAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const row = ctx.db.lobbyAdminIdentity.identity.find(args.identity);
-    if (!row) return;
-    if (ctx.db.lobbyAdminIdentity.count() <= 1n) {
-      fail(errors.cannotRemoveLastAdmin);
-    }
-    ctx.db.lobbyAdminIdentity.delete(row);
-  }
-);
+const lobbySweepArgs: { arg: typeof lobbySweepTick.rowType } = {
+  arg: lobbySweepTick.rowType,
+};
+export const lobbySweep: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof lobbySweepArgs
+> = spacetimedb.reducer({ onSchedule: lobbySweepTick }, lobbySweepArgs, ctx => {
+  sweep(ctx);
+});
 
-export const lobbySweep = spacetimedb.reducer(
-  { onSchedule: lobbySweepTick },
-  { arg: lobbySweepTick.rowType },
-  ctx => {
-    sweep(ctx);
-  }
-);
-
-export const getLobbyStatus = spacetimedb.procedure({}, lobbyStatus, ctx =>
+export const getLobbyStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  {},
+  typeof lobbyStatus
+> = spacetimedb.procedure({}, lobbyStatus, ctx =>
   ctx.withTx(tx => {
     const config = getConfig(tx);
     return {
