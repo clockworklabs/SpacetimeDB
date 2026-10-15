@@ -615,10 +615,8 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-// Grew by one word when `ReducerName` became fully qualified: it now holds a
-// `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
-// One per transaction, not per row.
-static_assert_size!(MutTxId, 592);
+// The transaction-local blob map is inline to avoid an allocation when empty.
+static_assert_size!(MutTxId, 624);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -2910,10 +2908,23 @@ impl MutTxId {
         before_release: impl FnOnce(&Arc<TxData>),
     ) -> Result<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)> {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let prepared = self.committed_state_write_lock.prepare_merge(self.tx_state)?;
-        let tx_data = self
+        let prepared = match self
             .committed_state_write_lock
-            .merge(prepared, self.read_sets, self.view_instances, &self.ctx);
+            .prepare_merge(&self.tx_state)
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.committed_state_write_lock.rollback(self.tx_state);
+                return Err(error);
+            }
+        };
+        let tx_data = self.committed_state_write_lock.merge(
+            prepared,
+            self.tx_state,
+            self.read_sets,
+            self.view_instances,
+            &self.ctx,
+        );
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2977,10 +2988,23 @@ impl MutTxId {
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
     ) -> Result<(Arc<TxData>, TxMetrics, TxId, u64)> {
-        let prepared = self.committed_state_write_lock.prepare_merge(self.tx_state)?;
-        let tx_data = self
+        let prepared = match self
             .committed_state_write_lock
-            .merge(prepared, self.read_sets, self.view_instances, &self.ctx);
+            .prepare_merge(&self.tx_state)
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.committed_state_write_lock.rollback(self.tx_state);
+                return Err(error);
+            }
+        };
+        let tx_data = self.committed_state_write_lock.merge(
+            prepared,
+            self.tx_state,
+            self.read_sets,
+            self.view_instances,
+            &self.ctx,
+        );
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -3150,6 +3174,7 @@ impl<'a, I: Iterator<Item = Result<RowRef<'a>>>> ScanMutTx<'a, I> {
 impl<'a, I: Iterator<Item = Result<RowRef<'a>>>> Iterator for ScanMutTx<'a, I> {
     type Item = Result<RowRef<'a>>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         use ScanMutTxInner::*;
         match &mut self.inner {
@@ -3163,6 +3188,7 @@ impl<'a, I: Iterator<Item = Result<RowRef<'a>>>> Iterator for ScanMutTx<'a, I> {
 
 impl<'a, I: Iterator<Item = Result<RowRef<'a>>>> Iterator for FilterDeleted<'a, I> {
     type Item = Result<RowRef<'a>>;
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for row in &mut self.iter {
             match row {
