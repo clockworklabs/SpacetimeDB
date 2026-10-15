@@ -32,7 +32,7 @@ use crate::{
 pub struct BlobSet {
     resident: Arc<mem::ResidentObjects>,
     storage: Arc<TieredStorage>,
-    entries: Arc<RwLock<ObjectMap<BlobEntry>>>,
+    entries: RwLock<ObjectMap<BlobEntry>>,
     evictable: Mutex<Vec<BlobEvictionCandidate>>,
 }
 
@@ -63,7 +63,7 @@ impl BlobSet {
         Self {
             resident,
             storage,
-            entries: Arc::new(RwLock::new(entries)),
+            entries: RwLock::new(entries),
             evictable: <_>::default(),
         }
     }
@@ -89,7 +89,7 @@ impl BlobSet {
         Self {
             resident,
             storage,
-            entries: Arc::new(RwLock::new(entries)),
+            entries: RwLock::new(entries),
             evictable: <_>::default(),
         }
     }
@@ -116,7 +116,13 @@ impl BlobSet {
 
             if let Some(blob) = maybe_resident {
                 self.storage.write(&blob)?;
-                self.entries.write().remove(candidate.key);
+                let mut entries = self.entries.write();
+                if let Some(entry) = entries.get_mut(&candidate.key) {
+                    let uses = entry.uses();
+                    let size = entry.size();
+                    *entry = BlobEntry::NonResident { uses, size };
+                }
+                drop(entries);
                 self.resident.evict_blob(candidate);
             }
         }
@@ -190,7 +196,7 @@ impl BlobSet {
             .write()
             .entry(hash.into())
             .and_modify(BlobEntry::inc_uses)
-            .or_error(|| BlobError::MissingBlob(hash))
+            .or_error(|| BlobError::MissingBlob(Box::new(hash)))
             .map(drop)
     }
 
@@ -206,7 +212,7 @@ impl BlobSet {
     pub fn free_ref(&self, hash: BlobHash) -> Result<u64, BlobError> {
         let mut entries = self.entries.write();
         match entries.entry(hash.into()) {
-            map::Entry::Vacant(_) => Err(BlobError::MissingBlob(hash)),
+            map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash))),
             map::Entry::Occupied(mut entry) => {
                 let size = entry.get().size();
                 entry.get_mut().dec_uses();
@@ -227,7 +233,9 @@ impl BlobSet {
     pub fn get(&self, hash: BlobHash) -> Result<BlobHandle, BlobError> {
         let blob_or_bytes = {
             let entries = self.entries.read();
-            let entry = entries.get(&hash.into()).ok_or(BlobError::MissingBlob(hash))?;
+            let entry = entries
+                .get(&hash.into())
+                .ok_or_else(|| BlobError::MissingBlob(Box::new(hash)))?;
             match entry {
                 BlobEntry::Resident { blob, .. } => Ok::<_, BlobError>(Ok(blob.clone())),
                 BlobEntry::NonResident { uses, .. } => {
@@ -346,10 +354,9 @@ impl BlobSet {
 impl MemoryUsage for BlobSet {
     fn heap_usage(&self) -> usize {
         let arc = std::mem::size_of::<usize>() * 2;
-        (3 * arc)
+        (2 * arc)
             + std::mem::size_of::<mem::ResidentObjects>()
             + std::mem::size_of::<TieredStorage>()
-            + std::mem::size_of::<RwLock<ObjectMap<BlobEntry>>>()
             + std::mem::size_of::<Mutex<Vec<BlobEvictionCandidate>>>()
             + (self.physical_bytes_used_by_blobs() as usize)
     }
@@ -439,9 +446,9 @@ impl Deref for BlobHandle {
 /// Essentially just a set of [BlobHandle]s that guarantees that those blobs are
 /// resident. Used to perform operations such as equality checking that cannot
 /// be fallible due to faults.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct BlobReadSet {
-    inner: SmallHashMap<BlobHash, BlobHandle, 4, 16>,
+    inner: Option<Arc<SmallHashMap<BlobHash, BlobHandle, 4, 16>>>,
 }
 
 impl BlobReadSet {
@@ -462,7 +469,9 @@ impl BlobReadSet {
             inner.insert(blob_hash, blob);
         }
 
-        Ok(Self { inner })
+        Ok(Self {
+            inner: (!inner.is_empty()).then(|| Arc::new(inner)),
+        })
     }
 
     /// Create an empty read set.
@@ -473,12 +482,12 @@ impl BlobReadSet {
     /// Get the blob with content address `hash`, or `None` if it is not in the
     /// read set.
     pub fn get(&self, hash: &BlobHash) -> Option<&BlobHandle> {
-        self.inner.get(hash)
+        self.inner.as_ref()?.get(hash)
     }
 
     /// Iterator over all entries in the read set.
     pub fn iter(&self) -> impl Iterator<Item = (&BlobHash, &BlobHandle)> {
-        self.inner.iter()
+        self.inner.iter().flat_map(|inner| inner.iter())
     }
 }
 
@@ -506,4 +515,64 @@ struct BlobMapEntry {
 
 fn n_or_one(x: usize) -> NonZeroUsize {
     NonZeroUsize::new(x).unwrap_or(NonZeroUsize::MIN)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::table::test::table;
+    use spacetimedb_sats::{product, AlgebraicType, ProductType};
+
+    #[test]
+    fn empty_row_blob_read_sets_do_not_allocate() {
+        let blobs = BlobSet::new_for_test();
+        let mut fixed = table(ProductType::from([AlgebraicType::U64]));
+        let row = fixed.insert(&blobs, &product![1u64]).unwrap().1;
+        assert!(row.blob_store().inner.is_none());
+        assert!(row.clone().blob_store().inner.is_none());
+        let mut inline = table(ProductType::from([AlgebraicType::String]));
+        let row = inline.insert(&blobs, &product!["small"]).unwrap().1;
+        assert!(row.blob_store().inner.is_none());
+        assert_eq!(row.to_product_value(), product!["small"]);
+    }
+
+    #[test]
+    fn cloned_row_pins_large_blobs_and_unpinned_blobs_can_fault_back() {
+        let blobs = BlobSet::new_for_test();
+        let mut table = table(ProductType::from([AlgebraicType::String]));
+        let value = product!["large blob".repeat(1024)];
+        let row = table.insert(&blobs, &value).unwrap().1;
+        let pointer = row.pointer();
+        assert!(row.blob_store().inner.is_some());
+        let clone = row.clone();
+        drop(row);
+        assert!(blobs.evict().unwrap().accounted_bytes() > 0);
+        assert_eq!(clone.to_product_value(), value);
+        drop(clone);
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+        let row = table.get_row_ref(&blobs, pointer).unwrap().unwrap();
+        assert_eq!(row.to_product_value(), value);
+        assert_eq!(blobs.usage_counter().values().copied().sum::<usize>(), 1);
+    }
+
+    #[test]
+    fn shared_blob_registry_reuses_live_frames_and_replaces_stale_entries() {
+        let resident = Arc::new(mem::ResidentObjects::new(ByteBudget::unlimited()));
+        let storage = Arc::new(TieredStorage::new_for_test());
+        let source = BlobSet::new(resident.clone(), storage.clone());
+        let destination = BlobSet::new(resident.clone(), storage.clone());
+        let bytes = b"shared content";
+        let source_handle = source.insert(bytes).unwrap();
+        let pins = destination.extend_from(&source).unwrap();
+        assert!(Arc::ptr_eq(&source_handle.frame, &pins[0].frame));
+        assert_eq!(resident.usage().accounted_bytes(), bytes.len() as u64);
+        drop(source_handle);
+        drop(pins);
+        drop(source);
+        drop(destination);
+        assert_eq!(resident.usage().accounted_bytes(), 0);
+        let set = BlobSet::new(resident.clone(), storage);
+        assert_eq!(&*set.insert(bytes).unwrap(), bytes);
+        assert_eq!(resident.usage().accounted_bytes(), bytes.len() as u64);
+    }
 }

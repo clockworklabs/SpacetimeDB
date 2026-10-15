@@ -559,11 +559,8 @@ impl CommittedState {
         }
     }
 
-    pub(super) fn prepare_merge(&mut self, tx_state: TxState) -> Result<PreparedMerge> {
-        self.prepare_merge_inner(&tx_state).inspect_err(|_| {
-            // Ensure schema changes are undone.
-            self.rollback(tx_state);
-        })
+    pub(super) fn prepare_merge(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
+        self.prepare_merge_inner(tx_state)
     }
 
     fn prepare_merge_inner(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
@@ -571,6 +568,12 @@ impl CommittedState {
         // installs and pins their frames without publishing logical references.
         let blobs: Box<[BlobHandle]> = self.storage.merge_blobs_from(&tx_state.blob_store)?;
         let mut prepared = PreparedMerge::with_pinned_blobs(blobs);
+        prepared.resident = tx_state.tx_tables().all(|tx| {
+            let count = tx.inserts.map_or(0, Table::num_rows);
+            self.get_table(tx.id)
+                .is_some_and(|table| table.can_commit_resident(count))
+                && tx.inserts.is_none_or(|table| table.can_commit_resident(0))
+        });
 
         // If a table was dropped, collect its rows.
         // Subscription updates contain all the deleted rows, instead of a drop
@@ -599,6 +602,9 @@ impl CommittedState {
             inserts: maybe_inserts,
         } in tx_state.tx_tables()
         {
+            if prepared.resident {
+                break;
+            }
             // The table in the committed state. This is what we're modifying.
             let (commit_table, _, _) = self
                 .get_table_and_blob_store(table_id)
@@ -630,6 +636,7 @@ impl CommittedState {
     pub(super) fn merge(
         &mut self,
         prepared: PreparedMerge,
+        tx_state: TxState,
         read_sets: ViewReadSets,
         view_instances: ViewInstanceTxState,
         ctx: &ExecutionContext,
@@ -637,19 +644,42 @@ impl CommittedState {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
-        let PreparedMerge {
-            mutated_tables,
-            removed_tables,
-            pinned_blobs,
-        } = prepared;
-
-        for (table_id, commit) in mutated_tables {
+        let commits = if prepared.resident {
+            Either::Left(
+                tx_state
+                    .tx_tables()
+                    .map(|tx| (tx.id, Either::Left((tx.deletes, tx.inserts)))),
+            )
+        } else {
+            Either::Right(
+                prepared
+                    .mutated_tables
+                    .into_iter()
+                    .map(|(id, commit)| (id, Either::Right(commit))),
+            )
+        };
+        for (table_id, commit) in commits {
             let (table, blob_store, _) = self
                 .get_table_and_blob_store_mut(table_id)
                 .expect("table must have been created during prepare phase");
             let page_bytes_before = table.page_bytes();
 
-            let (deletes, inserts) = commit.apply(table, blob_store).into_parts();
+            let applied = match commit {
+                Either::Left((deletes, source)) => {
+                    let count = deletes.map_or(0, |deletes| deletes.len() as u64);
+                    let deletes = deletes.map(|deletes| deletes.iter());
+                    PreparedCommit::apply_resident(
+                        table,
+                        blob_store,
+                        count,
+                        deletes,
+                        source,
+                        &tx_state.blob_store,
+                    )
+                }
+                Either::Right(commit) => commit.apply(table, blob_store),
+            };
+            let (deletes, inserts) = applied.into_parts();
             let table_name = &table.get_schema().table_name;
 
             if !deletes.is_empty() {
@@ -680,9 +710,9 @@ impl CommittedState {
 
         // All page mutations have finished, so pinned blob frames no longer
         // need to be pinned by the commit guard.
-        drop(pinned_blobs);
+        drop(prepared.pinned_blobs);
 
-        for PreparedRemovedTable { id, name, rows } in removed_tables {
+        for PreparedRemovedTable { id, name, rows } in prepared.removed_tables {
             truncates.insert(id);
             tx_data.set_deletes_for_table(id, &name, rows);
         }
@@ -995,6 +1025,7 @@ impl CommittedState {
 pub(super) type CommitTableForInsertion<'a> = (&'a Table, &'a BlobSet, &'a IndexIdMap);
 
 pub(super) struct PreparedMerge {
+    resident: bool,
     mutated_tables: BTreeMap<TableId, PreparedCommit>,
     removed_tables: Vec<PreparedRemovedTable>,
     pinned_blobs: Box<[BlobHandle]>,
@@ -1012,6 +1043,7 @@ impl PreparedMerge {
             mutated_tables: <_>::default(),
             removed_tables: <_>::default(),
             pinned_blobs,
+            resident: false,
         }
     }
 
