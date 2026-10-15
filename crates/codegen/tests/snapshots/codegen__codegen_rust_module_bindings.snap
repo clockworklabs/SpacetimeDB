@@ -97,7 +97,7 @@ pub struct add;
 impl spacetimedb::rt::RemoteReducer for add {
     const NAME: &'static str = "add";
     const ARG_NAMES: &'static [&'static str] = &["name", "age"];
-    const SIGNATURE_HASH: &'static str = "26d5229326c3d7b333fe52bafde649dba62ece7f3c1951edfd9982c82ffbf853";
+    const SIGNATURE_HASH: &'static str = "99a35dc6bdb6cabe48f524346c1979dfe7e6259304f68fb48595ded5c0737c7f";
     type Args = AddArgs;
 }
 
@@ -115,7 +115,7 @@ pub struct add_player;
 impl spacetimedb::rt::RemoteReducer for add_player {
     const NAME: &'static str = "add_player";
     const ARG_NAMES: &'static [&'static str] = &["name"];
-    const SIGNATURE_HASH: &'static str = "c80e485a6d30ae41ed4f8f687c3e5846f60860028c90056bddd924159d3cfeaf";
+    const SIGNATURE_HASH: &'static str = "085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d";
     type Args = AddPlayerArgs;
 }
 
@@ -133,7 +133,7 @@ pub struct add_private;
 impl spacetimedb::rt::RemoteReducer for add_private {
     const NAME: &'static str = "add_private";
     const ARG_NAMES: &'static [&'static str] = &["name"];
-    const SIGNATURE_HASH: &'static str = "3a8c358e0ff027ec458779b91f6fc9d49d5a8941af0245dec6fc9b1b0c3c267e";
+    const SIGNATURE_HASH: &'static str = "085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d";
     type Args = AddPrivateArgs;
 }
 
@@ -150,7 +150,7 @@ pub struct assert_caller_identity_is_module_identity;
 impl spacetimedb::rt::RemoteReducer for assert_caller_identity_is_module_identity {
     const NAME: &'static str = "assert_caller_identity_is_module_identity";
     const ARG_NAMES: &'static [&'static str] = &[];
-    const SIGNATURE_HASH: &'static str = "6d0d08ff21de9ae6151c39ffb5f6382a251d9212affbb90ef2249830e12c6049";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = AssertCallerIdentityIsModuleIdentityArgs;
 }
 
@@ -168,7 +168,7 @@ pub struct delete_player;
 impl spacetimedb::rt::RemoteReducer for delete_player {
     const NAME: &'static str = "delete_player";
     const ARG_NAMES: &'static [&'static str] = &["id"];
-    const SIGNATURE_HASH: &'static str = "c8eb35e3483d7d67383f1791b21dba13bb1a37d0e9e25085dfc2fef28e5a6fd0";
+    const SIGNATURE_HASH: &'static str = "f9843c43d6a007427a042049aa531419e42c5895ecfe92bf30bbd6f7389e9cb0";
     type Args = DeletePlayerArgs;
 }
 
@@ -186,7 +186,7 @@ pub struct delete_players_by_name;
 impl spacetimedb::rt::RemoteReducer for delete_players_by_name {
     const NAME: &'static str = "delete_players_by_name";
     const ARG_NAMES: &'static [&'static str] = &["name"];
-    const SIGNATURE_HASH: &'static str = "6aae4f508f648ffca37db5ce131258cf7f8317e8f0c68f0175a3a6f35e87e1fa";
+    const SIGNATURE_HASH: &'static str = "085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d";
     type Args = DeletePlayersByNameArgs;
 }
 
@@ -205,7 +205,7 @@ pub struct expect_environment;
 impl spacetimedb::rt::RemoteReducer for expect_environment {
     const NAME: &'static str = "expect_environment";
     const ARG_NAMES: &'static [&'static str] = &["key", "expected"];
-    const SIGNATURE_HASH: &'static str = "2883b365df862c8651a3a42285c18c641a0a756b3d2a157ef7f0962cdc04842b";
+    const SIGNATURE_HASH: &'static str = "92fae346d390625a393c5a4470e5ae4c4111b7d7323984087899d521938ab49b";
     type Args = ExpectEnvironmentArgs;
 }
 
@@ -223,7 +223,7 @@ pub struct list_over_age;
 impl spacetimedb::rt::RemoteReducer for list_over_age {
     const NAME: &'static str = "list_over_age";
     const ARG_NAMES: &'static [&'static str] = &["age"];
-    const SIGNATURE_HASH: &'static str = "398abc37ce96b9a0f66156efea25f0d0b0b53fcf41c98bae6771696ee108ae51";
+    const SIGNATURE_HASH: &'static str = "480a4dd20223acbee97594f8957ffae7757bd59f68b8e07a22b8900fb21e0cbd";
     type Args = ListOverAgeArgs;
 }
 
@@ -240,7 +240,7 @@ pub struct log_module_identity;
 impl spacetimedb::rt::RemoteReducer for log_module_identity {
     const NAME: &'static str = "log_module_identity";
     const ARG_NAMES: &'static [&'static str] = &[];
-    const SIGNATURE_HASH: &'static str = "abf2ac226dc9346619e586f08825a63364b264a3787f29ab5e35b64e9588618c";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = LogModuleIdentityArgs;
 }
 
@@ -257,7 +257,7 @@ pub struct query_private;
 impl spacetimedb::rt::RemoteReducer for query_private {
     const NAME: &'static str = "query_private";
     const ARG_NAMES: &'static [&'static str] = &[];
-    const SIGNATURE_HASH: &'static str = "f56e1827cfc17ce4c4ecb222612c61e8543ede0ab74a1c9c33a7d1059a1d890a";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = QueryPrivateArgs;
 }
 
@@ -274,7 +274,7 @@ pub struct say_hello;
 impl spacetimedb::rt::RemoteReducer for say_hello {
     const NAME: &'static str = "say_hello";
     const ARG_NAMES: &'static [&'static str] = &[];
-    const SIGNATURE_HASH: &'static str = "1b0d6ad2d4c406803c059d3fc10010d26cfc9c54d165a2347905ebfc944f7233";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = SayHelloArgs;
 }
 
@@ -295,7 +295,7 @@ pub struct test;
 impl spacetimedb::rt::RemoteReducer for test {
     const NAME: &'static str = "test";
     const ARG_NAMES: &'static [&'static str] = &["arg", "arg_2", "arg_3", "arg_4"];
-    const SIGNATURE_HASH: &'static str = "b661235bde1be930b4123596e688894c1731ccc76587fe669880746946a9567d";
+    const SIGNATURE_HASH: &'static str = "7c5f9ed84b96b24179d63afbe2e4e459cae4cb0b7076f237249d46ea295f698e";
     type Args = TestArgs;
 }
 
@@ -312,6 +312,6 @@ pub struct test_btree_index_args;
 impl spacetimedb::rt::RemoteReducer for test_btree_index_args {
     const NAME: &'static str = "test_btree_index_args";
     const ARG_NAMES: &'static [&'static str] = &[];
-    const SIGNATURE_HASH: &'static str = "515d0dcb44892f5675c64197910ef16cd4df3e24f44dccdb02a27288870b4060";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = TestBtreeIndexArgsArgs;
 }

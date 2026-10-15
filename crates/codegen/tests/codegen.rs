@@ -67,9 +67,20 @@ fn test_codegen_rust_module_bindings() {
     assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
     assert!(root.contains("const NAME: &'static str = \"add\";"));
     assert!(root.contains("const ARG_NAMES: &'static [&'static str] = &[\"name\", \"age\"];"));
-    assert!(root.contains(
-        "const SIGNATURE_HASH: &'static str = \"26d5229326c3d7b333fe52bafde649dba62ece7f3c1951edfd9982c82ffbf853\";"
-    ));
+    let reducer = module
+        .reducers()
+        .find(|reducer| reducer.name.as_ref() == "add")
+        .unwrap();
+    let expected_hash = spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    );
+    assert!(root.contains(&format!(
+        "const SIGNATURE_HASH: &'static str = \"{}\";",
+        expected_hash.to_hex()
+    )));
     assert!(!root.contains("pub struct init;"));
     assert!(!root.contains("pub struct client_connected;"));
     assert!(!root.contains("sleep_one_second"));

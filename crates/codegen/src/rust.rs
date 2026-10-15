@@ -8,7 +8,6 @@ use crate::util::{
 use crate::CodegenOptions;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
-use spacetimedb_lib::hash_bytes;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
@@ -28,8 +27,9 @@ const INDENT: &str = "    ";
 pub struct Rust;
 
 pub fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+    // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
     itertools::chain!(
-        iter_types(module).flat_map(|typ| Rust.generate_type_files(module, typ)),
+        iter_types(module).map(|typ| generate_module_binding_type_file(module, typ)),
         [generate_module_bindings_root_file(module)],
     )
     .collect()
@@ -1005,12 +1005,6 @@ fn write_module_binding_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &Alg
     Ok(())
 }
 
-fn module_binding_type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
-    let mut s = String::new();
-    write_module_binding_type(module, &mut s, ty).unwrap();
-    s
-}
-
 /// Arguments to a reducer or procedure pretty-printed in various ways that are convenient to compute together.
 struct FormattedArglist {
     /// The arguments as `ident: ty, ident: ty, ident: ty,`,
@@ -1216,6 +1210,63 @@ fn define_struct_for_product(
     out.newline();
 }
 
+fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> OutputFile {
+    let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_auto_generated_file_comment(out);
+    writeln!(out, "{ALLOW_LINTS}");
+    writeln!(out, "use super::Identity;");
+    let def = &module.typespace_for_generate()[typ.ty];
+    let plain_variants;
+    let (kind, members): (_, &[(Identifier, AlgebraicTypeUse)]) = match def {
+        AlgebraicTypeDef::Product(product) => ("struct", &product.elements),
+        AlgebraicTypeDef::Sum(sum) => ("enum", &sum.variants),
+        AlgebraicTypeDef::PlainEnum(plain_enum) => {
+            plain_variants = plain_enum
+                .variants
+                .iter()
+                .cloned()
+                .map(|variant| (variant, AlgebraicTypeUse::Unit))
+                .collect::<Vec<_>>();
+            ("enum", &plain_variants)
+        }
+    };
+    gen_and_print_imports(module, out, members, &[typ.ty]);
+    out.newline();
+    writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+    if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {
+        print_plain_enum_extra_derives(out);
+    }
+    write!(out, "pub {kind} {type_name} ");
+    out.delimited_block(
+        "{",
+        |out| {
+            for (ident, ty) in members {
+                if matches!(def, AlgebraicTypeDef::Product(_)) {
+                    write!(out, "pub {}: ", ident.deref().to_case(Case::Snake));
+                    write_module_binding_type(module, out, ty).unwrap();
+                } else {
+                    write!(out, "{}", ident.deref().to_case(Case::Pascal));
+                    if !matches!(ty, AlgebraicTypeUse::Unit) {
+                        write!(out, "(");
+                        write_module_binding_type(module, out, ty).unwrap();
+                        write!(out, ")");
+                    }
+                }
+                writeln!(out, ",");
+            }
+        },
+        "}\n",
+    );
+
+    OutputFile {
+        filename: type_module_name(&typ.accessor_name) + ".rs",
+        code: output.into_inner(),
+    }
+}
+
 fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -1335,15 +1386,14 @@ impl spacetimedb::rt::RemoteReducer for {handle_name} {{
 }
 
 fn reducer_signature_hash(module: &ModuleDef, reducer: &ReducerDef) -> String {
-    let mut sig = String::from("spacetimedb::idc::reducer_signature::v1\0");
-    sig.push_str(reducer.name.deref());
-    for (name, ty) in &reducer.params_for_generate.elements {
-        sig.push('\0');
-        sig.push_str(name.deref());
-        sig.push(':');
-        sig.push_str(&module_binding_type_name(module, ty));
-    }
-    hash_bytes(sig.as_bytes()).to_hex().to_string()
+    spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    )
+    .to_hex()
+    .to_string()
 }
 
 fn rust_string_literal(value: &str) -> String {
