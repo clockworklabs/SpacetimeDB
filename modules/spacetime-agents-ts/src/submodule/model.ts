@@ -35,6 +35,7 @@ export const agentAdminIdentity: ReturnType<
   >
 > = table(agentAdminIdentityOptions, agentAdminIdentityColumns);
 
+// Operator overrides take precedence over agent code defaults.
 const agentOverrideOptions = { name: 'agent_override', public: false };
 const agentOverrideColumns = {
   agentName: t.string().primaryKey(),
@@ -47,11 +48,11 @@ const agentOverrideColumns = {
   retries: t.option(t.u32()),
   updatedAt: t.timestamp(),
 };
-// Operator overrides take precedence over agent code defaults.
 export const agentOverride: ReturnType<
   typeof table<typeof agentOverrideColumns, typeof agentOverrideOptions>
 > = table(agentOverrideOptions, agentOverrideColumns);
 
+// owner is the application-defined key passed to the client, such as a user id.
 const threadOptions = { name: 'thread', public: false };
 const threadColumns = {
   id: t.u64().primaryKey().autoInc(),
@@ -65,11 +66,11 @@ const threadColumns = {
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
 };
-// owner is the application-defined key passed to the client, such as a user id.
 export const thread: ReturnType<
   typeof table<typeof threadColumns, typeof threadOptions>
 > = table(threadOptions, threadColumns);
 
+// owner is denormalized from thread so host views can filter on it.
 const messageOptions = { name: 'message', public: false };
 const messageColumns = {
   id: t.u64().primaryKey().autoInc(),
@@ -84,11 +85,11 @@ const messageColumns = {
   completionTokens: t.option(t.u32()),
   createdAt: t.timestamp(),
 };
-// owner is denormalized from thread so host views can filter on it.
 export const message: ReturnType<
   typeof table<typeof messageColumns, typeof messageOptions>
 > = table(messageOptions, messageColumns);
 
+// Presence of a row is the per-thread mutex: a loop is running for it.
 const threadLockOptions = { name: 'thread_lock', public: false };
 const threadLockColumns = {
   threadId: t.u64().primaryKey(),
@@ -97,7 +98,6 @@ const threadLockColumns = {
   cancelRequested: t.bool(),
   runId: t.string().default(''),
 };
-// Presence of a row is the per-thread mutex: a loop is running for it.
 export const threadLock: ReturnType<
   typeof table<typeof threadLockColumns, typeof threadLockOptions>
 > = table(threadLockOptions, threadLockColumns);

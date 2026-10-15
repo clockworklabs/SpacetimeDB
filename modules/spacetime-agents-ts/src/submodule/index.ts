@@ -121,6 +121,7 @@ export const clearApiKey: ReducerExport<
   ctx.db.apiKey.provider.delete(provider);
 });
 
+// Overrides for names that no client agent defines are stored but unused.
 const setAgentOverrideArgs = {
   agentName: t.string(),
   provider: t.option(t.string()),
@@ -131,7 +132,6 @@ const setAgentOverrideArgs = {
   maxTokens: t.option(t.u32()),
   retries: t.option(t.u32()),
 };
-// Overrides for names that no client agent defines are stored but unused.
 export const setAgentOverride: ReducerExport<
   typeof spacetimedb.schemaType,
   typeof setAgentOverrideArgs
@@ -196,8 +196,8 @@ export const removeAgentAdminIdentity: ReducerExport<
   ctx.db.agentAdminIdentity.identity.delete(identity);
 });
 
-const clearThreadLockArgs = { threadId: t.u64() };
 // Bypasses ownership to clear a wedged lock.
+const clearThreadLockArgs = { threadId: t.u64() };
 export const clearThreadLock: ReducerExport<
   typeof spacetimedb.schemaType,
   typeof clearThreadLockArgs

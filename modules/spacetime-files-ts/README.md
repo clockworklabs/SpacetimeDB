@@ -12,7 +12,7 @@ default total limit of 100 MB per owner.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/files spacetimedb@^2.12.0
+npm install @spacetimedb/files
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

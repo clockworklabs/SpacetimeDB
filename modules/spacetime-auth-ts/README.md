@@ -14,7 +14,7 @@ key, and email delivery service.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/auth spacetimedb@^2.12.0
+npm install @spacetimedb/auth
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
