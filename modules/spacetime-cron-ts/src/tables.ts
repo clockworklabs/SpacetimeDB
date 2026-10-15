@@ -61,15 +61,13 @@ function cronJobColumns(args: VariantsObj) {
   };
 }
 
+const cronJobOptions = { name: 'cron_job', public: false };
 export function cronJobTable(
   args: VariantsObj
 ): ReturnType<
-  typeof table<
-    ReturnType<typeof cronJobColumns>,
-    { name: 'cron_job'; public: false }
-  >
+  typeof table<ReturnType<typeof cronJobColumns>, typeof cronJobOptions>
 > {
-  return table({ name: 'cron_job', public: false }, cronJobColumns(args));
+  return table(cronJobOptions, cronJobColumns(args));
 }
 
 const cronRunColumns = {
@@ -85,7 +83,7 @@ const cronRunColumns = {
 export function cronRunTable(
   isPublic: boolean
 ): ReturnType<
-  typeof table<typeof cronRunColumns, { name: 'cron_run'; public: boolean }>
+  typeof table<typeof cronRunColumns, { name: string; public: boolean }>
 > {
   return table({ name: 'cron_run', public: isPublic }, cronRunColumns);
 }
@@ -117,7 +115,7 @@ export function cronReconcileTickTable(
 ): ReturnType<
   typeof table<
     typeof cronReconcileTickColumns,
-    { name: 'cron_reconcile_tick'; public: boolean }
+    { name: string; public: boolean }
   >
 > {
   return table(

@@ -10,7 +10,7 @@ tasks and past attempts.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/retry spacetimedb@^2.12.0
+npm install @spacetimedb/retry
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

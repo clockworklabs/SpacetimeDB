@@ -41,15 +41,13 @@ function retryTaskColumns(args: SumBuilder<VariantsObj>) {
   };
 }
 
+const retryTaskOptions = { name: 'retry_task', public: false } as const;
 function retryTaskTable(
   args: SumBuilder<VariantsObj>
 ): ReturnType<
-  typeof table<
-    ReturnType<typeof retryTaskColumns>,
-    { name: 'retry_task'; public: false }
-  >
+  typeof table<ReturnType<typeof retryTaskColumns>, typeof retryTaskOptions>
 > {
-  return table({ name: 'retry_task', public: false }, retryTaskColumns(args));
+  return table(retryTaskOptions, retryTaskColumns(args));
 }
 
 type RetryHistoryStatusBuilder = SumBuilder<

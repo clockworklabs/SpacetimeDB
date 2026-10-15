@@ -60,12 +60,12 @@ function upsertConfig(
   ctx.db.resendConfig.singleton.update(row);
 }
 
+// Requires an admin seeded by the database owner; no public first-call bootstrap.
 const setResendConfigArgs = {
   apiKey: t.string(),
   webhookSigningSecret: t.option(t.string()),
   defaultFrom: t.option(t.string()),
 };
-// Requires an admin seeded by the database owner; no public first-call bootstrap.
 export const setResendConfig: ProcedureExport<
   typeof spacetimedb.schemaType,
   typeof setResendConfigArgs,

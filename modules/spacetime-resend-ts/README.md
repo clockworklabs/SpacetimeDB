@@ -12,7 +12,7 @@ Resend webhooks. Your application decides who can send email and see its history
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/resend spacetimedb@^2.12.0
+npm install @spacetimedb/resend
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

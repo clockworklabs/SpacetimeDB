@@ -20,7 +20,7 @@ changes.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/cron spacetimedb@^2.12.0
+npm install @spacetimedb/cron
 ```
 
 ## Quick start
