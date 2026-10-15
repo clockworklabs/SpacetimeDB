@@ -130,13 +130,13 @@ fn init_template_with_dotnet_version(
 
     // Check the CLI output before local SDK overrides can hide invalid dependencies.
     // Motivated by #6298.
-    assert_portable_rust_manifests(template_id, &project_path)?;
+    assert_portable_rust_manifests(&project_path)?;
 
     Ok((tmpdir, project_path))
 }
 
 /// Validate generated client and server manifests before rewriting SDK dependencies.
-fn assert_portable_rust_manifests(template_id: &str, project_path: &Path) -> Result<()> {
+fn assert_portable_rust_manifests(project_path: &Path) -> Result<()> {
     let project_root = project_path.canonicalize()?;
     for relative_manifest in ["Cargo.toml", "spacetimedb/Cargo.toml"] {
         let manifest_path = project_path.join(relative_manifest);
@@ -179,12 +179,7 @@ fn assert_portable_rust_manifests(template_id: &str, project_path: &Path) -> Res
             }
             Ok(())
         };
-        validate().with_context(|| {
-            format!(
-                "Template {template_id}: non-portable generated manifest {}",
-                manifest_path.display()
-            )
-        })?;
+        validate().with_context(|| format!("Non-portable generated manifest {}", manifest_path.display()))?;
     }
     Ok(())
 }
@@ -200,10 +195,9 @@ fn test_generated_rust_manifest_rejects_original_chat_dev_dependency() -> Result
         r#"spacetimedb = { version = "2.12.*" }"#,
     );
     fs::write(server.join("Cargo.toml"), &manifest)?;
-    let error = assert_portable_rust_manifests("chat-console-rs", project.path()).unwrap_err();
+    let error = assert_portable_rust_manifests(project.path()).unwrap_err();
     let message = format!("{error:#}");
     for expected in [
-        "chat-console-rs",
         "Cargo.toml",
         "[dev-dependencies]",
         "spacetimedb",
@@ -214,7 +208,7 @@ fn test_generated_rust_manifest_rejects_original_chat_dev_dependency() -> Result
 
     let corrected = manifest.replace(r#"path = "../../../crates/bindings""#, r#"version = "2.12.*""#);
     fs::write(server.join("Cargo.toml"), corrected)?;
-    assert_portable_rust_manifests("chat-console-rs", project.path())
+    assert_portable_rust_manifests(project.path())
 }
 
 #[test]
@@ -246,7 +240,7 @@ fn test_generated_rust_manifest_dependency_portability() -> Result<()> {
                             format!("[{section}]\nexample = {{ {dependency} }}\n")
                         };
                         fs::write(&manifest_path, manifest)?;
-                        let result = assert_portable_rust_manifests("example-template", project.path());
+                        let result = assert_portable_rust_manifests(project.path());
                         assert_eq!(
                             result.is_ok(),
                             valid,
