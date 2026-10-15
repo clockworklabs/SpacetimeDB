@@ -58,13 +58,27 @@ tables. Use procedures only when you need side effects such as outbound HTTP.
 | Filter                                    | SQL predicate or indexed table lookup                                     | Prefer indexed lookups for hot paths. Subscription queries should be supported by suitable indexes.                                                                                                   |
 | Pagination                                | Limit/range query, cursor table, or application-level pagination          | Model pagination around stable ordering columns, usually timestamps or monotonic IDs.                                                                                                                 |
 | Scheduled function                        | Schedule table                                                            | Insert rows into a schedule table to run a reducer or procedure at a time or interval.                                                                                                                |
-| Cron job                                  | Schedule table with interval rows                                         | Use interval schedules for recurring jobs.                                                                                                                                                            |
+| Cron job                                  | Schedule table with interval rows, or the cron submodule                  | Use interval schedules for recurring jobs, or [`@spacetimedb/cron`](#components-and-submodules) for calendar schedules with time zones.                                                               |
 | File Storage                              | Binary column or external storage reference                               | Store small binary data inline when it should participate in transactions. Store large objects externally and keep metadata/URLs in tables.                                                           |
-| Components                                | Submodules or separate modules/databases                                  | Convex Components package isolated code and data. In SpacetimeDB, use submodules where available, or isolate reusable systems as separate modules/databases with explicit APIs.                       |
+| Components                                | Submodules                                                                | See [Components and submodules](#components-and-submodules) for the submodule that replaces each Convex component.                                                                                    |
 | Environment variables                     | Module configuration and host environment                                 | Keep secrets out of reducers. Use procedures or external services for operations that require secret-backed side effects.                                                                             |
 | Dashboard logs                            | `spacetime logs` and host logs                                            | Use CLI and host logs to debug module execution.                                                                                                                                                      |
 | `npx convex dev`                          | `spacetime dev`                                                           | Runs development mode with rebuild, publish, and binding generation.                                                                                                                                  |
 | `npx convex deploy`                       | `spacetime publish`                                                       | Publishes a module to a SpacetimeDB database.                                                                                                                                                         |
+
+## Components and Submodules
+
+Convex [components](https://www.convex.dev/components) package reusable backend code and data. The SpacetimeDB equivalent is a [submodule](/docs/submodules): a module you install from npm and include in your own module's database. Submodules are TypeScript-only for now.
+
+| Convex component             | SpacetimeDB submodule     | Notes                                                                     |
+| ---------------------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `@convex-dev/crons`          | `@spacetimedb/cron`       | Calendar and interval schedules stored in your database, with time zones. |
+| `@convex-dev/rate-limiter`   | `@spacetimedb/rate-limit` | Fixed-window rate limiting.                                               |
+| `@convex-dev/action-retrier` | `@spacetimedb/retry`      | Typed retries with exponential backoff and attempt history.               |
+| `@convex-dev/resend`         | `@spacetimedb/resend`     | Resend email delivery, webhook verification, and event storage.           |
+| None                         | `@spacetimedb/crypto`     | Deterministic hashing, encoding, and webhook-signature helpers.           |
+
+Install a submodule from npm, for example `npm install @spacetimedb/cron spacetimedb`, and follow its README. If a component you use has no submodule yet, keep that logic in your own module, or package it as a submodule yourself.
 
 ## Migration Strategy
 

@@ -30,9 +30,10 @@ use spacetimedb_schema::def::{
     BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
-    TableSchema,
+    ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema, ScheduleSchema, Schema,
+    SequenceSchema, TableSchema,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::table::RowRef;
@@ -182,7 +183,17 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StEventTableRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_TABLE_ACCESSOR_ID | ST_INDEX_ACCESSOR_ID | ST_COLUMN_ACCESSOR_ID => false,
+        ST_TABLE_ACCESSOR_ID
+        | ST_INDEX_ACCESSOR_ID
+        | ST_COLUMN_ACCESSOR_ID
+        | ST_OUTBOUND_STREAM_ID
+        | ST_OUTBOUND_MSG_ID
+        | ST_INBOUND_STREAM_ID
+        | ST_INBOUND_MSG_ID => false,
+        ST_OUTBOX_ID => {
+            let row: StOutboxRow = to_typed_row(row)?;
+            table_id_is_reserved(row.table_id)
+        }
         TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
@@ -205,9 +216,10 @@ pub enum SystemTable {
     st_table_accessor,
 
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
+    st_outbox = ST_OUTBOX_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 21] {
+pub fn system_tables() -> [TableSchema; 26] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -231,7 +243,77 @@ pub fn system_tables() -> [TableSchema; 21] {
         st_index_accessor_schema(),
         st_column_accessor_schema(),
         st_env_schema(),
+        st_outbound_stream_schema(),
+        st_outbound_msg_schema(),
+        st_inbound_stream_schema(),
+        st_inbound_msg_schema(),
+        st_outbox_schema(),
     ]
+}
+
+/// Return the rows which describe the built-in system table schemas.
+///
+/// These rows are inserted directly into committed state by
+/// `CommittedState::bootstrap_system_tables`. Durable databases also write
+/// them into the commit log before the first ordinary transaction so replay
+/// from offset 0 can learn about system tables which are newer than the replay
+/// binary's built-in catalog.
+#[cfg(any(test, feature = "test"))]
+pub fn system_table_schema_rows() -> Vec<(TableId, ProductValue)> {
+    let schemas = system_tables();
+    let mut rows = Vec::new();
+
+    for schema in &schemas {
+        rows.push((
+            ST_TABLE_ID,
+            ProductValue::from(StTableRow {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                table_type: StTableType::System,
+                table_access: schema.table_access,
+                table_primary_key: schema.primary_key.map(Into::into),
+            }),
+        ));
+    }
+
+    for col in schemas.iter().flat_map(|schema| schema.columns()).cloned() {
+        rows.push((ST_COLUMN_ID, ProductValue::from(StColumnRow::from(col))));
+    }
+
+    for constraint in schemas.iter().flat_map(|schema| &schema.constraints) {
+        rows.push((
+            ST_CONSTRAINT_ID,
+            ProductValue::from(StConstraintRow {
+                constraint_id: constraint.constraint_id,
+                constraint_name: constraint.constraint_name.clone(),
+                table_id: constraint.table_id,
+                constraint_data: constraint.data.clone().into(),
+            }),
+        ));
+    }
+
+    for index in schemas.iter().flat_map(|schema| &schema.indexes).cloned() {
+        rows.push((ST_INDEX_ID, ProductValue::from(StIndexRow::from(index))));
+    }
+
+    for seq in schemas.iter().flat_map(|schema| &schema.sequences) {
+        rows.push((
+            ST_SEQUENCE_ID,
+            ProductValue::from(StSequenceRow {
+                sequence_id: seq.sequence_id,
+                sequence_name: seq.sequence_name.clone(),
+                table_id: seq.table_id,
+                col_pos: seq.col_pos,
+                increment: SequenceSchema::INCREMENT,
+                min_value: SequenceSchema::MIN_VALUE,
+                max_value: SequenceSchema::MAX_VALUE,
+                start: seq.start,
+                allocated: seq.start - 1,
+            }),
+        ));
+    }
+
+    rows
 }
 
 /// Types that represent the fields / columns of a system table.
@@ -280,6 +362,11 @@ pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
 pub(crate) const ST_ENV_IDX: usize = 20;
+pub(crate) const ST_OUTBOUND_STREAM_IDX: usize = 21;
+pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 22;
+pub(crate) const ST_INBOUND_STREAM_IDX: usize = 23;
+pub(crate) const ST_INBOUND_MSG_IDX: usize = 24;
+pub(crate) const ST_OUTBOX_IDX: usize = 25;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -316,7 +403,9 @@ macro_rules! st_fields_enum {
 }
 
 mod environment;
+mod idc;
 pub use environment::*;
+pub use idc::*;
 
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StTableFields {
@@ -676,6 +765,7 @@ fn system_module_def() -> ModuleDef {
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
     environment::register_table(&mut builder);
+    idc::register_tables(&mut builder);
 
     let result = builder
         .finish()
@@ -703,6 +793,11 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
     validate_system_table::<StEnvFields>(&result, ST_ENV_NAME);
+    validate_system_table::<StOutboundStreamFields>(&result, ST_OUTBOUND_STREAM_NAME);
+    validate_system_table::<StOutboundMsgFields>(&result, ST_OUTBOUND_MSG_NAME);
+    validate_system_table::<StInboundStreamFields>(&result, ST_INBOUND_STREAM_NAME);
+    validate_system_table::<StInboundMsgFields>(&result, ST_INBOUND_MSG_NAME);
+    validate_system_table::<StOutboxFields>(&result, ST_OUTBOX_NAME);
 
     result
 }
@@ -752,6 +847,13 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
         m.insert("st_env_key_key", ConstraintId(26));
+        m.insert("st_outbound_stream_stream_id_key", ConstraintId(27));
+        m.insert("st_outbound_stream_outbox_table_id_target_identity_key", ConstraintId(28));
+        m.insert("st_outbound_msg_stream_id_seq_key", ConstraintId(29));
+        m.insert("st_inbound_stream_sender_identity_stream_id_key", ConstraintId(30));
+        m.insert("st_inbound_msg_sender_identity_stream_id_seq_key", ConstraintId(31));
+        m.insert("st_outbound_msg_stream_id_msg_id_key", ConstraintId(32));
+        m.insert("st_outbox_table_id_key", ConstraintId(33));
         m
     };
 }
@@ -791,6 +893,13 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
         m.insert("st_env_key_idx_btree", IndexId(30));
+        m.insert("st_outbound_stream_stream_id_idx_btree", IndexId(31));
+        m.insert("st_outbound_stream_outbox_table_id_target_identity_idx_btree", IndexId(32));
+        m.insert("st_outbound_msg_stream_id_seq_idx_btree", IndexId(33));
+        m.insert("st_inbound_stream_sender_identity_stream_id_idx_btree", IndexId(34));
+        m.insert("st_inbound_msg_sender_identity_stream_id_seq_idx_btree", IndexId(35));
+        m.insert("st_outbound_msg_stream_id_msg_id_idx_btree", IndexId(36));
+        m.insert("st_outbox_table_id_idx_btree", IndexId(37));
         m
     };
 }
@@ -807,6 +916,7 @@ lazy_static::lazy_static! {
         m.insert("st_sequence_sequence_id_seq", SequenceId(5));
         m.insert("st_view_view_id_seq", SequenceId(6));
         m.insert("st_view_arg_id_seq", SequenceId(7));
+        m.insert("st_outbound_stream_stream_id_seq", SequenceId(8));
         m
     };
 }
@@ -958,6 +1068,7 @@ fn st_column_accessor_schema() -> TableSchema {
 /// whereas user tables are reinstantiated with a schema computed from the snapshotted system tables.
 ///
 /// This must be kept in sync with the set of system tables.
+#[cfg(feature = "durability")]
 pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
     match table_id {
         ST_TABLE_ID => Some(st_table_schema()),
@@ -981,6 +1092,11 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
         ST_ENV_ID => Some(st_env_schema()),
+        ST_OUTBOUND_STREAM_ID => Some(st_outbound_stream_schema()),
+        ST_OUTBOUND_MSG_ID => Some(st_outbound_msg_schema()),
+        ST_INBOUND_STREAM_ID => Some(st_inbound_stream_schema()),
+        ST_INBOUND_MSG_ID => Some(st_inbound_msg_schema()),
+        ST_OUTBOX_ID => Some(st_outbox_schema()),
         _ => None,
     }
 }

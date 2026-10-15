@@ -16,8 +16,8 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
-    <AssemblyVersion>2.11.0</AssemblyVersion>
-    <Version>2.11.0</Version>
+    <AssemblyVersion>2.13.0</AssemblyVersion>
+    <Version>2.13.0</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <RestorePackagesPath>obj~/godot/packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
@@ -26,13 +26,12 @@
     <BaseOutputPath>bin~/</BaseOutputPath>
     <OutputPath>bin~/$(Configuration)/$(TargetFramework)/</OutputPath>
     <PackageOutputPath>bin~/$(Configuration)/</PackageOutputPath>
-    <BaseIntermediateOutputPath>obj~/godot/</BaseIntermediateOutputPath>
     <IntermediateOutputPath>obj~/godot/$(Configuration)/$(TargetFramework)/</IntermediateOutputPath>
     <UseLocalBsatnRuntime Condition="'$(UseLocalBsatnRuntime)' == ''">false</UseLocalBsatnRuntime>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalBsatnRuntime)' != 'true'">
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.11.*" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.13.*" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalBsatnRuntime)' == 'true'">

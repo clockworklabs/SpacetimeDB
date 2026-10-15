@@ -55,7 +55,7 @@ partial struct BTreeMultiColumn
                     {
                         new("X", XRW.GetAlgebraicType(registrar)),
                         new("Y", YRW.GetAlgebraicType(registrar)),
-                        new("Z", ZRW.GetAlgebraicType(registrar))
+                        new("Z", ZRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
