@@ -12,7 +12,7 @@ who can access each conversation and how much they can spend on model calls.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/agents spacetimedb@^2.12.0
+npm install @spacetimedb/agents
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
