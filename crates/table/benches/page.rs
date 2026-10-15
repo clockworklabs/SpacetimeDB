@@ -11,13 +11,13 @@ use spacetimedb_sats::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
-use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
 use spacetimedb_table::static_layout::StaticLayout;
+use spacetimedb_table::tiered::{BlobReadSet, BlobSet};
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -157,7 +157,7 @@ fn var_len_rows_per_page(data_size_in_bytes: usize) -> usize {
 fn fill_with_fixed_len<Row: FixedLenRow>(page: &mut Page, val: Row, visitor: &impl VarLenMembers) {
     while black_box(&*page).has_space_for_row(row_size_for_type::<Row>(), 0) {
         let _ = black_box(unsafe {
-            black_box(&mut *page).insert_row(val.as_bytes(), &[] as &[&[u8]], visitor, &mut NullBlobStore)
+            black_box(&mut *page).insert_row(val.as_bytes(), &[] as &[&[u8]], visitor, &mut BlobSet::new_for_test())
         });
     }
 }
@@ -211,7 +211,7 @@ fn delete_all_shuffled<R: Row>(page: &mut Page, rng: &mut impl Rng) {
 
     let visitor = R::var_len_visitor();
     for row in row_offsets {
-        unsafe { page.delete_row(row, row_size_for_type::<R>(), &visitor, &mut NullBlobStore) };
+        let _ = unsafe { page.delete_row(row, row_size_for_type::<R>(), &visitor, &BlobSet::new_for_test()) };
     }
     assert_eq!(page.num_rows(), 0);
 }
@@ -219,7 +219,12 @@ fn delete_all_shuffled<R: Row>(page: &mut Page, rng: &mut impl Rng) {
 fn fill_with_var_len(page: &mut Page, var_len: &[u8], visitor: &impl VarLenMembers) {
     while black_box(&*page).has_space_for_row_with_objects(row_size_for_type::<VarLenRef>(), &[var_len]) {
         let _ = black_box(unsafe {
-            black_box(&mut *page).insert_row(as_bytes(&VarLenRef::NULL), &[var_len], visitor, &mut NullBlobStore)
+            black_box(&mut *page).insert_row(
+                as_bytes(&VarLenRef::NULL),
+                &[var_len],
+                visitor,
+                &mut BlobSet::new_for_test(),
+            )
         });
     }
 }
@@ -341,14 +346,14 @@ fn insert_opt_str(c: &mut Criterion) {
                                 break;
                             }
                             let _ = unsafe {
-                                page.insert_row(&variant_none, &[] as &[&[u8]], &visitor, &mut NullBlobStore)
+                                page.insert_row(&variant_none, &[] as &[&[u8]], &visitor, &mut BlobSet::new_for_test())
                             };
                         } else {
                             if !page.has_space_for_row_with_objects(fixed_row_size, &[&var_len_data]) {
                                 break;
                             }
                             let _ = unsafe {
-                                page.insert_row(&variant_some, &[&var_len_data], &visitor, &mut NullBlobStore)
+                                page.insert_row(&variant_some, &[&var_len_data], &visitor, &mut BlobSet::new_for_test())
                             };
                         }
                     };
@@ -376,7 +381,7 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
     for row in row_offsets.into_iter() {
         let should_keep = rng.random_bool(fullness);
         if !should_keep {
-            unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &mut NullBlobStore) };
+            let _ = unsafe { page.delete_row(row, row_size_for_type::<Row>(), &visitor, &BlobSet::new_for_test()) };
         }
     }
 }
@@ -694,7 +699,7 @@ fn time_insert_one(
         value.clone()
     };
     iter_time_with_page(b, page, pre, |val, _, page| unsafe {
-        let _ = black_box(write_row_to_page(page, &mut NullBlobStore, visitor, ty, &val));
+        let _ = black_box(write_row_to_page(page, &BlobSet::new_for_test(), visitor, ty, &val));
     });
 }
 
@@ -730,8 +735,9 @@ fn insert_product_value_into_page(c: &mut Criterion) {
 }
 
 fn time_extract_one(b: &mut Bencher, page: &mut Page, offset: PageOffset, ty: &RowTypeLayout) {
-    let body =
-        |_, _, page: &mut _| unsafe { serialize_row_from_page(ValueSerializer, page, &NullBlobStore, offset, ty) };
+    let body = |_, _, page: &mut _| unsafe {
+        serialize_row_from_page(ValueSerializer, page, &BlobReadSet::empty(), offset, ty)
+    };
     iter_time_with_page(b, page, |_| (), body);
 }
 
@@ -740,7 +746,8 @@ fn extract_product_value_from_page(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let mut group = c.benchmark_group("extract_product_value");
         let (ty, mut page, visitor) = ty_page_visitor(ty);
-        let (offset, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset, _) =
+            unsafe { write_row_to_page(&mut page, &BlobSet::new_for_test(), &visitor, &ty, &value) }.unwrap();
         group.bench_function(name, |b| time_extract_one(b, &mut page, offset, &ty));
     }
 }
@@ -755,8 +762,9 @@ fn eq_in_page_same(c: &mut Criterion) {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
         let static_bsatn_layout = StaticLayout::for_row_type(&ty);
 
-        let (offset_0, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
-        let (offset_1, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let blobs = BlobSet::new_for_test();
+        let (offset_0, _) = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &value) }.unwrap();
+        let (offset_1, _) = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &value) }.unwrap();
 
         group.bench_function(name, |b| {
             b.iter(|| {
@@ -784,7 +792,8 @@ fn hash_in_page(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
 
-        let (offset, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset, _) =
+            unsafe { write_row_to_page(&mut page, &BlobSet::new_for_test(), &visitor, &ty, &value) }.unwrap();
         group.bench_function(name, |b| {
             let mut hasher = RowHash::hasher_builder().build_hasher();
             b.iter(|| {
@@ -792,7 +801,7 @@ fn hash_in_page(c: &mut Criterion) {
                     hash_row_in_page(
                         &mut hasher,
                         black_box(&page),
-                        black_box(&NullBlobStore),
+                        black_box(&BlobReadSet::empty()),
                         black_box(offset),
                         black_box(&ty),
                     )
