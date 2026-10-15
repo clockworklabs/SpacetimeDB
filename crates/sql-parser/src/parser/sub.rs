@@ -168,6 +168,9 @@ mod tests {
             "select * from v(:sender)",
             "select * from v(id => 1)",
             "select * from v(*)",
+            // View calls with arguments can't be joined
+            "select t.* from t join v(42) on t.a = v.a",
+            "select v.* from v(42) join t on v.a = t.a",
         ] {
             assert!(parse_subscription(sql).is_err());
         }
@@ -193,7 +196,8 @@ mod tests {
             "select * from v(-1, 'a', true, 0x01)",
             r#"select * from "v"(42)"#,
             "select * from v(42) as x",
-            "select t.* from t join v(42) on t.a = v.a",
+            // Empty parens are no arguments, so they can be joined
+            "select t.* from t join v() on t.a = v.a",
         ] {
             assert!(parse_subscription(sql).is_ok());
         }

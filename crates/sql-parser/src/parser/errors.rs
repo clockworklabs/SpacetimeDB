@@ -9,6 +9,8 @@ use sqlparser::{
 };
 use thiserror::Error;
 
+use crate::ast::SqlIdent;
+
 // FIXME: reduce type size
 #[expect(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
@@ -53,6 +55,8 @@ pub enum SqlUnsupported {
     ViewArg(Expr),
     #[error("Unsupported view argument: {0}. View arguments must be positional literals")]
     ViewArgKind(FunctionArg),
+    #[error("Unsupported view call in a JOIN: `{}`. A view that takes arguments can only be queried by itself", .0.0)]
+    JoinViewArgs(SqlIdent),
     #[error("Unsupported set operation: {0}")]
     SetOp(Box<SetExpr>),
     #[error("Unsupported INSERT expression: {0}")]

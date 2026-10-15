@@ -72,21 +72,21 @@ pub trait TypeChecker {
                     view_args,
                 }))
             }
-            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), args, joins) => {
+            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
                 let schema = Self::type_relvar(tx, &name)?;
-                let view_args = type_view_args(&schema, args)?;
+                // The parser rejects args in a JOIN, so a view that takes them is missing them
+                type_view_args(&schema, vec![])?;
                 vars.insert(alias.clone(), schema.clone());
                 let mut join = RelExpr::RelVar(Relvar {
                     schema,
                     alias,
                     delta: None,
-                    view_args,
+                    view_args: None,
                 });
 
                 for SqlJoin {
                     var: SqlIdent(name),
                     alias: SqlIdent(alias),
-                    args,
                     on,
                 } in joins
                 {
@@ -96,14 +96,13 @@ pub trait TypeChecker {
                     }
 
                     let lhs = Box::new(join);
-                    let schema = Self::type_relvar(tx, &name)?;
-                    let view_args = type_view_args(&schema, args)?;
                     let rhs = Relvar {
-                        schema,
+                        schema: Self::type_relvar(tx, &name)?,
                         alias,
                         delta: None,
-                        view_args,
+                        view_args: None,
                     };
+                    type_view_args(&rhs.schema, vec![])?;
 
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
 
@@ -288,12 +287,13 @@ pub mod test_utils {
     pub struct SchemaViewer(pub ModuleDef);
 
     impl SchemaViewer {
-        /// The schema of view `v`, `w` or `f`, if the module defines it.
+        /// The schema of view `v`, `w`, `f` or `p`, if the module defines it.
         fn view_schema(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             let name = match table_id.idx() {
                 2 => "v",
                 3 => "w",
                 4 => "f",
+                5 => "p",
                 _ => return None,
             };
             let def = self.0.view(name)?;
@@ -311,6 +311,7 @@ pub mod test_utils {
                 "v" => Some(TableId(2)),
                 "w" => Some(TableId(3)),
                 "f" => Some(TableId(4)),
+                "p" => Some(TableId(5)),
                 _ => None,
             }
         }
@@ -341,7 +342,7 @@ pub mod test_utils {
 mod tests {
     use crate::{
         check::test_utils::{build_module_def, build_module_def_with_views, SchemaViewer},
-        expr::{LeftDeepJoin, ProjectName, RelExpr},
+        expr::{ProjectName, RelExpr},
     };
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, AlgebraicValue, Identity, ProductType, ProductValue};
     use spacetimedb_schema::def::ModuleDef;
@@ -386,7 +387,7 @@ mod tests {
     }
 
     /// A table, a view `v(id: u32)`, a view `w(ids: [u32])` whose parameter SQL can't express,
-    /// and a view `f(x: f64)`.
+    /// a view `f(x: f64)`, and a view `p` without parameters.
     fn module_def_with_views() -> ModuleDef {
         let row = || ProductType::from([("x", AlgebraicType::U32)]);
         build_module_def_with_views(
@@ -399,6 +400,7 @@ mod tests {
                     row(),
                 ),
                 ("f", ProductType::from([("x", AlgebraicType::F64)]), row()),
+                ("p", ProductType::unit(), row()),
             ],
         )
     }
@@ -688,30 +690,33 @@ mod tests {
                 msg: "Max u32",
             },
             TestCase {
-                sql: "select t.* from t join v(42) on t.u32 = v.x",
-                msg: "View call on the rhs of a join",
-            },
-            TestCase {
                 sql: "select * from t()",
                 msg: "No args on a table",
+            },
+            TestCase {
+                sql: "select t.* from t join p on t.u32 = p.x",
+                msg: "View without params in a join",
+            },
+            TestCase {
+                sql: "select t.* from t join p() on t.u32 = p.x",
+                msg: "View without params in a join, with empty parens",
             },
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_ok(), "{msg}: {result:?}");
         }
 
-        // The typed args are carried on the relvar, including the rhs of a join,
-        // and binding sets the rhs's hash too.
+        // The typed args are carried on the relvar, and binding sets its hash.
         let args = ProductValue::from_iter([AlgebraicValue::U32(42)]);
-        let Ok(ProjectName::Some(RelExpr::EqJoin(LeftDeepJoin { rhs, .. }, ..), _)) =
-            parse_and_type_sub("select t.* from t join v(42) on t.u32 = v.x", &tx).map(|mut expr| {
+        let Ok(ProjectName::None(RelExpr::RelVar(relvar))) =
+            parse_and_type_sub("select * from v(42)", &tx).map(|mut expr| {
                 expr.bind_view_arg_hashes(Identity::ONE);
                 expr
             })
         else {
-            panic!("expected a join");
+            panic!("expected a relvar");
         };
-        let view_args = rhs.view_args.expect("rhs should be a view call");
+        let view_args = relvar.view_args.expect("v should be a view call");
         assert_eq!(view_args.args, args);
         assert!(view_args.arg_hash.is_some());
     }
@@ -757,6 +762,14 @@ mod tests {
             TestCase {
                 sql: "select * from w(1)",
                 msg: "Param type SQL can't express",
+            },
+            TestCase {
+                sql: "select t.* from t join v(42) on t.u32 = v.x",
+                msg: "View call with args in a join",
+            },
+            TestCase {
+                sql: "select t.* from t join v on t.u32 = v.x",
+                msg: "View with params in a join, without args",
             },
         ] {
             let result = parse_and_type_sub(sql, &tx);

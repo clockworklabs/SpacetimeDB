@@ -484,6 +484,9 @@ mod tests {
             // Empty statement
             "",
             " ",
+            // View calls with arguments can't be joined
+            "select t.* from t join v(42) on t.a = v.a",
+            "select v.* from v(42) join t on v.a = t.a",
         ] {
             assert!(parse_sql(sql).is_err());
         }
