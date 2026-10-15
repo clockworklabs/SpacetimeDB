@@ -11,7 +11,7 @@ A **submodule** is a SpacetimeDB module that can be included in another module's
 Submodules let you package reusable database logic as a library that any consumer can integrate without coordinating table names.
 
 :::note
-Submodules are supported in TypeScript and C#. C# composition requires **SpacetimeDB 2.13 or later**, including the `SpacetimeDB.Runtime` package, and **.NET 10 and C# 14** in both the root module and its dependencies; .NET 8 modules cannot participate. Cross-language composition is not supported.
+Submodules are supported in TypeScript and C#. C# composition requires **SpacetimeDB 2.13 or later**, including the `SpacetimeDB.Runtime` package, and **.NET 10 and C# 14** in both the root module and its dependencies; .NET 8 modules can only be standalone modules. Cross-language composition is not supported.
 
 Building and publishing .NET 10 C# modules currently requires Windows or Linux because the NativeAOT-LLVM toolchain does not support macOS hosts.
 :::
