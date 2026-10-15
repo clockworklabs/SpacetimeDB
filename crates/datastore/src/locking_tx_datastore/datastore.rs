@@ -43,7 +43,8 @@ use spacetimedb_schema::{
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
-use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
+use spacetimedb_table::tiered::{TieredDatabaseStorage, TieredStorageConfig};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,21 +81,21 @@ impl MemoryUsage for Locking {
 }
 
 impl Locking {
-    pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
+    pub fn new(database_identity: Identity, storage: TieredDatabaseStorage) -> Self {
         Self {
-            committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
+            committed_state: Arc::new(RwLock::new(CommittedState::new(storage))),
             database_identity,
         }
     }
 
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_identity: Identity, page_pool: PagePool) -> Result<Self> {
+    pub fn bootstrap(database_identity: Identity, config: TieredStorageConfig) -> Result<Self> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Self::new(database_identity, page_pool);
+        let datastore = Self::new(database_identity, TieredDatabaseStorage::new(config));
         let mut commit_state = datastore.committed_state.write_arc();
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -167,13 +168,13 @@ impl Locking {
     /// - Construct all the tables referenced by `snapshot`, computing their schemas
     ///   either from known system table schemas or from `st_table` and friends.
     /// - Populate those tables with all rows in `snapshot`.
-    /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
+    /// - Construct a [`spacetimedb_table::tiered::BlobSet`] containing all the large blobs referenced by `snapshot`,
     ///   with reference counts specified in `snapshot`.
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
     #[cfg(feature = "durability")]
-    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, page_pool: PagePool) -> Result<Self> {
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, config: TieredStorageConfig) -> Result<Self> {
         let ReconstructedSnapshot {
             database_identity,
             tx_offset,
@@ -182,9 +183,8 @@ impl Locking {
             ..
         } = snapshot;
 
-        let datastore = Self::new(database_identity, page_pool);
+        let datastore = Self::new(database_identity, TieredDatabaseStorage::with_blobs(config, blob_store));
         let mut committed_state = datastore.committed_state.write_arc();
-        committed_state.blob_store = blob_store;
 
         // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
         // This means that we will instantiate and populate the system tables before any user tables.
@@ -1021,10 +1021,11 @@ impl MutTx for Locking {
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
         let lock_wait_time = timer.elapsed();
+        let tx_state = TxState::new(&committed_state_write_lock.storage);
 
         MutTxId {
             committed_state_write_lock,
-            tx_state: TxState::default(),
+            tx_state,
             lock_wait_time,
             read_sets: <_>::default(),
             view_instances: <_>::default(),
@@ -1055,10 +1056,11 @@ impl Locking {
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
         let lock_wait_time = timer.elapsed();
+        let tx_state = TxState::new(&committed_state_write_lock.storage);
 
         Some(MutTxId {
             committed_state_write_lock,
-            tx_state: TxState::default(),
+            tx_state,
             lock_wait_time,
             read_sets: <_>::default(),
             view_instances: <_>::default(),
@@ -1253,7 +1255,7 @@ pub(crate) mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())
+        Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())
     }
 
     fn col(col: u16) -> ColList {
@@ -2114,6 +2116,18 @@ pub(crate) mod tests {
         let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_large_blob_insert_post_commit() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+        let large = "x".repeat(2048);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &large, 18))?;
+        datastore.commit_mut_tx(tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, &large, 18)]);
         Ok(())
     }
 

@@ -661,13 +661,13 @@ impl<'cs> ReplayCommittedState<'cs> {
     pub(super) fn build_indexes(&mut self) -> Result<()> {
         let st_indexes = self.tables.get(&ST_INDEX_ID).unwrap();
         let rows = st_indexes
-            .scan_rows(&self.blob_store)
+            .scan_rows(self.storage.blobs())
             .map(|row_ref| row_ref.map_err(Into::into).and_then(StIndexRow::try_from))
             .collect::<Result<Vec<_>>>()?;
 
         let st_constraints = self.tables.get(&ST_CONSTRAINT_ID).unwrap();
         let unique_constraints: HashSet<(TableId, ColSet)> = st_constraints
-            .scan_rows(&self.blob_store)
+            .scan_rows(self.storage.blobs())
             .map(|row_ref| row_ref.map_err(Into::into).and_then(StConstraintRow::try_from))
             .filter_map(Result::ok)
             .filter_map(|constraint| match constraint.constraint_data {
@@ -707,7 +707,7 @@ impl<'cs> ReplayCommittedState<'cs> {
             return Ok(tables);
         };
         let backing_tables = st_view
-            .scan_rows(&self.blob_store)
+            .scan_rows(self.storage.blobs())
             .map(|row_ref| {
                 let StViewRow { table_id, view_id, .. } = StViewRow::try_from(row_ref?)?;
                 table_id.ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_id)))
@@ -741,7 +741,7 @@ impl<'cs> ReplayCommittedState<'cs> {
     pub(super) fn build_missing_tables(&mut self) -> Result<()> {
         // Find all ids of tables that are in `st_tables` but haven't been built.
         let mut table_ids = Vec::new();
-        for row in self.get_table(ST_TABLE_ID).unwrap().scan_rows(&self.blob_store) {
+        for row in self.get_table(ST_TABLE_ID).unwrap().scan_rows(self.storage.blobs()) {
             let row_ref = row?;
             let table_id = row_ref.read_col(StTableFields::TableId).unwrap();
             if self.get_table(table_id).is_none() {
@@ -782,7 +782,7 @@ impl<'cs> ReplayCommittedState<'cs> {
             }
             Err(InsertError::Bflatn(e)) => return Err(TableError::Bflatn(e).into()),
             Err(InsertError::IndexError(e)) => return Err(IndexError::UniqueConstraintViolation(e).into()),
-            Err(InsertError::Page(e)) => return Err(DatastoreError::Page(e)),
+            Err(InsertError::Table(e)) => return Err(e.into()),
         };
 
         // `row_ref` is treated as having a mutable borrow on `self`
@@ -1164,7 +1164,7 @@ mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::{product, AlgebraicType};
-    use spacetimedb_table::page_pool::PagePool;
+    use spacetimedb_table::tiered::TieredStorageConfig;
 
     use super::*;
 
@@ -1199,7 +1199,7 @@ mod tests {
 
     #[test]
     fn test_replay_updated_st_table_lookup_reads_st_table() -> ResultTest<()> {
-        let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
+        let datastore = Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())?;
 
         let mut tx = begin_mut_tx(&datastore);
         let schema = TableSchema::new(

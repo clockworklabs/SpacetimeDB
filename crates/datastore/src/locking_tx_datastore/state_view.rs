@@ -18,8 +18,8 @@ use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::{
-    blob_store::HashMapBlobStore,
     table::{self, RowRef, Table},
+    tiered::BlobSet,
 };
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -374,7 +374,7 @@ pub(crate) fn iter_st_column_for_table<'a>(
 }
 
 pub struct IterMutTx<'a> {
-    tx_state_ins: Option<(&'a Table, &'a HashMapBlobStore)>,
+    tx_state_ins: Option<(&'a Table, &'a BlobSet)>,
     stage: ScanStage<'a>,
 }
 
@@ -391,7 +391,7 @@ impl<'a> IterMutTx<'a> {
             .get(&table_id)
             .map(|table| (table, &tx_state.blob_store));
 
-        let iter = commit_table.scan_rows(&committed_state.blob_store).err_into();
+        let iter = commit_table.scan_rows(committed_state.storage.blobs()).err_into();
         let stage = if let Some(deletes) = tx_state.get_delete_table(table_id) {
             // There are deletes in the tx state
             // so we must exclude those (1b).

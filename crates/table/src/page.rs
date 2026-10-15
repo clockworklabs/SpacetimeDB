@@ -32,8 +32,10 @@
 //!   See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
 //!   for a discussion on safety and validity invariants.
 
+use crate::tiered::{BlobError, BlobSet};
+
 use super::{
-    blob_store::{BlobHash, BlobStore},
+    blob_store::BlobHash,
     fixed_bit_set::FixedBitSet,
     fixed_bit_set::IterSet,
     indexes::{max_rows_in_page, Byte, Bytes, PageOffset},
@@ -739,19 +741,17 @@ impl<'page> VarView<'page> {
     /// Inserts `var_len_obj` into `blob_store`
     /// and stores the blob hash in the granule pointed to by `vlr.first_granule`.
     ///
-    /// This insertion will never fail.
-    ///
     /// # Safety
     ///
     /// `vlr.first_granule` must point to an unused `VarLenGranule` in bounds of this page,
     /// which must be valid for writes.
     pub unsafe fn write_large_blob_hash_to_granule(
         &mut self,
-        blob_store: &mut dyn BlobStore,
+        blobs: &BlobSet,
         var_len_obj: &impl AsRef<[u8]>,
         vlr: VarLenRef,
-    ) -> BlobNumBytes {
-        let hash = blob_store.insert_blob(var_len_obj.as_ref());
+    ) -> Result<BlobNumBytes, BlobError> {
+        let hash = blobs.insert(var_len_obj.as_ref())?.hash();
 
         let granule = vlr.first_granule;
         // SAFETY:
@@ -759,7 +759,7 @@ impl<'page> VarView<'page> {
         // 2. The null granule is trivially initialized.
         // 3. The caller promised that `granule` is safe to overwrite.
         unsafe { self.write_chunk_to_granule(&hash.data, hash.data.len(), granule, PageOffset::VAR_LEN_NULL) };
-        var_len_obj.as_ref().len().into()
+        Ok(var_len_obj.as_ref().len().into())
     }
 
     /// Write the `chunk` (data) to the [`VarLenGranule`] pointed to by `granule`,
@@ -902,29 +902,14 @@ impl<'page> VarView<'page> {
     /// SAFETY: `offset` must point to a valid [`VarLenGranule`] or be NULL.
     #[cold]
     #[inline(never)]
-    unsafe fn free_blob(&self, offset: PageOffset, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+    unsafe fn free_blob(&self, offset: PageOffset, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
         assert!(!offset.is_var_len_null());
 
         // SAFETY: Per caller contract + the assertion above,
         // we know `offset` refers to a valid `VarLenGranule`.
         let granule = unsafe { self.get_granule_ref(offset) };
 
-        // Actually free the blob.
-        let hash = granule.blob_hash();
-
-        // The size of `deleted_bytes` is calculated here instead of requesting it from `blob_store`.
-        // This is because the actual number of bytes deleted depends on the `blob_store`'s logic.
-        // We prefer to measure it from the datastore's point of view.
-        let blob_store_deleted_bytes = blob_store
-            .retrieve_blob(&hash)
-            .expect("failed to free var-len blob")
-            .len()
-            .into();
-
-        // Actually free the blob.
-        blob_store.free_blob(&hash).expect("failed to free var-len blob");
-
-        blob_store_deleted_bytes
+        blobs.free_ref(granule.blob_hash()).map(BlobNumBytes::from)
     }
 
     /// Frees an entire var-len linked-list object.
@@ -963,14 +948,14 @@ impl<'page> VarView<'page> {
     /// Frees an entire var-len linked-list object.
     ///
     /// SAFETY: `var_len_obj.first_granule` must point to a valid [`VarLenGranule`] or be NULL.
-    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
         let mut blob_store_deleted_bytes = BlobNumBytes::default();
         // For large blob objects, extract the hash and tell `blob_store` to discard it.
         if var_len_obj.is_large_blob() {
             // SAFETY: `var_len_obj.first_granule` was promised to
             // point to a valid [`VarLenGranule`] or be NULL, as required.
             unsafe {
-                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blob_store);
+                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blobs)?;
             }
         }
 
@@ -979,7 +964,7 @@ impl<'page> VarView<'page> {
             self.free_object_ignore_blob(var_len_obj);
         }
 
-        blob_store_deleted_bytes
+        Ok(blob_store_deleted_bytes)
     }
 }
 
@@ -1246,7 +1231,7 @@ impl Page {
     ///
     /// Note that large blobs themselves are not counted.
     /// The caller should obtain a count of the bytes used by large blobs
-    /// from the [`super::blob_store::BlobStore`].
+    /// from the [`super::tiered::BlobSet`].
     ///
     /// This method runs in constant time.
     pub fn bytes_used_by_rows(&self, fixed_row_size: Size) -> usize {
@@ -1384,7 +1369,7 @@ impl Page {
         fixed_row: &Bytes,
         var_len_objects: &[impl AsRef<[u8]>],
         var_len_visitor: &impl VarLenMembers,
-        blob_store: &mut dyn BlobStore,
+        blobs: &mut BlobSet,
     ) -> Result<PageOffset, Error> {
         // Allocate the fixed-len row.
         let fixed_row_size = Size(fixed_row.len() as u16);
@@ -1408,13 +1393,13 @@ impl Page {
         for (var_len_ref_slot, var_len_obj) in vlr_slot_iter.zip(var_len_objects) {
             let (var_len_ref, in_blob) = var.alloc_for_slice(var_len_obj.as_ref())?;
             if in_blob {
-                // The blob store insertion will never fail.
                 // SAFETY: `alloc_for_slice` always returns a pointer
                 // to a `VarLenGranule` in bounds of this page.
                 // As `in_blob` holds, it is also unused, as required.
                 // We'll now make that granule valid.
                 unsafe {
-                    var.write_large_blob_hash_to_granule(blob_store, var_len_obj, var_len_ref);
+                    var.write_large_blob_hash_to_granule(blobs, var_len_obj, var_len_ref)
+                        .expect("legacy Page::insert_row cannot propagate blob errors");
                 }
             }
             *var_len_ref_slot = var_len_ref;
@@ -1553,8 +1538,8 @@ impl Page {
         fixed_row: PageOffset,
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
-        blob_store: &mut dyn BlobStore,
-    ) -> BlobNumBytes {
+        blobs: &BlobSet,
+    ) -> Result<BlobNumBytes, BlobError> {
         // We're modifying the page, so clear the unmodified hash.
         self.header.unmodified_hash = None;
 
@@ -1571,7 +1556,7 @@ impl Page {
             // which we've justified that the above is,
             // returns an iterator, that will only yield `var_len_ref`s,
             // where `var_len_ref.first_granule` points to a valid `VarLenGranule` or is NULL.
-            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blob_store) }
+            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blobs)? }
         }
 
         // SAFETY: Caller promised that `fixed_row` points to a valid row in the page.
@@ -1583,7 +1568,7 @@ impl Page {
             fixed.free(fixed_row, fixed_row_size);
         }
 
-        blob_store_deleted_bytes
+        Ok(blob_store_deleted_bytes)
     }
 
     /// Returns the total number of granules used by the fixed row at `fixed_row_offset`
@@ -1915,26 +1900,17 @@ impl Page {
     }
 
     pub fn metadata(&self, fixed_row_size: Size) -> PageMetadata {
-        PageMetadata {
-            num_rows: self.num_rows() as _,
-            bytes_used_by_rows: self.bytes_used_by_rows(fixed_row_size) as _,
-            has_free_fixed_slot: self.header.fixed.next_free.has(),
-            gap_bytes: gap_remaining_size(self.header.var.first, self.header.fixed.last).0 as _,
-            available_granules: self.available_var_len_granules() as _,
-        }
-    }
-
-    pub fn capacity(&self, fixed_row_size: Size) -> PageCapacity {
         let allocated_fixed_slots = self.header.fixed.last / fixed_row_size;
         let free_fixed_slots = allocated_fixed_slots
             .checked_sub(self.header.fixed.num_rows as usize)
             .expect("live row count exceeds allocated fixed slots");
 
-        PageCapacity {
-            num_rows: self.num_rows(),
-            gap_size: gap_remaining_size(self.header.var.first, self.header.fixed.last),
-            free_fixed_slots,
-            available_granules: self.available_var_len_granules(),
+        PageMetadata {
+            num_rows: self.num_rows() as _,
+            bytes_used_by_rows: self.bytes_used_by_rows(fixed_row_size) as _,
+            free_fixed_slots: free_fixed_slots as _,
+            gap_bytes: gap_remaining_size(self.header.var.first, self.header.fixed.last).0 as _,
+            available_granules: self.available_var_len_granules() as _,
         }
     }
 }
@@ -1999,7 +1975,7 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 pub struct PageMetadata {
     pub num_rows: u16,
     pub bytes_used_by_rows: u32,
-    has_free_fixed_slot: bool,
+    free_fixed_slots: u16,
     gap_bytes: u16,
     available_granules: u16,
 }
@@ -2007,7 +1983,7 @@ pub struct PageMetadata {
 impl PageMetadata {
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_var_len_granules: usize) -> bool {
         has_space_for_row(
-            self.has_free_fixed_slot,
+            self.free_fixed_slots != 0,
             Size(self.gap_bytes),
             self.available_granules as _,
             fixed_row_size,
@@ -2126,10 +2102,29 @@ impl PageCapacity {
     }
 }
 
+impl From<PageMetadata> for PageCapacity {
+    fn from(
+        PageMetadata {
+            num_rows,
+            free_fixed_slots,
+            gap_bytes,
+            available_granules,
+            ..
+        }: PageMetadata,
+    ) -> Self {
+        Self {
+            num_rows: num_rows as _,
+            gap_size: Size(gap_bytes),
+            free_fixed_slots: free_fixed_slots as _,
+            available_granules: available_granules as _,
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{blob_store::NullBlobStore, page_pool::PagePool, var_len::AlignedVarLenOffsets};
+    use crate::{page_pool::PagePool, var_len::AlignedVarLenOffsets};
     use proptest::{collection::vec, prelude::*};
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::layout::row_size_for_type;
@@ -2147,8 +2142,15 @@ pub(crate) mod tests {
 
     fn insert_u64(page: &mut Page, val: u64) -> PageOffset {
         let val_slice = val.to_le_bytes();
-        unsafe { page.insert_row(&val_slice, &[] as &[&[u8]], u64_var_len_visitor(), &mut NullBlobStore) }
-            .expect("Failed to insert first row")
+        unsafe {
+            page.insert_row(
+                &val_slice,
+                &[] as &[&[u8]],
+                u64_var_len_visitor(),
+                &mut BlobSet::new_for_test(),
+            )
+        }
+        .expect("Failed to insert first row")
     }
 
     fn insert_u64_drop(page: &mut Page, val: u64) {
@@ -2156,7 +2158,7 @@ pub(crate) mod tests {
     }
 
     fn assert_page_summaries_match(page: &Page, capacity: &PageCapacity, fixed_row_size: Size) {
-        let canonical_capacity = page.capacity(fixed_row_size);
+        let canonical_capacity = PageCapacity::from(page.metadata(fixed_row_size));
         assert_eq!(capacity.num_rows, canonical_capacity.num_rows);
         assert_eq!(capacity.gap_size, canonical_capacity.gap_size);
         assert_eq!(capacity.free_fixed_slots, canonical_capacity.free_fixed_slots);
@@ -2168,7 +2170,7 @@ pub(crate) mod tests {
             metadata.bytes_used_by_rows as usize,
             page.bytes_used_by_rows(fixed_row_size)
         );
-        assert_eq!(metadata.has_free_fixed_slot, page.header.fixed.next_free.has());
+        assert_eq!(metadata.free_fixed_slots != 0, page.header.fixed.next_free.has());
         assert_eq!(
             Size(metadata.gap_bytes),
             gap_remaining_size(page.header.var.first, page.header.fixed.last)
@@ -2186,7 +2188,7 @@ pub(crate) mod tests {
     fn page_summaries_match_page_after_reservations() {
         let fixed_row_size = u64_row_size();
         let mut page = Page::new(fixed_row_size);
-        let mut capacity = page.capacity(fixed_row_size);
+        let mut capacity = PageCapacity::from(page.metadata(fixed_row_size));
 
         assert_page_summaries_match(&page, &capacity, fixed_row_size);
         for val in 0..64 {
@@ -2283,8 +2285,9 @@ pub(crate) mod tests {
         assert_ne!(hash_pre_ins, hash_pre_del);
 
         // Delete rows.
+        let blobs = &mut BlobSet::new_for_test();
         for row_offset in odds {
-            unsafe { page.delete_row(row_offset, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
+            unsafe { page.delete_row(row_offset, u64_row_size(), u64_var_len_visitor(), blobs) }.unwrap();
         }
 
         // The hash should have been cleared.
@@ -2325,7 +2328,15 @@ pub(crate) mod tests {
         assert_ne!(hash_pre_ins, hash_pre_del);
 
         // Delete first row.
-        unsafe { page.delete_row(offset_0, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
+        unsafe {
+            page.delete_row(
+                offset_0,
+                u64_row_size(),
+                u64_var_len_visitor(),
+                &BlobSet::new_for_test(),
+            )
+        }
+        .unwrap();
 
         assert_eq!(page.header.fixed.last, u64_row_size() * 2);
 
@@ -2360,14 +2371,22 @@ pub(crate) mod tests {
 
     fn insert_str(page: &mut Page, data: &[u8]) -> PageOffset {
         let fixed_len_data = [0u8; STR_ROW_SIZE.len()];
-        unsafe { page.insert_row(&fixed_len_data, &[data], str_var_len_visitor(), &mut NullBlobStore) }
-            .expect("Failed to insert row")
+        unsafe {
+            page.insert_row(
+                &fixed_len_data,
+                &[data],
+                str_var_len_visitor(),
+                &mut BlobSet::new_for_test(),
+            )
+        }
+        .expect("Failed to insert row")
     }
 
     #[test]
     fn page_summaries_match_page_with_var_len_freelist() {
         let mut page = Page::new(STR_ROW_SIZE);
-        let mut capacity = page.capacity(STR_ROW_SIZE);
+        let blobs = &mut BlobSet::new_for_test();
+        let mut capacity = PageCapacity::from(page.metadata(STR_ROW_SIZE));
         let one_granule = [0xa5; 1];
         let one_granule_count = Page::total_granules_required_for_objects(&[one_granule]);
         let mut offsets = Vec::new();
@@ -2380,7 +2399,7 @@ pub(crate) mod tests {
 
         for offset in offsets.into_iter().step_by(2) {
             capacity.release_row(one_granule_count);
-            unsafe { page.delete_row(offset, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
+            unsafe { page.delete_row(offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
             assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
         }
 
@@ -2487,6 +2506,8 @@ pub(crate) mod tests {
         let data_2 = b"Glad to hear it.";
 
         let mut page = Page::new(STR_ROW_SIZE);
+        let blobs = &mut BlobSet::new_for_test();
+
         let offset_0 = insert_str(&mut page, data_0);
         let offset_1 = insert_str(&mut page, data_1);
 
@@ -2506,7 +2527,7 @@ pub(crate) mod tests {
 
         let hash_pre_del = hash_unmodified_save_get(&mut page);
 
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
+        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
 
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
@@ -2530,6 +2551,7 @@ pub(crate) mod tests {
     #[test]
     fn free_var_len_obj_multiple_granules() {
         let mut page = Page::new(STR_ROW_SIZE);
+        let blobs = &mut BlobSet::new_for_test();
 
         // Allocate a 4-granule var-len object.
         let data_0 = [0xa5u8].repeat(VarLenGranule::DATA_SIZE * 4);
@@ -2547,7 +2569,7 @@ pub(crate) mod tests {
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(4));
 
         // Delete the row.
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
+        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
 
         // Allocate a new 4-granule var-len object.
         // This should use the same storage as the original row.
@@ -2582,6 +2604,7 @@ pub(crate) mod tests {
         let data_2 = data_2.as_ref();
 
         let mut page = Page::new(STR_ROW_SIZE);
+        let blobs = &mut BlobSet::new_for_test();
 
         // First the hash is not saved, so compute it.
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
@@ -2597,7 +2620,7 @@ pub(crate) mod tests {
         assert_ne!(hash_pre_ins, hash_pre_del);
 
         // Delete the first row.
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
+        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
 
         // Hash is cleared by deleting.
         let hash_post_del = hash_unmodified_save_get(&mut page);
@@ -2677,6 +2700,7 @@ pub(crate) mod tests {
     #[test]
     fn fill_delete_iter_var_len_str() {
         let mut page = Page::new(STR_ROW_SIZE);
+        let blobs = &mut BlobSet::new_for_test();
 
         // First the hash is not saved, so compute it.
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
@@ -2700,7 +2724,7 @@ pub(crate) mod tests {
 
         // Delete the rows.
         for row_offset in odds {
-            unsafe { page.delete_row(row_offset, STR_ROW_SIZE, str_var_len_visitor(), &mut NullBlobStore) };
+            unsafe { page.delete_row(row_offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
         }
 
         // Hash was cleared by deleting and is different now.
@@ -2728,6 +2752,7 @@ pub(crate) mod tests {
     fn serde_round_trip_whole_page() {
         let pool = PagePool::new_for_test();
         let mut page = Page::new(u64_row_size());
+        let blobs = &mut BlobSet::new_for_test();
 
         // Construct an empty page, ser/de it, and assert that it's still empty.
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
@@ -2761,7 +2786,7 @@ pub(crate) mod tests {
             .enumerate()
             .filter_map(|(i, offset)| {
                 if i % 2 == 0 {
-                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
+                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), blobs) }.unwrap();
                     None
                 } else {
                     Some(offset)

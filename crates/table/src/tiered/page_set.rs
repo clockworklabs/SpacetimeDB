@@ -1,23 +1,34 @@
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
     convert::Infallible,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    blob_store::BlobStore,
     indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
-    table::{BlobNumBytes, PreparedInsert, Table},
-    tiered::page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlotHandle, ReservedPage},
+    table::{BlobNumBytes, PreparedInsert, Table, TableError},
+    tiered::{
+        blob_set::BlobHandle,
+        mem::{PageEvictionCandidate, PageId},
+        page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
+        BlobError, BlobSet, PageError,
+    },
     var_len::VarLenMembers,
 };
 
-pub use crate::tiered::page_manager::PageError;
+#[derive(Debug, thiserror::Error)]
+pub enum DeleteRowError {
+    #[error(transparent)]
+    Page(#[from] PageError),
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+}
 
 /// The set of pages of a [Table].
 #[derive(Debug)]
@@ -28,6 +39,9 @@ pub struct PageSet {
     free_page_slots: BTreeSet<PageIndex>,
     non_full_pages: BTreeSet<(usize, PageIndex)>,
     pub(crate) manager: Arc<PageManager>,
+
+    // Scratch allocations for eviction.
+    evictable: Mutex<EvictionScratch>,
 }
 type EvictionScratch = (Box<Vec<PageEvictionCandidate>>, Box<IntMap<PageId, PageIndex>>);
 
@@ -41,6 +55,8 @@ impl PageSet {
             free_page_slots: <_>::default(),
             non_full_pages: <_>::default(),
             manager,
+
+            evictable: <_>::default(),
         }
     }
 
@@ -53,7 +69,8 @@ impl PageSet {
 
         // This is ok, because the table is empty.
         self.fixed_row_size = fixed_row_size;
-        self.slots = self.manager.register(self.eviction_policy, self.fixed_row_size, pages);
+        self.manager
+            .register_unchecked(self.eviction_policy, self.fixed_row_size, pages, &mut self.slots);
         self.non_full_pages = self
             .slots
             .iter()
@@ -185,8 +202,8 @@ impl PageSet {
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         row_ptr: RowPointer,
-        blob_store: &mut dyn BlobStore,
-    ) -> Result<BlobNumBytes, PageError> {
+        blobs: &BlobSet,
+    ) -> Result<BlobNumBytes, DeleteRowError> {
         let page_index = row_ptr.page_index();
         let (blob_bytes_deleted, is_empty, available_granules) =
             self.with_page_mut(page_index, fixed_row_size, |page| {
@@ -197,14 +214,14 @@ impl PageSet {
                 // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
                 //   The size is also conistent with `var_len_visitor`.
                 let blob_bytes_deleted =
-                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) };
+                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blobs) }?;
 
-                (
+                Ok::<_, BlobError>((
                     blob_bytes_deleted,
                     page.num_rows() == 0,
                     page.available_var_len_granules(),
-                )
-            })?;
+                ))
+            })??;
 
         if is_empty {
             self.slots[page_index.idx()].free();
@@ -283,7 +300,7 @@ impl PageSet {
         if idx == self.slots.len() {
             self.slots.push(slot);
         } else {
-            assert!(self.slots[idx].is_absent());
+            assert!(self.slots.get(idx).unwrap().is_absent());
             self.free_page_slots.remove(&index);
             self.slots[idx] = slot;
         }
@@ -360,8 +377,8 @@ impl PageSet {
         fixed_row_size: Size,
         visitor: &impl VarLenMembers,
         deletes: impl IntoIterator<Item = RowPointer>,
-        inserts: impl IntoIterator<Item = Result<(PreparedInsert, usize), PageError>>,
-    ) -> Result<PreparedCommit, PageError> {
+        inserts: impl IntoIterator<Item = Result<(PreparedInsert, usize), TableError>>,
+    ) -> Result<PreparedCommit, TableError> {
         let mut allocator = PageAllocator::new(self, fixed_row_size);
         let mut pinned = BTreeMap::new();
 
@@ -379,7 +396,7 @@ impl PageSet {
                         .row_total_granules(row_ptr.page_offset(), fixed_row_size, visitor)
                 };
                 allocator.prepare_delete::<Infallible>(page_index, granules, |page_index| {
-                    Ok(pinned[&page_index].read().capacity(fixed_row_size))
+                    Ok(pinned[&page_index].read().metadata(fixed_row_size).into())
                 });
 
                 Ok(row_ptr)
@@ -395,14 +412,14 @@ impl PageSet {
                         btree_map::Entry::Vacant(entry) => {
                             let page = self.get_page(page_index)?.expect("delete from absent page");
                             let page = entry.insert(page);
-                            Ok(page.read().capacity(fixed_row_size))
+                            Ok(page.read().metadata(fixed_row_size).into())
                         }
-                        btree_map::Entry::Occupied(entry) => Ok(entry.get().read().capacity(fixed_row_size)),
+                        btree_map::Entry::Occupied(entry) => Ok(entry.get().read().metadata(fixed_row_size).into()),
                     }
                 })?;
                 Ok(PlannedInsert { page_index, row })
             })
-            .collect::<Result<_, PageError>>()?;
+            .collect::<Result<_, TableError>>()?;
 
         let reserved = allocator
             .pages_to_allocate()
@@ -410,6 +427,7 @@ impl PageSet {
                 self.manager
                     .reserve(fixed_row_size)
                     .map(|reservation| (page_index, reservation))
+                    .map_err(PageError::from)
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
 
@@ -418,7 +436,53 @@ impl PageSet {
             reserved,
             deletes,
             inserts,
+            pinned_blobs: Vec::new(),
         })
+    }
+
+    pub fn evict(&self) -> Result<(), PageError> {
+        let mut _guard = self.evictable.lock().unwrap();
+        let (candidates, slots) = &mut *_guard;
+
+        // Collect eviction candidates, returning early if there aren't any.
+        self.manager.evictable(candidates);
+        if candidates.is_empty() {
+            return Ok(());
+        }
+
+        // Only resident slots have a page id, so collect them now.
+        slots.clear();
+        slots.extend(self.slots.iter().enumerate().filter_map(|(idx, slot_handle)| {
+            let page_id = slot_handle.page_id()?;
+            Some((page_id, PageIndex(idx as _)))
+        }));
+
+        for candidate in candidates.drain(..) {
+            let Some(page_index) = slots.remove(&candidate.id) else {
+                continue;
+            };
+            let mut slot = self.slots[page_index.idx()].lock();
+            match &*slot {
+                PageSlot::Resident {
+                    handle: page_handle,
+                    metadata,
+                    backing,
+                    eviction_policy: PageEvictionPolicy::Evictable,
+                } => {
+                    let hash = backing
+                        .map(Ok)
+                        .unwrap_or_else(|| self.manager.ensure_lower_tier_stored(page_handle))?;
+                    *slot = PageSlot::NonResident {
+                        hash,
+                        metadata: *metadata,
+                    };
+                    self.manager.evicted(candidate);
+                }
+                _ => continue,
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -484,6 +548,7 @@ impl MemoryUsage for PageSet {
             // TODO: The manager is shared by all page sets of a database, how
             // should we account for it?
             manager: _,
+            evictable: _,
         } = self;
 
         slots.heap_usage() + free_page_slots.heap_usage() + non_full_pages.heap_usage()
@@ -503,6 +568,9 @@ pub struct PreparedCommit {
     deletes: Vec<RowPointer>,
     /// The rows to be inserted in this transaction.
     inserts: Vec<PlannedInsert>,
+    /// Blobs referenced by rows which will be deleted. Holding these handles
+    /// makes blob reads during apply infallible.
+    pinned_blobs: Vec<BlobHandle>,
 }
 
 impl PreparedCommit {
@@ -510,7 +578,7 @@ impl PreparedCommit {
     ///
     /// The table's [PageSet] must be the same as the one the [PreparedCommit]
     /// was created from.
-    pub fn apply(mut self, table: &mut Table, blob_store: &mut dyn BlobStore) -> AppliedCommit {
+    pub fn apply(mut self, table: &mut Table, blobs: &BlobSet) -> AppliedCommit {
         let mut pinned = self.pinned;
 
         fn collect_arc_slice<T, U>(iter: impl ExactSizeIterator<Item = T>, mut f: impl FnMut(T) -> U) -> Arc<[U]> {
@@ -528,7 +596,7 @@ impl PreparedCommit {
 
         let deletes = collect_arc_slice(self.deletes.into_iter(), |row_ptr| {
             table
-                .delete(blob_store, row_ptr, |row| row.to_product_value())
+                .delete(blobs, row_ptr, |row| row.to_product_value())
                 .expect("no page faults")
                 .expect("`Table::delete` never returns `None`")
         });
@@ -540,7 +608,7 @@ impl PreparedCommit {
             if !schema.is_event {
                 let reservation = self.reserved.remove(&page_index).map(|page| (page_index, page));
                 let row_ref = table
-                    .insert_prepared(blob_store, &row, reservation)
+                    .insert_prepared(blobs, &row, reservation)
                     .map(|(_, row_ref)| row_ref)
                     .expect("failed to insert during transaction commit");
                 let (page, _) = row_ref.page_and_offset();
@@ -555,8 +623,13 @@ impl PreparedCommit {
         });
 
         drop(pinned);
+        drop(self.pinned_blobs);
 
         AppliedCommit { deletes, inserts }
+    }
+
+    pub(crate) fn pin_blobs(&mut self, blobs: impl IntoIterator<Item = BlobHandle>) {
+        self.pinned_blobs.extend(blobs);
     }
 }
 
@@ -674,11 +747,11 @@ impl<'a> PageAllocator<'a> {
             .range((row_granules, PageIndex(0))..)
             // A planned page shadows committed state.
             .filter(|(_, index)| !self.planned.contains_key(index))
-            .find_map(|&(_, index)| {
+            .find_map(|(_, index)| {
                 self.pages.slots[index.idx()]
                     .has_space_for_row(self.fixed_row_size, row_granules)
                     .unwrap()
-                    .then_some(index)
+                    .then_some(*index)
             });
 
         match (planned, committed) {

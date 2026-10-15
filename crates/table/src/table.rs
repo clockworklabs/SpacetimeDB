@@ -1,13 +1,15 @@
 use crate::{
     bflatn_to::required_var_len_granules_for_row,
     page,
-    tiered::{PageError, PageEvictionPolicy, PageHandle, PageManager, PageSet, PreparedCommit, ReservedPage},
+    tiered::{
+        BlobError, BlobReadSet, BlobSet, DeleteRowError, PageError, PageEvictionPolicy, PageHandle, PageManager,
+        PageSet, PreparedCommit, ReservedPage,
+    },
 };
 
 use super::{
     bflatn_from::{serialize_columns_from_page, serialize_row_from_page},
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
-    blob_store::{BlobStore, NullBlobStore},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
@@ -20,7 +22,6 @@ use super::{
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
     static_layout::StaticLayout,
     table_index::{IndexCannotSeekRange, IndexKey, IndexKind, TableIndex, TableIndexPointIter, TableIndexRangeIter},
-    var_len::VarLenMembers,
 };
 use core::{fmt, ptr};
 use core::{
@@ -62,14 +63,37 @@ use std::{
 };
 use thiserror::Error;
 
-/// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
+/// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobSet`].
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign, SubAssign)]
 pub struct BlobNumBytes(usize);
+
+impl From<u64> for BlobNumBytes {
+    fn from(v: u64) -> Self {
+        Self(v as usize)
+    }
+}
 
 impl MemoryUsage for BlobNumBytes {}
 
 pub type SeqIdList = SmallVec<[SequenceId; 4]>;
 static_assert_size!(SeqIdList, 24);
+
+#[derive(Debug, Error)]
+pub enum TableError {
+    #[error(transparent)]
+    Page(#[from] PageError),
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+}
+
+impl From<DeleteRowError> for TableError {
+    fn from(e: DeleteRowError) -> Self {
+        match e {
+            DeleteRowError::Blob(e) => Self::Blob(e),
+            DeleteRowError::Page(e) => Self::Page(e),
+        }
+    }
+}
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -100,7 +124,7 @@ pub struct Table {
     pub row_count: u64,
     /// Stores the sum total number of bytes that each blob object in the table occupies.
     ///
-    /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
+    /// Note that the [`BlobSet`] does ref-counting and de-duplication,
     /// but this sum will count an object each time its hash is mentioned, rather than just once.
     blob_store_bytes: BlobNumBytes,
     /// Indicates whether this is a scheduler table or not.
@@ -162,16 +186,16 @@ impl TableInner {
     /// is sufficient to demonstrate all of these properties.
     unsafe fn get_row_ref_unchecked<'a>(
         &'a self,
-        blob_store: &'a dyn BlobStore,
+        blobs: &'a BlobSet,
         squashed_offset: SquashedOffset,
         ptr: RowPointer,
-    ) -> Result<RowRef<'a>, PageError> {
+    ) -> Result<RowRef<'a>, TableError> {
         let page = self
             .pages
             .get_page(ptr.page_index())?
             .expect("page for get_row_ref_unchecked to be present");
         // SAFETY: Forward caller requirements.
-        Ok(unsafe { RowRef::new(self, blob_store, squashed_offset, ptr, page) })
+        unsafe { RowRef::new(self, blobs, squashed_offset, ptr, page) }.map_err(Into::into)
     }
 
     /// Returns whether the row at `ptr` is present or not.
@@ -214,7 +238,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 304);
+static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -274,7 +298,7 @@ pub enum InsertError {
     IndexError(#[from] UniqueConstraintViolation),
 
     #[error(transparent)]
-    Page(#[from] PageError),
+    Table(#[from] TableError),
 }
 
 /// Errors that can occur while trying to read a value via bsatn.
@@ -367,7 +391,7 @@ pub enum TableNotEmptyError {
     #[error("Table is not empty")]
     TableNotEmpty,
     #[error(transparent)]
-    Page(#[from] PageError),
+    Table(#[from] TableError),
 }
 
 // Public API:
@@ -420,7 +444,7 @@ impl Table {
         // Remove and drop any pages, as even though they must be empty,
         // they may have residual layout-derived data which conflicts with the new schema.
         // Safety: there aren't any pages here, so they cannot conflict with the schema or row layout.
-        unsafe { self.set_pages(Vec::new(), &NullBlobStore)? };
+        unsafe { self.set_pages(Vec::new(), &BlobSet::new_for_test())? };
 
         // Safety: the table has no rows according to its row count,
         // and no pages 'cause we just did `set_pages` to the empty vec.
@@ -660,21 +684,21 @@ impl Table {
     /// TODO(error-handling): describe errors from `write_row_to_pages` and return meaningful errors.
     pub fn insert<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         row: &ProductValue,
     ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
-        self.insert_with_reservation(blob_store, row, None)
+        self.insert_with_reservation(blobs, row, None)
     }
 
     pub(crate) fn insert_with_reservation<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         row: &ProductValue,
         reservation: Option<(PageIndex, ReservedPage)>,
     ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
-        let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row, reservation)?;
+        let (row_ref, blob_bytes) = self.insert_physically_pv(blobs, row, reservation)?;
         let row_ptr = row_ref.into_pointer();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
@@ -683,24 +707,24 @@ impl Table {
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) }?;
+        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row_ptr) }?;
         Ok((hash, row_ref))
     }
 
     pub(crate) fn insert_prepared<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         prepared: &PreparedInsert,
         reservation: Option<(PageIndex, ReservedPage)>,
     ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
         let (row_ref, blob_bytes) = match &prepared.inner {
-            PreparedInsertInner::Product(row) => self.insert_physically_pv(blob_store, row, reservation),
+            PreparedInsertInner::Product(row) => self.insert_physically_pv(blobs, row, reservation),
             PreparedInsertInner::CopyFixed {
                 source_page,
                 source_offset,
-            } => self.insert_physically_copy_bflatn(blob_store, source_page, *source_offset, reservation),
+            } => self.insert_physically_copy_bflatn(blobs, source_page, *source_offset, reservation),
         }?;
 
         let row_ptr = row_ref.into_pointer();
@@ -711,16 +735,16 @@ impl Table {
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row_ptr) }?;
+        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row_ptr) }?;
 
         Ok((hash, row_ref))
     }
 
     fn insert_physically_copy_bflatn<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         source_page: &PageHandle,
         source_offset: PageOffset,
         reservation: Option<(PageIndex, ReservedPage)>,
@@ -746,7 +770,7 @@ impl Table {
         let ptr = RowPointer::new(false, page_index, fixed_offset, squashed_offset);
 
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, squashed_offset, ptr) }?;
 
         Ok((row_ref, BlobNumBytes::default()))
     }
@@ -758,7 +782,7 @@ impl Table {
     /// A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
     pub fn insert_physically_pv<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         row: &ProductValue,
         reservation: Option<(PageIndex, ReservedPage)>,
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
@@ -769,14 +793,14 @@ impl Table {
                 &mut self.inner.pages,
                 reservation,
                 &self.inner.visitor_prog,
-                blob_store,
+                blobs,
                 &self.inner.row_layout,
                 row,
                 self.squashed_offset,
             )
         }?;
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
 
         Ok((row_ref, blob_bytes))
     }
@@ -796,7 +820,7 @@ impl Table {
     /// an error is returned and there will be nothing for the caller to revert.
     pub fn insert_physically_bsatn<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a mut BlobSet,
         row: &[u8],
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // Got a static layout? => Use fast-path insertion.
@@ -813,7 +837,7 @@ impl Table {
                 .with_page_to_insert_row(fixed_row_size, 0, None, |page| {
                     // SAFETY: We've used the right `row_size` and we trust that others have too.
                     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
-                    let fixed_offset = unsafe { page.alloc_fixed_len(fixed_row_size) }.map_err(Error::PageError)?;
+                    let fixed_offset = unsafe { page.alloc_fixed_len(fixed_row_size) }.map_err(Error::Page)?;
                     let (mut fixed, _) = page.split_fixed_var_mut();
                     let fixed_buf = fixed.get_row_mut(fixed_offset, fixed_row_size);
                     // SAFETY:
@@ -822,9 +846,9 @@ impl Table {
                     unsafe { static_layout.deserialize_row_into(fixed_buf, row) };
                     Ok(fixed_offset)
                 })
-                .map_err(Error::PagesError)?;
+                .map_err(Error::Pages)?;
             match res {
-                (page, Ok(offset)) => (RowPointer::new(false, page, offset, squashed_offset), 0.into()),
+                (page, Ok(offset)) => (RowPointer::new(false, page, offset, squashed_offset), 0usize.into()),
                 (_, Err(e)) => return Err(e),
             }
         } else {
@@ -834,7 +858,7 @@ impl Table {
                 write_row_to_pages_bsatn(
                     &mut self.inner.pages,
                     &self.inner.visitor_prog,
-                    blob_store,
+                    blobs,
                     &self.inner.row_layout,
                     row,
                     self.squashed_offset,
@@ -843,7 +867,7 @@ impl Table {
         };
 
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
 
         Ok((row_ref, blob_bytes))
     }
@@ -855,14 +879,14 @@ impl Table {
     /// `self.is_row_present(row)` must hold.
     pub unsafe fn sequence_triggers_for<'a>(
         &'a self,
-        blob_store: &'a dyn BlobStore,
+        blobs: &'a BlobSet,
         row: RowPointer,
     ) -> Result<(ColList, SeqIdList), Error> {
         let sequences = &*self.get_schema().sequences;
         let row_ty = self.row_layout().product();
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row) }?;
+        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row) }?;
 
         Ok(sequences
             .iter()
@@ -951,14 +975,14 @@ impl Table {
     /// `self.is_row_present(row)` must hold.
     pub unsafe fn confirm_insertion<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         ptr: RowPointer,
         blob_bytes: BlobNumBytes,
     ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        let hash = unsafe { self.insert_into_pointer_map(blob_store, ptr) }??;
+        let hash = unsafe { self.insert_into_pointer_map(blobs, ptr) }??;
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        unsafe { self.insert_into_indices::<CHECK_SAME_ROW>(blob_store, ptr) }?;
+        unsafe { self.insert_into_indices::<CHECK_SAME_ROW>(blobs, ptr) }?;
 
         self.update_statistics_added_row(blob_bytes);
         Ok((hash, ptr))
@@ -979,28 +1003,29 @@ impl Table {
     /// `self.is_row_present(new_row)` and `self.is_row_present(old_row)`  must hold.
     pub unsafe fn confirm_update<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a mut BlobSet,
         new_ptr: RowPointer,
         old_ptr: RowPointer,
         blob_bytes_added: BlobNumBytes,
     ) -> Result<RowPointer, InsertError> {
         // (1) Remove old row from indices.
         // SAFETY: Caller promised that `self.is_row_present(old_ptr)` holds.
-        unsafe { self.delete_from_indices(blob_store, old_ptr) }?;
+        unsafe { self.delete_from_indices(blobs, old_ptr) }?;
 
         // Insert new row into indices.
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        let res = unsafe { self.insert_into_indices::<true>(blob_store, new_ptr) };
+        let res = unsafe { self.insert_into_indices::<true>(blobs, new_ptr) };
         if let Err(e) = res {
             // Undo (1).
-            unsafe { self.insert_into_indices::<true>(blob_store, old_ptr) }
+            unsafe { self.insert_into_indices::<true>(blobs, old_ptr) }
                 .expect("re-inserting the old row into indices should always work");
             return Err(e);
         }
 
         // Remove the old row physically.
         // SAFETY: The physical `old_ptr` still exists.
-        let blob_bytes_removed = unsafe { self.delete_internal_skip_pointer_map(blob_store, old_ptr) }?;
+        let blob_bytes_removed =
+            unsafe { self.delete_internal_skip_pointer_map(blobs, old_ptr) }.map_err(TableError::from)?;
         self.update_statistics_deleted_row(blob_bytes_removed);
 
         // Update statistics.
@@ -1034,13 +1059,13 @@ impl Table {
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
     unsafe fn insert_into_indices<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         new: RowPointer,
     ) -> Result<(), InsertError> {
         let mut violation = None;
         for (index_id, index) in self.indexes.iter_mut() {
             // SAFETY: We just inserted `ptr`, so it must be present.
-            let new = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, new) }?;
+            let new = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, new) }?;
             // SAFETY: any index in this table was constructed with the same row type as this table.
             if let Err(old) = unsafe { index.check_and_insert(&new) } {
                 violation = Some((*index_id, old, new));
@@ -1060,7 +1085,7 @@ impl Table {
                     // - The row layouts are the same as it's the same table.
                     // - We know `old` exists in `self` as we just found it in an index.
                     // - Caller promised that `new` is valid for `self`.
-                    && unsafe { Self::eq_row_in_page(self, old_ptr, self, new_ref.pointer()) }?
+                    && unsafe { Self::eq_row_in_page(self, old_ptr, self, new_ref.pointer()) }.map_err(TableError::from)?
             {
                 DuplicateError(old_ptr).into()
             } else {
@@ -1073,11 +1098,11 @@ impl Table {
             // Do this before the actual deletion, as `index.delete` needs a `RowRef`
             // so it can extract the appropriate value.
             // SAFETY: We just inserted `new`, so it must be present.
-            unsafe { self.delete_from_indices_until(blob_store, new, index_id)? };
+            unsafe { self.delete_from_indices_until(blobs, new, index_id)? };
 
             // Cleanup, undo the row insertion of `new`s.
             // SAFETY: We just inserted `new`, so it must be present.
-            unsafe { self.delete_internal(blob_store, new)? };
+            unsafe { self.delete_internal(blobs, new)? };
 
             return Err(error);
         }
@@ -1096,9 +1121,9 @@ impl Table {
     unsafe fn find_same_row_via_unique_index(
         target_table: &Table,
         needle_table: &Table,
-        needle_bs: &dyn BlobStore,
+        needle_bs: &BlobSet,
         needle_ptr: RowPointer,
-    ) -> Result<Option<RowPointer>, PageError> {
+    ) -> Result<Option<RowPointer>, TableError> {
         // Use some index (the one with the lowest `IndexId` currently).
         // TODO(centril): this isn't what we actually want.
         // Rather, we'd prefer the index with the simplest type,
@@ -1146,9 +1171,9 @@ impl Table {
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
     unsafe fn insert_into_pointer_map<'a>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         ptr: RowPointer,
-    ) -> Result<Result<Option<RowHash>, DuplicateError>, PageError> {
+    ) -> Result<Result<Option<RowHash>, DuplicateError>, TableError> {
         if self.pointer_map.is_none() {
             // No pointer map? Set semantic constraint is checked by a unique index instead.
             return Ok(Ok(None));
@@ -1157,7 +1182,7 @@ impl Table {
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
         // - Caller promised that `self.is_row_present(row)` holds.
-        let (hash, existing_row) = unsafe { Self::find_same_row_via_pointer_map(self, self, blob_store, ptr, None) }?;
+        let (hash, existing_row) = unsafe { Self::find_same_row_via_pointer_map(self, self, blobs, ptr, None) }?;
 
         if let Some(existing_row) = existing_row {
             // If an equal row was already present,
@@ -1167,7 +1192,7 @@ impl Table {
             unsafe {
                 self.inner
                     .pages
-                    .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)?
+                    .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blobs)?
             };
             return Ok(Err(DuplicateError(existing_row)));
         }
@@ -1214,10 +1239,10 @@ impl Table {
     pub unsafe fn find_same_row_via_pointer_map(
         target_table: &Table,
         needle_table: &Table,
-        needle_bs: &dyn BlobStore,
+        needle_bs: &BlobSet,
         needle_ptr: RowPointer,
         row_hash: Option<RowHash>,
-    ) -> Result<(RowHash, Option<RowPointer>), PageError> {
+    ) -> Result<(RowHash, Option<RowPointer>), TableError> {
         let row_hash = match row_hash {
             Some(hash) => hash,
             None => {
@@ -1292,10 +1317,10 @@ impl Table {
     pub unsafe fn find_same_row(
         target_table: &Table,
         needle_table: &Table,
-        needle_bs: &dyn BlobStore,
+        needle_bs: &BlobSet,
         needle_ptr: RowPointer,
         row_hash: Option<RowHash>,
-    ) -> Result<(Option<RowHash>, Option<RowPointer>), PageError> {
+    ) -> Result<(Option<RowHash>, Option<RowPointer>), TableError> {
         if target_table.pointer_map.is_some() {
             // SAFETY: Caller promised that `target_table` and `needle_table` have the same `row_layout`.
             // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
@@ -1315,9 +1340,9 @@ impl Table {
     /// Returns a [`RowRef`] for `ptr` or `None` if the row isn't present.
     pub fn get_row_ref<'a>(
         &'a self,
-        blob_store: &'a dyn BlobStore,
+        blob_store: &'a BlobSet,
         ptr: RowPointer,
-    ) -> Result<Option<RowRef<'a>>, PageError> {
+    ) -> Result<Option<RowRef<'a>>, TableError> {
         if self.is_row_present(ptr)? {
             // SAFETY: We only call `get_row_ref_unchecked` when `is_row_present` holds.
             unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.map(Some)
@@ -1345,11 +1370,11 @@ impl Table {
     /// is sufficient to demonstrate all of these properties.
     pub unsafe fn get_row_ref_unchecked<'a>(
         &'a self,
-        blob_store: &'a dyn BlobStore,
+        blobs: &'a BlobSet,
         ptr: RowPointer,
-    ) -> Result<RowRef<'a>, PageError> {
+    ) -> Result<RowRef<'a>, TableError> {
         // SAFETY: Caller promised that ^-- holds.
-        unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }
+        unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }
     }
 
     /// Deletes a row in the page manager
@@ -1360,9 +1385,9 @@ impl Table {
     /// `ptr` must point to a valid, live row in this table.
     pub unsafe fn delete_internal_skip_pointer_map(
         &mut self,
-        blob_store: &mut dyn BlobStore,
+        blobs: &BlobSet,
         ptr: RowPointer,
-    ) -> Result<BlobNumBytes, PageError> {
+    ) -> Result<BlobNumBytes, DeleteRowError> {
         debug_assert!(self.is_row_present(ptr).unwrap());
         // Delete the physical row.
         //
@@ -1373,7 +1398,7 @@ impl Table {
         unsafe {
             self.inner
                 .pages
-                .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)
+                .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blobs)
         }
     }
 
@@ -1385,15 +1410,11 @@ impl Table {
     /// Use `delete_unchecked` or `delete` to delete a row with index updating.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_internal(
-        &mut self,
-        blob_store: &mut dyn BlobStore,
-        ptr: RowPointer,
-    ) -> Result<BlobNumBytes, PageError> {
+    unsafe fn delete_internal(&mut self, blobs: &BlobSet, ptr: RowPointer) -> Result<BlobNumBytes, TableError> {
         // Remove the set semantic association.
         if let Some(pointer_map) = &mut self.pointer_map {
             // SAFETY: `self.is_row_present(row)` holds.
-            let row = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }?;
+            let row = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
 
             let _remove_result = pointer_map.remove(row.row_hash(), ptr);
             debug_assert!(_remove_result);
@@ -1402,7 +1423,7 @@ impl Table {
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
-        unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) }
+        unsafe { self.delete_internal_skip_pointer_map(blobs, ptr) }.map_err(Into::into)
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -1410,15 +1431,15 @@ impl Table {
     /// This method does update statistics.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> Result<(), PageError> {
+    unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, ptr: RowPointer) -> Result<(), TableError> {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        unsafe { self.delete_from_indices(blob_store, ptr)? };
+        unsafe { self.delete_from_indices(blobs, ptr)? };
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let blob_bytes_deleted = unsafe { self.delete_internal(blob_store, ptr)? };
+        let blob_bytes_deleted = unsafe { self.delete_internal(blobs, ptr)? };
 
         self.update_statistics_deleted_row(blob_bytes_deleted);
 
@@ -1431,12 +1452,12 @@ impl Table {
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_from_indices_until(
         &mut self,
-        blob_store: &dyn BlobStore,
+        blobs: &BlobSet,
         ptr: RowPointer,
         index_id: IndexId,
-    ) -> Result<(), PageError> {
+    ) -> Result<(), TableError> {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
 
         for (_, index) in self.indexes.range_mut(..index_id) {
             // SAFETY: any index in this table was constructed with the same row type as this table.
@@ -1449,9 +1470,9 @@ impl Table {
     /// Delete `row_ref` from all the indices of this table.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_from_indices(&mut self, blob_store: &dyn BlobStore, ptr: RowPointer) -> Result<(), PageError> {
+    unsafe fn delete_from_indices(&mut self, blobs: &BlobSet, ptr: RowPointer) -> Result<(), TableError> {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, self.squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
 
         for index in self.indexes.values_mut() {
             // SAFETY: any index in this table was constructed with the same row type as this table.
@@ -1471,21 +1492,21 @@ impl Table {
     /// so that the resulting `ProductValue`s can be passed to the subscription evaluator.
     pub fn delete<'a, R>(
         &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a BlobSet,
         ptr: RowPointer,
         before: impl for<'b> FnOnce(RowRef<'b>) -> R,
-    ) -> Result<Option<R>, PageError> {
+    ) -> Result<Option<R>, TableError> {
         if !self.is_row_present(ptr)? {
             return Ok(None);
         };
 
         // SAFETY: We only call `get_row_ref_unchecked` when `is_row_present` holds.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }?;
+        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, ptr) }?;
 
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        unsafe { self.delete_unchecked(blob_store, ptr) }?;
+        unsafe { self.delete_unchecked(blobs, ptr) }?;
 
         Ok(Some(ret))
     }
@@ -1501,15 +1522,11 @@ impl Table {
     /// checking `find_same_row` on the newly-inserted row,
     /// deleting the matching row if it exists,
     /// then deleting the temporary insertion.
-    pub fn delete_equal_row(
-        &mut self,
-        blob_store: &mut dyn BlobStore,
-        row: &ProductValue,
-    ) -> Result<Option<RowPointer>, Error> {
+    pub fn delete_equal_row(&mut self, blobs: &BlobSet, row: &ProductValue) -> Result<Option<RowPointer>, Error> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
-        let (temp_row, _) = self.insert_physically_pv(blob_store, row, None)?;
+        let (temp_row, _) = self.insert_physically_pv(blobs, row, None)?;
         let temp_ptr = temp_row.into_pointer();
 
         // Find the row equal to the passed-in `row`.
@@ -1520,31 +1537,32 @@ impl Table {
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
         // - We just inserted `temp_ptr`, so it's valid.
-        let (_, existing_row_ptr) = unsafe { Self::find_same_row(self, self, blob_store, temp_ptr, None) }?;
+        let (_, existing_row_ptr) = unsafe { Self::find_same_row(self, self, blobs, temp_ptr, None) }?;
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
             // SAFETY: `find_same_row` ensures that the pointer is valid.
-            unsafe { self.delete_unchecked(blob_store, existing_row_ptr)? };
+            unsafe { self.delete_unchecked(blobs, existing_row_ptr)? };
         }
 
         // Remove the temporary row we inserted in the beginning.
         // Avoid the pointer map, since we don't want to delete it twice.
         // SAFETY: `ptr` is valid as we just inserted it.
         unsafe {
-            self.delete_internal_skip_pointer_map(blob_store, temp_ptr)?;
+            self.delete_internal_skip_pointer_map(blobs, temp_ptr)
+                .map_err(TableError::from)?;
         }
 
         Ok(existing_row_ptr)
     }
 
     /// Clears this table, removing all present rows from it.
-    pub fn clear(&mut self, blob_store: &mut dyn BlobStore) -> Result<u64, PageError> {
+    pub fn clear(&mut self, blobs: &BlobSet) -> Result<u64, TableError> {
         let ptrs = self.scan_all_row_ptrs()?;
         let len = ptrs.len() as u64;
         for ptr in ptrs {
             // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
-            unsafe { self.delete_unchecked(blob_store, ptr) }?;
+            unsafe { self.delete_unchecked(blobs, ptr) }?;
         }
         Ok(len)
     }
@@ -1607,18 +1625,18 @@ impl Table {
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
     pub unsafe fn insert_index(
         &mut self,
-        blob_store: &dyn BlobStore,
+        blobs: &BlobSet,
         index_id: IndexId,
         mut index: TableIndex,
-    ) -> Result<Result<(), String>, PageError> {
-        let rows = self.scan_rows(blob_store);
+    ) -> Result<Result<(), String>, TableError> {
+        let rows = self.scan_rows(blobs);
         // SAFETY: Caller promised that table's row type/layout
         // matches that which `index` was constructed with.
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) }?;
         if let Err(ptr) = violation {
             // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
-            let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }?.to_product_value();
+            let row = unsafe { self.get_row_ref_unchecked(blobs, ptr) }?.to_product_value();
 
             let errmsg = if let Some(index_schema) = self
                 .schema
@@ -1690,17 +1708,17 @@ impl Table {
     /// Returns whether an index existed with `index_id`.
     pub fn delete_index(
         &mut self,
-        blob_store: &dyn BlobStore,
+        blobs: &BlobSet,
         index_id: IndexId,
         pointer_map: Option<PointerMap>,
-    ) -> Result<Option<TableIndex>, PageError> {
+    ) -> Result<Option<TableIndex>, TableError> {
         let Some(index) = self.indexes.remove(&index_id) else {
             return Ok(None);
         };
 
         // If we removed the last unique index, add a pointer map.
         if index.is_unique() && !self.indexes.values().any(|idx| idx.is_unique()) {
-            self.pointer_map = Some(pointer_map.map_or_else(|| self.rebuild_pointer_map(blob_store), Ok)?);
+            self.pointer_map = Some(pointer_map.map_or_else(|| self.rebuild_pointer_map(blobs), Ok)?);
         }
 
         Ok(Some(index))
@@ -1745,19 +1763,19 @@ impl Table {
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
-    pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
+    pub fn scan_rows<'a>(&'a self, blobs: &'a BlobSet) -> TableScanIter<'a> {
         TableScanIter {
             current_page: None, // Will be filled by the iterator.
             current_page_idx: PageIndex(0),
             table: self,
-            blob_store,
+            blobs,
         }
     }
 
     /// Returns a list of all present row pointers.
-    pub fn scan_all_row_ptrs(&self) -> Result<Vec<RowPointer>, PageError> {
+    pub fn scan_all_row_ptrs(&self) -> Result<Vec<RowPointer>, TableError> {
         let mut ptrs = Vec::with_capacity(self.row_count as usize);
-        for row in self.scan_rows(&NullBlobStore) {
+        for row in self.scan_rows(&BlobSet::new_for_test()) {
             let row = row?;
             ptrs.push(row.pointer);
         }
@@ -1767,12 +1785,12 @@ impl Table {
     /// Returns this table combined with the index for [`IndexId`], if any.
     pub fn get_index_by_id_with_table<'a>(
         &'a self,
-        blob_store: &'a dyn BlobStore,
+        blobs: &'a BlobSet,
         index_id: IndexId,
     ) -> Option<TableAndIndex<'a>> {
         Some(TableAndIndex {
             table: self,
-            blob_store,
+            blobs,
             index: self.get_index_by_id(index_id)?,
         })
     }
@@ -1783,15 +1801,11 @@ impl Table {
     }
 
     /// Returns this table combined with the first index with `cols`, if any.
-    pub fn get_index_by_cols_with_table<'a>(
-        &'a self,
-        blob_store: &'a dyn BlobStore,
-        cols: &ColList,
-    ) -> Option<TableAndIndex<'a>> {
+    pub fn get_index_by_cols_with_table<'a>(&'a self, blobs: &'a BlobSet, cols: &ColList) -> Option<TableAndIndex<'a>> {
         let (_, index) = self.get_index_by_cols(cols)?;
         Some(TableAndIndex {
             table: self,
-            blob_store,
+            blobs,
             index,
         })
     }
@@ -1816,12 +1830,12 @@ impl Table {
     /// Makes the index at `index_id` non-unique.
     ///
     /// If no unique indices remain after this, rebuilds and restores the pointer map.
-    pub fn make_index_non_unique(&mut self, index_id: IndexId, blob_store: &dyn BlobStore) -> Result<(), PageError> {
+    pub fn make_index_non_unique(&mut self, index_id: IndexId, blobs: &BlobSet) -> Result<(), TableError> {
         if let Some(idx) = self.indexes.get_mut(&index_id) {
             idx.make_non_unique();
         }
         if !self.has_unique_index() && self.pointer_map.is_none() {
-            let pm = self.rebuild_pointer_map(blob_store)?;
+            let pm = self.rebuild_pointer_map(blobs)?;
             self.restore_pointer_map(pm);
         }
 
@@ -1888,17 +1902,13 @@ impl Table {
     /// # Safety
     ///
     /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
-    pub unsafe fn set_pages(
-        &mut self,
-        pages: Vec<Option<Box<Page>>>,
-        blob_store: &dyn BlobStore,
-    ) -> Result<(), PageError> {
+    pub unsafe fn set_pages(&mut self, pages: Vec<Option<Box<Page>>>, blobs: &BlobSet) -> Result<(), TableError> {
         self.inner.pages.set_contents(pages, self.inner.row_layout.size());
 
         // Recompute table metadata based on the new pages.
         // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
-        self.compute_row_count(blob_store)?;
-        self.pointer_map = Some(self.rebuild_pointer_map(blob_store)?);
+        self.compute_row_count(blobs)?;
+        self.pointer_map = Some(self.rebuild_pointer_map(blobs)?);
 
         Ok(())
     }
@@ -1928,7 +1938,7 @@ impl Table {
     /// - Per-page overhead (e.g. page headers).
     /// - Table overhead (e.g. the [`RowTypeLayout`], [`PointerMap`], [`Schema`] &c).
     /// - Indexes.
-    /// - Large blobs in the [`BlobStore`].
+    /// - Large blobs in the [`BlobSet`].
     ///
     /// Of these, the caller should inspect the blob store in order to account for memory usage by large blobs,
     /// and call [`Self::bytes_used_by_index_keys`] to account for indexes,
@@ -1985,23 +1995,35 @@ impl Table {
 
     pub fn prepare_commit(
         &self,
+        blobs: &BlobSet,
         deletes: impl IntoIterator<Item = RowPointer>,
-        inserts: impl IntoIterator<Item = Result<PreparedInsert, PageError>>,
-    ) -> Result<PreparedCommit, PageError> {
-        self.inner.pages.prepare_commit(
+        inserts: impl IntoIterator<Item = Result<PreparedInsert, TableError>>,
+    ) -> Result<PreparedCommit, TableError> {
+        let deletes: Vec<_> = deletes.into_iter().collect();
+        let mut pinned_blobs = Vec::new();
+        for &ptr in &deletes {
+            // Constructing the row reference faults all of its blobs. Transfer
+            // clones of those handles to the prepared commit so apply cannot
+            // encounter a blob fault.
+            let row = unsafe { self.get_row_ref_unchecked(blobs, ptr) }?;
+            pinned_blobs.extend(row.blobs.iter().map(|(_, handle)| handle.clone()));
+        }
+
+        let mut prepared = self.inner.pages.prepare_commit(
             self.row_size(),
             &self.inner.visitor_prog,
             deletes,
-            inserts.into_iter().map(|res| {
-                res.map(|insert| {
-                    let num_granules = match &insert.inner {
-                        PreparedInsertInner::Product(row) => self.required_var_len_granules_for_insert(row),
-                        PreparedInsertInner::CopyFixed { .. } => 0,
-                    };
-                    (insert, num_granules)
-                })
+            inserts.into_iter().map_ok(|insert| {
+                let num_granules = match &insert.inner {
+                    PreparedInsertInner::Product(row) => self.required_var_len_granules_for_insert(row),
+                    PreparedInsertInner::CopyFixed { .. } => 0,
+                };
+                (insert, num_granules)
             }),
-        )
+        )?;
+        prepared.pin_blobs(pinned_blobs);
+
+        Ok(prepared)
     }
 
     pub fn prepare_insert(&self, row: RowRef<'_>) -> PreparedInsert {
@@ -2038,12 +2060,12 @@ impl Table {
 pub struct RowRef<'a> {
     /// The table that has the row at `self.pointer`.
     table: &'a TableInner,
-    /// The blob store used in case there are blob hashes to resolve.
-    blob_store: &'a dyn BlobStore,
     /// The pointer to the row in `self.table`.
     pointer: RowPointer,
     /// Guard that ensures the page stays resident while this `RowRef` is live.
     page: PageHandle,
+    /// Blobs referenced by this row.
+    blobs: Arc<BlobReadSet>,
 }
 
 impl fmt::Debug for RowRef<'_> {
@@ -2074,21 +2096,31 @@ impl<'a> RowRef<'a> {
     /// is sufficient to demonstrate all of these properties.
     unsafe fn new(
         table: &'a TableInner,
-        blob_store: &'a dyn BlobStore,
+        blobs: &BlobSet,
         _squashed_offset: SquashedOffset,
         pointer: RowPointer,
         page: PageHandle,
-    ) -> Self {
+    ) -> Result<Self, BlobError> {
         debug_assert_eq!(_squashed_offset, pointer.squashed_offset());
         debug_assert!(page
             .read()
             .has_row_offset(table.row_layout.size(), pointer.page_offset()));
-        Self {
+
+        let blobs = BlobReadSet::new(
+            &table.visitor_prog,
+            &page.read(),
+            blobs,
+            &table.row_layout,
+            pointer.page_offset(),
+        )?
+        .into();
+
+        Ok(Self {
             table,
-            blob_store,
             pointer,
             page,
-        }
+            blobs,
+        })
     }
 
     /// Extract a `ProductValue` from the table.
@@ -2126,7 +2158,7 @@ impl<'a> RowRef<'a> {
         // - We have a `RowRef`, so `ptr` points to a valid row in this table
         // so safety requirements 1-3 flow from that.
         // - Caller promised that any `col` in `cols` is in-bounds of `self`'s layout.
-        unsafe { serialize_columns_from_page(ser, &page.read(), self.blob_store, offset, &table.row_layout, cols) }
+        unsafe { serialize_columns_from_page(ser, &page.read(), &self.blobs, offset, &table.row_layout, cols) }
     }
 
     /// Construct a projection of the row at `self` by extracting the `cols`.
@@ -2213,9 +2245,8 @@ impl<'a> RowRef<'a> {
         self.pointer
     }
 
-    /// Returns the blob store that any [`crate::blob_store::BlobHash`]es within the row refer to.
-    pub(crate) fn blob_store(&self) -> &dyn BlobStore {
-        self.blob_store
+    pub(crate) fn blob_store(&self) -> &BlobReadSet {
+        &self.blobs
     }
 
     /// Return the layout of the row.
@@ -2264,24 +2295,7 @@ impl<'a> RowRef<'a> {
     /// as a row may contain multiple references to the same large blob.
     /// This seems unlikely to occur in practice.
     fn blob_store_bytes(&self) -> usize {
-        let (page, offset) = self.page_and_offset();
-        let page = page.read();
-        let row_data = page.get_row_data(offset, self.table.row_layout.size());
-        // SAFETY:
-        // - Existence of a `RowRef` treated as proof
-        //   of the row's validity and type information's correctness.
-        unsafe { self.table.visitor_prog.visit_var_len(row_data) }
-            .filter(|vlr| vlr.is_large_blob())
-            .map(|vlr| {
-                // SAFETY:
-                // - Because `vlr.is_large_blob`, it points to exactly one granule.
-                let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }.next().unwrap();
-                let blob_hash = granule.blob_hash();
-                let blob = self.blob_store.retrieve_blob(&blob_hash).unwrap();
-
-                blob.len()
-            })
-            .sum()
+        self.blobs.iter().map(|(_, blob)| blob.size() as usize).sum()
     }
 
     pub fn into_page(self) -> PageHandle {
@@ -2301,7 +2315,7 @@ impl Serialize for RowRef<'_> {
             .map_err(<S::Error as ser::Error>::custom)?;
         // SAFETY: We have a `RowRef`, so `ptr` points to a valid row in this table
         // so safety requirements 1-3 flow from that.
-        unsafe { serialize_row_from_page(ser, &page.read(), self.blob_store, offset, &table.row_layout) }
+        unsafe { serialize_row_from_page(ser, &page.read(), &self.blobs, offset, &table.row_layout) }
     }
 }
 
@@ -2380,7 +2394,7 @@ impl PartialEq<ProductValue> for RowRef<'_> {
         let (page, offset) = self.page_and_offset();
         // SAFETY: By having `RowRef`,
         // we know that `offset` is a valid offset for a row in `page` typed at `ty`.
-        unsafe { eq_row_in_page_to_pv(self.blob_store, &page.read(), offset, rhs, ty) }
+        unsafe { eq_row_in_page_to_pv(&self.blobs, &page.read(), offset, rhs, ty) }
     }
 }
 
@@ -2393,7 +2407,7 @@ impl Hash for RowRef<'_> {
         // 2. the row is valid for `ty`.
         // 3. for any `vlr: VarLenRef` stored in the row,
         //    `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
-        unsafe { hash_row_in_page(state, &page.read(), self.blob_store, offset, ty) };
+        unsafe { hash_row_in_page(state, &page.read(), &self.blobs, offset, ty) };
     }
 }
 
@@ -2407,8 +2421,8 @@ pub struct TableScanIter<'table> {
 
     /// The table the iterator is yielding rows from.
     pub(crate) table: &'table Table,
-    /// The `BlobStore` that row references may refer into.
-    pub(crate) blob_store: &'table dyn BlobStore,
+    /// The [`BlobSet`] that row references may refer into.
+    pub(crate) blobs: &'table BlobSet,
 }
 
 struct CurrentPage {
@@ -2428,7 +2442,7 @@ impl Iterator for CurrentPage {
 }
 
 impl<'a> Iterator for TableScanIter<'a> {
-    type Item = Result<RowRef<'a>, PageError>;
+    type Item = Result<RowRef<'a>, TableError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // This could have been written using `.flat_map`,
@@ -2447,13 +2461,13 @@ impl<'a> Iterator for TableScanIter<'a> {
                         let row_ref = unsafe {
                             RowRef::new(
                                 &self.table.inner,
-                                self.blob_store,
+                                self.blobs,
                                 self.table.squashed_offset,
                                 ptr,
                                 page_handle,
                             )
                         };
-                        return Some(Ok(row_ref));
+                        return Some(row_ref.map_err(Into::into));
                     } else {
                         // We've finished visiting that page, so set `current_page` to `None`,
                         // increment `self.current_page_idx` to the index of the next page,
@@ -2501,7 +2515,7 @@ impl<'a> Iterator for TableScanIter<'a> {
                                 // so continue past it to the next page slot.
                                 self.current_page_idx.0 += 1;
                             }
-                            Err(e) => return Some(Err(e)),
+                            Err(e) => return Some(Err(e.into())),
                         }
                     }
                 }
@@ -2515,7 +2529,7 @@ impl<'a> Iterator for TableScanIter<'a> {
 #[derive(Copy, Clone)]
 pub struct TableAndIndex<'a> {
     table: &'a Table,
-    blob_store: &'a dyn BlobStore,
+    blobs: &'a BlobSet,
     index: &'a TableIndex,
 }
 
@@ -2533,9 +2547,9 @@ impl<'a> TableAndIndex<'a> {
     /// # Safety
     ///
     /// The `self.table().is_row_present(ptr)` must hold.
-    pub unsafe fn combine_with_ptr(&self, ptr: RowPointer) -> Result<RowRef<'a>, PageError> {
+    pub unsafe fn combine_with_ptr(&self, ptr: RowPointer) -> Result<RowRef<'a>, TableError> {
         // SAFETY: forward caller requirement.
-        unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+        unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
     }
 
     /// Returns an iterator yielding all rows in this index for `key`.
@@ -2544,7 +2558,7 @@ impl<'a> TableAndIndex<'a> {
     pub fn seek_point(&self, key: &IndexKey<'_>) -> IndexScanPointIter<'a> {
         IndexScanPointIter {
             table: self.table,
-            blob_store: self.blob_store,
+            blobs: self.blobs,
             btree_index_iter: self.index.seek_point(key),
         }
     }
@@ -2559,7 +2573,7 @@ impl<'a> TableAndIndex<'a> {
     ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
         Ok(IndexScanRangeIter {
             table: self.table,
-            blob_store: self.blob_store,
+            blobs: self.blobs,
             btree_index_iter: self.index.seek_range(range)?,
         })
     }
@@ -2586,7 +2600,7 @@ impl<'a> TableAndIndex<'a> {
 
         Ok(IndexScanRangeIter {
             table: self.table,
-            blob_store: self.blob_store,
+            blobs: self.blobs,
             btree_index_iter,
         })
     }
@@ -2600,7 +2614,7 @@ pub struct IndexScanPointIter<'a> {
     /// The table being scanned for rows.
     table: &'a Table,
     /// The blob store; passed on to the [`RowRef`]s in case they need it.
-    blob_store: &'a dyn BlobStore,
+    blobs: &'a BlobSet,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexPointIter<'a>,
 }
@@ -2613,12 +2627,12 @@ impl<'a> IndexScanPointIter<'a> {
 }
 
 impl<'a> Iterator for IndexScanPointIter<'a> {
-    type Item = Result<RowRef<'a>, PageError>;
+    type Item = Result<RowRef<'a>, TableError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
-            unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+            unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
         })
     }
 }
@@ -2631,18 +2645,18 @@ pub struct IndexScanRangeIter<'a> {
     /// The table being scanned for rows.
     table: &'a Table,
     /// The blob store; passed on to the [`RowRef`]s in case they need it.
-    blob_store: &'a dyn BlobStore,
+    blobs: &'a BlobSet,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexRangeIter<'a>,
 }
 
 impl<'a> Iterator for IndexScanRangeIter<'a> {
-    type Item = Result<RowRef<'a>, PageError>;
+    type Item = Result<RowRef<'a>, TableError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
-            unsafe { self.table.get_row_ref_unchecked(self.blob_store, ptr) }
+            unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
         })
     }
 }
@@ -2810,10 +2824,10 @@ impl Table {
     /// Called when restoring from a snapshot after installing the pages,
     /// but after computing the row count,
     /// since snapshots do not save the pointer map..
-    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) -> Result<PointerMap, PageError> {
+    fn rebuild_pointer_map(&mut self, blobs: &BlobSet) -> Result<PointerMap, TableError> {
         // TODO(perf): Pre-allocate `PointerMap.map` with capacity `self.row_count`.
         // Alternatively, do this at the same time as `compute_row_count`.
-        self.scan_rows(blob_store)
+        self.scan_rows(blobs)
             .map(|row_ref| row_ref.map(|row_ref| (row_ref.row_hash(), row_ref.pointer())))
             .collect()
     }
@@ -2823,10 +2837,10 @@ impl Table {
     ///
     /// Called when restoring from a snapshot after installing the pages,
     /// since snapshots do not save this metadata.
-    fn compute_row_count(&mut self, blob_store: &dyn BlobStore) -> Result<(), PageError> {
+    fn compute_row_count(&mut self, blobs: &BlobSet) -> Result<(), TableError> {
         let mut row_count = 0;
         let mut blob_store_bytes = 0;
-        for row in self.scan_rows(blob_store) {
+        for row in self.scan_rows(blobs) {
             let row = row?;
             row_count += 1;
             blob_store_bytes += row.blob_store_bytes();
@@ -2874,7 +2888,6 @@ enum PreparedInsertInner {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::blob_store::{HashMapBlobStore, NullBlobStore};
     use crate::page::tests::hash_unmodified_save_get;
     use crate::table_index::KeySize;
     use crate::var_len::VarLenGranule;
@@ -2931,7 +2944,7 @@ pub(crate) mod test {
             PageManager::new_for_test().into(),
             PageEvictionPolicy::NeverEvict,
         );
-        let blob_store = &mut NullBlobStore;
+        let blob_store = &mut BlobSet::new_for_test();
         let cols = ColList::new(0.into());
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
@@ -2997,9 +3010,9 @@ pub(crate) mod test {
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
         let val = val.into();
-        let mut blob_store = HashMapBlobStore::default();
+        let blob_store = BlobSet::new_for_test();
         let mut table = table(ty.into());
-        let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+        let (hash, row) = table.insert(&blob_store, &val).unwrap();
         let hash = hash.unwrap();
         prop_assert_eq!(row.row_hash(), hash);
         let ptr = row.pointer();
@@ -3050,14 +3063,14 @@ pub(crate) mod test {
         insert_retrieve_body(ty, AlgebraicValue::from(arr)).unwrap();
     }
 
-    fn reconstruct_index_num_key_bytes(table: &Table, blob_store: &dyn BlobStore, index_id: IndexId) -> u64 {
+    fn reconstruct_index_num_key_bytes(table: &Table, blobs: &BlobSet, index_id: IndexId) -> u64 {
         let index = table.get_index_by_id(index_id).unwrap();
 
         index
             .iter()
             .map(|row_ptr| {
                 let row_ref = table
-                    .get_row_ref(blob_store, row_ptr)
+                    .get_row_ref(blobs, row_ptr)
                     .expect("no page fault")
                     .expect("row to be present");
                 index.project_row(&row_ref).key_size_in_bytes() as u64
@@ -3076,11 +3089,11 @@ pub(crate) mod test {
         index_kind: IndexKind,
         is_unique: bool,
     ) -> Result<(), TestCaseError> {
-        let mut blob_store = HashMapBlobStore::default();
+        let blob_store = BlobSet::new_for_test();
         let mut table = table(ty.clone());
 
         for row in &vals {
-            prop_assume!(table.insert(&mut blob_store, row).is_ok());
+            prop_assume!(table.insert(&blob_store, row).is_ok());
         }
 
         // We haven't added any indexes yet, so there should be 0 rows in indexes.
@@ -3145,9 +3158,9 @@ pub(crate) mod test {
 
         #[test]
         fn insert_delete_removed_from_pointer_map((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let blob_store = BlobSet::new_for_test();
             let mut table = table(ty);
-            let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+            let (hash, row) = table.insert(&blob_store, &val).unwrap();
             let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
             let ptr = row.into_pointer();
@@ -3160,7 +3173,7 @@ pub(crate) mod test {
 
             let hash_pre_del = table.inner.pages.with_page_mut(ptr.page_index(), table.row_size(), hash_unmodified_save_get).unwrap();
 
-            table.delete(&mut blob_store, ptr, |_| ()).unwrap();
+            table.delete(&blob_store, ptr, |_| ()).unwrap();
 
             // Deleting the only row frees the tiered page slot.
             prop_assert!(table.inner.pages.get_page(ptr.page_index()).unwrap().is_none());
@@ -3177,10 +3190,10 @@ pub(crate) mod test {
 
         #[test]
         fn insert_duplicate_set_semantic((ty, val) in generate_typed_row()) {
-            let mut blob_store = HashMapBlobStore::default();
+            let blob_store = BlobSet::new_for_test();
             let mut table = table(ty);
 
-            let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+            let (hash, row) = table.insert(&blob_store, &val).unwrap();
             let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
             let ptr = row.into_pointer();
@@ -3193,7 +3206,7 @@ pub(crate) mod test {
 
             let hash_pre_ins = table.inner.pages.with_page_mut(ptr.page_index(), table.row_size(), hash_unmodified_save_get).unwrap();
 
-            prop_assert!(table.insert(&mut blob_store, &val).is_err());
+            prop_assert!(table.insert(&blob_store, &val).is_err());
 
             // Hash was cleared and is different despite failure to insert.
             let hash_post_ins = table.inner.pages.with_page_mut(ptr.page_index(), table.row_size(), hash_unmodified_save_get).unwrap();
@@ -3213,26 +3226,27 @@ pub(crate) mod test {
         #[test]
         fn insert_bsatn_same_as_pv((ty, val) in generate_typed_row()) {
             let page_manager = Arc::new(PageManager::new_for_test());
-            let mut bs_pv = HashMapBlobStore::default();
+            let bs_pv = BlobSet::new_for_test();
             let mut table_pv = table_with_manager(page_manager.clone(), ty.clone());
-            let _res_pv = table_pv.insert(&mut bs_pv, &val);
+            let _res_pv = table_pv.insert(&bs_pv, &val);
 
-            let mut bs_bsatn = HashMapBlobStore::default();
+            let mut bs_bsatn = BlobSet::new_for_test();
             let mut table_bsatn = table_with_manager(page_manager.clone(), ty);
             let _res_bsatn = insert_bsatn(&mut table_bsatn, &mut bs_bsatn, &val);
 
             //prop_assert_eq!(res_pv, res_bsatn);
-            prop_assert_eq!(bs_pv, bs_bsatn);
+            //prop_assert_eq!(bs_pv.entries(), bs_bsatn.entries());
+            prop_assert_eq!(bs_pv.keys(), bs_bsatn.keys());
             //prop_assert_eq!(table_pv, table_bsatn);
         }
 
         #[test]
         fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
-            let mut blob_store = HashMapBlobStore::default();
+            let blob_store = BlobSet::new_for_test();
             let mut table = table(ty.clone());
 
             for row in &vals {
-                prop_assume!(table.insert(&mut blob_store, row).is_ok());
+                prop_assume!(table.insert(&blob_store, row).is_ok());
             }
 
             prop_assert_eq!(table.bytes_used_by_rows(), table.reconstruct_bytes_used_by_rows());
@@ -3250,7 +3264,7 @@ pub(crate) mod test {
         /// Tested here rather than in pages.rs because it's easier to test with typed rows than raw byte buffers.
         #[test]
         fn non_full_pages_consistent((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
-            let mut blob_store = HashMapBlobStore::default();
+            let blob_store = BlobSet::new_for_test();
             let mut table = table(ty);
             let mut inserted_row_ptrs = Vec::new();
 
@@ -3260,7 +3274,7 @@ pub(crate) mod test {
             // This keeps the page usage growing towards fullness, but also includes some deletes.
             for rows in vals.chunks(3) {
                 for row in rows {
-                    let row_ptr = match table.insert(&mut blob_store, row) {
+                    let row_ptr = match table.insert(&blob_store, row) {
                         Ok((_, row_ref)) => row_ref.pointer(),
                         Err(InsertError::Duplicate(_)) => continue,
                         Err(e) => return Err(TestCaseError::fail(format!("unexpected insert error: {e:?}"))),
@@ -3270,7 +3284,7 @@ pub(crate) mod test {
                 }
 
                 if let Some(row_ptr) = inserted_row_ptrs.pop() {
-                    table.delete(&mut blob_store, row_ptr, |_| ()).unwrap();
+                    table.delete(&blob_store, row_ptr, |_| ()).unwrap();
                     table.inner.pages.assert_non_full_pages_consistent(table.row_size());
                 }
             }
@@ -3297,31 +3311,31 @@ pub(crate) mod test {
 
     fn insert_bsatn<'a>(
         table: &'a mut Table,
-        blob_store: &'a mut dyn BlobStore,
+        blobs: &'a mut BlobSet,
         val: &ProductValue,
     ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
         let row = &to_vec(&val).unwrap();
 
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
-        let (row_ref, blob_bytes) = table.insert_physically_bsatn(blob_store, row)?;
+        let (row_ref, blob_bytes) = table.insert_physically_bsatn(blobs, row)?;
         let row_ptr = row_ref.into_pointer();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blob_store, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blobs, row_ptr, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, row_ptr) }?;
+        let row_ref = unsafe { table.get_row_ref_unchecked(blobs, row_ptr) }?;
         Ok((hash, row_ref))
     }
 
     // Compare `scan_rows` against a simpler implementation.
     #[test]
     fn table_scan_iter_eq_flatmap() {
-        let mut blob_store = HashMapBlobStore::default();
+        let blob_store = BlobSet::new_for_test();
         let mut table = table(AlgebraicType::U64.into());
         for v in 0..2u64.pow(14) {
-            table.insert(&mut blob_store, &product![v]).unwrap();
+            table.insert(&blob_store, &product![v]).unwrap();
         }
 
         let complex = table.scan_rows(&blob_store).map(|r| r.unwrap().pointer());
@@ -3353,13 +3367,13 @@ pub(crate) mod test {
     /// assuming no other reason to prefer a different page.
     #[test]
     fn prefer_earlier_non_full_page() {
-        let mut blob_store = HashMapBlobStore::default();
+        let blob_store = BlobSet::new_for_test();
         let mut table = table(ProductType::from([AlgebraicType::I32]));
 
         let mut inserted_ptrs = Vec::new();
         let mut next_value = 0i32;
         while table.num_pages() < 2 {
-            let (_, row_ref) = table.insert(&mut blob_store, &product![next_value]).unwrap();
+            let (_, row_ref) = table.insert(&blob_store, &product![next_value]).unwrap();
             inserted_ptrs.push(row_ref.pointer());
             next_value += 1;
         }
@@ -3387,7 +3401,7 @@ pub(crate) mod test {
         }
 
         let first_ptr = inserted_ptrs[0];
-        table.delete(&mut blob_store, first_ptr, |_| ()).unwrap();
+        table.delete(&blob_store, first_ptr, |_| ()).unwrap();
 
         {
             let first_page = table
@@ -3401,7 +3415,7 @@ pub(crate) mod test {
             assert_eq!(first_page.available_var_len_granules(), 0);
         }
 
-        let (_, row_ref) = table.insert(&mut blob_store, &product![next_value]).unwrap();
+        let (_, row_ref) = table.insert(&blob_store, &product![next_value]).unwrap();
         let new_ptr = row_ref.pointer();
         assert_eq!(new_ptr.page_index(), first_ptr.page_index());
         assert_eq!(new_ptr.page_offset(), first_ptr.page_offset());
@@ -3424,7 +3438,7 @@ pub(crate) mod test {
         let pt = AlgebraicType::U64.into();
         let pv = product![42u64];
         let mut table = table(pt);
-        let blob_store = &mut NullBlobStore;
+        let blob_store = &mut BlobSet::new_for_test();
         let (_, row_ref) = table.insert(blob_store, &pv).unwrap();
 
         // Manipulate the page offset to 1 instead of 0.
@@ -3434,7 +3448,7 @@ pub(crate) mod test {
         // We expect this to panic.
         // Miri should not have any issue with this call either.
         table
-            .get_row_ref(&NullBlobStore, ptr)
+            .get_row_ref(&BlobSet::new_for_test(), ptr)
             .expect("no page faults")
             .unwrap()
             .to_product_value();
@@ -3444,8 +3458,8 @@ pub(crate) mod test {
     fn test_blob_store_bytes() {
         let page_manager = Arc::new(PageManager::new_for_test());
         let pt: ProductType = [AlgebraicType::String, AlgebraicType::I32].into();
-        let blob_store = &mut HashMapBlobStore::default();
-        let mut insert =
+        let blob_store = &mut BlobSet::new_for_test();
+        let insert =
             |table: &mut Table, string, num| table.insert(blob_store, &product![string, num]).unwrap().1.pointer();
         let mut table1 = table_with_manager(page_manager.clone(), pt.clone());
 
@@ -3462,14 +3476,14 @@ pub(crate) mod test {
 
         // Insert previous long string in the same table,
         // `blob_store_bytes` should count the length twice,
-        // even though `HashMapBlobStore` deduplicates it.
+        // even though `BlobSet` deduplicates it.
         let long_row_ptr2 = insert(&mut table1, long_str, 1);
         const BLOB_OBJ_LEN_2X: BlobNumBytes = BlobNumBytes(BLOB_OBJ_LEN.0 * 2);
         assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN_2X);
 
         // Insert previous long string in a new table,
         // `blob_store_bytes` should show the length,
-        // even though `HashMapBlobStore` deduplicates it.
+        // even though `BlobSet` deduplicates it.
         let mut table2 = table_with_manager(page_manager, pt);
         let _ = insert(&mut table2, long_str, 0);
         assert_eq!(table2.blob_store_bytes, BLOB_OBJ_LEN);
@@ -3484,14 +3498,14 @@ pub(crate) mod test {
 
         // Delete the first long string row. This gets us down to 0 (we've now deleted 2x).
         table1.delete(blob_store, long_row_ptr2, |_| ()).unwrap();
-        assert_eq!(table1.blob_store_bytes, 0.into());
+        assert_eq!(table1.blob_store_bytes, 0usize.into());
     }
 
     /// Assert that calling `get_row_ref` to get a row ref to a non-existent `RowPointer`
     /// does not panic.
     #[test]
     fn get_row_ref_no_panic() {
-        let blob_store = &mut HashMapBlobStore::default();
+        let blob_store = &mut BlobSet::new_for_test();
         let table = table([AlgebraicType::String, AlgebraicType::I32].into());
 
         // This row pointer has an incorrect `SquashedOffset`, and so does not point into `table`.
@@ -3515,7 +3529,7 @@ pub(crate) mod test {
 
     #[test]
     fn table_iter_skips_absent_pages() {
-        let blob_store = &mut NullBlobStore;
+        let blob_store = &mut BlobSet::new_for_test();
         let mut table = table([AlgebraicType::I32].into());
 
         let mut next_value = 0i32;
@@ -3557,7 +3571,7 @@ pub(crate) mod test {
 
     #[test]
     fn alloc_new_page_fills_hole() {
-        let blob_store = &mut NullBlobStore;
+        let blob_store = &mut BlobSet::new_for_test();
         let mut table = table([AlgebraicType::I32].into());
 
         fn has_two_full_pages(table: &Table) -> bool {

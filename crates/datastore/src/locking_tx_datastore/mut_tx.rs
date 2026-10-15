@@ -73,7 +73,6 @@ use spacetimedb_schema::{
     table_name::TableName,
 };
 use spacetimedb_table::{
-    blob_store::BlobStore,
     indexes::{RowPointer, SquashedOffset},
     static_assert_size,
     table::{
@@ -81,6 +80,7 @@ use spacetimedb_table::{
         TableAndIndex, UniqueConstraintViolation,
     },
     table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
+    tiered::BlobSet,
     tiered::PageEvictionPolicy,
 };
 use std::{marker::PhantomData, sync::Arc, time::Duration};
@@ -460,7 +460,7 @@ pub struct MutTxId {
 // Grew by one word when `ReducerName` became fully qualified: it now holds a
 // `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
 // One per transaction, not per row.
-static_assert_size!(MutTxId, 576);
+static_assert_size!(MutTxId, 592);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -1138,7 +1138,7 @@ impl MutTxId {
         let commit_table = Table::new(
             schema,
             SquashedOffset::COMMITTED_STATE,
-            self.committed_state_write_lock.page_manager.clone(),
+            self.committed_state_write_lock.storage.pages().clone(),
             PageEvictionPolicy::NeverEvict,
         );
         let tx_table = commit_table.clone_structure(SquashedOffset::TX_STATE);
@@ -1386,10 +1386,7 @@ impl MutTxId {
     fn get_or_create_insert_table_mut(
         &mut self,
         table_id: TableId,
-    ) -> Result<(
-        TxTableForInsertion<'_>,
-        (&mut Table, &mut dyn BlobStore, &mut IndexIdMap),
-    )> {
+    ) -> Result<(TxTableForInsertion<'_>, (&mut Table, &BlobSet, &mut IndexIdMap))> {
         let (commit_table, commit_bs, idx_map) =
             self.committed_state_write_lock.get_table_and_blob_store_mut(table_id)?;
         // Get the insert table, so we can write the row into it.
@@ -1842,20 +1839,18 @@ impl MutTxId {
             self.get_or_create_insert_table_mut(table_id)?;
 
         // Create and build the indices.
-        let map_violation =
-            |violation, index: &TableIndex, table: &Table, bs: &dyn BlobStore| -> Result<DatastoreError> {
-                let violation = table
-                    .get_row_ref(bs, violation)?
-                    .expect("row came from scanning the table");
-                let violation = index.project_row(&violation);
-                let schema = table.get_schema();
-                let violation =
-                    UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
-                Ok(IndexError::from(violation).into())
-            };
+        let map_violation = |violation, index: &TableIndex, table: &Table, bs: &BlobSet| -> Result<DatastoreError> {
+            let violation = table
+                .get_row_ref(bs, violation)?
+                .expect("row came from scanning the table");
+            let violation = index.project_row(&violation);
+            let schema = table.get_schema();
+            let violation = UniqueConstraintViolation::build_with_index_schema(schema, index, &index_schema, violation);
+            Ok(IndexError::from(violation).into())
+        };
         // Builds the index and ensures that `table`'s row won't cause a unique constraint violation
         // due to the existing rows having the same value for some column(s).
-        let build_from_rows = |index: &mut TableIndex, table: &Table, bs: &dyn BlobStore| -> Result<()> {
+        let build_from_rows = |index: &mut TableIndex, table: &Table, bs: &BlobSet| -> Result<()> {
             let rows = table.scan_rows(bs);
             // SAFETY: (1) `tx_index` / `commit_index` was derived from `table` / `commit_table`
             // which in turn was derived from `commit_table`.
@@ -3771,7 +3766,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
         // Unwrap these error into `TableError::{IndexError, Bflatn}`:
         Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
         Err(InsertError::Bflatn(e)) => Err(TableError::Bflatn(e).into()),
-        Err(InsertError::Page(e)) => Err(e.into()),
+        Err(InsertError::Table(e)) => Err(e.into()),
     }
 }
 

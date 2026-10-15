@@ -833,9 +833,7 @@ mod tests {
     use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::layout::{row_size_for_type, Size};
-    use spacetimedb_table::{
-        blob_store::NullBlobStore, indexes::PageOffset, page::Page, var_len::AlignedVarLenOffsets,
-    };
+    use spacetimedb_table::{indexes::PageOffset, page::Page, tiered::BlobSet, var_len::AlignedVarLenOffsets};
     use std::io::Cursor;
     use tempfile::tempdir;
     use zstd_framed::AsyncZstdWriter;
@@ -981,8 +979,15 @@ mod tests {
 
     fn insert_u64(page: &mut Page, val: u64) -> PageOffset {
         let val_slice = val.to_le_bytes();
-        unsafe { page.insert_row(&val_slice, &[] as &[&[u8]], u64_var_len_visitor(), &mut NullBlobStore) }
-            .expect("Failed to insert first row")
+        unsafe {
+            page.insert_row(
+                &val_slice,
+                &[] as &[&[u8]],
+                u64_var_len_visitor(),
+                &mut BlobSet::new_for_test(),
+            )
+        }
+        .expect("Failed to insert first row")
     }
 
     const U64_VL_VISITOR: AlignedVarLenOffsets<'_> = AlignedVarLenOffsets::from_offsets(&[]);

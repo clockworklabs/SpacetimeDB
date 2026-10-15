@@ -8,10 +8,10 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
-use spacetimedb_table::tiered::PageError;
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
+    tiered::{BlobError, DeleteRowError, PageError},
 };
 use thiserror::Error;
 
@@ -38,6 +38,12 @@ pub enum DatastoreError {
 
     #[error(transparent)]
     Page(#[from] PageError),
+
+    #[error(transparent)]
+    TableStorage(#[from] table::TableError),
+
+    #[error(transparent)]
+    Blob(#[from] BlobError),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -146,7 +152,7 @@ impl From<table::InsertError> for DatastoreError {
             table::InsertError::Duplicate(e) => TableError::from(e).into(),
             table::InsertError::Bflatn(e) => TableError::from(e).into(),
             table::InsertError::IndexError(e) => IndexError::from(e).into(),
-            table::InsertError::Page(e) => e.into(),
+            table::InsertError::Table(e) => e.into(),
         }
     }
 }
@@ -154,6 +160,12 @@ impl From<table::InsertError> for DatastoreError {
 impl From<bflatn_to::Error> for DatastoreError {
     fn from(err: bflatn_to::Error) -> Self {
         Self::Table(err.into())
+    }
+}
+
+impl From<DeleteRowError> for DatastoreError {
+    fn from(err: DeleteRowError) -> Self {
+        table::TableError::from(err).into()
     }
 }
 

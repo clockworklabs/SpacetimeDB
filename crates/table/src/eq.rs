@@ -229,7 +229,7 @@ fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
 
 #[cfg(test)]
 mod test {
-    use crate::blob_store::NullBlobStore;
+    use crate::tiered::BlobSet;
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
 
     #[test]
@@ -241,7 +241,7 @@ mod test {
             AlgebraicType::product([AlgebraicType::U8, AlgebraicType::U32]), // xpppxxxx
         ])]);
 
-        let bs = &mut NullBlobStore;
+        let bs = &mut BlobSet::new_for_test();
         let mut table_a = crate::table::test::table(ty.clone());
         let mut table_b = crate::table::test::table(ty);
 
@@ -262,7 +262,7 @@ mod test {
         // They should occupy the spaces of the previous rows.
         let v1 = product![AlgebraicValue::sum(1, product![0u8, 0u32].into())];
         let (_, a1_rr) = table_a.insert(bs, &v1).unwrap();
-        let bs = &mut NullBlobStore;
+        let bs = &mut BlobSet::new_for_test();
         let (_, b1_rr) = table_b.insert(bs, &v1).unwrap();
         assert_eq!(a0_ptr, a1_rr.pointer());
         assert_eq!(b0_ptr, b1_rr.pointer());

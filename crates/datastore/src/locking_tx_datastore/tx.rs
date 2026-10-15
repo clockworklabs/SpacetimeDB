@@ -1,7 +1,7 @@
 use super::{
     committed_state::CommittedState,
     datastore::{Result, TxMetrics},
-    state_view::{IterByColRangeTx, StateView},
+    state_view::{IterByColRangeTx, StateView, TableScanIter},
     time::Instant,
     IterByColEqTx, SharedReadGuard,
 };
@@ -144,7 +144,7 @@ impl TxId {
             .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
                 table
-                    .get_index_by_id_with_table(&self.committed_state_shared_lock.blob_store, index_id)
+                    .get_index_by_id_with_table(self.committed_state_shared_lock.storage.blobs(), index_id)
                     .map(seek)
                     .ok_or_else(|| anyhow::anyhow!("IndexId `{index_id}` does not exist"))
             })
