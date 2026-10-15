@@ -137,6 +137,8 @@ export const posthogFlushTick: ReturnType<
   typeof table<typeof posthogFlushTickColumns, typeof posthogFlushTickOptions>
 > = table(posthogFlushTickOptions, posthogFlushTickColumns);
 
+// Counts of outbox rows by state. pending covers Queued and Processing;
+// failed covers Failed and Rejected.
 const posthogDeliveryStatsOptions = {
   name: 'posthog_delivery_stats',
   public: false,
@@ -148,8 +150,6 @@ const posthogDeliveryStatsColumns = {
   failed: t.u64(),
   updatedAt: t.timestamp(),
 };
-// Counts of outbox rows by state. pending covers Queued and Processing;
-// failed covers Failed and Rejected.
 export const posthogDeliveryStats: ReturnType<
   typeof table<
     typeof posthogDeliveryStatsColumns,

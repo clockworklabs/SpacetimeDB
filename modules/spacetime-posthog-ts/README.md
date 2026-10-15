@@ -13,7 +13,7 @@ failures, and lets administrators inspect delivery results.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/posthog spacetimedb@^2.12.0
+npm install @spacetimedb/posthog
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
