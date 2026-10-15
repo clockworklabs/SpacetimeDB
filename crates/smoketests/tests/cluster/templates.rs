@@ -128,7 +128,136 @@ fn init_template_with_dotnet_version(
         bail!("Project directory not created for template {}", template_id);
     }
 
+    // Check the CLI output before local SDK overrides can hide invalid dependencies.
+    assert_portable_rust_manifests(template_id, &project_path)?;
+
     Ok((tmpdir, project_path))
+}
+
+/// Validate generated client and server manifests before rewriting SDK dependencies.
+fn assert_portable_rust_manifests(template_id: &str, project_path: &Path) -> Result<()> {
+    let project_root = project_path.canonicalize()?;
+    for relative_manifest in ["Cargo.toml", "spacetimedb/Cargo.toml"] {
+        let manifest_path = project_path.join(relative_manifest);
+        if !manifest_path.exists() {
+            continue;
+        }
+        let validate = || -> Result<()> {
+            let content = fs::read_to_string(&manifest_path)?;
+            let manifest: toml::Value = content.parse()?;
+            let check_sections = |table: &toml::Value, prefix: &str| -> Result<()> {
+                for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+                    let Some(dependencies) = table.get(kind).and_then(toml::Value::as_table) else {
+                        continue;
+                    };
+                    for (name, dependency) in dependencies {
+                        let context = format!("[{prefix}{kind}] dependency {name}");
+                        if dependency.get("workspace").and_then(toml::Value::as_bool) == Some(true) {
+                            bail!("{context}: unresolved workspace inheritance");
+                        }
+                        if let Some(path) = dependency.get("path").and_then(toml::Value::as_str) {
+                            let resolved = manifest_path
+                                .parent()
+                                .unwrap()
+                                .join(path)
+                                .canonicalize()
+                                .with_context(|| format!("{context}: cannot resolve dependency path {path:?}"))?;
+                            if !resolved.starts_with(&project_root) {
+                                bail!("{context}: dependency path {path:?} escapes the generated project");
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            };
+            check_sections(&manifest, "")?;
+            if let Some(targets) = manifest.get("target").and_then(toml::Value::as_table) {
+                for (selector, target) in targets {
+                    check_sections(target, &format!("target.{selector}."))?;
+                }
+            }
+            Ok(())
+        };
+        validate().with_context(|| {
+            format!(
+                "Template {template_id}: non-portable generated manifest {}",
+                manifest_path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_generated_rust_manifest_rejects_original_chat_dev_dependency() -> Result<()> {
+    let project = tempfile::tempdir()?;
+    let server = project.path().join("spacetimedb");
+    fs::create_dir(&server)?;
+    // Reproduce the old CLI output: only the normal dependency was normalized.
+    let manifest = include_str!("../../../../templates/chat-console-rs/spacetimedb/Cargo.toml").replace(
+        r#"spacetimedb = { path = "../../../crates/bindings" }"#,
+        r#"spacetimedb = { version = "2.12.*" }"#,
+    );
+    fs::write(server.join("Cargo.toml"), &manifest)?;
+    let error = assert_portable_rust_manifests("chat-console-rs", project.path()).unwrap_err();
+    let message = format!("{error:#}");
+    for expected in [
+        "chat-console-rs",
+        "Cargo.toml",
+        "[dev-dependencies]",
+        "spacetimedb",
+        "../../../crates/bindings",
+    ] {
+        assert!(message.contains(expected), "Missing {expected:?} in {message}");
+    }
+
+    let corrected = manifest.replace(r#"path = "../../../crates/bindings""#, r#"version = "2.12.*""#);
+    fs::write(server.join("Cargo.toml"), corrected)?;
+    assert_portable_rust_manifests("chat-console-rs", project.path())
+}
+
+#[test]
+fn test_generated_rust_manifest_dependency_portability() -> Result<()> {
+    let project = tempfile::tempdir()?;
+    let outside = tempfile::tempdir()?;
+    fs::create_dir(project.path().join("local-crate"))?;
+    fs::create_dir(project.path().join("spacetimedb"))?;
+    for relative_manifest in ["Cargo.toml", "spacetimedb/Cargo.toml"] {
+        let manifest_path = project.path().join(relative_manifest);
+        let local_path = if relative_manifest == "Cargo.toml" {
+            "local-crate"
+        } else {
+            "../local-crate"
+        };
+        for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+            for prefix in ["", "target.'cfg(unix)'."] {
+                for expanded in [false, true] {
+                    for (dependency, valid) in [
+                        (format!(r#"path = {local_path:?}"#), true),
+                        (r#"version = "1.0""#.to_string(), true),
+                        ("workspace = true".to_string(), false),
+                        (format!("path = {:?}", outside.path().to_str().unwrap()), false),
+                    ] {
+                        let section = format!("{prefix}{kind}");
+                        let manifest = if expanded {
+                            format!("[{section}.example]\n{dependency}\n")
+                        } else {
+                            format!("[{section}]\nexample = {{ {dependency} }}\n")
+                        };
+                        fs::write(&manifest_path, manifest)?;
+                        let result = assert_portable_rust_manifests("example-template", project.path());
+                        assert_eq!(
+                            result.is_ok(),
+                            valid,
+                            "{relative_manifest} [{section}] {dependency}: {result:?}"
+                        );
+                    }
+                }
+            }
+        }
+        fs::remove_file(manifest_path)?;
+    }
+    Ok(())
 }
 
 /// Updates dependency entries in a `Cargo.toml` to use a local path.
