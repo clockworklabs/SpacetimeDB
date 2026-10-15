@@ -9,8 +9,12 @@ tracking records are cleaned up automatically.
 
 ## Install
 
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
+
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/rate-limit spacetimedb
+npm install @spacetimedb/rate-limit spacetimedb@^2.12.0
 ```
 
 ## Integrate into an application
@@ -88,7 +92,7 @@ A view can report the caller's remaining capacity with `peek`:
 export const postLimitStatus = spacetimedb.view(
   { name: 'post_limit_status', public: true },
   t.array(
-    t.object('PostLimitStatus', {
+    t.object('PostLimitStatusRow', {
       limit: t.u32(),
       windowSeconds: t.u32(),
       used: t.u32(),
@@ -163,7 +167,7 @@ Package entrypoints:
 - `@spacetimedb/rate-limit` exports `client`, `errors`, and their types.
 
 See the
-[Powerhouse host module](./example/spacetimedb/)
+[Powerhouse host module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-rate-limit-ts/example/spacetimedb)
 for per-action and per-tier policies, caller-visible status, and admin controls.
 
 ## Testing
@@ -175,4 +179,4 @@ pnpm run typecheck
 
 ## License
 
-[Apache-2.0](./LICENSE.txt).
+Apache-2.0.

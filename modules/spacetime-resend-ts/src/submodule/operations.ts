@@ -1,4 +1,12 @@
 import * as v from 'valibot';
+import type {
+  ProcedureExport,
+  StringBuilder,
+  OptionBuilder,
+  ArrayBuilder,
+  ProductBuilder,
+  U16Builder,
+} from 'spacetimedb/server';
 import {
   EmailStatus,
   emailStatus,
@@ -238,48 +246,52 @@ const sendEmailArgs = {
   idempotencyKey: t.option(t.string()),
 };
 
-export const sendEmail = spacetimedb.procedure(
-  sendEmailArgs,
-  sendEmailResult,
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    return sendEmailRequest(ctx, args);
-  }
-);
+export const sendEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof sendEmailArgs,
+  typeof sendEmailResult
+> = spacetimedb.procedure(sendEmailArgs, sendEmailResult, (ctx, args) => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  return sendEmailRequest(ctx, args);
+});
 
-export const cancelEmail = spacetimedb.procedure(
-  { resendId: t.string() },
-  t.unit(),
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const response = callResend(ctx, {
-      method: 'POST',
-      path: `/emails/${args.resendId}/cancel`,
-      apiKey: cfg.apiKey,
-      jsonBody: undefined,
-      idempotencyKey: undefined,
-    });
-    ensureOkOrThrow(response, errors.cancelEmailFailed);
+export const cancelEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { resendId: StringBuilder },
+  ReturnType<typeof t.unit>
+> = spacetimedb.procedure({ resendId: t.string() }, t.unit(), (ctx, args) => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const response = callResend(ctx, {
+    method: 'POST',
+    path: `/emails/${args.resendId}/cancel`,
+    apiKey: cfg.apiKey,
+    jsonBody: undefined,
+    idempotencyKey: undefined,
+  });
+  ensureOkOrThrow(response, errors.cancelEmailFailed);
 
-    ctx.withTx(tx => {
-      const existing = tx.db.resendEmail.resendId.find(args.resendId);
-      if (!existing) return;
-      const updated = {
-        ...existing,
-        status: EmailStatus.Cancelled,
-        statusUpdatedAt: ctx.timestamp,
-        updatedAt: ctx.timestamp,
-      };
-      tx.db.resendEmail.resendId.update(updated);
-    });
-    return {};
-  }
-);
+  ctx.withTx(tx => {
+    const existing = tx.db.resendEmail.resendId.find(args.resendId);
+    if (!existing) return;
+    const updated = {
+      ...existing,
+      status: EmailStatus.Cancelled,
+      statusUpdatedAt: ctx.timestamp,
+      updatedAt: ctx.timestamp,
+    };
+    tx.db.resendEmail.resendId.update(updated);
+  });
+  return {};
+});
 
-export const getEmail = spacetimedb.procedure(
+export const getEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { resendId: StringBuilder },
+  OptionBuilder<typeof resendEmailTable.rowType>
+> = spacetimedb.procedure(
   { resendId: t.string() },
   t.option(resendEmailTable.rowType),
   (ctx, { resendId }) => {
@@ -290,7 +302,11 @@ export const getEmail = spacetimedb.procedure(
   }
 );
 
-export const getWebhookEvent = spacetimedb.procedure(
+export const getWebhookEvent: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { eventId: StringBuilder },
+  OptionBuilder<typeof resendWebhookEventTable.rowType>
+> = spacetimedb.procedure(
   { eventId: t.string() },
   t.option(resendWebhookEventTable.rowType),
   (ctx, { eventId }) => {
@@ -301,7 +317,11 @@ export const getWebhookEvent = spacetimedb.procedure(
   }
 );
 
-export const listEmailsByUserId = spacetimedb.procedure(
+export const listEmailsByUserId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { userId: StringBuilder },
+  ArrayBuilder<typeof resendEmailTable.rowType>
+> = spacetimedb.procedure(
   { userId: t.string() },
   t.array(resendEmailTable.rowType),
   (ctx, { userId }) => {
@@ -312,7 +332,11 @@ export const listEmailsByUserId = spacetimedb.procedure(
   }
 );
 
-export const listEmailsByOrgId = spacetimedb.procedure(
+export const listEmailsByOrgId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { orgId: StringBuilder },
+  ArrayBuilder<typeof resendEmailTable.rowType>
+> = spacetimedb.procedure(
   { orgId: t.string() },
   t.array(resendEmailTable.rowType),
   (ctx, { orgId }) => {
@@ -321,7 +345,11 @@ export const listEmailsByOrgId = spacetimedb.procedure(
   }
 );
 
-export const listEmailsByStatus = spacetimedb.procedure(
+export const listEmailsByStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { status: typeof emailStatus },
+  ArrayBuilder<typeof resendEmailTable.rowType>
+> = spacetimedb.procedure(
   { status: emailStatus },
   t.array(resendEmailTable.rowType),
   (ctx, { status }) => {
@@ -332,7 +360,11 @@ export const listEmailsByStatus = spacetimedb.procedure(
   }
 );
 
-export const listDeliveryEventsForEmail = spacetimedb.procedure(
+export const listDeliveryEventsForEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  { resendId: StringBuilder },
+  ArrayBuilder<typeof resendDeliveryEventTable.rowType>
+> = spacetimedb.procedure(
   { resendId: t.string() },
   t.array(resendDeliveryEventTable.rowType),
   (ctx, { resendId }) => {
@@ -343,7 +375,16 @@ export const listDeliveryEventsForEmail = spacetimedb.procedure(
   }
 );
 
-export const resendApiRequest = spacetimedb.procedure(
+export const resendApiRequest: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  {
+    method: StringBuilder;
+    path: StringBuilder;
+    jsonBody: OptionBuilder<StringBuilder>;
+    idempotencyKey: OptionBuilder<StringBuilder>;
+  },
+  ProductBuilder<{ status: U16Builder; body: StringBuilder }>
+> = spacetimedb.procedure(
   {
     method: t.string(),
     path: t.string(),

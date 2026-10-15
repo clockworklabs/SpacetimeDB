@@ -1,3 +1,11 @@
+import type {
+  ProcedureExport,
+  StringBuilder,
+  OptionBuilder,
+  ProductBuilder,
+  BoolBuilder,
+  U16Builder,
+} from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
@@ -59,7 +67,15 @@ function upsertConfig(
 }
 
 // Requires an admin seeded by the database owner; no public first-call bootstrap.
-export const setResendConfig = spacetimedb.procedure(
+export const setResendConfig: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  {
+    apiKey: StringBuilder;
+    webhookSigningSecret: OptionBuilder<StringBuilder>;
+    defaultFrom: OptionBuilder<StringBuilder>;
+  },
+  ReturnType<typeof t.unit>
+> = spacetimedb.procedure(
   {
     apiKey: t.string(),
     webhookSigningSecret: t.option(t.string()),
@@ -76,7 +92,16 @@ export const setResendConfig = spacetimedb.procedure(
   }
 );
 
-export const getResendConfigStatus = spacetimedb.procedure(
+export const getResendConfigStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  {},
+  ProductBuilder<{
+    isConfigured: BoolBuilder;
+    hasWebhookSecret: BoolBuilder;
+    defaultFrom: OptionBuilder<StringBuilder>;
+    apiKeyLength: U16Builder;
+  }>
+> = spacetimedb.procedure(
   {},
   t.object('ResendConfigStatus', {
     isConfigured: t.bool(),

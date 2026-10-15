@@ -7,18 +7,25 @@ import {
   type ProcedureCtx,
   type ReducerCtx,
   type TransactionCtx,
+  type SumBuilder,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
 import { install } from './install.js';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
 // Ignored = event type this submodule does not handle. Failed = invalid payload.
-export const webhookEventStatus = t.enum('WebhookEventStatus', [
-  'Received',
-  'Processed',
-  'Ignored',
-  'Failed',
-]);
+type WebhookStatus = SumBuilder<
+  Record<
+    'Received' | 'Processed' | 'Ignored' | 'Failed',
+    ReturnType<typeof t.unit>
+  >
+>;
+export const webhookEventStatus: WebhookStatus = t.enum('WebhookEventStatus', {
+  Received: t.unit(),
+  Processed: t.unit(),
+  Ignored: t.unit(),
+  Failed: t.unit(),
+});
 export const WebhookEventStatus = {
   Received: { tag: 'Received' as const },
   Processed: { tag: 'Processed' as const },
@@ -28,15 +35,27 @@ export const WebhookEventStatus = {
 
 // Lifecycle of a tracked outbound email. Tags match Resend's
 // `email.<type>` webhook events for direct ingestion mapping.
-export const emailStatus = t.enum('EmailStatus', [
-  'Queued',
-  'Sent',
-  'Delivered',
-  'DeliveryDelayed',
-  'Bounced',
-  'Failed',
-  'Cancelled',
-]);
+type EmailStatusBuilder = SumBuilder<
+  Record<
+    | 'Queued'
+    | 'Sent'
+    | 'Delivered'
+    | 'DeliveryDelayed'
+    | 'Bounced'
+    | 'Failed'
+    | 'Cancelled',
+    ReturnType<typeof t.unit>
+  >
+>;
+export const emailStatus: EmailStatusBuilder = t.enum('EmailStatus', {
+  Queued: t.unit(),
+  Sent: t.unit(),
+  Delivered: t.unit(),
+  DeliveryDelayed: t.unit(),
+  Bounced: t.unit(),
+  Failed: t.unit(),
+  Cancelled: t.unit(),
+});
 export const EmailStatus = {
   Queued: { tag: 'Queued' as const },
   Sent: { tag: 'Sent' as const },
@@ -115,7 +134,30 @@ export const resendAdminIdentityRow = {
   addedAt: t.timestamp(),
 };
 
-export const resendEmailTable = table(
+export const resendEmailTable: ReturnType<
+  typeof table<
+    typeof resendEmailRow,
+    {
+      indexes: [
+        {
+          readonly accessor: 'byUserId';
+          readonly algorithm: 'btree';
+          readonly columns: readonly ['userId'];
+        },
+        {
+          readonly accessor: 'byOrgId';
+          readonly algorithm: 'btree';
+          readonly columns: readonly ['orgId'];
+        },
+        {
+          readonly accessor: 'byStatus';
+          readonly algorithm: 'btree';
+          readonly columns: readonly ['status'];
+        },
+      ];
+    }
+  >
+> = table(
   {
     name: 'resend_email',
     public: false,
@@ -128,7 +170,20 @@ export const resendEmailTable = table(
   resendEmailRow
 );
 
-export const resendDeliveryEventTable = table(
+export const resendDeliveryEventTable: ReturnType<
+  typeof table<
+    typeof resendDeliveryEventRow,
+    {
+      indexes: [
+        {
+          readonly accessor: 'byResendId';
+          readonly algorithm: 'btree';
+          readonly columns: readonly ['resendId'];
+        },
+      ];
+    }
+  >
+> = table(
   {
     name: 'resend_delivery_event',
     public: false,
@@ -141,7 +196,20 @@ export const resendDeliveryEventTable = table(
 
 // Private because the raw payload and signature headers are operational data.
 // Host modules can expose an admin-only view when needed.
-export const resendWebhookEventTable = table(
+export const resendWebhookEventTable: ReturnType<
+  typeof table<
+    typeof resendWebhookEventRow,
+    {
+      indexes: [
+        {
+          readonly accessor: 'byStatus';
+          readonly algorithm: 'btree';
+          readonly columns: readonly ['status'];
+        },
+      ];
+    }
+  >
+> = table(
   {
     name: 'resend_webhook_event',
     public: false,
@@ -152,27 +220,41 @@ export const resendWebhookEventTable = table(
   resendWebhookEventRow
 );
 
-export const resendConfigTable = table(
+export const resendConfigTable: ReturnType<
+  typeof table<typeof resendConfigRow, { indexes: [] }>
+> = table(
   { name: 'resend_config', public: false, indexes: [] },
   resendConfigRow
 );
 
-export const resendAdminIdentityTable = table(
+export const resendAdminIdentityTable: ReturnType<
+  typeof table<typeof resendAdminIdentityRow, { indexes: [] }>
+> = table(
   { name: 'resend_admin_identity', public: false, indexes: [] },
   resendAdminIdentityRow
 );
 
-export const spacetimedb = schema({
+const tables: {
+  resendEmail: typeof resendEmailTable;
+  resendDeliveryEvent: typeof resendDeliveryEventTable;
+  resendWebhookEvent: typeof resendWebhookEventTable;
+  resendConfig: typeof resendConfigTable;
+  resendAdminIdentity: typeof resendAdminIdentityTable;
+} = {
   resendEmail: resendEmailTable,
   resendDeliveryEvent: resendDeliveryEventTable,
   resendWebhookEvent: resendWebhookEventTable,
   resendConfig: resendConfigTable,
   resendAdminIdentity: resendAdminIdentityTable,
-});
+};
+export const spacetimedb: ReturnType<typeof schema<typeof tables>> =
+  schema(tables);
 
-export const init = spacetimedb.init(ctx => {
-  install(ctx);
-});
+export const init: ReturnType<typeof spacetimedb.init> = spacetimedb.init(
+  ctx => {
+    install(ctx);
+  }
+);
 
 export default spacetimedb;
 

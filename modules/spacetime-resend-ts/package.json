@@ -76,7 +76,7 @@
     "valibot": "^1.4.2"
   },
   "peerDependencies": {
-    "spacetimedb": "workspace:^"
+    "spacetimedb": "^2.12.0"
   },
   "devDependencies": {
     "eslint": "^9.17.0",

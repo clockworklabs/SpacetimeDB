@@ -1,5 +1,10 @@
 import * as v from 'valibot';
 import { Timestamp } from 'spacetimedb';
+import type {
+  ReducerExport,
+  StringBuilder,
+  OptionBuilder,
+} from 'spacetimedb/server';
 import {
   EmailStatus,
   WebhookEventStatus,
@@ -334,7 +339,16 @@ function applyResendWebhook(
   return outcome.status;
 }
 
-export const ingestResendWebhook = spacetimedb.reducer(
+export const ingestResendWebhook: ReducerExport<
+  typeof spacetimedb.schemaType,
+  {
+    eventId: StringBuilder;
+    eventType: StringBuilder;
+    payloadJson: StringBuilder;
+    signatureHeader: OptionBuilder<StringBuilder>;
+    timestampHeader: OptionBuilder<StringBuilder>;
+  }
+> = spacetimedb.reducer(
   {
     eventId: t.string(),
     eventType: t.string(),
@@ -389,14 +403,14 @@ export function makeResendWebhookHandler() {
   };
 }
 
-export const replayWebhookEvent = spacetimedb.reducer(
-  { eventId: t.string() },
-  (ctx, { eventId }) => {
-    // Administrators may run this operation over stored events.
-    requireAdmin(ctx, ctx.sender);
-    const event = ctx.db.resendWebhookEvent.eventId.find(eventId);
-    if (!event) throwSenderError(`${errors.webhookEventNotFound}:${eventId}`);
-    const outcome = applyResendEvent(ctx, eventId, event.payloadJson);
-    updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
-  }
-);
+export const replayWebhookEvent: ReducerExport<
+  typeof spacetimedb.schemaType,
+  { eventId: StringBuilder }
+> = spacetimedb.reducer({ eventId: t.string() }, (ctx, { eventId }) => {
+  // Administrators may run this operation over stored events.
+  requireAdmin(ctx, ctx.sender);
+  const event = ctx.db.resendWebhookEvent.eventId.find(eventId);
+  if (!event) throwSenderError(`${errors.webhookEventNotFound}:${eventId}`);
+  const outcome = applyResendEvent(ctx, eventId, event.payloadJson);
+  updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
+});

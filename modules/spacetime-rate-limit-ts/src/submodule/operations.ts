@@ -1,4 +1,14 @@
-import { Range, SenderError } from 'spacetimedb/server';
+import {
+  Range,
+  SenderError,
+  type ProcedureExport,
+  type ReducerExport,
+  type ViewExport,
+  type IdentityBuilder,
+  type OptionBuilder,
+  type U32Builder,
+  type Infer,
+} from 'spacetimedb/server';
 import type { Identity } from 'spacetimedb';
 import {
   DEFAULT_SWEEP_BATCH,
@@ -12,6 +22,7 @@ import {
   spacetimedb,
   t,
   type ViewModuleCtx,
+  type Schema,
 } from './schema.js';
 
 /** Whether `identity` is a rate-limit administrator. */
@@ -39,7 +50,11 @@ function maxRowsArg(value: number | undefined): number {
     : positiveU32(errors.invalidMaxRows, value, MAX_SWEEP_BATCH);
 }
 
-export const runSweep = spacetimedb.procedure(
+export const runSweep: ProcedureExport<
+  Schema,
+  { maxRows: OptionBuilder<U32Builder> },
+  U32Builder
+> = spacetimedb.procedure(
   { maxRows: t.option(t.u32()) },
   t.u32(),
   (ctx, args) => {
@@ -57,35 +72,34 @@ export const runSweep = spacetimedb.procedure(
   }
 );
 
-export const addRateLimitAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (ctx.db.rateLimitAdminIdentity.identity.find(args.identity) == null) {
-      ctx.db.rateLimitAdminIdentity.insert({
-        identity: args.identity,
-        addedAt: ctx.timestamp,
-      });
-    }
+export const addRateLimitAdmin: ReducerExport<
+  Schema,
+  { identity: IdentityBuilder }
+> = spacetimedb.reducer({ identity: t.identity() }, (ctx, args) => {
+  requireAdmin(ctx);
+  if (ctx.db.rateLimitAdminIdentity.identity.find(args.identity) == null) {
+    ctx.db.rateLimitAdminIdentity.insert({
+      identity: args.identity,
+      addedAt: ctx.timestamp,
+    });
   }
-);
+});
 
-export const removeRateLimitAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, { identity }) => {
-    requireAdmin(ctx);
-    const existing = ctx.db.rateLimitAdminIdentity.identity.find(identity);
-    if (!existing) return;
-    if (ctx.db.rateLimitAdminIdentity.count() <= 1n) {
-      throw new SenderError(errors.cannotRemoveLastAdmin);
-    }
-    ctx.db.rateLimitAdminIdentity.delete(existing);
+export const removeRateLimitAdmin: ReducerExport<
+  Schema,
+  { identity: IdentityBuilder }
+> = spacetimedb.reducer({ identity: t.identity() }, (ctx, { identity }) => {
+  requireAdmin(ctx);
+  const existing = ctx.db.rateLimitAdminIdentity.identity.find(identity);
+  if (!existing) return;
+  if (ctx.db.rateLimitAdminIdentity.count() <= 1n) {
+    throw new SenderError(errors.cannotRemoveLastAdmin);
   }
-);
+  ctx.db.rateLimitAdminIdentity.delete(existing);
+});
 
-export const updateConfig = spacetimedb.reducer(
-  { sweepBatch: t.u32() },
-  (ctx, args) => {
+export const updateConfig: ReducerExport<Schema, { sweepBatch: U32Builder }> =
+  spacetimedb.reducer({ sweepBatch: t.u32() }, (ctx, args) => {
     requireAdmin(ctx);
     const cfg = ctx.db.rateLimitConfig.singleton.find(true);
     if (!cfg) throw new Error('rate_limit.config_missing');
@@ -98,24 +112,25 @@ export const updateConfig = spacetimedb.reducer(
       ),
       updatedAt: ctx.timestamp,
     });
-  }
-);
+  });
 
-export const resetBuckets = spacetimedb.reducer(
-  { maxRows: t.option(t.u32()) },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const maxRows = maxRowsArg(args.maxRows);
-    let removed = 0;
-    for (const row of ctx.db.rateLimitBucket.iter()) {
-      if (removed >= maxRows) break;
-      ctx.db.rateLimitBucket.delete(row);
-      removed++;
-    }
+export const resetBuckets: ReducerExport<
+  Schema,
+  { maxRows: OptionBuilder<U32Builder> }
+> = spacetimedb.reducer({ maxRows: t.option(t.u32()) }, (ctx, args) => {
+  requireAdmin(ctx);
+  const maxRows = maxRowsArg(args.maxRows);
+  let removed = 0;
+  for (const row of ctx.db.rateLimitBucket.iter()) {
+    if (removed >= maxRows) break;
+    ctx.db.rateLimitBucket.delete(row);
+    removed++;
   }
-);
+});
 
-export const adminRateLimitBuckets = spacetimedb.view(
+export const adminRateLimitBuckets: ViewExport<
+  (ctx: ViewModuleCtx) => Infer<typeof rateLimitBucket.rowType>[]
+> = spacetimedb.view(
   { name: 'admin_rate_limit_buckets', public: true },
   t.array(rateLimitBucket.rowType),
   ctx => {
@@ -129,7 +144,10 @@ export const adminRateLimitBuckets = spacetimedb.view(
   }
 );
 
-export const rateLimitSweep = spacetimedb.reducer(
+export const rateLimitSweep: ReducerExport<
+  Schema,
+  { arg: typeof rateLimitSweepTick.rowType }
+> = spacetimedb.reducer(
   { onSchedule: rateLimitSweepTick },
   { arg: rateLimitSweepTick.rowType },
   (ctx, _args) => {
