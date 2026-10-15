@@ -19,7 +19,10 @@ use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_schema::schema::{Schema, TableOrViewSchema, TableSchema};
+use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::table::RowRef;
+use spacetimedb_table::tiered::TieredStorageConfig;
 use thiserror::Error;
 
 /// Commit-time behavior for a pending transaction.
@@ -59,7 +62,10 @@ impl PortableDatastore {
     /// Create an in-memory datastore initialized with the tables in `raw`.
     pub fn from_module_def(raw: RawModuleDef, module_identity: Identity) -> Result<Self, PortableDatastoreError> {
         let module_def = ModuleDef::try_from(raw.clone())?;
-        let datastore = Locking::bootstrap(module_identity, PagePool::new(None))?;
+        let datastore = Locking::bootstrap(
+            module_identity,
+            TieredStorageConfig::new_for_memory_database(PagePool::new(None)),
+        )?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let mut event_table_ids = Vec::new();
         let mut table_ids = HashMap::new();
@@ -198,17 +204,22 @@ impl PortableDatastore {
             Some(tx) => self.with_tx(tx, |tx| {
                 self.datastore
                     .iter_mut_tx(tx, table_id)?
-                    .map(|row_ref| row_ref.to_bsatn_vec())
+                    .map(|res| {
+                        let row_ref = res?;
+                        row_ref.to_bsatn_vec().map_err(PortableDatastoreError::from)
+                    })
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(Into::into)
             }),
             None => {
                 let tx = self.datastore.begin_tx(Workload::Internal);
                 let result = (|| {
-                    let rows = self.datastore.iter_tx(&tx, table_id)?;
-                    rows.map(|row_ref| row_ref.to_bsatn_vec())
+                    self.datastore
+                        .iter_tx(&tx, table_id)?
+                        .map(|res| {
+                            let row_ref = res?;
+                            row_ref.to_bsatn_vec().map_err(PortableDatastoreError::from)
+                        })
                         .collect::<Result<Vec<_>, _>>()
-                        .map_err(PortableDatastoreError::from)
                 })();
                 let _ = self.datastore.release_tx(tx);
                 result
@@ -297,7 +308,7 @@ impl PortableDatastore {
     ) -> Result<u32, PortableDatastoreError> {
         self.with_tx_mut(tx, |tx| {
             let (table_id, _, iter) = tx.index_scan_point(index_id, point)?;
-            let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
+            let rows_to_delete = iter.map(row_result_to_row_pointer).collect::<Result<Vec<_>, _>>()?;
             Ok(self.datastore.delete_mut_tx(tx, table_id, rows_to_delete))
         })
     }
@@ -315,8 +326,12 @@ impl PortableDatastore {
         self.with_tx_mut(tx, |tx| {
             let (table_id, iter) = tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?;
             let rows_to_delete = match iter {
-                IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
-                IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+                IndexScanPointOrRange::Point(_, iter) => {
+                    iter.map(row_result_to_row_pointer).collect::<Result<Vec<_>, _>>()?
+                }
+                IndexScanPointOrRange::Range(iter) => {
+                    iter.map(row_result_to_row_pointer).collect::<Result<Vec<_>, _>>()?
+                }
             };
             Ok(self.datastore.delete_mut_tx(tx, table_id, rows_to_delete))
         })
@@ -467,9 +482,7 @@ fn collect_point_scan(
     point: &[u8],
 ) -> Result<Vec<Vec<u8>>, PortableDatastoreError> {
     let (_, _, iter) = tx.index_scan_point(index_id, point)?;
-    iter.map(|row_ref| row_ref.to_bsatn_vec())
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(Into::into)
+    iter.map(row_result_to_bsatn_vec).collect::<Result<Vec<_>, _>>()
 }
 
 fn collect_range_scan(
@@ -482,15 +495,17 @@ fn collect_range_scan(
 ) -> Result<Vec<Vec<u8>>, PortableDatastoreError> {
     let (_, iter) = tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?;
     match iter {
-        IndexScanPointOrRange::Point(_, iter) => iter
-            .map(|row_ref| row_ref.to_bsatn_vec())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into),
-        IndexScanPointOrRange::Range(iter) => iter
-            .map(|row_ref| row_ref.to_bsatn_vec())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into),
+        IndexScanPointOrRange::Point(_, iter) => iter.map(row_result_to_bsatn_vec).collect::<Result<Vec<_>, _>>(),
+        IndexScanPointOrRange::Range(iter) => iter.map(row_result_to_bsatn_vec).collect::<Result<Vec<_>, _>>(),
     }
+}
+
+fn row_result_to_bsatn_vec(r: Result<RowRef, DatastoreError>) -> Result<Vec<u8>, PortableDatastoreError> {
+    r?.to_bsatn_vec().map_err(Into::into)
+}
+
+fn row_result_to_row_pointer(r: Result<RowRef, DatastoreError>) -> Result<RowPointer, PortableDatastoreError> {
+    r.map(RowRef::into_pointer).map_err(Into::into)
 }
 
 fn decode_relation(row_ty: &ProductType, relation: &[u8]) -> Result<Vec<ProductValue>, PortableDatastoreError> {
@@ -537,6 +552,9 @@ impl<T: StateView> spacetimedb_expr::check::SchemaView for SchemaViewer<'_, T> {
     }
 
     fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+        let error_context = || {
+            format!("Failed to read value from the `sql` column of `st_row_level_security` for table_id `{table_id}`")
+        };
         self.tx
             .iter_by_col_eq(
                 ST_ROW_LEVEL_SECURITY_ID,
@@ -544,19 +562,11 @@ impl<T: StateView> spacetimedb_expr::check::SchemaView for SchemaViewer<'_, T> {
                 &AlgebraicValue::from(table_id),
             )?
             .map(|row| {
-                row.read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
-                    .with_context(|| {
-                        format!(
-                            "Failed to read value from the `sql` column of `st_row_level_security` for table_id `{table_id}`"
-                        )
-                    })
-                    .and_then(|sql| {
-                        sql.into_string().map_err(|_| {
-                            anyhow::anyhow!(
-                                "Failed to read string from the `sql` column of `st_row_level_security` for table_id `{table_id}`"
-                            )
-                        })
-                    })
+                let row = row.with_context(error_context)?;
+                let sql = row
+                    .read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
+                    .with_context(error_context)?;
+                sql.into_string().map_err(|_| anyhow::anyhow!(error_context()))
             })
             .collect()
     }
