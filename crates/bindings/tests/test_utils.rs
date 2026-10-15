@@ -620,6 +620,30 @@ fn test_context_supports_unique_index_find_update_and_delete() {
 
 #[cfg(feature = "unstable")]
 #[test]
+fn procedure_context_with_tx_commits() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let mut procedure = test.procedure_context(TestAuth::internal());
+
+    let count = procedure.with_tx(|tx| {
+        tx.db.test_utils_user().insert(TestUtilsUser {
+            id: 20,
+            name: "Committed".to_owned(),
+        });
+        tx.db.test_utils_user().count()
+    });
+
+    assert_eq!(count, 1);
+    assert_eq!(
+        test.db.test_utils_user().iter().collect::<Vec<_>>(),
+        vec![TestUtilsUser {
+            id: 20,
+            name: "Committed".to_owned(),
+        }]
+    );
+}
+
+#[cfg(feature = "unstable")]
+#[test]
 fn procedure_context_try_with_tx_commits() {
     let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
     let mut procedure = test.procedure_context(TestAuth::internal());
