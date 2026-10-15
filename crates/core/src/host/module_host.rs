@@ -78,6 +78,9 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
+/// Maximum duration of a transaction durability confirmation wait.
+pub const TRANSACTION_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
     pub tables: SmallVec<[DatabaseTableUpdate; 1]>,
@@ -2434,6 +2437,21 @@ impl ModuleHost {
         .map_err(Into::into)
     }
 
+    async fn call_reducer_with_params_and_offset(
+        &self,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        call_instance!(
+            self,
+            reducer_name,
+            params,
+            |p, inst| inst.call_reducer_with_offset(p),
+            |p, inst| { inst.call_reducer_with_offset(p).await },
+        )
+        .map_err(Into::into)
+    }
+
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
         let log_message = match err {
             ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
@@ -2501,6 +2519,31 @@ impl ModuleHost {
             reducer_name,
             args,
             async |call| self.call_reducer_with_params(&call.name, call.params).await,
+        )
+        .await
+    }
+
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction,
+    /// so that the caller can wait for it to become durable.
+    pub async fn call_reducer_with_offset(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        self.with_reducer_call(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+            async |call| self.call_reducer_with_params_and_offset(&call.name, call.params).await,
         )
         .await
     }

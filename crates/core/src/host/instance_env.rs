@@ -2,7 +2,9 @@ use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError,
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, TRANSACTION_CONFIRMATION_TIMEOUT,
+};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -987,9 +989,12 @@ impl InstanceEnv {
         })();
         async move {
             if let Some((offset, mut durable)) = confirmation? {
-                durable.wait_for(offset).await.context(
-                    "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
-                )?;
+                tokio::time::timeout(TRANSACTION_CONFIRMATION_TIMEOUT, durable.wait_for(offset))
+                    .await
+                    .context("durability confirmation timed out; outcome unknown, do not retry without deduplication")?
+                    .context(
+                        "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+                    )?;
             }
             Ok(())
         }
@@ -1577,7 +1582,7 @@ mod test {
         use crate::db::relational_db::Persistence;
         use std::pin::pin;
 
-        let runtime = tokio::runtime::Runtime::new()?;
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
         let (durable, rx) = tokio::sync::watch::channel(None);
         let persistence = Persistence::new(
             PendingDurability(rx),
@@ -1601,6 +1606,7 @@ mod test {
         durable.send_replace(Some(offset - 1));
 
         runtime.block_on(async {
+            tokio::time::pause();
             let mut confirmation = pin!(confirmation);
             assert!(futures::poll!(&mut confirmation).is_pending());
 
@@ -1613,7 +1619,19 @@ mod test {
             assert!(futures::poll!(&mut confirmation).is_pending());
 
             durable.send_replace(Some(offset));
-            confirmation.await
+            confirmation.await?;
+
+            // This read observes the second transaction, which is still unconfirmed.
+            env.start_mutable_tx()?;
+            env.commit_mutable_tx()?;
+            let mut confirmation = pin!(env.procedure_confirmation());
+            assert!(futures::poll!(&mut confirmation).is_pending());
+            tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT + Duration::from_millis(1)).await;
+            let std::task::Poll::Ready(Err(error)) = futures::poll!(confirmation) else {
+                panic!("confirmation must time out even while the durability sender is alive");
+            };
+            assert!(error.to_string().contains("outcome unknown"));
+            Ok(())
         })
     }
 
