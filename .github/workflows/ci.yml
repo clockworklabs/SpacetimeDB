@@ -1472,7 +1472,7 @@ jobs:
 
   portable_datastore:
     name: Check portable datastore
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -2097,6 +2097,8 @@ jobs:
         uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
+          # Keep the .NET 8 SDK and workload set below in sync.
+          dotnet-version: '8.0.416'
 
       - name: Install .NET workloads
         run: |
@@ -2107,10 +2109,11 @@ jobs:
           # overwriting the repository's .NET 10 global.json, which later C# harness
           # tests rely on for SDK selection.
           workload_dir="$(mktemp -d)"
-          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > "$workload_dir/global.json"
+          echo '{"sdk":{"version":"8.0.416","rollForward":"disable"}}' > "$workload_dir/global.json"
           (
             cd "$workload_dir"
-            dotnet workload install wasi-experimental
+            # Pin a coordinated workload set instead of updating individual manifests.
+            dotnet workload install wasi-experimental --version 8.0.416
           )
 
       - name: Override NuGet packages
@@ -2131,9 +2134,9 @@ jobs:
         working-directory: sdks/csharp
         run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
-      - name: Run .NET tests
+      - name: Run C# SDK tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror --no-restore SpacetimeDB.ClientSDK.csproj
+        run: dotnet test -warnaserror --no-restore tests~/tests.csproj
 
       - name: Verify C# formatting
         working-directory: sdks/csharp
@@ -2407,7 +2410,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Submodules
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       ARTIFACT_SUFFIX: linux
     steps:

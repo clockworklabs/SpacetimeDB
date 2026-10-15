@@ -55,7 +55,7 @@ partial struct TestUniqueNotEquatable
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new("UniqueField", UniqueFieldRW.GetAlgebraicType(registrar)),
-                        new("PrimaryKeyField", PrimaryKeyFieldRW.GetAlgebraicType(registrar))
+                        new("PrimaryKeyField", PrimaryKeyFieldRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
