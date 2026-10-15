@@ -117,7 +117,7 @@ fn view_backing_table_id(tx: &mut TxId, full_name: &NamespacedIdentifier) -> any
         return Ok(None);
     };
 
-    Ok(StViewRow::try_from(row)?.table_id)
+    Ok(StViewRow::try_from(row?)?.table_id)
 }
 
 fn view_backing_row_layout_changed(actual: &TableSchema, expected: &TableSchema) -> bool {
@@ -690,7 +690,7 @@ fn rewrite_outbound_stream_outbox_table_id(
             StOutboundStreamFields::OutboxTableId,
             &old_table_id.into(),
         )?
-        .map(StOutboundStreamRow::try_from)
+        .map(|row| row.and_then(StOutboundStreamRow::try_from))
         .collect::<Result<Vec<_>, _>>()?;
 
     for mut stream in streams {
@@ -835,7 +835,7 @@ mod test {
 
         let rows = stdb
             .iter_mut(&tx, ST_OUTBOUND_STREAM_ID)?
-            .map(StOutboundStreamRow::try_from)
+            .map(|row| row.and_then(StOutboundStreamRow::try_from))
             .collect::<Result<Vec<_>, _>>()?;
         assert_eq!(
             rows,
@@ -914,10 +914,11 @@ mod test {
         let idx_b_id = stdb
             .index_id_from_name(&tx, "t_b_idx_btree")?
             .expect("there should be an index named `idx_b`");
-        assert_eq!(
+        assert!(matches!(
             tx.pending_schema_changes(),
-            [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
-        );
+            [PendingSchemaChange::IndexAdded(tid, iid, None)]
+                if *tid == t_id && *iid == idx_b_id
+        ));
 
         Ok(())
     }
@@ -1898,7 +1899,7 @@ mod test {
 
             let mut ids = stdb
                 .iter_mut(&tx, table_id)?
-                .map(|r| r.read_col::<i64>(0))
+                .map(|r| r.unwrap().read_col::<i64>(0))
                 .collect::<Result<Vec<_>, _>>()?;
 
             ids.sort();

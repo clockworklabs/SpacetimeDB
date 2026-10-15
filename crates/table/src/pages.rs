@@ -1,6 +1,7 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use super::blob_store::BlobStore;
+use crate::tiered::{BlobError, BlobSet};
+
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
 use super::page_pool::PagePool;
@@ -78,63 +79,6 @@ impl Pages {
         self.pages
             .get_mut(page_index.idx())
             .and_then(|page_slot| page_slot.as_deref_mut())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn assert_non_full_pages_consistent(&self, fixed_row_size: Size) {
-        let mut seen_page_indexes = BTreeSet::new();
-        for &(_, page_index) in &self.non_full_pages {
-            assert!(
-                seen_page_indexes.insert(page_index),
-                "page {:?} appears multiple times in non_full_pages",
-                page_index
-            );
-        }
-
-        for (idx, page) in self.pages.iter().enumerate() {
-            let page_index = PageIndex(idx as u64);
-            if let Some(page) = page {
-                let is_full = page.is_full(fixed_row_size);
-                let available_granules = page.available_var_len_granules();
-                let entries_for_page: Vec<_> = self
-                    .non_full_pages
-                    .iter()
-                    .copied()
-                    .filter(|&(_, idx)| idx == page_index)
-                    .collect();
-
-                if is_full {
-                    assert!(
-                        entries_for_page.is_empty(),
-                        "page {:?} has 0 available var-len granules but appears in non_full_pages as {:?}",
-                        page_index,
-                        entries_for_page
-                    );
-                } else {
-                    assert_eq!(
-                        entries_for_page,
-                        vec![(available_granules, page_index)],
-                        "page {:?} has {} available var-len granules but non_full_pages has {:?}",
-                        page_index,
-                        available_granules,
-                        entries_for_page
-                    );
-                }
-            } else {
-                let entries_for_page: Vec<_> = self
-                    .non_full_pages
-                    .iter()
-                    .copied()
-                    .filter(|&(_free_granules, idx)| idx == page_index)
-                    .collect();
-                assert!(
-                    entries_for_page.is_empty(),
-                    "page slot {:?} is None, but appears in non_full_pages as {:?}",
-                    page_index,
-                    entries_for_page,
-                );
-            }
-        }
     }
 
     /// Is there space to allocate another page?
@@ -274,7 +218,7 @@ impl Pages {
         fixed_row_size: Size,
         fixed_len: &Bytes,
         var_len: &[&[u8]],
-        blob_store: &mut dyn BlobStore,
+        blob_store: &mut BlobSet,
     ) -> Result<(PageIndex, PageOffset), Error> {
         debug_assert!(fixed_len.len() == fixed_row_size.len());
 
@@ -318,8 +262,8 @@ impl Pages {
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         row_ptr: RowPointer,
-        blob_store: &mut dyn BlobStore,
-    ) -> BlobNumBytes {
+        blob_store: &mut BlobSet,
+    ) -> Result<BlobNumBytes, BlobError> {
         let page_index = row_ptr.page_index();
 
         self.with_updating_non_full_pages(page_index, fixed_row_size, |this| {
