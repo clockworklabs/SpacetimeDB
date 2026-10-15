@@ -85,7 +85,9 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{
+    InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, ReducerCallResultWithTxOffset, Scheduler,
+};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -497,6 +499,11 @@ impl JsMainInstance {
     }
 
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
+        self.request(CallReducerRequest { params }).await.result
+    }
+
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction.
+    pub async fn call_reducer_with_offset(&self, params: CallReducerParams) -> ReducerCallResultWithTxOffset {
         self.request(CallReducerRequest { params }).await
     }
 
@@ -649,7 +656,7 @@ js_main_request! {
 js_main_request! {
     CallReducerRequest {
         params: CallReducerParams,
-    } => "call_reducer", ReducerCallResult, CallReducer
+    } => "call_reducer", ReducerCallResultWithTxOffset, CallReducer
 }
 
 js_main_request! {
@@ -837,7 +844,7 @@ enum JsMainWorkerRequest {
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
-        reply_tx: JsReplyTx<ReducerCallResult>,
+        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
@@ -1443,8 +1450,7 @@ fn handle_main_worker_request(
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped) = call_reducer(None, params);
-                (res.result, trapped)
+                call_reducer(None, params)
             })
         }
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {

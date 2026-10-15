@@ -518,6 +518,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction.
+    pub fn call_reducer_with_offset(&mut self, params: CallReducerParams) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset(None, params);
+        self.trapped = trapped;
+        res
+    }
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
