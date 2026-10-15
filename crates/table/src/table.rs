@@ -2,8 +2,8 @@ use crate::{
     bflatn_to::required_var_len_granules_for_row,
     page,
     tiered::{
-        BlobError, BlobReadSet, BlobSet, DeleteRowError, PageError, PageEvictionPolicy, PageHandle, PageManager,
-        PageSet, PreparedCommit, ReservedPage,
+        BlobError, BlobReadSet, BlobSet, DeleteRowError, PageBorrow, PageError, PageEvictionPolicy,
+        PageHandle, PageManager, PageRef, PageSet, PreparedCommit, ReservedPage,
     },
 };
 
@@ -43,7 +43,7 @@ use spacetimedb_sats::{
     layout::HasLayout,
     product_value::InvalidFieldError,
     satn::Satn,
-    ser::{self, Serialize, Serializer},
+    ser::{Serialize, Serializer},
     u256, AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_sats::{
@@ -81,16 +81,28 @@ static_assert_size!(SeqIdList, 24);
 #[derive(Debug, Error)]
 pub enum TableError {
     #[error(transparent)]
-    Page(#[from] PageError),
+    Page(#[from] Box<PageError>),
     #[error(transparent)]
-    Blob(#[from] BlobError),
+    Blob(#[from] Box<BlobError>),
+}
+
+impl From<PageError> for TableError {
+    fn from(error: PageError) -> Self {
+        Self::Page(Box::new(error))
+    }
+}
+
+impl From<BlobError> for TableError {
+    fn from(error: BlobError) -> Self {
+        Self::Blob(Box::new(error))
+    }
 }
 
 impl From<DeleteRowError> for TableError {
     fn from(e: DeleteRowError) -> Self {
         match e {
-            DeleteRowError::Blob(e) => Self::Blob(e),
-            DeleteRowError::Page(e) => Self::Page(e),
+            DeleteRowError::Blob(e) => e.into(),
+            DeleteRowError::Page(e) => e.into(),
         }
     }
 }
@@ -184,7 +196,34 @@ impl TableInner {
     /// Showing that `ptr` was the result of a call to [`Table::insert(table, ..)`]
     /// and has not been passed to [`Table::delete_internal_skip_pointer_map(table, ..)`]
     /// is sufficient to demonstrate all of these properties.
+    #[inline(always)]
     unsafe fn get_row_ref_unchecked<'a>(
+        &'a self,
+        blobs: &'a BlobSet,
+        squashed_offset: SquashedOffset,
+        ptr: RowPointer,
+    ) -> Result<RowRef<'a>, TableError> {
+        if self.pages.is_resident() && self.row_layout.layout().fixed {
+            // The caller proves the row is live. With no eviction or external
+            // blobs to pin, defer page lookup until the row is actually read.
+            return Ok(RowRef {
+                table: self,
+                pointer: ptr,
+                page: None,
+                blobs: BlobReadSet::empty(),
+            });
+        }
+        // Keep fault handling and blob pinning out of the small resident path.
+        // SAFETY: Forward the caller's proof that `ptr` refers to a live row.
+        unsafe { self.get_row_ref_with_pins(blobs, squashed_offset, ptr) }
+    }
+
+    /// General row lookup for tiered pages or rows with variable-length members.
+    ///
+    /// # Safety
+    /// Same requirements as `get_row_ref_unchecked`.
+    #[inline(never)]
+    unsafe fn get_row_ref_with_pins<'a>(
         &'a self,
         blobs: &'a BlobSet,
         squashed_offset: SquashedOffset,
@@ -197,7 +236,6 @@ impl TableInner {
         // SAFETY: Forward caller requirements.
         unsafe { RowRef::new(self, blobs, squashed_offset, ptr, page) }.map_err(Into::into)
     }
-
     /// Returns whether the row at `ptr` is present or not.
     // TODO: Remove all uses of this method,
     //       or more likely, gate them behind `debug_assert!`
@@ -217,27 +255,41 @@ impl TableInner {
     //       during a table scan or index seek.
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
-    fn is_row_present(&self, squashed_offset: SquashedOffset, ptr: RowPointer) -> Result<bool, PageError> {
+    #[inline]
+    fn is_row_present(
+        &self,
+        squashed_offset: SquashedOffset,
+        ptr: RowPointer,
+    ) -> Result<bool, PageError> {
         if squashed_offset != ptr.squashed_offset() {
             return Ok(false);
+        }
+        if let Some(present) = self.pages.resident_row_present(ptr, self.row_layout.size()) {
+            return Ok(present);
         }
         let Some((page, offset)) = self.try_page_and_offset(ptr)? else {
             return Ok(false);
         };
-        Ok(page.read().has_row_offset(self.row_layout.size(), offset))
+        Ok(page.with_page(|page| page.has_row_offset(self.row_layout.size(), offset)))
     }
 
-    fn try_page_and_offset(&self, ptr: RowPointer) -> Result<Option<(PageHandle, PageOffset)>, PageError> {
+    fn try_page_and_offset(
+        &self,
+        ptr: RowPointer,
+    ) -> Result<Option<(PageRef<'_>, PageOffset)>, PageError> {
         let page = self.pages.get_page(ptr.page_index())?;
         Ok(page.map(|page| (page, ptr.page_offset())))
     }
 
     /// Returns the page and page offset that `ptr` points to.
-    fn page_and_offset(&self, ptr: RowPointer) -> Result<(PageHandle, PageOffset), PageError> {
+    fn page_and_offset(&self, ptr: RowPointer) -> Result<(PageRef<'_>, PageOffset), PageError> {
         Ok(self.try_page_and_offset(ptr)?.unwrap())
     }
 }
 
+#[cfg(target_os = "macos")]
+static_assert_size!(Table, 336);
+#[cfg(not(target_os = "macos"))]
 static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
@@ -818,6 +870,7 @@ impl Table {
     ///
     /// When `row` is not valid BSATN at the table's row type,
     /// an error is returned and there will be nothing for the caller to revert.
+    #[inline]
     pub fn insert_physically_bsatn<'a>(
         &'a mut self,
         blobs: &'a mut BlobSet,
@@ -1276,12 +1329,35 @@ impl Table {
     /// - `target_table` and `needle_table` must have the same `row_layout`.
     /// - `target_table.is_row_present(target_ptr)`.
     /// - `needle_table.is_row_present(needle_ptr)`.
+    #[inline]
     pub unsafe fn eq_row_in_page(
         target_table: &Table,
         target_ptr: RowPointer,
         needle_table: &Table,
         needle_ptr: RowPointer,
     ) -> Result<bool, PageError> {
+        if target_table.inner.pages.is_resident() && needle_table.inner.pages.is_resident() {
+            let target = target_table
+                .inner
+                .pages
+                .resident_page(target_ptr.page_index());
+            let needle = needle_table
+                .inner
+                .pages
+                .resident_page(needle_ptr.page_index());
+            // SAFETY: Both tables are borrowed and cannot evict these pages. The
+            // caller guarantees that both rows are live and their layouts match.
+            return Ok(unsafe {
+                eq_row_in_page(
+                    target,
+                    needle,
+                    target_ptr.page_offset(),
+                    needle_ptr.page_offset(),
+                    &target_table.inner.row_layout,
+                    target_table.static_layout(),
+                )
+            });
+        }
         let (target_page, target_offset) = target_table.inner.page_and_offset(target_ptr)?;
         let (needle_page, needle_offset) = needle_table.inner.page_and_offset(needle_ptr)?;
 
@@ -1291,16 +1367,18 @@ impl Table {
         // - Caller promised that the layouts of `target_table` and `needle_table` are the same,
         //   so `target_table` applies to both.
         //   Moreover `(x: Table).inner.static_layout` is always derived from `x.row_layout`.
-        Ok(unsafe {
-            eq_row_in_page(
-                &target_page.read(),
-                &needle_page.read(),
-                target_offset,
-                needle_offset,
-                &target_table.inner.row_layout,
-                target_table.static_layout(),
-            )
-        })
+        Ok(target_page.with_page(|target| {
+            needle_page.with_page(|needle| unsafe {
+                eq_row_in_page(
+                    target,
+                    needle,
+                    target_offset,
+                    needle_offset,
+                    &target_table.inner.row_layout,
+                    target_table.static_layout(),
+                )
+            })
+        }))
     }
 
     /// Searches `target_table` for a row equal to `needle_table[needle_ptr]`,
@@ -1368,6 +1446,7 @@ impl Table {
     /// Showing that `ptr` was the result of a call to [`Table::insert(table, ..)`]
     /// and has not been passed to [`Table::delete(table, ..)`]
     /// is sufficient to demonstrate all of these properties.
+    #[inline]
     pub unsafe fn get_row_ref_unchecked<'a>(
         &'a self,
         blobs: &'a BlobSet,
@@ -1389,6 +1468,13 @@ impl Table {
         ptr: RowPointer,
     ) -> Result<BlobNumBytes, DeleteRowError> {
         debug_assert!(self.is_row_present(ptr).unwrap());
+        if self.inner.row_layout.layout().fixed
+            // SAFETY: The caller proves the row is live; the layout check proves
+            // that deleting it needs no variable-length or blob operations.
+            && unsafe { self.inner.pages.delete_fixed_resident_row(ptr, self.inner.row_layout.size()) }
+        {
+            return Ok(BlobNumBytes::default());
+        }
         // Delete the physical row.
         //
         // SAFETY:
@@ -1949,7 +2035,7 @@ impl Table {
     pub fn bytes_used_by_rows(&self) -> u64 {
         self.pages()
             .iter_present_pages()
-            .map(|page| page.bytes_used_by_rows() as u64)
+            .map(|page| page.bytes_used_by_rows(self.row_size()) as u64)
             .sum()
     }
 
@@ -1993,6 +2079,11 @@ impl Table {
         self.indexes.values().map(|idx| idx.num_key_bytes()).sum()
     }
 
+    /// Whether commit can stream directly from resident transaction tables.
+    pub fn can_commit_resident(&self, insert_count: u64) -> bool {
+        self.inner.row_layout.layout().fixed && self.inner.pages.can_commit_resident(insert_count)
+    }
+
     pub fn prepare_commit(
         &self,
         blobs: &BlobSet,
@@ -2027,20 +2118,22 @@ impl Table {
     }
 
     pub fn prepare_insert(&self, row: RowRef<'_>) -> PreparedInsert {
-        debug_assert_eq!(self.row_layout(), row.row_layout());
+        assert_eq!(self.row_layout(), row.row_layout());
 
-        if !self.schema.is_event && self.inner.row_layout.layout().fixed {
-            let (source_page, source_offset) = row.page_and_offset();
-            PreparedInsertInner::CopyFixed {
+        if !self.schema.is_event
+            && self.inner.row_layout.layout().fixed
+            && let Some(source_page) = &row.page
+        {
+            return PreparedInsertInner::CopyFixed {
                 source_page: source_page.clone(),
-                source_offset,
+                source_offset: row.pointer().page_offset(),
             }
-            .into()
-        } else {
-            PreparedInsertInner::Product(row.to_product_value()).into()
+            .into();
         }
+        // Resident pages are borrowed, so prepared commits own the row value.
+        // Unlimited fixed-row resident commits bypass preparation entirely.
+        PreparedInsertInner::Product(row.to_product_value()).into()
     }
-
     fn required_var_len_granules_for_insert(&self, row: &ProductValue) -> usize {
         if self.inner.row_layout.layout().fixed {
             0
@@ -2062,11 +2155,14 @@ pub struct RowRef<'a> {
     table: &'a TableInner,
     /// The pointer to the row in `self.table`.
     pointer: RowPointer,
-    /// Guard that ensures the page stays resident while this `RowRef` is live.
-    page: PageHandle,
-    /// Blobs referenced by this row.
-    blobs: Arc<BlobReadSet>,
+    /// Resident pages are protected by the table borrow; tiered pages retain a pin.
+    page: Option<PageHandle>,
+    /// Pins external blobs; fixed-layout rows keep an empty read set.
+    blobs: BlobReadSet,
 }
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(mem::size_of::<RowRef<'_>>() == 32);
 
 impl fmt::Debug for RowRef<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -2094,27 +2190,37 @@ impl<'a> RowRef<'a> {
     /// Showing that `pointer` was the result of a call to `table.insert`
     /// and has not been passed to `table.delete`
     /// is sufficient to demonstrate all of these properties.
+    #[inline]
     unsafe fn new(
         table: &'a TableInner,
         blobs: &BlobSet,
         _squashed_offset: SquashedOffset,
         pointer: RowPointer,
-        page: PageHandle,
+        page: PageRef<'a>,
     ) -> Result<Self, BlobError> {
         debug_assert_eq!(_squashed_offset, pointer.squashed_offset());
         debug_assert!(page
             .read()
             .has_row_offset(table.row_layout.size(), pointer.page_offset()));
 
-        let blobs = BlobReadSet::new(
-            &table.visitor_prog,
-            &page.read(),
-            blobs,
-            &table.row_layout,
-            pointer.page_offset(),
-        )?
-        .into();
+        let blobs = if table.row_layout.layout().fixed {
+            BlobReadSet::empty()
+        } else {
+            page.with_page(|page| {
+                BlobReadSet::new(
+                    &table.visitor_prog,
+                    page,
+                    blobs,
+                    &table.row_layout,
+                    pointer.page_offset(),
+                )
+            })?
+        };
 
+        let page = match page {
+            PageRef::Resident(_) => None,
+            PageRef::Tiered(handle) => Some(handle),
+        };
         Ok(Self {
             table,
             pointer,
@@ -2151,14 +2257,14 @@ impl<'a> RowRef<'a> {
     /// Any `col` in `cols` is in-bounds of `self`'s layout.
     pub unsafe fn serialize_columns_unchecked<S: Serializer>(&self, cols: &ColList, ser: S) -> Result<S::Ok, S::Error> {
         let table = self.table;
-        let (page, offset) = table
-            .page_and_offset(self.pointer)
-            .map_err(<S::Error as ser::Error>::custom)?;
+        let (page, offset) = self.page_and_offset();
         // SAFETY:
         // - We have a `RowRef`, so `ptr` points to a valid row in this table
         // so safety requirements 1-3 flow from that.
         // - Caller promised that any `col` in `cols` is in-bounds of `self`'s layout.
-        unsafe { serialize_columns_from_page(ser, &page.read(), &self.blobs, offset, &table.row_layout, cols) }
+        page.with_page(|page| unsafe {
+            serialize_columns_from_page(ser, page, &self.blobs, offset, &table.row_layout, cols)
+        })
     }
 
     /// Construct a projection of the row at `self` by extracting the `cols`.
@@ -2203,6 +2309,7 @@ impl<'a> RowRef<'a> {
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
     /// If you want to wrap single elements in a [`ProductValue`], see [`Self::project_product`].
+    #[inline]
     pub fn project(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             return self.read_col(head).map_err(|_| head.into());
@@ -2257,15 +2364,19 @@ impl<'a> RowRef<'a> {
     }
 
     /// Returns the page the row is in and the offset of the row within that page.
-    pub fn page_and_offset(&self) -> (&PageHandle, PageOffset) {
-        (&self.page, self.pointer.page_offset())
+    #[inline]
+    pub fn page_and_offset(&self) -> (PageBorrow<'_>, PageOffset) {
+        let page = match &self.page {
+            Some(handle) => PageBorrow::Tiered(handle),
+            None => PageBorrow::Resident(self.table.pages.resident_page(self.pointer.page_index())),
+        };
+        (page, self.pointer.page_offset())
     }
 
     /// Runs `f` with the bytes for the fixed portion of this row.
     pub(crate) fn with_row_data<T>(&self, f: impl FnOnce(&Bytes) -> T) -> T {
         let (page, offset) = self.page_and_offset();
-        let page = page.read();
-        f(page.get_row_data(offset, self.table.row_layout.size()))
+        page.with_page(|page| f(page.get_row_data(offset, self.table.row_layout.size())))
     }
 
     /// Returns the row hash for `ptr`.
@@ -2298,8 +2409,11 @@ impl<'a> RowRef<'a> {
         self.blobs.iter().map(|(_, blob)| blob.size() as usize).sum()
     }
 
-    pub fn into_page(self) -> PageHandle {
-        self.page
+    pub fn into_page(self) -> PageRef<'a> {
+        match self.page {
+            Some(handle) => PageRef::Tiered(handle),
+            None => PageRef::Resident(self.table.pages.resident_page(self.pointer.page_index())),
+        }
     }
 
     pub fn into_pointer(self) -> RowPointer {
@@ -2310,12 +2424,12 @@ impl<'a> RowRef<'a> {
 impl Serialize for RowRef<'_> {
     fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
         let table = self.table;
-        let (page, offset) = table
-            .page_and_offset(self.pointer)
-            .map_err(<S::Error as ser::Error>::custom)?;
+        let (page, offset) = self.page_and_offset();
         // SAFETY: We have a `RowRef`, so `ptr` points to a valid row in this table
         // so safety requirements 1-3 flow from that.
-        unsafe { serialize_row_from_page(ser, &page.read(), &self.blobs, offset, &table.row_layout) }
+        page.with_page(|page| unsafe {
+            serialize_row_from_page(ser, page, &self.blobs, offset, &table.row_layout)
+        })
     }
 }
 
@@ -2384,7 +2498,11 @@ impl PartialEq for RowRef<'_> {
         let static_layout = self.static_layout();
         // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
         // and `static_bsatn_layout` is derived from `a_ty`.
-        unsafe { eq_row_in_page(&page_a.read(), &page_b.read(), offset_a, offset_b, a_ty, static_layout) }
+        page_a.with_page(|a| {
+            page_b.with_page(|b| unsafe {
+                eq_row_in_page(a, b, offset_a, offset_b, a_ty, static_layout)
+            })
+        })
     }
 }
 
@@ -2394,7 +2512,7 @@ impl PartialEq<ProductValue> for RowRef<'_> {
         let (page, offset) = self.page_and_offset();
         // SAFETY: By having `RowRef`,
         // we know that `offset` is a valid offset for a row in `page` typed at `ty`.
-        unsafe { eq_row_in_page_to_pv(&self.blobs, &page.read(), offset, rhs, ty) }
+        page.with_page(|page| unsafe { eq_row_in_page_to_pv(&self.blobs, page, offset, rhs, ty) })
     }
 }
 
@@ -2407,7 +2525,7 @@ impl Hash for RowRef<'_> {
         // 2. the row is valid for `ty`.
         // 3. for any `vlr: VarLenRef` stored in the row,
         //    `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
-        unsafe { hash_row_in_page(state, &page.read(), &self.blobs, offset, ty) };
+        page.with_page(|page| unsafe { hash_row_in_page(state, page, &self.blobs, offset, ty) });
     }
 }
 
@@ -2415,7 +2533,7 @@ impl Hash for RowRef<'_> {
 pub struct TableScanIter<'table> {
     /// The current page we're yielding rows from.
     /// When `None`, the iterator will attempt to advance to the next page, if any.
-    current_page: Option<CurrentPage>,
+    current_page: Option<CurrentPage<'table>>,
     /// The current page index we visiting.
     current_page_idx: PageIndex,
 
@@ -2425,25 +2543,55 @@ pub struct TableScanIter<'table> {
     pub(crate) blobs: &'table BlobSet,
 }
 
-struct CurrentPage {
-    handle: PageHandle,
-    rows: Vec<PageOffset>,
-    next_row: usize,
+enum CurrentPage<'a> {
+    Resident {
+        page: &'a Page,
+        rows: crate::page::FixedLenRowsIter<'a>,
+    },
+    Tiered {
+        handle: PageHandle,
+        rows: std::vec::IntoIter<PageOffset>,
+    },
 }
 
-impl Iterator for CurrentPage {
-    type Item = (PageHandle, PageOffset);
+impl<'a> CurrentPage<'a> {
+    fn new(page: PageRef<'a>, row_size: Size) -> Self {
+        match page {
+            PageRef::Resident(page) => Self::Resident {
+                page,
+                rows: page.iter_fixed_len(row_size),
+            },
+            PageRef::Tiered(handle) => {
+                let rows = handle
+                    .read()
+                    .iter_fixed_len(row_size)
+                    .collect::<Vec<_>>()
+                    .into_iter();
+                Self::Tiered { handle, rows }
+            }
+        }
+    }
+}
 
+impl<'a> Iterator for CurrentPage<'a> {
+    type Item = (PageRef<'a>, PageOffset);
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let offset = self.rows.get(self.next_row)?;
-        self.next_row += 1;
-        Some((self.handle.clone(), *offset))
+        match self {
+            Self::Resident { page, rows } => {
+                rows.next().map(|offset| (PageRef::Resident(page), offset))
+            }
+            Self::Tiered { handle, rows } => rows
+                .next()
+                .map(|offset| (PageRef::Tiered(handle.clone()), offset)),
+        }
     }
 }
 
 impl<'a> Iterator for TableScanIter<'a> {
     type Item = Result<RowRef<'a>, TableError>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // This could have been written using `.flat_map`,
         // but we don't have `type Foo = impl Iterator<...>;` on stable yet.
@@ -2493,20 +2641,8 @@ impl<'a> Iterator for TableScanIter<'a> {
                         }
                         match self.table.pages().get_page(self.current_page_idx) {
                             Ok(Some(next_page)) => {
-                                if let Some(current_page) = self.current_page.as_mut() {
-                                    current_page.rows.clear();
-                                    current_page
-                                        .rows
-                                        .extend(next_page.read().iter_fixed_len(self.table.row_size()));
-                                    current_page.handle = next_page;
-                                    current_page.next_row = 0;
-                                } else {
-                                    self.current_page = Some(CurrentPage {
-                                        rows: next_page.read().iter_fixed_len(self.table.row_size()).collect(),
-                                        handle: next_page,
-                                        next_row: 0,
-                                    });
-                                }
+                                self.current_page =
+                                    Some(CurrentPage::new(next_page, self.table.row_size()));
 
                                 break 'find_next_page;
                             }
@@ -2629,6 +2765,7 @@ impl<'a> IndexScanPointIter<'a> {
 impl<'a> Iterator for IndexScanPointIter<'a> {
     type Item = Result<RowRef<'a>, TableError>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
@@ -2653,6 +2790,7 @@ pub struct IndexScanRangeIter<'a> {
 impl<'a> Iterator for IndexScanRangeIter<'a> {
     type Item = Result<RowRef<'a>, TableError>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
@@ -2805,7 +2943,7 @@ impl Table {
     // TODO(disk-tables): Avoid faulting in pages that are already on disk.
     pub fn iter_pages_with_hashes(
         &mut self,
-    ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageHandle)>, PageError>> {
+    ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageRef<'_>)>, PageError>> {
         self.inner.pages.iter_pages_with_hashes()
     }
 
@@ -2916,6 +3054,375 @@ pub(crate) mod test {
             page_manager,
             PageEvictionPolicy::NeverEvict,
         )
+    }
+
+    #[test]
+    fn resident_fixed_delete_invalidates_snapshot_hash() {
+        let blobs = BlobSet::new_for_test();
+        let mut table = table(ProductType::from([AlgebraicType::U64]));
+        let pointer = table
+            .insert(&blobs, &product![1u64])
+            .unwrap()
+            .1
+            .into_pointer();
+        table.insert(&blobs, &product![2u64]).unwrap();
+        let before = table
+            .iter_pages_with_hashes()
+            .next()
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .0;
+        table.delete(&blobs, pointer, |_| ()).unwrap().unwrap();
+        let after = table
+            .iter_pages_with_hashes()
+            .next()
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .0;
+        assert_ne!(before, after);
+        assert_eq!(table.num_rows(), 1);
+        assert_eq!(
+            table
+                .scan_rows(&blobs)
+                .next()
+                .unwrap()
+                .unwrap()
+                .to_product_value(),
+            product![2u64]
+        );
+    }
+
+    #[test]
+    fn resident_and_tiered_budget_snapshot_roundtrip() {
+        use crate::tiered::{
+            ByteBudget, ByteBudgetConfig, TieredDatabaseStorage, TieredStorageConfig,
+        };
+        let page_bytes = mem::size_of::<Page>() as u64;
+        for policy in [
+            PageEvictionPolicy::NeverEvict,
+            PageEvictionPolicy::Evictable,
+        ] {
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: page_bytes,
+                soft_limit_bytes: page_bytes,
+                hard_limit_bytes: page_bytes,
+            })
+            .unwrap();
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = budget.clone();
+            let storage = TieredDatabaseStorage::new(config);
+            let schema = Arc::new(TableSchema::from_product_type(ProductType::from([
+                AlgebraicType::U64,
+            ])));
+            let mut table = Table::new(
+                schema.clone(),
+                SquashedOffset::COMMITTED_STATE,
+                storage.pages().clone(),
+                policy,
+            );
+            let pointer = table
+                .insert(storage.blobs(), &product![42u64])
+                .unwrap()
+                .1
+                .into_pointer();
+            assert_eq!(budget.usage().accounted_bytes(), page_bytes);
+            assert_eq!(
+                matches!(
+                    table
+                        .inner
+                        .pages
+                        .get_page(pointer.page_index())
+                        .unwrap()
+                        .unwrap(),
+                    PageRef::Resident(_)
+                ),
+                policy == PageEvictionPolicy::NeverEvict
+            );
+            let snapshot: Vec<_> = table
+                .iter_pages_with_hashes()
+                .map(|page| {
+                    let (_, page) = page.unwrap().unwrap();
+                    bsatn::to_vec(&*page.read()).unwrap()
+                })
+                .collect();
+            let mut other = Table::new(
+                schema.clone(),
+                SquashedOffset::COMMITTED_STATE,
+                storage.pages().clone(),
+                policy,
+            );
+            assert!(other.insert(storage.blobs(), &product![43u64]).is_err());
+            assert_eq!(other.num_rows(), 0);
+            table
+                .delete(storage.blobs(), pointer, |row| row.to_product_value())
+                .unwrap()
+                .unwrap();
+            assert_eq!(budget.usage().accounted_bytes(), 0);
+            other.insert(storage.blobs(), &product![43u64]).unwrap();
+            drop(other);
+            let mut restored = Table::new(
+                schema,
+                SquashedOffset::COMMITTED_STATE,
+                storage.pages().clone(),
+                policy,
+            );
+            let pool = crate::page_pool::PagePool::new_for_test();
+            let pages = snapshot
+                .iter()
+                .map(|bytes| Some(pool.take_deserialize_from(bytes).unwrap()))
+                .collect();
+            // SAFETY: The snapshot and restored table have identical schemas.
+            unsafe {
+                restored.set_pages(pages, storage.blobs()).unwrap();
+            }
+            assert_eq!(
+                restored
+                    .scan_rows(storage.blobs())
+                    .next()
+                    .unwrap()
+                    .unwrap()
+                    .to_product_value(),
+                product![42u64]
+            );
+            assert_eq!(budget.usage().accounted_bytes(), page_bytes);
+            drop(restored);
+            assert_eq!(budget.usage().accounted_bytes(), 0);
+        }
+    }
+
+    #[test]
+    fn resident_cache_reuses_pages_and_releases_its_budget_on_drop() {
+        use crate::tiered::{ByteBudget, TieredDatabaseStorage, TieredStorageConfig};
+        let budget = ByteBudget::unlimited();
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let storage = TieredDatabaseStorage::new(config);
+        let schema = Arc::new(TableSchema::from_product_type(ProductType::from([
+            AlgebraicType::U64,
+        ])));
+        let mut first = Table::new(
+            schema.clone(),
+            SquashedOffset::TX_STATE,
+            storage.pages().clone(),
+            PageEvictionPolicy::NeverEvict,
+        );
+        let pointer = first
+            .insert(storage.blobs(), &product![42u64])
+            .unwrap()
+            .1
+            .into_pointer();
+        let first_address = first
+            .inner
+            .pages
+            .get_page(pointer.page_index())
+            .unwrap()
+            .unwrap()
+            .with_page(|page| page as *const Page);
+        drop(first);
+        assert_eq!(
+            budget.usage().accounted_bytes(),
+            mem::size_of::<Page>() as u64
+        );
+        let mut second = Table::new(
+            schema,
+            SquashedOffset::TX_STATE,
+            storage.pages().clone(),
+            PageEvictionPolicy::NeverEvict,
+        );
+        let row = second.insert(storage.blobs(), &product![43u64]).unwrap().1;
+        let second_address = row.table.pages.resident_page(row.pointer.page_index()) as *const Page;
+        assert_eq!(first_address, second_address);
+        assert_eq!(row.to_product_value(), product![43u64]);
+        drop(row);
+        assert_eq!(second.num_rows(), 1);
+        drop(second);
+        drop(storage);
+        assert_eq!(budget.usage().accounted_bytes(), 0);
+    }
+
+    #[test]
+    fn resident_cache_uses_the_configured_page_pool_capacity() {
+        use crate::tiered::{ByteBudget, TieredDatabaseStorage, TieredStorageConfig};
+        let page_bytes = mem::size_of::<Page>() as u64;
+        let pool = crate::page_pool::PagePool::new(Some(mem::size_of::<Page>() * 2));
+        let budget = ByteBudget::unlimited();
+        let mut config = TieredStorageConfig::new_for_test();
+        config.page_pool = pool.clone();
+        config.resident_budget = budget.clone();
+        let storage = TieredDatabaseStorage::new(config);
+        let schema = Arc::new(TableSchema::from_product_type(ProductType::from([
+            AlgebraicType::U64,
+        ])));
+        let new_table = || {
+            Table::new(
+                schema.clone(),
+                SquashedOffset::TX_STATE,
+                storage.pages().clone(),
+                PageEvictionPolicy::NeverEvict,
+            )
+        };
+        let mut tables: Vec<_> = (0..3).map(|_| new_table()).collect();
+        for table in &mut tables {
+            table.insert(storage.blobs(), &product![42u64]).unwrap();
+        }
+        assert_eq!(pool.new_allocated_count(), 3);
+        assert_eq!(budget.usage().accounted_bytes(), page_bytes * 3);
+        drop(tables);
+        assert_eq!(budget.usage().accounted_bytes(), page_bytes * 2);
+        let mut tables: Vec<_> = (0..2).map(|_| new_table()).collect();
+        for table in &mut tables {
+            let row = table.insert(storage.blobs(), &product![43u64]).unwrap().1;
+            assert_eq!(row.to_product_value(), product![43u64]);
+        }
+        assert_eq!(pool.new_allocated_count(), 3);
+        drop(tables);
+        drop(storage);
+        assert_eq!(budget.usage().accounted_bytes(), 0);
+    }
+
+    #[test]
+    fn prepared_fixed_inserts_for_both_page_backends() {
+        use crate::tiered::{TieredDatabaseStorage, TieredStorageConfig};
+        for source_policy in [
+            PageEvictionPolicy::NeverEvict,
+            PageEvictionPolicy::Evictable,
+        ] {
+            for destination_policy in [
+                PageEvictionPolicy::NeverEvict,
+                PageEvictionPolicy::Evictable,
+            ] {
+                let storage = TieredDatabaseStorage::new(TieredStorageConfig::new_for_test());
+                let schema = Arc::new(TableSchema::from_product_type(ProductType::from([
+                    AlgebraicType::U64,
+                ])));
+                let mut source = Table::new(
+                    schema.clone(),
+                    SquashedOffset::TX_STATE,
+                    storage.pages().clone(),
+                    source_policy,
+                );
+                let mut destination = Table::new(
+                    schema,
+                    SquashedOffset::COMMITTED_STATE,
+                    storage.pages().clone(),
+                    destination_policy,
+                );
+                source.insert(storage.blobs(), &product![42u64]).unwrap();
+                source.insert(storage.blobs(), &product![43u64]).unwrap();
+                let inserts = source
+                    .scan_rows(storage.blobs())
+                    .map(|row| Ok(destination.prepare_insert(row.unwrap())));
+                let prepared = destination
+                    .prepare_commit(storage.blobs(), [], inserts)
+                    .unwrap();
+                drop(source);
+                let (deleted, inserted) = prepared
+                    .apply(&mut destination, storage.blobs())
+                    .into_parts();
+                assert!(deleted.is_empty());
+                assert_eq!(inserted.len(), 2);
+                assert_eq!(destination.num_rows(), 2);
+                let values: Vec<_> = destination
+                    .scan_rows(storage.blobs())
+                    .map(|row| row.unwrap().to_product_value())
+                    .collect();
+                assert!(values.contains(&product![42u64]));
+                assert!(values.contains(&product![43u64]));
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_prepare_failure_preserves_rows_for_both_backends() {
+        use crate::tiered::{
+            ByteBudget, ByteBudgetConfig, TieredDatabaseStorage, TieredStorageConfig,
+        };
+        let page_bytes = mem::size_of::<Page>() as u64;
+        for policy in [
+            PageEvictionPolicy::NeverEvict,
+            PageEvictionPolicy::Evictable,
+        ] {
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: page_bytes * 2,
+                soft_limit_bytes: page_bytes * 2,
+                hard_limit_bytes: page_bytes * 2,
+            })
+            .unwrap();
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = budget.clone();
+            let storage = TieredDatabaseStorage::new(config);
+            let schema = Arc::new(TableSchema::from_product_type(ProductType::from([
+                AlgebraicType::U64,
+            ])));
+            let mut destination = Table::new(
+                schema.clone(),
+                SquashedOffset::COMMITTED_STATE,
+                storage.pages().clone(),
+                policy,
+            );
+            let pointer = destination
+                .insert(storage.blobs(), &product![0u64])
+                .unwrap()
+                .1
+                .into_pointer();
+            let row_size = destination.row_size();
+            for value in 1..=crate::indexes::max_rows_in_page(row_size) as u64 {
+                if destination
+                    .inner
+                    .pages
+                    .get_page(pointer.page_index())
+                    .unwrap()
+                    .unwrap()
+                    .read()
+                    .is_full(row_size)
+                {
+                    break;
+                }
+                destination
+                    .insert(storage.blobs(), &product![value])
+                    .unwrap();
+            }
+            assert_eq!(destination.num_pages(), 1);
+            assert!(destination
+                .inner
+                .pages
+                .get_page(pointer.page_index())
+                .unwrap()
+                .unwrap()
+                .read()
+                .is_full(row_size));
+            let count = destination.num_rows();
+            let mut source = Table::new(
+                schema,
+                SquashedOffset::TX_STATE,
+                storage.pages().clone(),
+                policy,
+            );
+            source
+                .insert(storage.blobs(), &product![100000u64])
+                .unwrap();
+            source
+                .insert(storage.blobs(), &product![100001u64])
+                .unwrap();
+            let inserts = source
+                .scan_rows(storage.blobs())
+                .map(|row| Ok(destination.prepare_insert(row.unwrap())));
+            assert!(destination
+                .prepare_commit(storage.blobs(), [pointer], inserts)
+                .is_err());
+            assert_eq!(destination.num_rows(), count);
+            assert_eq!(
+                destination
+                    .get_row_ref(storage.blobs(), pointer)
+                    .unwrap()
+                    .unwrap()
+                    .to_product_value(),
+                product![0u64]
+            );
+            assert_eq!(budget.usage().accounted_bytes(), page_bytes * 2);
+        }
     }
 
     #[test]

@@ -542,6 +542,7 @@ where
 {
     type Item = std::result::Result<T, F>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item| item.map_err(F::from))
     }

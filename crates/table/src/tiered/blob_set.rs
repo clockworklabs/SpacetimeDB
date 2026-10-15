@@ -119,6 +119,7 @@ impl BlobSet {
             });
 
             if let Some(blob) = maybe_resident {
+<<<<<<< HEAD
                 let key = self.storage.write(Object::from(&blob))?;
                 assert_eq!(
                     key.as_blob_hash().expect("storage key to be a blob hash"),
@@ -411,10 +412,9 @@ impl BlobSet {
 impl MemoryUsage for BlobSet {
     fn heap_usage(&self) -> usize {
         let arc = std::mem::size_of::<usize>() * 2;
-        (3 * arc)
+        (2 * arc)
             + std::mem::size_of::<mem::ResidentObjects>()
             + std::mem::size_of::<TieredStorage>()
-            + std::mem::size_of::<RwLock<ObjectMap<BlobEntry>>>()
             + std::mem::size_of::<Mutex<Vec<BlobEvictionCandidate>>>()
             + (self.physical_bytes_used_by_blobs() as usize)
     }
@@ -504,9 +504,9 @@ impl Deref for BlobHandle {
 /// Essentially just a set of [BlobHandle]s that guarantees that those blobs are
 /// resident. Used to perform operations such as equality checking that cannot
 /// be fallible due to faults.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct BlobReadSet {
-    inner: SmallHashMap<BlobHashWrapper, BlobHandle, 4, 16>,
+    inner: Option<Arc<SmallHashMap<BlobHash, BlobHandle, 4, 16>>>,
 }
 
 impl BlobReadSet {
@@ -527,7 +527,9 @@ impl BlobReadSet {
             inner.insert(blob_hash, blob);
         }
 
-        Ok(Self { inner })
+        Ok(Self {
+            inner: (!inner.is_empty()).then(|| Arc::new(inner)),
+        })
     }
 
     /// Create an empty read set.
@@ -537,8 +539,8 @@ impl BlobReadSet {
 
     /// Get the blob with content address `hash`, or `None` if it is not in the
     /// read set.
-    pub fn get(&self, hash: &BlobHashWrapper) -> Option<&BlobHandle> {
-        self.inner.get(hash)
+    pub fn get(&self, hash: &BlobHash) -> Option<&BlobHandle> {
+        self.inner.as_ref()?.get(hash)
     }
 
     /// Iterator over all entries in the read set.
@@ -689,6 +691,5 @@ mod tests {
             let _first_handle = set.insert(&first).unwrap();
             prop_assert!(matches!(set.insert(&second), Err(BlobError::MemoryLimitExceeded(_))));
         }
-
     }
 }

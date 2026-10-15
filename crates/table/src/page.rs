@@ -1520,6 +1520,19 @@ impl Page {
         unsafe { self.iter_var_len_object(first_granule) }.map(|g| g.data())
     }
 
+    /// Free a row whose layout contains no variable-length members.
+    ///
+    /// # Safety
+    /// `fixed_row` must identify a live row of `fixed_row_size` bytes, and that
+    /// layout must contain no variable-length members or external blob references.
+    #[inline]
+    pub(crate) unsafe fn delete_fixed_row(&mut self, fixed_row: PageOffset, fixed_row_size: Size) {
+        self.header.unmodified_hash = None;
+        let (mut fixed, _) = self.split_fixed_var_mut();
+        // SAFETY: The caller guarantees that the row is live and has this size.
+        unsafe { fixed.free(fixed_row, fixed_row_size) };
+    }
+
     /// Free a row, marking its fixed-len and var-len storage granules as available for re-use.
     ///
     /// This call will clear the unmodified hash.
