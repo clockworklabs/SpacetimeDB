@@ -12,12 +12,6 @@ import {
 import * as v from 'valibot';
 import { install } from './install.js';
 
-type WebhookEventStatusBuilder = SumBuilder<
-  Record<
-    'Received' | 'Processed' | 'Ignored' | 'Failed',
-    ReturnType<typeof t.unit>
-  >
->;
 // Internal ingest lifecycle for webhook rows. Received = stored. Processed =
 // applied to the data model. Ignored = unhandled event type or an event older
 // than the stored state. Failed = a handled event type whose payload could not
@@ -28,6 +22,12 @@ type WebhookEventStatusBuilder = SumBuilder<
 // delivered by webhooks. An open string preserves new provider states.
 // Stripe's TS types lift them to literal unions on the SDK side; consumers
 // can do `subscription.status === 'active'` directly against the wire value.
+type WebhookEventStatusBuilder = SumBuilder<
+  Record<
+    'Received' | 'Processed' | 'Ignored' | 'Failed',
+    ReturnType<typeof t.unit>
+  >
+>;
 export const webhookEventStatus: WebhookEventStatusBuilder = t.enum(
   'WebhookEventStatus',
   {
@@ -238,6 +238,7 @@ export const stripeWebhookEventTable: ReturnType<
   typeof table<typeof stripeWebhookEventRow, typeof stripeWebhookEventOptions>
 > = table(stripeWebhookEventOptions, stripeWebhookEventRow);
 
+// Schedules the retention sweep of stripe_webhook_event.
 const stripeWebhookPruneTickOptions = {
   name: 'stripe_webhook_prune_tick',
   public: false,
@@ -246,7 +247,6 @@ const stripeWebhookPruneTickColumns = {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 };
-// Schedules the retention sweep of stripe_webhook_event.
 export const stripeWebhookPruneTickTable: ReturnType<
   typeof table<
     typeof stripeWebhookPruneTickColumns,

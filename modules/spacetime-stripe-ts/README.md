@@ -13,7 +13,7 @@ user can see.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/stripe spacetimedb@^2.12.0
+npm install @spacetimedb/stripe
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

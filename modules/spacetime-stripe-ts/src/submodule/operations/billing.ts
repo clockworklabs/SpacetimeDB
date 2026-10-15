@@ -180,8 +180,8 @@ export const getRemoteCheckoutSession: ProcedureExport<
   }
 );
 
-const getWebhookEventCountResult = t.i64();
 // Cheap count of stripe_webhook_event rows; exposes the metric without leaking payloads.
+const getWebhookEventCountResult = t.i64();
 export const getWebhookEventCount: ProcedureExport<
   typeof spacetimedb.schemaType,
   {},
