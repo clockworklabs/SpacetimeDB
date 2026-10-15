@@ -4,22 +4,19 @@ Run commands in temporary Daytona sandboxes from your SpacetimeDB application.
 Daytona provides the Linux environment. This submodule manages sandbox requests,
 tracks command results, and limits how many sandboxes each owner can use.
 
-The [example app](./example/README.md) lets you create a sandbox, run commands,
+The [example app](https://github.com/clockworklabs/SpacetimeDB/blob/master/modules/spacetime-daytona-ts/example/README.md) lets you create a sandbox, run commands,
 and watch the results in your browser. Creating a sandbox can use paid Daytona
 credits.
 
 ## Setup
 
-This package is not yet published. Use it within this repository with the
-workspace SDK and matching SpacetimeDB CLI and server built from this checkout.
-
-Add `@spacetimedb/daytona` and `spacetimedb` to your host module's dependencies
-with version `workspace:*`. Build the SDK from the repository root:
+Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-pnpm install
-pnpm --filter spacetimedb build
+npm install @spacetimedb/daytona spacetimedb@^2.12.0
 ```
+
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 You need a Daytona API key with sandbox management and execution access. Set
 `DAYTONA_API_KEY` in the shell used to publish the host module. Keep the key on
@@ -88,7 +85,7 @@ authenticated caller. Do not accept an owner value supplied by the browser.
 
 These methods record requests in the reducer's transaction. The scheduled
 procedure sends them to Daytona after commit. See the
-[example module](./example/spacetimedb/src/index.ts) for reducers with access
+[example module](https://github.com/clockworklabs/SpacetimeDB/blob/master/modules/spacetime-daytona-ts/example/spacetimedb/src/index.ts) for reducers with access
 checks and views that return each caller's records.
 
 Generate a request key once per user action. Reuse it if the client repeats that
@@ -115,7 +112,7 @@ Call `getCommandOutput(ctx, apiKey, { owner, executionId })` from an authorized
 host procedure to read a completed command's combined output. Derive `owner`
 from the caller, as with reducers. The method verifies sandbox ownership before
 contacting Daytona and returns `{ output, truncated }`. It does not run commands
-or change their state. See the [example procedure](./example/spacetimedb/src/index.ts).
+or change their state. See the [example procedure](https://github.com/clockworklabs/SpacetimeDB/blob/master/modules/spacetime-daytona-ts/example/spacetimedb/src/index.ts).
 
 The returned text is limited to 16,384 characters. This limits the value returned
 to the caller; the provider's full log response is still downloaded. Output is
@@ -179,4 +176,6 @@ data afterward. It does not create a paid Daytona sandbox.
 Live provider verification is separate: follow the example walkthrough, check
 successful and failed scripts, delete the sandbox, and confirm its removal in Daytona.
 
-Licensed under Apache-2.0.
+## License
+
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).
