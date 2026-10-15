@@ -10,16 +10,17 @@ changes.
 
 ## Requirements
 
-- A SpacetimeDB CLI and server compatible with the host SDK
-- The `spacetimedb` npm version required by this package's peer dependency
+- SpacetimeDB SDK, CLI, and server 2.12 or later
 - Host support for the `spacetime:sys@2.0` volatile procedure used by failure
   recovery
 - Node.js 20 or later for package tooling
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/cron spacetimedb
+npm install @spacetimedb/cron
 ```
 
 ## Quick start
@@ -78,7 +79,7 @@ scheduled run. Failure recovery is best effort; see [Execution model](#execution
 for crash behavior. `maxFailures: 3` disables the job after three consecutive
 recorded failures. The `cronJobs` view lets clients subscribe to job status.
 
-See the [browser example](./example/) to change schedules and try a cleanup
+See the [browser example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-cron-ts/example) to change schedules and try a cleanup
 job with arguments.
 
 ## API
@@ -344,4 +345,4 @@ pnpm run test:module:local
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](./LICENSE.txt).
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).
