@@ -2905,13 +2905,16 @@ impl ModuleHost {
         Ok(())
     }
 
-    pub(super) async fn finish_idc_message(&self, msg: super::idc_actor::DeliveredMessage) -> anyhow::Result<()> {
+    pub(super) async fn run_idc_callback_and_cleanup(
+        &self,
+        msg: super::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
         call_instance!(
             self,
             "IDC result",
             msg,
-            |msg, inst| inst.finish_idc_message(msg),
-            |msg, inst| inst.finish_idc_message(msg).await,
+            |msg, inst| inst.run_idc_callback_and_cleanup(msg),
+            |msg, inst| inst.run_idc_callback_and_cleanup(msg).await,
         )?
     }
 
