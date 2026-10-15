@@ -182,7 +182,7 @@ Reference the library with a normal `ProjectReference`, or a package containing 
 </ItemGroup>
 ```
 
-Referenced module assemblies, including transitive dependencies, are discovered automatically. Without a namespace attribute, their tables and functions register once in the default `public` scope with flat accessors. To place a dependency in a named namespace, add an assembly attribute to the root:
+Referenced module assemblies, including transitive dependencies, are discovered automatically. Assemblies that are not the target of any namespace attribute register once in the root's default `public` scope with flat accessors. Explicitly mounted assemblies register at their declared locations. To place a dependency in a named namespace, add an assembly attribute to the module that includes it:
 
 ```csharp
 // Root module's Lib.cs, before any namespace or type declarations
@@ -193,7 +193,7 @@ using SpacetimeDB;
 
 `typeof(AuthLib.Marker)` identifies the dependency assembly. `Accessor = "MyAuth"` creates C# members such as `ctx.Db.MyAuth.User`. `Name = "auth_data"` pins the canonical database namespace, so SQL uses `auth_data.auth_users`.
 
-When `Name` is omitted, the root module's case-conversion policy derives it from `Accessor`: under the default `SnakeCase` policy, `MyAuth` becomes `my_auth`. An explicit `Name` is used verbatim. Named dependencies retain their own table/function naming policy; dependencies in `public` inherit the root's policy and cannot explicitly declare a conflicting one.
+When `Name` is omitted, the parent module's case-conversion policy derives it from `Accessor`: under the default `SnakeCase` policy, `MyAuth` becomes `my_auth`. An explicit `Name` is used verbatim. Named dependencies retain their own table/function naming policy; dependencies in `public` inherit the containing scope's policy and cannot explicitly declare a conflicting one.
 
 :::warning Changing a canonical namespace re-creates its tables
 The canonical namespace is part of each table's identity. Changing it removes the old namespace's tables and creates empty tables in the new namespace. To change only C# accessor aliases, keep `Name` fixed while changing `Accessor`.
@@ -285,18 +285,20 @@ For reducers registered through the submodule's own schema (via `schema.reducer(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Call the library's reducer or helper as an ordinary C# method. Compiled library helpers resolve their own table accessors and share the caller's context and transaction:
+Call the library's reducer or helper as an ordinary C# method, using `ctx.As.MyAuth` to select the mounted instance:
 
 ```csharp
 [Reducer]
 public static void AddAuthUser(ReducerContext ctx, uint id)
 {
-    AuthLib.Functions.Add(ctx, id);
-    Log.Info($"Auth users: {AuthLib.Functions.Count(ctx)}");
+    AuthLib.Functions.Add(ctx.As.MyAuth, id);
+    Log.Info($"Auth users: {AuthLib.Functions.Count(ctx.As.MyAuth)}");
 }
 ```
 
-These calls run in the root reducer's transaction. If the reducer fails, its writes to both root and submodule tables roll back together.
+`ctx.As.MyAuth` supplies a `ReducerContext` for that instance. Library code still uses flat accessors such as `ctx.Db.User`. Selection preserves the caller's sender, connection, timestamp, and shared state without changing the original context. These calls run in the root reducer's transaction. If the reducer fails, its writes to both root and submodule tables roll back together.
+
+Passing `ctx` directly remains supported when the library's instance is unambiguous. If multiple instances are accessible, select one explicitly with `ctx.As`; ambiguous access throws an `InvalidOperationException`. Host-dispatched functions receive the appropriate instance context automatically.
 
 </TabItem>
 </Tabs>
@@ -332,18 +334,18 @@ export const transactAndCount = spacetimedb.procedure(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Pass the procedure context to a library procedure. Inside `WithTx`, use helpers accepting `ProcedureTxContext`, such as the `Insert` overload above:
+Use `ctx.As.MyAuth` to select the instance for a library procedure. Inside `WithTx`, select with `tx.As.MyAuth` and use helpers accepting `ProcedureTxContext`, such as the `Insert` overload above:
 
 ```csharp
 [Procedure]
 public static ulong CountAuthUsers(ProcedureContext ctx) =>
-    AuthLib.Functions.CountUsers(ctx);
+    AuthLib.Functions.CountUsers(ctx.As.MyAuth);
 
 [Procedure]
 public static ulong AddAndCountAuthUsers(ProcedureContext ctx, uint id) =>
     ctx.WithTx(tx =>
     {
-        AuthLib.Functions.Insert(tx, id);
+        AuthLib.Functions.Insert(tx.As.MyAuth, id);
         return tx.Db.MyAuth.User.Count;
     });
 ```
@@ -376,7 +378,7 @@ export const router = spacetimedb.httpRouter(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Pass the handler context directly to a library handler. Declare the route in the root, because routes from named dependencies are ignored:
+Use `ctx.As.MyAuth` to select the instance for a library handler. Declare the route in the root, because routes from named dependencies are ignored:
 
 ```csharp
 // Add to AuthLib.Functions. Handler transactions are an unstable API.
@@ -391,7 +393,7 @@ public static HttpResponse AuthCount(HandlerContext ctx, HttpRequest request) =>
 // Add to the root module's partial functions class.
 [HttpHandler]
 public static HttpResponse RootAuthCount(HandlerContext ctx, HttpRequest request) =>
-    AuthLib.Functions.AuthCount(ctx, request);
+    AuthLib.Functions.AuthCount(ctx.As.MyAuth, request);
 
 [HttpRouter]
 public static Router Routes() =>
@@ -403,7 +405,7 @@ public static Router Routes() =>
 
 ## Multiple and Nested Submodules
 
-You can include multiple distinct submodules under different namespaces. Tables and functions in separate namespaces can use the same names. Nested composition support differs by language.
+You can include multiple submodules under different namespaces. Tables and functions in separate namespaces can use the same names. A submodule can itself include other submodules.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -443,9 +445,77 @@ Declare a namespace for each dependency assembly in the root:
 [assembly: SpacetimeDB.Namespace(typeof(PaymentLib.Marker), Accessor = "Payments")]
 ```
 
-The root uses `ctx.Db.MyAuth.User` and `ctx.Db.Payments.<table>`. **Nested namespace mounts are not supported in C#.** A dependency that declares its own namespace mounts cannot be composed, even in `public`. Only the root chooses placement, and each assembly can be included only once.
+The root uses `ctx.Db.MyAuth.User` and `ctx.Db.Payments.<table>`. Each module can declare its own child mounts. The same assembly can be mounted more than once, with independent tables and function instances at each path.
 
-Named C# dependencies cannot define lifecycle reducers (`Init`, `ClientConnected`, `ClientDisconnected`). Such reducers remain valid when the dependency is published independently or registered in `public`, subject to the usual lifecycle uniqueness checks.
+For example, two libraries can each mount their own instance of `AuthLib`:
+
+```csharp
+// StoreLib/Lib.cs (references AuthLib)
+using SpacetimeDB;
+[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+namespace StoreLib;
+public class Marker { }
+```
+
+```csharp
+// ForumLib/Lib.cs (references AuthLib)
+using SpacetimeDB;
+[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+namespace ForumLib;
+public class Marker { }
+```
+
+```csharp
+// Root module (references StoreLib and ForumLib)
+using SpacetimeDB;
+[assembly: Namespace(typeof(StoreLib.Marker), Accessor = "Store")]
+[assembly: Namespace(typeof(ForumLib.Marker), Accessor = "Forum")]
+
+public static partial class Functions
+{
+    [Reducer]
+    public static void AddUsers(ReducerContext ctx, uint id)
+    {
+        AuthLib.Functions.Add(ctx.As.Store.MyAuth, id);
+        AuthLib.Functions.Add(ctx.As.Forum.MyAuth, id);
+    }
+
+    [View(Accessor = "StoreUsers", Public = true)]
+    public static IQuery<AuthLib.User> StoreUsers(AnonymousViewContext ctx) =>
+        ctx.From.Store.MyAuth.User();
+}
+```
+
+The two inserts above write to separate tables, `store.auth_data.auth_users` and `forum.auth_data.auth_users`. The root accesses them through `ctx.Db.Store.MyAuth.User` and `ctx.Db.Forum.MyAuth.User`. Code inside either parent selects its own child with `ctx.As.MyAuth`. View helpers can also receive a selected context; their flat `ctx.From.User()` queries then target that instance.
+
+Generated client bindings preserve the full path:
+
+```csharp
+conn.SubscriptionBuilder()
+    .AddQuery(q => q.From.Store.MyAuth.User())
+    .AddQuery(q => q.From.Forum.MyAuth.User())
+    .Subscribe();
+
+conn.Reducers.Store.MyAuth.Add(10);
+
+// After the subscription has been applied, read each instance's cache.
+var storeUser = conn.Db.Store.MyAuth.User.Id.Find(10);
+var forumUser = conn.Db.Forum.MyAuth.User.Id.Find(10);
+```
+
+You can also mount the same assembly twice directly in one parent by declaring two `Namespace` attributes with distinct accessors and canonical names. `Accessor = "public"` merges a dependency into its containing scope without adding a path segment; its named children remain accessible under that scope.
+
+For immediate scheduling, pass a selected context to the generated context-aware overload so it targets the intended instance:
+
+```csharp
+// Inside a root HTTP handler. Immediate scheduling is an unstable API.
+#pragma warning disable STDB_UNSTABLE
+AuthLib.Functions.VolatileNonatomicScheduleImmediateAdd(ctx.As.Store.MyAuth, 10u);
+AuthLib.Functions.VolatileNonatomicScheduleImmediateCountUsers(ctx.As.Forum.MyAuth);
+#pragma warning restore STDB_UNSTABLE
+```
+
+Dependencies in named scopes cannot define lifecycle reducers (`Init`, `ClientConnected`, `ClientDisconnected`). Such reducers remain valid when the dependency is published independently or contributes to the root's `public` scope, subject to the usual lifecycle uniqueness checks. A `public` dependency inside a named submodule still belongs to that named scope.
 
 </TabItem>
 </Tabs>
@@ -613,14 +683,14 @@ Both parts of the wire name are canonical: the namespace prefix and the function
 
 ## Namespace Name Rules
 
-Both the accessor name and the canonical name must be valid SpacetimeDB identifiers: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 UTF-8 bytes, case-insensitive for resolution. Two submodules cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered under the default policy. A submodule can be registered under at most one namespace per consumer module.
+Each accessor and canonical namespace segment must be a valid SpacetimeDB identifier: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 UTF-8 bytes, case-insensitive for resolution. Two submodules in the same parent scope cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered there under the default policy. Different parent scopes can reuse the same child namespace name.
 
 The reserved namespaces `st`, `spacetimedb`, and names starting with `pg_` cannot be used. `public` is the default scope, not a named submodule namespace.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-The schema key is the accessor name. The canonical name is derived from it unless explicitly set with `name`.
+The schema key is the accessor name. The canonical name is derived from it unless explicitly set with `name`. A submodule can be registered under at most one namespace per consumer module.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
