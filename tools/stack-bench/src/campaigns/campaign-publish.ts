@@ -22,10 +22,10 @@ const MAX_BYTES = 10 * 1024 * 1024;
 export function createCampaignUpload(directory: string, suite: string) {
   if (!/^[a-z0-9][a-z0-9.-]{0,99}$/.test(suite))
     throw new Error('publish requires a valid suite slug');
-  const current = readCampaignState(directory, { requireCurrentInputs: false });
   if (readCampaignLock(directory))
     throw new Error('cannot publish while campaign control is active');
-  const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const current = readCampaignState(directory, { requireCurrentInputs: false });
+  const { plan, state } = current;
   if (
     plan.state !== 'frozen' ||
     plan.definition.mode.id !== 'dependency' ||
@@ -63,7 +63,7 @@ export function createCampaignUpload(directory: string, suite: string) {
   const progression = compileProgressionInput(
     dependencyRuntimeDefinition(plan.featureCatalog, plan.dependencyPolicy)
   );
-  const attempts = report.attempts.map((attempt, index) => {
+  const attempts = report.attempts.map(attempt => {
     const execution = attempt.executions.at(-1)!;
     if (
       !['completed', 'invalid'].includes(attempt.status) ||
@@ -76,9 +76,12 @@ export function createCampaignUpload(directory: string, suite: string) {
     let featuresPassed: number | null = null;
     const featuresTotal = progression.definition.nodes.length;
     if (!invalid) {
+      // The report orders attempts for reading; the run record is found by attempt id.
+      const recorded = state.attempts.find(item => item.plan.id === attempt.id);
+      if (!recorded) throw new Error(`attempt ${attempt.id} has no campaign state`);
       const output = campaignChildPath(
         directory,
-        state.attempts[index]!.executions.at(-1)!.output,
+        recorded.executions.at(-1)!.output,
         'campaign execution'
       );
       const stored = readProgressionState(join(output, ARTIFACT_FILE.progressionState), {
