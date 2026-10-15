@@ -16,7 +16,7 @@ up to 16,384 characters, including errors.
 - A Daytona API key with sandbox management and execution access, and access to
   the `daytona-small` snapshot. The snapshot must contain `python3` and POSIX `sh`.
 
-The example uses the unpublished submodule from this workspace.
+The example uses the submodule and SDK from this workspace.
 
 ## Start
 

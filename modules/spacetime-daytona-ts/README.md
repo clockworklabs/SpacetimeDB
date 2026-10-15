@@ -13,7 +13,7 @@ credits.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/daytona spacetimedb@^2.12.0
+npm install @spacetimedb/daytona
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

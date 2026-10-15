@@ -36,6 +36,16 @@
     "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
     "directory": "modules/spacetime-daytona-ts"
   },
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-daytona-ts#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "keywords": [
+    "spacetimedb",
+    "daytona",
+    "sandbox",
+    "typescript"
+  ],
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
