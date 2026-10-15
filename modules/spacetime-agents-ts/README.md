@@ -157,7 +157,8 @@ assistant message contains only `agents.provider_error:<kind>`.
 
 Thread locks prevent two runs on one thread. A lock is released when the run
 ends, and the scheduled sweeper removes locks older than the configured
-threshold.
+threshold. A cleared or expired run stops at its next transaction and cannot
+change a replacement run's lock.
 
 ## Administration
 
@@ -201,6 +202,8 @@ results above 64 KiB. Agent definitions validate turns, history, token, retry,
 and RAG limits during initialization.
 
 Tools run inside the host transaction, so a tool can read the host's tables.
+If a tool throws or returns an invalid result, the current turn rolls back and
+the procedure fails. Earlier turns and the user's message remain stored.
 
 Package entrypoints:
 
@@ -220,6 +223,18 @@ pnpm run lint
 ```
 
 Unit tests use mocked provider responses.
+
+To check rollback and run replacement against a local server, publish the test
+fixture to a new disposable database:
+
+```bash
+spacetime publish --server local --module-path scripts/test-module agents-transaction-test
+spacetime call --server local agents-transaction-test test_rollback
+spacetime call --server local agents-transaction-test test_replaced_run
+spacetime delete --server local agents-transaction-test
+```
+
+The fixture uses fixed provider responses and makes no external API calls.
 
 ## License
 

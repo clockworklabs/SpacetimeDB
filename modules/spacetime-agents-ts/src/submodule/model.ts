@@ -85,6 +85,7 @@ export const threadLock = table(
     owner: t.string().index(),
     lockedAt: t.timestamp().index('btree'),
     cancelRequested: t.bool(),
+    runId: t.string().default(''),
   }
 );
 

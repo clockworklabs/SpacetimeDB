@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="libraries/**/*.cs" />
+    <ProjectReference Include="libraries/AuthLib/AuthLib.csproj" />
+    <ProjectReference Include="libraries/PublicLib/PublicLib.csproj" />
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0;TargetFrameworks=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;TargetFramework;TargetFrameworks" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" SetTargetFramework="TargetFramework=$(TargetFramework);TargetFrameworks=$(TargetFramework)" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

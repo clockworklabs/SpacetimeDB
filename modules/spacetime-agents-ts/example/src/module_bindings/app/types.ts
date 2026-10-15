@@ -112,6 +112,7 @@ export const ThreadLock = __t.object("ThreadLock", {
   owner: __t.string(),
   lockedAt: __t.timestamp(),
   cancelRequested: __t.bool(),
+  runId: __t.string(),
 });
 export type ThreadLock = __Infer<typeof ThreadLock>;
 

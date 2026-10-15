@@ -84,7 +84,8 @@ export function forgotPassword(
   if (!sendMail) throw new HttpError('mailer_not_configured', 500);
 
   const body = safeJson<ForgotBody>(req);
-  if (!body?.email) throw new HttpError('invalid_request', 400);
+  if (typeof body?.email !== 'string' || !body.email)
+    throw new HttpError('invalid_request', 400);
   const email = body.email.toLowerCase().trim();
   if (email.length === 0 || email.length > MAX_EMAIL_LEN)
     throw new HttpError('invalid_request', 400);
@@ -117,7 +118,12 @@ export function resetPassword(
   options: AuthHttpOptions
 ): SyncResponse {
   const body = safeJson<ResetBody>(req);
-  if (!body?.token || !body?.newPassword)
+  if (
+    typeof body?.token !== 'string' ||
+    !body.token ||
+    typeof body.newPassword !== 'string' ||
+    !body.newPassword
+  )
     throw new HttpError('invalid_request', 400);
   if (body.newPassword.length < MIN_PASSWORD_LEN)
     throw new HttpError('password_too_short', 400);

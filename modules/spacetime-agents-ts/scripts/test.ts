@@ -340,10 +340,15 @@ process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
     throw new Error('kaboom');
   });
   const d2 = makeAgentDispatch<unknown, { boom: typeof boom }>({ boom });
-  const r5 = d2.invoke({}, 'boom', '');
+  let toolThrew = false;
+  try {
+    d2.invoke({}, 'boom', '');
+  } catch {
+    toolThrew = true;
+  }
   assert(
-    r5.isError === true && r5.result === 'kaboom',
-    `tool throw becomes isError result`
+    toolThrew,
+    `tool exception escapes so the caller transaction rolls back`
   );
 
   const missing = invoke({}, 'echo', '{}');
