@@ -236,6 +236,7 @@ impl ModuleHandle {
                 None,
                 procedure,
                 FunctionArgs::Json(args_json.into()),
+                true,
             )
             .await;
         ret.result

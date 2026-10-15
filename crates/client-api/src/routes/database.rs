@@ -35,10 +35,11 @@ use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::{
     ClientConnectedError, DurabilityExited, DurableOffset, TransactionOffset, UpdateEnvironmentResult,
+    TRANSACTION_CONFIRMATION_TIMEOUT,
 };
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
-use spacetimedb::host::{ModuleHost, ReducerOutcome};
+use spacetimedb::host::{ModuleHost, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
@@ -160,6 +161,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Path(CallParams { reducer }): Path<CallParams>,
+    Query(params): Query<SqlQueryParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -168,6 +170,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     let caller_identity = auth.claims.identity;
 
     let args = FunctionArgs::Json(body);
+    let confirmed = params.confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS);
 
     let caller_auth: ConnectionAuthCtx = auth.into();
 
@@ -176,7 +179,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
         let result = match module
-            .call_reducer(
+            .call_reducer_with_offset(
                 caller_identity,
                 Some(connection_id),
                 None,
@@ -187,15 +190,21 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             )
             .await
         {
-            Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+            Ok(res) => Ok(CallResult::Reducer(
+                confirm_reducer_call(res, confirmed, module.durable_tx_offset()).await?,
+            )),
             Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
                 // Not a reducer — try procedure instead
-                match module
-                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
-                    .await
-                    .result
-                {
-                    Ok(res) => Ok(CallResult::Procedure(res)),
+                let ret = module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args, confirmed)
+                    .await;
+                match ret.result {
+                    Ok(res) => {
+                        if confirmed {
+                            confirm_call_offset(ret.tx_offset, module.durable_tx_offset()).await?;
+                        }
+                        Ok(CallResult::Procedure(res))
+                    }
                     Err(e) => Err(map_procedure_error(e, &reducer)),
                 }
             }
@@ -230,6 +239,43 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
+}
+
+/// If `confirmed`, waits for a committed reducer's transaction to be durable.
+async fn confirm_reducer_call(
+    res: ReducerCallResultWithTxOffset,
+    confirmed: bool,
+    durable: Option<DurableOffset>,
+) -> axum::response::Result<ReducerCallResult> {
+    if confirmed && matches!(res.result.outcome, ReducerOutcome::Committed) {
+        confirm_call_offset(Some(res.tx_offset), durable).await?;
+    }
+    Ok(res.result)
+}
+
+async fn confirm_call_offset(
+    offset: Option<spacetimedb::subscription::module_subscription_manager::TransactionOffset>,
+    durable: Option<spacetimedb::host::module_host::DurableOffset>,
+) -> axum::response::Result<()> {
+    if let (Some(offset), Some(mut durable)) = (offset, durable) {
+        timeout(TRANSACTION_CONFIRMATION_TIMEOUT, async {
+            let offset = offset
+                .await
+                .map_err(|_| log_and_500("transaction offset unavailable; outcome unknown"))?;
+            durable.wait_for(offset).await.map_err(|_| log_and_500(
+                "transaction completed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+            ))?;
+            Ok::<_, ErrorResponse>(())
+        })
+        .await
+        .map_err(|_| {
+            ErrorResponse::from((
+                StatusCode::GATEWAY_TIMEOUT,
+                "durability confirmation timed out; outcome unknown, do not retry without deduplication",
+            ))
+        })??;
+    }
+    Ok(())
 }
 #[derive(Deserialize)]
 pub struct HttpRouteParams {
@@ -598,10 +644,9 @@ fn extract_environment_error(mut error: &anyhow::Error) -> Option<axum::response
         } else {
             Err((StatusCode::BAD_REQUEST, error.to_string()).into())
         }
-    } else if let Some(error) = error.downcast_ref::<EnvironmentVersionConflict>() {
-        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
     } else {
-        return None;
+        let error = error.downcast_ref::<EnvironmentVersionConflict>()?;
+        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
     };
     Some(res)
 }
@@ -1932,6 +1977,68 @@ mod tests {
         drop(tx);
         let response = environment_publish_result(performed(rx)).await.into_response();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn reducer_call_reports_success_only_once_durable() {
+        use spacetimedb::energy::FunctionBudget;
+        use spacetimedb::subscription::module_subscription_manager::from_tx_offset;
+        use std::pin::pin;
+        use tokio::sync::watch;
+
+        let call = |outcome, tx_offset| ReducerCallResultWithTxOffset {
+            result: ReducerCallResult {
+                outcome,
+                execution_budget_used: FunctionBudget::ZERO,
+                execution_duration: Duration::ZERO,
+            },
+            tx_offset: from_tx_offset(tx_offset),
+        };
+        let (durable, rx) = watch::channel(None);
+
+        // A committed call doesn't return until its transaction is durable.
+        let mut res = pin!(confirm_reducer_call(
+            call(ReducerOutcome::Committed, 7),
+            true,
+            Some(rx.clone().into())
+        ));
+        assert!(futures::poll!(&mut res).is_pending());
+        durable.send_replace(Some(7));
+        assert!(res.await.is_ok());
+
+        // Unconfirmed and failed calls return without waiting.
+        for (outcome, confirmed) in [
+            (ReducerOutcome::Committed, false),
+            (ReducerOutcome::BudgetExceeded, true),
+        ] {
+            let res = pin!(confirm_reducer_call(
+                call(outcome, 8),
+                confirmed,
+                Some(rx.clone().into())
+            ));
+            assert!(matches!(futures::poll!(res), std::task::Poll::Ready(Ok(_))));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn call_confirmation_times_out_with_live_senders() {
+        use spacetimedb::subscription::module_subscription_manager::from_tx_offset;
+        use std::pin::pin;
+
+        let (_sender, pending_offset) = oneshot::channel();
+        let (_durable, rx) = tokio::sync::watch::channel(None);
+        for offset in [from_tx_offset(7), pending_offset] {
+            let mut confirmation = pin!(confirm_call_offset(Some(offset), Some(rx.clone().into())));
+            assert!(futures::poll!(&mut confirmation).is_pending());
+            tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT + Duration::from_millis(1)).await;
+            let std::task::Poll::Ready(Err(error)) = futures::poll!(confirmation) else {
+                panic!("confirmation must time out even while its senders are alive");
+            };
+            let response = Err::<(), _>(error).into_response();
+            assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+            let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+            assert!(std::str::from_utf8(&body).unwrap().contains("outcome unknown"));
+        }
     }
 
     #[tokio::test]

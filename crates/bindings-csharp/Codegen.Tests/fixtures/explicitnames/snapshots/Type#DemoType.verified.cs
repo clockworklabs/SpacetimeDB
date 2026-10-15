@@ -44,7 +44,7 @@ partial struct DemoType : System.IEquatable<DemoType>, SpacetimeDB.BSATN.IStruct
             registrar.RegisterType<DemoType>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new("A", ARW.GetAlgebraicType(registrar))
+                    new("A", ARW.GetAlgebraicType(registrar)),
                 }
             ));
 

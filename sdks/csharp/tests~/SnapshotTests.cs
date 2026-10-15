@@ -10,11 +10,22 @@ using Xunit;
 
 using U128 = SpacetimeDB.U128;
 
-public class SnapshotTests
+[Collection("SDK connections")]
+public class SnapshotTests : IDisposable
 {
+    private readonly ISpacetimeDBLogger previousLogger = Log.Current;
+    private readonly bool previousTesting = DbConnection.IsTesting;
+
+    public void Dispose()
+    {
+        Log.Current = previousLogger;
+        DbConnection.IsTesting = previousTesting;
+    }
+
     sealed class TestSubscriptionHandle : ISubscriptionHandle
     {
         public void OnApplied(ISubscriptionEventContext ctx) { }
+        public void RebindQuerySetId(QuerySetId id) { }
         public void OnError(IErrorContext ctx) { }
         public void OnEnded(ISubscriptionEventContext ctx) { }
     }

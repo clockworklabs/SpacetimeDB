@@ -518,6 +518,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction.
+    pub fn call_reducer_with_offset(&mut self, params: CallReducerParams) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset(None, params);
+        self.trapped = trapped;
+        res
+    }
+
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.common.clear_all_clients()
     }
@@ -760,8 +767,8 @@ impl InstanceCommon {
         match res {
             Err(e) => {
                 // TODO: Review log level after migration/user errors can be distinguished from internal database failures.
-                log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
-                system_logger.warn(&format!("Database update failed: {e}"));
+                log::warn!("Database update failed: {:#} @ {}", e, stdb.database_identity());
+                system_logger.warn(&format!("Database update failed: {e:#}"));
                 let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
@@ -946,7 +953,7 @@ impl InstanceCommon {
                 //     return Err(ProcedureCallError::OutOfEnergy);
                 // } else
                 {
-                    Err(ProcedureCallError::InternalError(format!("{err}")))
+                    Err(ProcedureCallError::InternalError(format!("{err:#}")))
                 }
             }
             Ok(return_val) => {
@@ -2077,6 +2084,7 @@ pub struct ProcedureOp {
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
+    pub confirmed_reads: bool,
 }
 
 impl ProcedureOp {
@@ -2093,6 +2101,7 @@ impl ProcedureOp {
                 caller_connection_id: params.caller_connection_id,
                 timestamp: params.timestamp,
                 arg_bytes: params.args.get_bsatn().clone(),
+                confirmed_reads: params.confirmed_reads,
             },
             def,
             owning,

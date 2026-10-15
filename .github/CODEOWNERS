@@ -6,18 +6,14 @@ LICENSE @cloutiertyler @jdetter
 LICENSE.txt @cloutiertyler @jdetter
 /licenses/ @cloutiertyler @jdetter
 
-/crates/client-api-messages/src/websocket.rs @centril @gefjon
-
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/commands/keynote-bench/ @joshua-spacetime @cloutiertyler @jdetter
 /tools/ci/commands/codeowners-check/ @cloutiertyler
+/tools/ci/commands/new-script-check/ @cloutiertyler
 /tools/upgrade-version/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/release/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/license-check/ @bfops @jdetter @cloutiertyler
 /.github/ @bfops @jdetter @cloutiertyler
 /.github/workflows/release.yml @bfops @jdetter @cloutiertyler @rekhoff
-
-/crates/sdk/examples/quickstart-chat/ @gefjon
-/modules/quickstart-chat/ @gefjon
 
 /.github/CODEOWNERS @cloutiertyler

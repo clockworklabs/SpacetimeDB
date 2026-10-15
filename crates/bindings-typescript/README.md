@@ -26,22 +26,31 @@ import { DbConnection, tables } from './module_bindings';
 const connection = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('MODULE_NAME')
-  .onDisconnect(() => {
-    console.log('disconnected');
+  .withAutomaticReconnect()
+  .onConnect((_connection, identity) => {
+    console.log('Connected:', identity.toHexString());
   })
-  .onConnectError(() => {
-    console.log('client_error');
+  .onAutomaticReconnect((_connection, identity) => {
+    console.log('Reconnected:', identity.toHexString());
   })
-  .onConnect((connection, identity, _token) => {
+  .onDisconnect((_ctx, error, attempt, delayMs) => {
     console.log(
-      'Connected to SpacetimeDB with identity:',
-      identity.toHexString()
+      attempt === undefined
+        ? 'Disconnected'
+        : `Retry ${attempt} in ${delayMs} ms`,
+      error
     );
-
-    connection.subscriptionBuilder().subscribe(tables.player);
+  })
+  .onConnectError((_ctx, error, attempt) => {
+    console.error(
+      attempt === undefined ? 'Connection failed' : 'Retry failed',
+      error
+    );
   })
   .withToken('TOKEN')
   .build();
+
+connection.subscriptionBuilder().subscribe(tables.player);
 ```
 
 If you need to disconnect the client:
@@ -49,6 +58,10 @@ If you need to disconnect the client:
 ```ts
 connection.disconnect();
 ```
+
+Automatic reconnection preserves the connection, cache, handles, and callbacks. Register subscriptions and row callbacks once after `build()` or inside `onConnect`, which fires once per connection object. Successful automatic reconnects fire `onAutomaticReconnect(connection, identity, token)` instead. This callback runs before subscription replay; wait for subscription `onApplied` callbacks when you need refreshed data. Cache reads remain available during outages. Initial connection failures are not retried by the core SDK.
+
+For expiring credentials, pass the initial token with `withToken` and add `withTokenProvider(() => auth.getAccessToken())`. The SDK asks for a fresh token before reconnecting when the retained token is near expiry. The provider must return a token for the same identity. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` to include refreshed credentials.
 
 Typically, you will use the SDK with types generated from SpacetimeDB module. For example, given a table named `Player` you can subscribe to player updates like this:
 

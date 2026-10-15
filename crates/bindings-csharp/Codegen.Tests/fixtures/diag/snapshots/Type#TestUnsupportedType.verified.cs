@@ -67,7 +67,7 @@ partial struct TestUnsupportedType
                             UnsupportedSystemTypeRW.GetAlgebraicType(registrar)
                         ),
                         new("UnresolvedType", UnresolvedTypeRW.GetAlgebraicType(registrar)),
-                        new("UnsupportedEnum", UnsupportedEnumRW.GetAlgebraicType(registrar))
+                        new("UnsupportedEnum", UnsupportedEnumRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
