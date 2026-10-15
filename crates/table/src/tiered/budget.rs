@@ -21,6 +21,10 @@ pub struct ByteBudget {
 }
 
 impl ByteBudget {
+    pub(super) fn is_unlimited(&self) -> bool {
+        self.config.hard_limit_bytes == u64::MAX
+    }
+
     pub fn new(config: ByteBudgetConfig) -> Result<Self, ConfigError> {
         config.validate_then(|config| Self {
             state: Arc::new(Mutex::new(ByteBudgetState { accounted_bytes: 0 })),

@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use super::BudgetPermit;
+use crate::indexes::max_rows_in_page;
 use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock, RwLockWriteGuard};
+use spacetimedb_data_structures::object_pool::{Pool, PooledObject};
 use spacetimedb_lib::bsatn;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
@@ -384,6 +387,33 @@ pub struct ReservedPage {
     metadata: PageMetadata,
 }
 
+impl ReservedPage {
+    pub(super) fn into_resident(self) -> (Box<Page>, BudgetPermit) {
+        self.inner.into_resident()
+    }
+}
+
+#[derive(Debug)]
+struct CachedResidentPage {
+    page: Box<Page>,
+    permit: BudgetPermit,
+}
+
+impl MemoryUsage for CachedResidentPage {
+    fn heap_usage(&self) -> usize {
+        self.page.heap_usage()
+    }
+}
+
+impl PooledObject for CachedResidentPage {
+    type ResidentBytesStorage = ();
+    fn resident_object_bytes(_: &(), count: usize) -> usize {
+        count * std::mem::size_of::<Page>()
+    }
+    fn add_to_resident_object_bytes(_: &(), _: usize) {}
+    fn sub_from_resident_object_bytes(_: &(), _: usize) {}
+}
+
 /// The page manager for a database.
 ///
 /// Manages page allocations, eviction and faulting.
@@ -392,14 +422,57 @@ pub struct ReservedPage {
 #[derive(Debug)]
 pub struct PageManager {
     pool: PagePool,
+    resident_cache: Pool<CachedResidentPage>,
     resident: Arc<ResidentObjects>,
     storage: Arc<TieredStorage>,
 }
 
 impl PageManager {
+    pub(super) fn has_unlimited_budget(&self) -> bool {
+        self.resident.has_unlimited_budget()
+    }
+
+    pub(super) fn reserve_resident(
+        &self,
+        fixed_row_size: Size,
+    ) -> Result<(Box<Page>, BudgetPermit), BudgetExceeded> {
+        if !self.has_unlimited_budget() {
+            let permit = self.resident.acquire_resident_page()?;
+            return Ok((self.pool.take_with_fixed_row_size(fixed_row_size), permit));
+        }
+        let CachedResidentPage { page, permit } = self.resident_cache.take(
+            |cached| cached.page.reset_for(max_rows_in_page(fixed_row_size)),
+            || CachedResidentPage {
+                permit: self
+                    .resident
+                    .acquire_resident_page()
+                    .expect("an unlimited budget cannot reject a resident page"),
+                page: self.pool.take_with_fixed_row_size(fixed_row_size),
+            },
+        );
+        Ok((page, permit))
+    }
+
+    pub(super) fn recycle_resident(&self, page: Box<Page>, permit: BudgetPermit) {
+        if self.has_unlimited_budget() {
+            self.resident_cache.put(CachedResidentPage { page, permit });
+        } else {
+            self.pool.put(page);
+            drop(permit);
+        }
+    }
+
+    pub(super) fn restored_permit(&self) -> BudgetPermit {
+        self.resident.restored_page_permit()
+    }
+
     pub fn new(resident: Arc<ResidentObjects>, pool: PagePool, storage: Arc<TieredStorage>) -> Self {
+        let resident_cache = Pool::new(
+            usize::try_from(pool.capacity()).expect("existing pool capacity fits the address space"),
+        );
         Self {
             pool,
+            resident_cache,
             resident,
             storage,
         }

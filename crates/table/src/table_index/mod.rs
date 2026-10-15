@@ -87,6 +87,7 @@ macro_rules! table_iter {
         impl Iterator for $wrapper<'_> {
             type Item = RowPointer;
 
+            #[inline]
             fn next(&mut self) -> Option<Self::Item> {
                 self.iter.next()
             }
@@ -107,6 +108,7 @@ macro_rules! table_iter {
 
         impl Iterator for $base<'_> {
             type Item = RowPointer;
+            #[inline]
             fn next(&mut self) -> Option<Self::Item> {
                 match self {
                     $(Self::$var(this) => this.next()),*

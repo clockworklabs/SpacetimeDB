@@ -39,7 +39,7 @@ pub struct Pages {
     /// datastores can converge on a dense sequence of pages.
     /// This assumes that deletes are distributed randomly.
     /// Low-indexed pages will be quickly replaced, while high-indexed pages will remain vacant for longer.
-    free_page_slots: BTreeSet<PageIndex>,
+    pub(crate) free_page_slots: BTreeSet<PageIndex>,
     /// The set of pages that aren't yet full,
     /// sorted by the number of var-len granules available in each page.
     ///
@@ -54,7 +54,7 @@ pub struct Pages {
     /// so that replaying the same set of operations on multiple datastores
     /// will always result in the same layout of rows in pages,
     /// regardless of when those datastores were (re)started prior to or during the sequence of operations.
-    non_full_pages: BTreeSet<(usize, PageIndex)>,
+    pub(crate) non_full_pages: BTreeSet<(usize, PageIndex)>,
 }
 
 impl MemoryUsage for Pages {
@@ -99,8 +99,7 @@ impl Pages {
             .expect("pages len to be greater than number of free slots")
     }
 
-    #[cfg(test)]
-    pub fn free_empty_page(&mut self, page_index: PageIndex) {
+    pub fn free_empty_page(&mut self, page_index: PageIndex) -> Box<Page> {
         let page = self.get(page_index).expect("page to free to have been present");
 
         assert_eq!(page.num_rows(), 0);
@@ -110,11 +109,68 @@ impl Pages {
         let removed_from_non_full = self.non_full_pages.remove(&(free_granules, page_index));
         assert!(removed_from_non_full);
 
-        self.pages[page_index.idx()] = None;
+        let page = self.pages[page_index.idx()].take().unwrap();
 
         let newly_inserted_into_free_pages_set = self.free_page_slots.insert(page_index);
 
-        assert!(newly_inserted_into_free_pages_set)
+        assert!(newly_inserted_into_free_pages_set);
+        page
+    }
+
+    pub(crate) fn next_page_index(&self) -> Result<PageIndex, Error> {
+        self.free_page_slots
+            .first()
+            .copied()
+            .map(Ok)
+            .unwrap_or_else(|| self.can_allocate_new_page())
+    }
+
+    #[inline]
+    pub(crate) fn install_page(&mut self, index: PageIndex, page: Box<Page>) {
+        if index.idx() == self.pages.len() {
+            self.pages.push(Some(page));
+        } else {
+            assert!(self.pages[index.idx()].is_none());
+            self.free_page_slots.remove(&index);
+            self.pages[index.idx()] = Some(page);
+        }
+    }
+
+    pub(crate) fn find_non_full_page(
+        &self,
+        fixed_row_size: Size,
+        granules: usize,
+    ) -> Option<PageIndex> {
+        self.non_full_pages
+            .range((granules, PageIndex(0))..)
+            .find_map(|&(_, index)| {
+                self.get(index)
+                    .unwrap()
+                    .has_space_for_row(fixed_row_size, granules)
+                    .then_some(index)
+            })
+    }
+
+    pub(crate) fn take_non_full_page(
+        &mut self,
+        fixed_row_size: Size,
+        granules: usize,
+    ) -> Option<PageIndex> {
+        let index = self.find_non_full_page(fixed_row_size, granules)?;
+        self.non_full_pages
+            .remove(&(self.get(index).unwrap().available_var_len_granules(), index));
+        Some(index)
+    }
+
+    pub(crate) fn with_page_mut<T>(
+        &mut self,
+        index: PageIndex,
+        fixed_row_size: Size,
+        f: impl FnOnce(&mut Page) -> T,
+    ) -> T {
+        self.with_updating_non_full_pages(index, fixed_row_size, |pages| {
+            f(pages.get_mut(index).unwrap())
+        })
     }
 
     /// Get a reference to fixed-len row data.
@@ -345,7 +401,7 @@ impl Pages {
     ///
     /// The page must still be present, that is, `self.pages[page_index.idx()]` must be `Some`.
     /// Otherwise this method will panic.
-    fn record_page_non_full(&mut self, page_index: PageIndex, fixed_row_size: Size) {
+    pub(crate) fn record_page_non_full(&mut self, page_index: PageIndex, fixed_row_size: Size) {
         debug_assert!(!self.non_full_pages.iter().any(|(_, idx)| *idx == page_index));
 
         let page = self
@@ -385,6 +441,10 @@ impl Pages {
             .filter_map(|(idx, page)| page.is_none().then_some(PageIndex(idx as _)))
             .collect();
         self.pages = pages;
+    }
+
+    pub(crate) fn into_page_slots(self) -> impl Iterator<Item = Option<Box<Page>>> {
+        self.pages.into_iter()
     }
 
     /// Consumes the page manager, returning all the pages it held.

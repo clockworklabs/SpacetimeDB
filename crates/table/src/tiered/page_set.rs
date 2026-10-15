@@ -12,12 +12,13 @@ use spacetimedb_sats::layout::Size;
 use crate::{
     indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
+    pages::Pages,
     table::{BlobNumBytes, PreparedInsert, Table, TableError},
     tiered::{
         blob_set::BlobHandle,
         mem::{PageEvictionCandidate, PageId},
         page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
-        BlobError, BlobSet, PageError,
+        BlobError, BlobSet, BudgetPermit, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
@@ -35,28 +36,252 @@ pub enum DeleteRowError {
 pub struct PageSet {
     pub eviction_policy: PageEvictionPolicy,
     fixed_row_size: Size,
+    pub(crate) manager: Arc<PageManager>,
+    storage: PageStorage,
+}
+
+/// The original directly owned page representation, with allocation accounting.
+/// A table borrow protects page access; no per-page ownership or locks are needed.
+#[derive(Debug)]
+struct ResidentPages {
+    pages: Pages,
+    permits: smallvec::SmallVec<[Option<BudgetPermit>; 1]>,
+}
+
+#[derive(Debug)]
+enum PageStorage {
+    Resident(ResidentPages),
+    Tiered(TieredPages),
+}
+
+#[derive(Debug, Default)]
+struct TieredPages {
     slots: Vec<PageSlotHandle>,
     free_page_slots: BTreeSet<PageIndex>,
     non_full_pages: BTreeSet<(usize, PageIndex)>,
-    pub(crate) manager: Arc<PageManager>,
-
-    // Scratch allocations for eviction.
     evictable: Mutex<EvictionScratch>,
+}
+
+impl PageStorage {
+    #[inline]
+    fn resident(&self) -> Option<&ResidentPages> {
+        match self {
+            Self::Resident(pages) => Some(pages),
+            Self::Tiered(_) => None,
+        }
+    }
+
+    #[inline]
+    fn resident_mut(&mut self) -> Option<&mut ResidentPages> {
+        match self {
+            Self::Resident(pages) => Some(pages),
+            Self::Tiered(_) => None,
+        }
+    }
+
+    #[inline]
+    fn tiered(&self) -> &TieredPages {
+        match self {
+            Self::Tiered(pages) => pages,
+            Self::Resident(_) => unreachable!("resident branch must be handled first"),
+        }
+    }
+
+    #[inline]
+    fn tiered_mut(&mut self) -> &mut TieredPages {
+        match self {
+            Self::Tiered(pages) => pages,
+            Self::Resident(_) => unreachable!("resident branch must be handled first"),
+        }
+    }
+}
+
+impl Drop for PageSet {
+    fn drop(&mut self) {
+        if let Some(resident) = self.storage.resident_mut() {
+            let pages = std::mem::take(&mut resident.pages).into_page_slots();
+            let permits = std::mem::take(&mut resident.permits);
+            for (page, permit) in pages.zip(permits) {
+                if let Some(page) = page {
+                    self.manager
+                        .recycle_resident(page, permit.expect("present page has a permit"));
+                }
+            }
+        }
+    }
+}
+
+impl ResidentPages {
+    #[inline(always)]
+    fn with_page_to_insert_row<T>(
+        &mut self,
+        manager: &PageManager,
+        fixed_row_size: Size,
+        num_var_len_granules: usize,
+        reservation: Option<(PageIndex, ReservedPage)>,
+        f: impl FnOnce(&mut Page) -> T,
+    ) -> Result<(PageIndex, T), PageError> {
+        let index = match reservation {
+            Some((index, reservation)) => {
+                self.install(index, reservation);
+                index
+            }
+            None => match self
+                .pages
+                .take_non_full_page(fixed_row_size, num_var_len_granules)
+            {
+                Some(index) => index,
+                None => {
+                    let index = self
+                        .pages
+                        .next_page_index()
+                        .map_err(|_| PageError::TooManyPages)?;
+                    let reservation = manager.reserve_resident(fixed_row_size)?;
+                    let (page, permit) = reservation;
+                    self.install_owned(index, page, permit);
+                    index
+                }
+            },
+        };
+        let result = f(self.pages.get_mut(index).unwrap());
+        self.pages.record_page_non_full(index, fixed_row_size);
+        Ok((index, result))
+    }
+
+    fn install(&mut self, index: PageIndex, reservation: ReservedPage) {
+        let (page, permit) = reservation.into_resident();
+        self.install_owned(index, page, permit);
+    }
+
+    #[inline]
+    fn install_owned(&mut self, index: PageIndex, page: Box<Page>, permit: BudgetPermit) {
+        self.pages.install_page(index, page);
+        if index.idx() == self.permits.len() {
+            self.permits.push(Some(permit));
+        } else {
+            self.permits[index.idx()] = Some(permit);
+        }
+    }
+}
+
+pub enum PageInfo<'a> {
+    Resident(&'a Page),
+    Tiered(&'a PageSlotHandle),
+}
+
+impl PageInfo<'_> {
+    #[cfg(test)]
+    fn is_full(&self, size: Size) -> Option<bool> {
+        match self {
+            Self::Resident(p) => Some(p.is_full(size)),
+            Self::Tiered(p) => p.is_full(size),
+        }
+    }
+    fn available_var_len_granules(&self) -> Option<usize> {
+        match self {
+            Self::Resident(p) => Some(p.available_var_len_granules()),
+            Self::Tiered(p) => p.available_var_len_granules(),
+        }
+    }
+    fn has_space_for_row(&self, size: Size, granules: usize) -> Option<bool> {
+        match self {
+            Self::Resident(p) => Some(p.has_space_for_row(size, granules)),
+            Self::Tiered(p) => p.has_space_for_row(size, granules),
+        }
+    }
+    pub fn bytes_used_by_rows(&self, size: Size) -> usize {
+        match self {
+            Self::Resident(p) => p.bytes_used_by_rows(size),
+            Self::Tiered(p) => p.bytes_used_by_rows(),
+        }
+    }
+    #[cfg(test)]
+    pub fn reconstruct_num_rows(&self) -> usize {
+        match self {
+            Self::Resident(p) => p.reconstruct_num_rows(),
+            Self::Tiered(p) => p.reconstruct_num_rows(),
+        }
+    }
+    #[cfg(test)]
+    pub unsafe fn reconstruct_bytes_used_by_rows(
+        &self,
+        size: Size,
+        visitor: &impl VarLenMembers,
+    ) -> usize {
+        unsafe {
+            match self {
+                Self::Resident(p) => p.reconstruct_bytes_used_by_rows(size, visitor),
+                Self::Tiered(p) => p.reconstruct_bytes_used_by_rows(size, visitor),
+            }
+        }
+    }
 }
 type EvictionScratch = (Box<Vec<PageEvictionCandidate>>, Box<IntMap<PageId, PageIndex>>);
 
 impl PageSet {
+    #[inline]
+    pub(crate) fn is_resident(&self) -> bool {
+        matches!(self.storage, PageStorage::Resident(_))
+    }
+
+    #[inline]
+    pub(crate) fn resident_row_present(
+        &self,
+        pointer: RowPointer,
+        fixed_row_size: Size,
+    ) -> Option<bool> {
+        self.storage.resident().map(|resident| {
+            resident
+                .pages
+                .get(pointer.page_index())
+                .is_some_and(|page| page.has_row_offset(fixed_row_size, pointer.page_offset()))
+        })
+    }
+
+    /// Delete a fixed-layout row directly, returning false for the tiered backend.
+    ///
+    /// # Safety
+    /// The pointer must identify a live row, and this table's layout must contain
+    /// no variable-length members or external blob references.
+    #[inline]
+    pub(crate) unsafe fn delete_fixed_resident_row(
+        &mut self,
+        pointer: RowPointer,
+        fixed_row_size: Size,
+    ) -> bool {
+        let Some(resident) = self.storage.resident_mut() else {
+            return false;
+        };
+        let index = pointer.page_index();
+        let empty = resident.pages.with_page_mut(index, fixed_row_size, |page| {
+            // SAFETY: Forward the caller's guarantees about the row and its layout.
+            unsafe { page.delete_fixed_row(pointer.page_offset(), fixed_row_size) };
+            page.num_rows() == 0
+        });
+        if empty {
+            let page = resident.pages.free_empty_page(index);
+            let permit = resident.permits[index.idx()]
+                .take()
+                .expect("present page has a permit");
+            self.manager.recycle_resident(page, permit);
+        }
+        true
+    }
+
     /// Create a fresh, empty page set.
     pub fn new(manager: Arc<PageManager>, eviction_policy: PageEvictionPolicy, fixed_row_size: Size) -> Self {
+        let storage = match eviction_policy {
+            PageEvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
+                pages: Pages::default(),
+                permits: smallvec::SmallVec::new(),
+            }),
+            PageEvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
+        };
         Self {
             eviction_policy,
             fixed_row_size,
-            slots: <_>::default(),
-            free_page_slots: <_>::default(),
-            non_full_pages: <_>::default(),
             manager,
-
-            evictable: <_>::default(),
+            storage,
         }
     }
 
@@ -65,13 +290,29 @@ impl PageSet {
     /// This method is provided for compatibility. It is used when restoring
     /// from a snapshot, or a schema migration on an empty table.
     pub fn set_contents(&mut self, pages: impl IntoIterator<Item = Option<Box<Page>>>, fixed_row_size: Size) {
-        assert!(self.slots.is_empty());
+        if let Some(resident) = self.storage.resident_mut() {
+            let pages: Vec<_> = pages.into_iter().collect();
+            resident.permits = pages
+                .iter()
+                .map(|page| page.as_ref().map(|_| self.manager.restored_permit()))
+                .collect();
+            resident.pages.set_contents(pages, fixed_row_size);
+            self.fixed_row_size = fixed_row_size;
+            return;
+        }
+        assert!(self.storage.tiered().slots.is_empty());
 
         // This is ok, because the table is empty.
         self.fixed_row_size = fixed_row_size;
-        self.manager
-            .register_unchecked(self.eviction_policy, self.fixed_row_size, pages, &mut self.slots);
-        self.non_full_pages = self
+        self.manager.register_unchecked(
+            self.eviction_policy,
+            self.fixed_row_size,
+            pages,
+            &mut self.storage.tiered_mut().slots,
+        );
+        self.storage.tiered_mut().non_full_pages = self
+            .storage
+            .tiered()
             .slots
             .iter()
             .enumerate()
@@ -84,7 +325,9 @@ impl PageSet {
                 }
             })
             .collect();
-        self.free_page_slots = self
+        self.storage.tiered_mut().free_page_slots = self
+            .storage
+            .tiered()
             .slots
             .iter()
             .enumerate()
@@ -99,11 +342,27 @@ impl PageSet {
     ///
     /// If the page is not currently resident, it may be faulted in. If this
     /// fails, a [PageError] is returned.
-    pub fn get_page(&self, index: PageIndex) -> Result<Option<PageHandle>, PageError> {
-        let Some(slot) = self.slots.get(index.idx()) else {
+    #[inline]
+    pub fn get_page(&self, index: PageIndex) -> Result<Option<PageRef<'_>>, PageError> {
+        if let Some(resident) = self.storage.resident() {
+            return Ok(resident.pages.get(index).map(PageRef::Resident));
+        }
+        let Some(slot) = self.storage.tiered().slots.get(index.idx()) else {
             return Ok(None);
         };
-        self.manager.get(slot, self.eviction_policy)
+        self.manager
+            .get(slot, self.eviction_policy)
+            .map(|page| page.map(PageRef::Tiered))
+    }
+
+    #[inline]
+    pub(crate) fn resident_page(&self, index: PageIndex) -> &Page {
+        self.storage
+            .resident()
+            .expect("row without an eviction pin is resident")
+            .pages
+            .get(index)
+            .expect("row reference points at a present page")
     }
 
     /// Iterate over all pages in this page set, ensuring that the page's hash
@@ -113,18 +372,33 @@ impl PageSet {
     ///
     /// Used when capturing a snapshot.
     pub(crate) fn iter_pages_with_hashes(
-        &self,
-    ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageHandle)>, PageError>> {
-        self.slots.iter().map(|slot| {
-            if slot.is_absent() {
-                Ok(None)
-            } else {
-                let mut page = self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
-                let hash = page.save_or_get_content_hash();
-
-                Ok(Some((hash, page.into_page_handle())))
+        &mut self,
+    ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageRef<'_>)>, PageError>> {
+        match &mut self.storage {
+            PageStorage::Resident(resident) => {
+                itertools::Either::Left(resident.pages.iter_mut().map(|page| {
+                    Ok(page.as_deref_mut().map(|page| {
+                        let hash = page.save_or_get_content_hash();
+                        (hash, PageRef::Resident(page))
+                    }))
+                }))
             }
-        })
+            PageStorage::Tiered(tiered) => {
+                itertools::Either::Right(tiered.slots.iter().map(|slot| {
+                    if slot.is_absent() {
+                        Ok(None)
+                    } else {
+                        let mut page = self.manager.get_mut(
+                            slot,
+                            self.eviction_policy,
+                            self.fixed_row_size,
+                        )?;
+                        let hash = page.save_or_get_content_hash();
+                        Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
+                    }
+                }))
+            }
+        }
     }
 
     /// Run a closure over a mutable [Page].
@@ -134,20 +408,35 @@ impl PageSet {
     /// Note that the fullness status of the page is updated after `f` returns,
     /// but the page is not freed if it is empty at that point. Use [Self::delete_row]
     /// to free the page immediately if it is empty.
+    #[inline]
     pub fn with_page_mut<T>(
         &mut self,
         index: PageIndex,
         fixed_row_size: Size,
         f: impl FnOnce(&mut Page) -> T,
     ) -> Result<T, PageError> {
-        let Some(slot) = self.slots.get(index.idx()) else {
+        if let Some(resident) = self.storage.resident_mut() {
+            if resident.pages.get(index).is_none() {
+                return Err(PageError::MissingPage(index));
+            }
+            return Ok(resident.pages.with_page_mut(index, fixed_row_size, f));
+        }
+        let Some(slot) = self.storage.tiered().slots.get(index.idx()) else {
             return Err(PageError::MissingPage(index));
         };
-        let mut page = self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
-        self.non_full_pages.remove(&(page.available_var_len_granules(), index));
+        let mut page = self
+            .manager
+            .get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
+        self.storage
+            .tiered_mut()
+            .non_full_pages
+            .remove(&(page.available_var_len_granules(), index));
         let ret = f(&mut page);
         if !page.is_full(fixed_row_size) {
-            self.non_full_pages.insert((page.available_var_len_granules(), index));
+            self.storage
+                .tiered_mut()
+                .non_full_pages
+                .insert((page.available_var_len_granules(), index));
         }
         Ok(ret)
     }
@@ -165,7 +454,27 @@ impl PageSet {
     ///
     /// The fullness status of the page is updated, but the page is not freed if
     /// it ends up being empty after `f` returns.
+    #[inline(always)]
     pub fn with_page_to_insert_row<T>(
+        &mut self,
+        fixed_row_size: Size,
+        num_var_len_granules: usize,
+        reservation: Option<(PageIndex, ReservedPage)>,
+        f: impl FnOnce(&mut Page) -> T,
+    ) -> Result<(PageIndex, T), PageError> {
+        if let Some(resident) = self.storage.resident_mut() {
+            return resident.with_page_to_insert_row(
+                &self.manager,
+                fixed_row_size,
+                num_var_len_granules,
+                reservation,
+                f,
+            );
+        }
+        self.with_tiered_page_to_insert_row(fixed_row_size, num_var_len_granules, reservation, f)
+    }
+
+    fn with_tiered_page_to_insert_row<T>(
         &mut self,
         fixed_row_size: Size,
         num_var_len_granules: usize,
@@ -224,9 +533,20 @@ impl PageSet {
             })??;
 
         if is_empty {
-            self.slots[page_index.idx()].free();
-            self.free_page_slots.insert(page_index);
-            self.non_full_pages.remove(&(available_granules, page_index));
+            if let Some(resident) = self.storage.resident_mut() {
+                let page = resident.pages.free_empty_page(page_index);
+                let permit = resident.permits[page_index.idx()]
+                    .take()
+                    .expect("present page has a permit");
+                self.manager.recycle_resident(page, permit);
+            } else {
+                self.storage.tiered().slots[page_index.idx()].free();
+                self.storage.tiered_mut().free_page_slots.insert(page_index);
+                self.storage
+                    .tiered_mut()
+                    .non_full_pages
+                    .remove(&(available_granules, page_index));
+            }
         }
 
         Ok(blob_bytes_deleted)
@@ -242,13 +562,15 @@ impl PageSet {
         num_var_len_granules: usize,
     ) -> Result<PageIndex, PageError> {
         if let Some((_, page_idx)) = self
+            .storage
+            .tiered()
             .non_full_pages
             .range((num_var_len_granules, PageIndex(0))..)
             .copied()
             .find(|(_, page_index)| {
-                self.slots[page_index.idx()]
+                self.storage.tiered().slots[page_index.idx()]
                     .has_space_for_row(fixed_row_size, num_var_len_granules)
-                    .expect("page in `self.non_full_pages` to be present in `self.pages`")
+                    .expect("page in `self.storage.tiered().non_full_pages` to be present in `self.pages`")
             })
         {
             return Ok(page_idx);
@@ -267,6 +589,8 @@ impl PageSet {
     /// Callers should call [`Pages::record_page_non_full`] after operating on the new page.
     fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, PageError> {
         let page_index = self
+            .storage
+            .tiered_mut()
             .free_page_slots
             .pop_first()
             .map(Ok)
@@ -282,11 +606,11 @@ impl PageSet {
     /// Register a [ReservedPage] with this [PageSet].
     ///
     /// Pages are reserved during [Self::prepare_commit].
-    fn register(&mut self, index: PageIndex, reservation: ReservedPage) -> PageHandle {
+    fn register(&mut self, index: PageIndex, reservation: ReservedPage) {
         let slot = self.manager.redeem(reservation, self.eviction_policy);
         // SAFETY: The page is resident. The index was obtained during commit
         // planning.
-        unsafe { self.install_page_slot(index, slot) }
+        unsafe { self.install_page_slot(index, slot) };
     }
 
     /// SAFETY:
@@ -297,15 +621,17 @@ impl PageSet {
         let page = slot.page().expect("page must be resident");
 
         let idx = index.idx();
-        if idx == self.slots.len() {
-            self.slots.push(slot);
+        if idx == self.storage.tiered().slots.len() {
+            self.storage.tiered_mut().slots.push(slot);
         } else {
-            assert!(self.slots.get(idx).unwrap().is_absent());
-            self.free_page_slots.remove(&index);
-            self.slots[idx] = slot;
+            assert!(self.storage.tiered().slots[idx].is_absent());
+            self.storage.tiered_mut().free_page_slots.remove(&index);
+            self.storage.tiered_mut().slots[idx] = slot;
         }
 
-        self.non_full_pages
+        self.storage
+            .tiered_mut()
+            .non_full_pages
             .insert((page.read().available_var_len_granules(), index));
 
         page
@@ -313,7 +639,7 @@ impl PageSet {
 
     /// Is there space to allocate another page?
     pub fn can_allocate_new_page(&self) -> Result<PageIndex, PageError> {
-        let new_idx = self.slots.len();
+        let new_idx = self.num_pages();
         if new_idx <= PageIndex::MAX.idx() {
             Ok(PageIndex(new_idx as _))
         } else {
@@ -323,32 +649,49 @@ impl PageSet {
 
     /// Iterate over all pages that have not been freed.
     ///
-    /// This yields [PageSlotHandle]s and doesn't fault in pages.
-    pub fn iter_present_pages(&self) -> impl Iterator<Item = &PageSlotHandle> {
-        self.slots.iter().filter(|slot| !slot.is_absent())
+    /// Yields borrowed page metadata without faulting in tiered pages.
+    pub fn iter_present_pages(&self) -> impl Iterator<Item = PageInfo<'_>> {
+        self.iter_present_pages_with_page_index()
+            .map(|(_, page)| page)
     }
 
-    /// Iterate over all pagess that have not been freed, along with their
+    /// Iterate over all pages that have not been freed, along with their
     /// [PageIndex].
     ///
     /// Because absent pages are skipped, the [PageIndex] sequence may contain
     /// gaps.
     ///
-    /// Yields [PageSlotHandle]s and doesn't fault in pages.
-    pub fn iter_present_pages_with_page_index(&self) -> impl Iterator<Item = (PageIndex, &PageSlotHandle)> {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, slot)| (!slot.is_absent()).then_some((PageIndex(idx as _), slot)))
+    /// Yields borrowed page metadata without faulting in tiered pages.
+    pub fn iter_present_pages_with_page_index(
+        &self,
+    ) -> impl Iterator<Item = (PageIndex, PageInfo<'_>)> {
+        if let Some(resident) = self.storage.resident() {
+            return itertools::Either::Left(
+                resident
+                    .pages
+                    .iter_present_pages_with_page_index()
+                    .map(|(index, page)| (index, PageInfo::Resident(page))),
+            );
+        }
+        itertools::Either::Right(self.storage.tiered().slots.iter().enumerate().filter_map(
+            |(idx, slot)| {
+                (!slot.is_absent()).then_some((PageIndex(idx as _), PageInfo::Tiered(slot)))
+            },
+        ))
     }
 
     /// The number of present pages in `self`.
     ///
     /// Includes resident as well as non-resident pages, but not freed ones.
     pub fn num_present_pages(&self) -> usize {
-        self.slots
+        if let Some(resident) = self.storage.resident() {
+            return resident.pages.num_present_pages();
+        }
+        self.storage
+            .tiered()
+            .slots
             .len()
-            .checked_sub(self.free_page_slots.len())
+            .checked_sub(self.storage.tiered().free_page_slots.len())
             .expect("pages len to be greater than number of free slots")
     }
 
@@ -356,7 +699,45 @@ impl PageSet {
     ///
     /// Includes resident, non-resident and absent (i.e. freed) pages.
     pub fn num_pages(&self) -> usize {
-        self.slots.len()
+        if let Some(resident) = self.storage.resident() {
+            return resident.pages.len();
+        }
+        self.storage.tiered().slots.len()
+    }
+
+    pub(crate) fn can_commit_resident(&self, insert_count: u64) -> bool {
+        self.storage.resident().is_some()
+            && self.manager.has_unlimited_budget()
+            && u64::try_from(self.num_pages())
+                .ok()
+                .and_then(|pages| pages.checked_add(insert_count))
+                .is_some_and(|pages| pages <= PageIndex::MAX.0 + 1)
+    }
+
+    fn non_full_pages(&self) -> &BTreeSet<(usize, PageIndex)> {
+        match &self.storage {
+            PageStorage::Resident(pages) => &pages.pages.non_full_pages,
+            PageStorage::Tiered(pages) => &pages.non_full_pages,
+        }
+    }
+
+    fn free_page_slots(&self) -> &BTreeSet<PageIndex> {
+        match &self.storage {
+            PageStorage::Resident(pages) => &pages.pages.free_page_slots,
+            PageStorage::Tiered(pages) => &pages.free_page_slots,
+        }
+    }
+
+    fn page_info(&self, index: PageIndex) -> Option<PageInfo<'_>> {
+        if let Some(resident) = self.storage.resident() {
+            return resident.pages.get(index).map(PageInfo::Resident);
+        }
+        self.storage
+            .tiered()
+            .slots
+            .get(index.idx())
+            .filter(|slot| !slot.is_absent())
+            .map(PageInfo::Tiered)
     }
 
     /// Plan a transaction commit.
@@ -386,17 +767,20 @@ impl PageSet {
             .into_iter()
             .map(|row_ptr| {
                 let page_index = row_ptr.page_index();
-                if let btree_map::Entry::Vacant(entry) = pinned.entry(page_index) {
-                    let page = self.get_page(page_index)?.expect("delete from absent page");
-                    entry.insert(page);
-                }
-                let granules = unsafe {
-                    pinned[&page_index]
-                        .read()
-                        .row_total_granules(row_ptr.page_offset(), fixed_row_size, visitor)
+                let page = match pinned.entry(page_index) {
+                    btree_map::Entry::Vacant(entry) => {
+                        match self.get_page(page_index)?.expect("delete from absent page") {
+                            PageRef::Resident(page) => PageRead::Resident(page),
+                            PageRef::Tiered(pin) => PageRead::Tiered(entry.insert(pin).read()),
+                        }
+                    }
+                    btree_map::Entry::Occupied(entry) => PageRead::Tiered(entry.get().read()),
                 };
-                allocator.prepare_delete::<Infallible>(page_index, granules, |page_index| {
-                    Ok(pinned[&page_index].read().metadata(fixed_row_size).into())
+                let granules = unsafe {
+                    page.row_total_granules(row_ptr.page_offset(), fixed_row_size, visitor)
+                };
+                allocator.prepare_delete::<Infallible>(page_index, granules, |_| {
+                    Ok(page.metadata(fixed_row_size).into())
                 });
 
                 Ok(row_ptr)
@@ -411,8 +795,12 @@ impl PageSet {
                     match pinned.entry(page_index) {
                         btree_map::Entry::Vacant(entry) => {
                             let page = self.get_page(page_index)?.expect("delete from absent page");
-                            let page = entry.insert(page);
-                            Ok(page.read().metadata(fixed_row_size).into())
+                            match page {
+                                PageRef::Resident(page) => Ok(page.metadata(fixed_row_size).into()),
+                                PageRef::Tiered(pin) => {
+                                    Ok(entry.insert(pin).read().metadata(fixed_row_size).into())
+                                }
+                            }
                         }
                         btree_map::Entry::Occupied(entry) => Ok(entry.get().read().metadata(fixed_row_size).into()),
                     }
@@ -441,7 +829,11 @@ impl PageSet {
     }
 
     pub fn evict(&self) -> Result<(), PageError> {
-        let mut _guard = self.evictable.lock().unwrap();
+        if self.storage.resident().is_some() {
+            return Ok(());
+        }
+        let tiered = self.storage.tiered();
+        let mut _guard = tiered.evictable.lock().unwrap();
         let (candidates, slots) = &mut *_guard;
 
         // Collect eviction candidates, returning early if there aren't any.
@@ -452,16 +844,22 @@ impl PageSet {
 
         // Only resident slots have a page id, so collect them now.
         slots.clear();
-        slots.extend(self.slots.iter().enumerate().filter_map(|(idx, slot_handle)| {
-            let page_id = slot_handle.page_id()?;
-            Some((page_id, PageIndex(idx as _)))
-        }));
+        slots.extend(
+            tiered
+                .slots
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, slot_handle)| {
+                    let page_id = slot_handle.page_id()?;
+                    Some((page_id, PageIndex(idx as _)))
+                }),
+        );
 
         for candidate in candidates.drain(..) {
             let Some(page_index) = slots.remove(&candidate.id) else {
                 continue;
             };
-            let mut slot = self.slots[page_index.idx()].lock();
+            let mut slot = tiered.slots[page_index.idx()].lock();
             match &*slot {
                 PageSlot::Resident {
                     handle: page_handle,
@@ -490,44 +888,24 @@ impl PageSet {
 impl PageSet {
     pub(crate) fn assert_non_full_pages_consistent(&self, fixed_row_size: Size) {
         let mut page_granules = BTreeMap::new();
-        for &(avail, page_index) in &self.non_full_pages {
+        for &(avail, page_index) in self.non_full_pages() {
             assert!(
                 page_granules.insert(page_index, avail).is_none(),
                 "page {:?} appears multiple times in non_full_pages",
                 page_index,
             );
         }
-        for (idx, slot) in self.slots.iter().enumerate() {
-            let page_index = PageIndex(idx as _);
+        for index in 0..self.num_pages() {
+            let page_index = PageIndex(index as _);
             let entry = page_granules.get(&page_index).copied();
-            if !slot.is_absent() {
-                let is_full = slot.is_full(fixed_row_size).unwrap();
-                let available_granules = slot.available_var_len_granules().unwrap();
-
-                if is_full {
-                    assert!(
-                        entry.is_none(),
-                        "page {:?} has 0 available var-len granules but appears in non_full_pages as {:?}",
-                        page_index,
-                        entry
-                    );
+            if let Some(page) = self.page_info(page_index) {
+                if page.is_full(fixed_row_size).unwrap() {
+                    assert!(entry.is_none(), "full page appears in non_full_pages");
                 } else {
-                    assert_eq!(
-                        entry,
-                        Some(available_granules),
-                        "page {:?} has {} available var-len granules but non_full_pages has {:?}",
-                        page_index,
-                        available_granules,
-                        entry
-                    );
+                    assert_eq!(entry, page.available_var_len_granules());
                 }
             } else {
-                assert!(
-                    entry.is_none(),
-                    "page slot {:?} is is absent, but appears in non_full_pages as {:?}",
-                    page_index,
-                    entry,
-                );
+                assert!(entry.is_none(), "absent page appears in non_full_pages");
             }
         }
     }
@@ -539,20 +917,42 @@ impl PageSet {
 
 impl MemoryUsage for PageSet {
     fn heap_usage(&self) -> usize {
-        let Self {
-            eviction_policy: _,
-            fixed_row_size: _,
-            slots,
-            free_page_slots,
-            non_full_pages,
-            // TODO: The manager is shared by all page sets of a database, how
-            // should we account for it?
-            manager: _,
-            evictable: _,
-        } = self;
-
-        slots.heap_usage() + free_page_slots.heap_usage() + non_full_pages.heap_usage()
+        // The manager is shared by all page sets of a database.
+        match &self.storage {
+            PageStorage::Resident(pages) => {
+                pages.pages.heap_usage()
+                    + if pages.permits.spilled() {
+                        pages.permits.capacity() * std::mem::size_of::<Option<BudgetPermit>>()
+                    } else {
+                        0
+                    }
+            }
+            PageStorage::Tiered(pages) => {
+                pages.slots.heap_usage()
+                    + pages.free_page_slots.heap_usage()
+                    + pages.non_full_pages.heap_usage()
+            }
+        }
     }
+}
+
+#[inline]
+fn collect_arc_slice<T, U>(
+    len: u64,
+    iter: impl Iterator<Item = T>,
+    mut f: impl FnMut(T) -> U,
+) -> Arc<[U]> {
+    let mut output =
+        Arc::new_uninit_slice(usize::try_from(len).expect("row count fits the address space"));
+    let slots = Arc::get_mut(&mut output).unwrap();
+    let mut written: u64 = 0;
+    for item in iter {
+        slots[usize::try_from(written).expect("row index fits the address space")].write(f(item));
+        written += 1;
+    }
+    assert_eq!(written, len, "row count must match iterator length");
+    // SAFETY: Every slot was initialized, as verified above.
+    unsafe { output.assume_init() }
 }
 
 /// A planned transaction commit created by [PageSet::prepare_commit].
@@ -574,6 +974,48 @@ pub struct PreparedCommit {
 }
 
 impl PreparedCommit {
+    /// Apply a transaction directly when neither source nor destination can fault
+    /// and the destination has no allocation budget or page-index failure ahead.
+    pub fn apply_resident(
+        table: &mut Table,
+        blobs: &BlobSet,
+        delete_count: u64,
+        deletes: Option<impl Iterator<Item = RowPointer>>,
+        source_table: Option<&Table>,
+        source_blobs: &BlobSet,
+    ) -> AppliedCommit {
+        let insert_count = source_table.map_or(0, Table::num_rows);
+        assert!(table.can_commit_resident(insert_count));
+        assert!(source_table.is_none_or(|source| source.can_commit_resident(0)));
+        let deletes = match deletes {
+            Some(deletes) => collect_arc_slice(delete_count, deletes, |pointer| {
+                table
+                    .delete(blobs, pointer, |row| row.to_product_value())
+                    .expect("resident page access cannot fail")
+                    .expect("deleted row must be present")
+            }),
+            None => Arc::from([]),
+        };
+        let is_event = table.get_schema().is_event;
+        let inserts = match source_table {
+            Some(source) => {
+                collect_arc_slice(insert_count, source.scan_rows(source_blobs), |row| {
+                    let row = row
+                        .expect("resident page access cannot fail")
+                        .to_product_value();
+                    if !is_event {
+                        table
+                            .insert(blobs, &row)
+                            .expect("resident commit was preflighted");
+                    }
+                    row
+                })
+            }
+            None => Arc::from([]),
+        };
+        AppliedCommit { deletes, inserts }
+    }
+
     /// Apply this transaction to [Table].
     ///
     /// The table's [PageSet] must be the same as the one the [PreparedCommit]
@@ -581,46 +1023,51 @@ impl PreparedCommit {
     pub fn apply(mut self, table: &mut Table, blobs: &BlobSet) -> AppliedCommit {
         let mut pinned = self.pinned;
 
-        fn collect_arc_slice<T, U>(iter: impl ExactSizeIterator<Item = T>, mut f: impl FnMut(T) -> U) -> Arc<[U]> {
-            let mut arc_slice = Arc::new_uninit_slice(iter.len());
-            let arc_slice_mut = Arc::get_mut(&mut arc_slice).expect("`Arc` must be unique as it was just created");
+        let deletes = collect_arc_slice(
+            self.deletes.len() as u64,
+            self.deletes.into_iter(),
+            |row_ptr| {
+                table
+                    .delete(blobs, row_ptr, |row| row.to_product_value())
+                    .expect("no page faults")
+                    .expect("`Table::delete` never returns `None`")
+            },
+        );
+        let inserts = collect_arc_slice(
+            self.inserts.len() as u64,
+            self.inserts.into_iter(),
+            |PlannedInsert { page_index, row }| {
+                let schema = table.get_schema();
+                // For event tables, we don't insert into the committed state. The
+                // row is collected regardless, as we include it in subscriptions
+                // and the commitlog.
+                if !schema.is_event {
+                    let reservation = self
+                        .reserved
+                        .remove(&page_index)
+                        .map(|page| (page_index, page));
+                    let row_ref = table
+                        .insert_prepared(blobs, &row, reservation)
+                        .map(|(_, row_ref)| row_ref)
+                        .expect("failed to insert during transaction commit");
+                    let (page, _) = row_ref.page_and_offset();
+                    let inserted_index = row_ref.pointer().page_index();
+                    if let btree_map::Entry::Vacant(entry) = pinned.entry(inserted_index)
+                        && let Some(pin) = page.pin()
+                    {
+                        entry.insert(pin);
+                    }
+                    assert_eq!(
+                        inserted_index, page_index,
+                        "planned and actual placement differ"
+                    );
 
-            for (x, slot) in iter.into_iter().zip(arc_slice_mut) {
-                slot.write(f(x));
-            }
-
-            // SAFETY: We wrote to every slot in `arc_slice`, so it is now fully
-            // initialized.
-            unsafe { arc_slice.assume_init() }
-        }
-
-        let deletes = collect_arc_slice(self.deletes.into_iter(), |row_ptr| {
-            table
-                .delete(blobs, row_ptr, |row| row.to_product_value())
-                .expect("no page faults")
-                .expect("`Table::delete` never returns `None`")
-        });
-        let inserts = collect_arc_slice(self.inserts.into_iter(), |PlannedInsert { page_index, row }| {
-            let schema = table.get_schema();
-            // For event tables, we don't insert into the committed state. The
-            // row is collected regardless, as we include it in subscriptions
-            // and the commitlog.
-            if !schema.is_event {
-                let reservation = self.reserved.remove(&page_index).map(|page| (page_index, page));
-                let row_ref = table
-                    .insert_prepared(blobs, &row, reservation)
-                    .map(|(_, row_ref)| row_ref)
-                    .expect("failed to insert during transaction commit");
-                let (page, _) = row_ref.page_and_offset();
-                let inserted_index = row_ref.pointer().page_index();
-                pinned.entry(inserted_index).or_insert_with(|| page.clone());
-                assert_eq!(inserted_index, page_index, "planned and actual placement differ");
-
-                row.into_product_value(Some(&row_ref))
-            } else {
-                row.into_product_value(None)
-            }
-        });
+                    row.into_product_value(Some(&row_ref))
+                } else {
+                    row.into_product_value(None)
+                }
+            },
+        );
 
         drop(pinned);
         drop(self.pinned_blobs);
@@ -684,7 +1131,7 @@ impl<'a> PageAllocator<'a> {
 
             planned: <_>::default(),
             non_full: <_>::default(),
-            next_new_page: pages.slots.len(),
+            next_new_page: pages.num_pages(),
         }
     }
 
@@ -743,21 +1190,28 @@ impl<'a> PageAllocator<'a> {
 
         let committed = self
             .pages
-            .non_full_pages
+            .non_full_pages()
             .range((row_granules, PageIndex(0))..)
             // A planned page shadows committed state.
             .filter(|(_, index)| !self.planned.contains_key(index))
-            .find_map(|(_, index)| {
-                self.pages.slots[index.idx()]
+            .find_map(|&(_, index)| {
+                self.pages
+                    .page_info(index)
+                    .unwrap()
                     .has_space_for_row(self.fixed_row_size, row_granules)
                     .unwrap()
-                    .then_some(*index)
+                    .then_some(index)
             });
 
         match (planned, committed) {
             (Some(a), Some(b)) => {
                 let a_free = self.available_granules(a).unwrap();
-                let b_free = self.pages.slots[b.idx()].available_var_len_granules().unwrap();
+                let b_free = self
+                    .pages
+                    .page_info(b)
+                    .unwrap()
+                    .available_var_len_granules()
+                    .unwrap();
                 Some(if (a_free, a) <= (b_free, b) { a } else { b })
             }
             (a, b) => a.or(b),
@@ -767,7 +1221,7 @@ impl<'a> PageAllocator<'a> {
     fn allocate_slot(&mut self) -> PageIndex {
         if let Some(index) = self
             .pages
-            .free_page_slots
+            .free_page_slots()
             .iter()
             .copied()
             .find(|index| !self.planned.contains_key(index))

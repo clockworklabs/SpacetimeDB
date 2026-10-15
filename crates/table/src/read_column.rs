@@ -173,21 +173,23 @@ unsafe impl ReadColumn for bool {
         matches!(ty, AlgebraicTypeLayout::Primitive(PrimitiveType::Bool))
     }
 
+    #[inline]
     unsafe fn unchecked_read_column(row_ref: &RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
         debug_assert!(Self::is_compatible_type(&layout.ty));
 
         let (page, offset) = row_ref.page_and_offset();
         let col_offset = offset + PageOffset(layout.offset);
 
-        let page = page.read();
-        let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
-        let data: *const bool = data.as_ptr().cast();
-        // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
-        // and that the `offset_in_bytes` refers to a column of type `Bool` within that row.
-        // A valid row can never have a column of an invalid value,
-        // and no byte in `Page.row_data` is ever uninit,
-        // so `data` must be initialized as either 0 or 1.
-        unsafe { *data }
+        page.with_page(|page| {
+            let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
+            let data: *const bool = data.as_ptr().cast();
+            // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
+            // and that the `offset_in_bytes` refers to a column of type `Bool` within that row.
+            // A valid row can never have a column of an invalid value,
+            // and no byte in `Page.row_data` is ever uninit,
+            // so `data` must be initialized as either 0 or 1.
+            unsafe { *data }
+        })
     }
 }
 
@@ -198,7 +200,8 @@ macro_rules! impl_read_column_number {
                 matches!(ty, AlgebraicTypeLayout::Primitive(PrimitiveType::$primitive_type))
             }
 
-            unsafe fn unchecked_read_column(
+            #[inline]
+    unsafe fn unchecked_read_column(
                 row_ref: &RowRef<'_>,
                 layout: &ProductTypeElementLayout,
             ) -> Self {
@@ -207,7 +210,7 @@ macro_rules! impl_read_column_number {
                 let (page, offset) = row_ref.page_and_offset();
                 let col_offset = offset + PageOffset(layout.offset);
 
-                let page = page.read();
+                page.with_page(|page| {
                 let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
                 let data: Result<[u8; mem::size_of::<Self>()], _> = data.try_into();
                 // SAFETY: `<[u8; N] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `N`.
@@ -216,6 +219,7 @@ macro_rules! impl_read_column_number {
                 let data = unsafe { data.unwrap_unchecked() };
 
                 Self::from_le_bytes(data)
+                })
             }
         }
     };
@@ -246,32 +250,34 @@ unsafe impl ReadColumn for AlgebraicValue {
     fn is_compatible_type(_ty: &AlgebraicTypeLayout) -> bool {
         true
     }
+    #[inline]
     unsafe fn unchecked_read_column(row_ref: &RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
         let curr_offset = Cell::new(layout.offset as usize);
         let blob_store = row_ref.blob_store();
         let (page, page_offset) = row_ref.page_and_offset();
-        let page = page.read();
-        let fixed_bytes = page.get_row_data(page_offset, row_ref.row_layout().size());
+        page.with_page(|page| {
+            let fixed_bytes = page.get_row_data(page_offset, row_ref.row_layout().size());
 
-        // SAFETY:
-        // 1. Our requirements on `row_ref` and `layout` mean that the column is valid at `layout`.
-        // 2. As a result of the above, all `VarLenRef`s in the column are valid.
-        // 3. Our requirements on `offset_in_bytes` mean that our `curr_offset` is valid.
-        let res = unsafe {
-            bflatn_from::serialize_value(
-                ValueSerializer,
-                fixed_bytes,
-                &page,
-                blob_store,
-                &curr_offset,
-                &layout.ty,
-            )
-        };
+            // SAFETY:
+            // 1. Our requirements on `row_ref` and `layout` mean that the column is valid at `layout`.
+            // 2. As a result of the above, all `VarLenRef`s in the column are valid.
+            // 3. Our requirements on `offset_in_bytes` mean that our `curr_offset` is valid.
+            let res = unsafe {
+                bflatn_from::serialize_value(
+                    ValueSerializer,
+                    fixed_bytes,
+                    page,
+                    blob_store,
+                    &curr_offset,
+                    &layout.ty,
+                )
+            };
 
-        debug_assert!(res.is_ok());
+            debug_assert!(res.is_ok());
 
-        // SAFETY: `ValueSerializer` is infallible.
-        unsafe { res.unwrap_unchecked() }
+            // SAFETY: `ValueSerializer` is infallible.
+            unsafe { res.unwrap_unchecked() }
+        })
     }
 }
 
@@ -282,7 +288,8 @@ macro_rules! impl_read_column_via_av {
                 matches!(ty, $av_pattern)
             }
 
-            unsafe fn unchecked_read_column(
+            #[inline]
+    unsafe fn unchecked_read_column(
                 row_ref: &RowRef<'_>,
                 layout: &ProductTypeElementLayout,
             ) -> Self {
@@ -325,7 +332,8 @@ macro_rules! impl_read_column_via_from {
                     <$base>::is_compatible_type(ty)
                 }
 
-                unsafe fn unchecked_read_column(row_ref: &RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
+                #[inline]
+    unsafe fn unchecked_read_column(row_ref: &RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
                     // SAFETY: We use `$base`'s notion of compatible types, so we can forward promises.
                     <$target>::from(unsafe { <$base>::unchecked_read_column(row_ref, layout) })
                 }
@@ -358,20 +366,22 @@ unsafe impl ReadColumn for SumTag {
         matches!(ty, AlgebraicTypeLayout::Sum(_))
     }
 
+    #[inline]
     unsafe fn unchecked_read_column(row_ref: &RowRef<'_>, layout: &ProductTypeElementLayout) -> Self {
         debug_assert!(Self::is_compatible_type(&layout.ty));
 
         let (page, offset) = row_ref.page_and_offset();
         let col_offset = offset + PageOffset(layout.offset);
 
-        let page = page.read();
-        let data = page.get_row_data(col_offset, Size(1));
-        let data: Result<[u8; 1], _> = data.try_into();
-        // SAFETY: `<[u8; 1] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `1`.
-        // We used `1` as both the length of the slice and the array, so we know them to be equal.
-        let [data] = unsafe { data.unwrap_unchecked() };
+        page.with_page(|page| {
+            let data = page.get_row_data(col_offset, Size(1));
+            let data: Result<[u8; 1], _> = data.try_into();
+            // SAFETY: `<[u8; 1] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `1`.
+            // We used `1` as both the length of the slice and the array, so we know them to be equal.
+            let [data] = unsafe { data.unwrap_unchecked() };
 
-        Self(data)
+            Self(data)
+        })
     }
 }
 

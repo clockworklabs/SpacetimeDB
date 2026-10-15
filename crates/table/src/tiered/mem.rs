@@ -75,6 +75,17 @@ pub struct ReservedPage {
     frame: PageFrame,
 }
 
+impl ReservedPage {
+    /// An unpublished reservation has no external pins or registry entry.
+    pub(super) fn into_resident(self) -> (Box<Page>, BudgetPermit) {
+        let PageFrame { page, permit, .. } = self.frame;
+        let page = Arc::try_unwrap(page)
+            .expect("an unredeemed page reservation has unique ownership")
+            .into_inner();
+        (page.into_owned(), permit)
+    }
+}
+
 #[derive(Debug)]
 pub struct PageFrame {
     pub(super) id: PageId,
@@ -156,6 +167,18 @@ pub struct ResidentObjects {
 }
 
 impl ResidentObjects {
+    pub(super) fn has_unlimited_budget(&self) -> bool {
+        self.budget.is_unlimited()
+    }
+
+    pub(super) fn acquire_resident_page(&self) -> Result<BudgetPermit, BudgetExceeded> {
+        self.budget.acquire(PAGE_SIZE as u64)
+    }
+
+    pub(super) fn restored_page_permit(&self) -> BudgetPermit {
+        self.budget.force_acquire(PAGE_SIZE as u64)
+    }
+
     pub fn new(budget: ByteBudget) -> Self {
         Self {
             budget,
@@ -186,7 +209,13 @@ impl ResidentObjects {
     }
 
     pub(super) fn redeem_blob(&self, ReservedBlob { frame }: ReservedBlob) -> Arc<BlobFrame> {
+<<<<<<< HEAD
         let key = frame.hash;
+||||||| parent of 9993057831 (Restore direct page storage for resident tables)
+        let key = frame.hash.into();
+=======
+        let key = frame.hash.into();
+>>>>>>> 9993057831 (Restore direct page storage for resident tables)
         let mut blobs = self.blobs.lock().unwrap();
         // Transaction and committed blob sets share this registry. Reuse live
         // frames and replace stale weak entries when a hash becomes resident again.
@@ -196,7 +225,7 @@ impl ResidentObjects {
             return existing;
         }
         let frame = Arc::new(frame);
-        assert!(self.blobs.lock().unwrap().insert(key, Arc::downgrade(&frame)).is_none());
+        blobs.insert(key, Arc::downgrade(&frame));
         frame
     }
 
@@ -413,6 +442,17 @@ pub(super) struct PooledPage {
 }
 
 impl PooledPage {
+    fn into_owned(self) -> Box<Page> {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this` suppresses PooledPage::drop, and both fields are moved
+        // exactly once. The receiving resident page set assumes pool ownership.
+        unsafe {
+            let page = ManuallyDrop::take(&mut this.page);
+            std::ptr::drop_in_place(&mut this.pool);
+            page
+        }
+    }
+
     pub fn new(page: Box<Page>, pool: PagePool) -> Self {
         Self {
             page: ManuallyDrop::new(page),

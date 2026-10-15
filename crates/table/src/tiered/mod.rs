@@ -10,6 +10,8 @@ mod error;
 mod map;
 mod mem;
 mod page_manager;
+mod page_ref;
+pub use page_ref::{PageBorrow, PageRead, PageRef};
 mod page_set;
 mod storage;
 
