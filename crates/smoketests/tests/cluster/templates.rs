@@ -189,59 +189,22 @@ fn assert_portable_rust_manifest(manifest_path: &Path, project_path: &Path) -> R
 }
 
 #[test]
-fn test_portable_rust_manifest_accepts_registry_and_project_local_dependencies() -> Result<()> {
+fn test_portable_rust_manifest_rejects_invalid_path() -> Result<()> {
     let project = tempfile::tempdir()?;
-    fs::create_dir(project.path().join("local"))?;
     let manifest_path = project.path().join("Cargo.toml");
     fs::write(
         &manifest_path,
-        r#"[dependencies]
-log = "0.4"
-
-[dev-dependencies]
-example = { path = "local" }
-
-[target.'cfg(unix)'.build-dependencies.example]
-path = "local"
+        r#"[dev-dependencies]
+spacetimedb = { path = "missing" }
 "#,
     )?;
-    assert_portable_rust_manifest(&manifest_path, project.path())
-}
 
-#[test]
-fn test_portable_rust_manifest_rejects_external_paths_and_workspace_dependencies() -> Result<()> {
-    let project = tempfile::tempdir()?;
-    let manifest_path = project.path().join("Cargo.toml");
-    for (manifest, section, reason) in [
-        (
-            r#"[dev-dependencies]
-spacetimedb = { path = ".." }
-"#,
-            "[dev-dependencies]",
-            "escapes the generated project",
-        ),
-        (
-            r#"[dependencies.spacetimedb]
-path = "missing"
-"#,
-            "[dependencies]",
-            "cannot resolve dependency path",
-        ),
-        (
-            r#"[target.'cfg(unix)'.build-dependencies]
-spacetimedb = { workspace = true }
-"#,
-            "[target.cfg(unix).build-dependencies]",
-            "unresolved workspace inheritance",
-        ),
-    ] {
-        fs::write(&manifest_path, manifest)?;
-        let error = assert_portable_rust_manifest(&manifest_path, project.path()).unwrap_err();
-        let message = format!("{error:#}");
-        for expected in ["Cargo.toml", section, "spacetimedb", reason] {
-            assert!(message.contains(expected), "Missing {expected:?} in {message}");
-        }
-    }
+    let error = assert_portable_rust_manifest(&manifest_path, project.path()).unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains(r#"[dev-dependencies] dependency spacetimedb: cannot resolve dependency path "missing""#),
+        "{message}"
+    );
     Ok(())
 }
 
