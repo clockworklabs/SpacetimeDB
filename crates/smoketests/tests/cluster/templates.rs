@@ -129,6 +129,7 @@ fn init_template_with_dotnet_version(
     }
 
     // Check the CLI output before local SDK overrides can hide invalid dependencies.
+    // Motivated by #6298.
     assert_portable_rust_manifests(template_id, &project_path)?;
 
     Ok((tmpdir, project_path))
