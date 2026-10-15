@@ -1337,6 +1337,7 @@ impl Deref for TxContext {
 /// We need to passthrough identity and connection_id because procedures can be invoked by users.
 /// For [HttpContext] this is always anonymous ([Identity::ZERO]).
 /// Construct the inner [ReducerContext] with the appropriate caller information.
+#[cfg(feature = "unstable")]
 fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
@@ -1390,6 +1391,7 @@ fn try_with_tx<T, E>(
     res
 }
 
+#[cfg(feature = "unstable")]
 fn with_tx<T>(
     body: impl Fn(&TxContext) -> T,
     identity: Identity,
@@ -1640,7 +1642,11 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id(), false)
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
     }
 
     /// Acquire a mutable transaction
