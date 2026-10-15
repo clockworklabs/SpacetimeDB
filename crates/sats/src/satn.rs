@@ -502,10 +502,13 @@ impl PsqlPrintFmt {
     pub fn use_fmt(tuple: &ProductType, field: &ProductTypeElement, name: Option<&str>) -> PsqlPrintFmt {
         if tuple.is_identity()
             || tuple.is_connection_id()
+            || tuple.is_file_ref()
             || field.algebraic_type.is_identity()
             || field.algebraic_type.is_connection_id()
+            || field.algebraic_type.is_file_ref()
             || name.map(ProductType::is_identity_tag).unwrap_or_default()
             || name.map(ProductType::is_connection_id_tag).unwrap_or_default()
+            || name.map(ProductType::is_file_ref_tag).unwrap_or_default()
         {
             return PsqlPrintFmt::Hex;
         };

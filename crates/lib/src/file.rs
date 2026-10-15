@@ -46,7 +46,7 @@ impl fmt::Display for FileId {
 /// Represented in SATS as the special product `{ __file_ref__: U256 }`, so that generated client code
 /// can give it its own type, with the `FileId` in the low 128 bits and the read secret in the high
 /// 128 bits. Its BSATN is the same as the `U256`'s.
-/// Its text form, used in URLs, is the `FileId` in hex followed by the read secret in hex.
+/// Like an [`Identity`]'s, its text form, used in URLs, is that `U256` in hex.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileRef {
     id: FileId,
@@ -105,7 +105,7 @@ impl fmt::Debug for FileRef {
 
 impl fmt::Display for FileRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:032x}{:032x}", self.id.0, self.read_secret)
+        write!(f, "{:064x}", self.to_u256())
     }
 }
 
@@ -114,7 +114,7 @@ pub struct ParseFileRefError;
 
 impl fmt::Display for ParseFileRefError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a file reference is 64 hexadecimal digits")
+        f.write_str("a file reference is 64 hexadecimal digits, optionally after `0x`")
     }
 }
 
@@ -124,12 +124,13 @@ impl FromStr for FileRef {
     type Err = ParseFileRefError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        let hex = s.strip_prefix("0x").unwrap_or(s);
+        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(ParseFileRefError);
         }
-        let id = u128::from_str_radix(&s[..32], 16).map_err(|_| ParseFileRefError)?;
-        let read_secret = u128::from_str_radix(&s[32..], 16).map_err(|_| ParseFileRefError)?;
-        Ok(Self::new(FileId(id), read_secret))
+        u256::from_str_radix(hex, 16)
+            .map(Self::from_u256)
+            .map_err(|_| ParseFileRefError)
     }
 }
 
@@ -235,8 +236,9 @@ mod tests {
     fn file_ref_round_trips_through_text_and_bsatn() {
         let file_ref = FileRef::new(FileId(0x0123_4567_89ab_cdef_0011_2233_4455_6677), u128::MAX - 7);
         let text = file_ref.to_string();
-        assert_eq!(text.len(), 64);
+        assert_eq!(text, format!("{:064x}", file_ref.to_u256()));
         assert_eq!(text.parse::<FileRef>(), Ok(file_ref));
+        assert_eq!(format!("0x{text}").parse::<FileRef>(), Ok(file_ref));
 
         let bytes = bsatn::to_vec(&file_ref).unwrap();
         assert_eq!(bytes.len(), 32);
@@ -264,5 +266,9 @@ mod tests {
         assert_eq!("".parse::<FileRef>(), Err(ParseFileRefError));
         assert_eq!("zz".repeat(32).parse::<FileRef>(), Err(ParseFileRefError));
         assert_eq!("0".repeat(63).parse::<FileRef>(), Err(ParseFileRefError));
+        assert_eq!(
+            format!("+{}", "0".repeat(63)).parse::<FileRef>(),
+            Err(ParseFileRefError)
+        );
     }
 }

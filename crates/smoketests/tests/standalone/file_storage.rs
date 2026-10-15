@@ -22,8 +22,6 @@ pub struct Attachment {
     #[auto_inc]
     id: u64,
     file: FileRef,
-    /// The file reference as text, so the test can read it with SQL.
-    key: String,
     name: String,
 }
 
@@ -47,10 +45,18 @@ pub fn attach_uploads(ctx: &ReducerContext) {
         if let Some(file) = ctx.files().reference(upload.file) {
             if ctx.db.attachment().iter().all(|a| a.file != file) {
                 let name = format!("upload-{}", upload.size);
-                ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name });
+                ctx.db.attachment().insert(Attachment { id: 0, file, name });
             }
         }
     }
+}
+
+/// Attaches a file whose reference the caller holds.
+#[spacetimedb::reducer]
+pub fn attach(ctx: &ReducerContext, file: FileRef, name: String) -> Result<(), String> {
+    ctx.files().id(file).ok_or("no such file")?;
+    ctx.db.attachment().insert(Attachment { id: 0, file, name });
+    Ok(())
 }
 
 #[spacetimedb::reducer]
@@ -62,7 +68,7 @@ pub fn create_note(ctx: &ReducerContext, text: String) -> Result<(), String> {
         return Err("wrong size".into());
     }
     let file = meta.file_ref();
-    ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name: "note".into() });
+    ctx.db.attachment().insert(Attachment { id: 0, file, name: "note".into() });
     Ok(())
 }
 
@@ -72,7 +78,7 @@ pub fn copy_note(ctx: &ReducerContext) -> Result<(), String> {
     // The note came from this module's own table, so its ID needs no check.
     let id = ctx.files().copy(note.file.id_unchecked()).map_err(|e| e.to_string())?;
     let file = ctx.files().reference(id).ok_or("the copy exists")?;
-    ctx.db.attachment().insert(Attachment { id: 0, file, key: file.to_string(), name: "copy".into() });
+    ctx.db.attachment().insert(Attachment { id: 0, file, name: "copy".into() });
     Ok(())
 }
 
@@ -172,22 +178,24 @@ impl<'a> Files<'a> {
 }
 
 /// The file reference of the attachment called `name`, read with SQL.
+///
+/// SQL prints a `FileRef` in hex after `0x`, like an `Identity`, so without the `0x` it is the same
+/// text the upload API returns.
 fn attachment_key(test: &Smoketest, name: &str) -> String {
     let output = test
-        .sql_confirmed(&format!("SELECT key FROM attachment WHERE name = '{name}'"))
+        .sql_confirmed(&format!("SELECT file FROM attachment WHERE name = '{name}'"))
         .unwrap();
-    let key = Regex::new("[0-9a-f]{64}").unwrap();
-    key.find(&output)
-        .unwrap_or_else(|| panic!("no attachment {name}: {output}"))
-        .as_str()
+    let key = Regex::new("0x([0-9a-f]{64})").unwrap();
+    key.captures(&output)
+        .unwrap_or_else(|| panic!("no attachment {name}: {output}"))[1]
         .to_owned()
 }
 
 fn forge(file_ref: &str) -> String {
-    // Flip the last hex digit of the read secret.
-    let (rest, last) = file_ref.split_at(63);
-    let flipped = if last == "0" { "1" } else { "0" };
-    format!("{rest}{flipped}")
+    // Flip the first hex digit, which is in the read secret.
+    let (first, rest) = file_ref.split_at(1);
+    let flipped = if first == "0" { "1" } else { "0" };
+    format!("{flipped}{rest}")
 }
 
 #[test]
@@ -283,6 +291,11 @@ fn test_file_storage() {
     // A module can resolve an uploaded file's ID, which allow_upload recorded, to its reference.
     test.call("attach_uploads", &[]).unwrap();
     assert_eq!(attachment_key(&test, "upload-12"), uploaded);
+
+    // A client passes a reducer the reference the upload API returned, as it is.
+    test.call("attach", &[&uploaded, "\"pasted\""]).unwrap();
+    assert_eq!(attachment_key(&test, "pasted"), uploaded);
+    assert!(test.call("attach", &[&forge(&uploaded), "\"forged\""]).is_err());
 
     // Clients can't call the allow_upload lifecycle reducer themselves.
     assert!(test.call("check_upload", &[]).is_err());
