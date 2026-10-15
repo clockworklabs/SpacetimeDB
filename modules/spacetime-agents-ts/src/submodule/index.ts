@@ -5,6 +5,7 @@ import {
   SenderError,
   type InferSchema,
   type ReducerCtx,
+  type ReducerExport,
 } from 'spacetimedb/server';
 import { Timestamp } from 'spacetimedb';
 import { errors } from '../errors.js';
@@ -28,7 +29,17 @@ import {
 const ONE_SECOND_MICROS = 1_000_000n;
 export const DEFAULT_STALE_LOCK_THRESHOLD_SECS = 15 * 60;
 
-const spacetimedb = schema({
+const tables: {
+  apiKey: typeof apiKey;
+  agentConfig: typeof agentConfig;
+  agentAdminIdentity: typeof agentAdminIdentity;
+  agentOverride: typeof agentOverride;
+  thread: typeof thread;
+  message: typeof message;
+  threadLock: typeof threadLock;
+  threadLockSweeperTick: typeof threadLockSweeperTick;
+  messageEmbedding: typeof messageEmbedding;
+} = {
   apiKey,
   agentConfig,
   agentAdminIdentity,
@@ -38,7 +49,8 @@ const spacetimedb = schema({
   threadLock,
   threadLockSweeperTick,
   messageEmbedding,
-});
+};
+const spacetimedb: ReturnType<typeof schema<typeof tables>> = schema(tables);
 export default spacetimedb;
 
 export type AgentsTx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -57,138 +69,152 @@ function requireKnownProvider(provider: string): void {
   }
 }
 
-export const setAgentConfig = spacetimedb.reducer(
-  { staleLockThresholdSecs: t.option(t.u32()) },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    const staleLockThresholdSecs =
-      args.staleLockThresholdSecs ?? DEFAULT_STALE_LOCK_THRESHOLD_SECS;
-    if (staleLockThresholdSecs === 0) {
-      throw new SenderError(errors.invalidStaleLockThreshold);
-    }
-    const row = {
-      singleton: true,
-      staleLockThresholdSecs,
-      updatedAt: ctx.timestamp,
-    };
-    if (ctx.db.agentConfig.singleton.find(true)) {
-      ctx.db.agentConfig.singleton.update(row);
-    } else {
-      ctx.db.agentConfig.insert(row);
-    }
+const setAgentConfigArgs = { staleLockThresholdSecs: t.option(t.u32()) };
+export const setAgentConfig: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof setAgentConfigArgs
+> = spacetimedb.reducer(setAgentConfigArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  const staleLockThresholdSecs =
+    args.staleLockThresholdSecs ?? DEFAULT_STALE_LOCK_THRESHOLD_SECS;
+  if (staleLockThresholdSecs === 0) {
+    throw new SenderError(errors.invalidStaleLockThreshold);
   }
-);
-
-export const setApiKey = spacetimedb.reducer(
-  { provider: t.string(), key: t.string() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    requireKnownProvider(args.provider);
-    if (args.key.length === 0) throw new SenderError(errors.invalidApiKey);
-    const row = {
-      provider: args.provider,
-      key: args.key,
-      updatedAt: ctx.timestamp,
-    };
-    if (ctx.db.apiKey.provider.find(args.provider)) {
-      ctx.db.apiKey.provider.update(row);
-    } else {
-      ctx.db.apiKey.insert(row);
-    }
+  const row = {
+    singleton: true,
+    staleLockThresholdSecs,
+    updatedAt: ctx.timestamp,
+  };
+  if (ctx.db.agentConfig.singleton.find(true)) {
+    ctx.db.agentConfig.singleton.update(row);
+  } else {
+    ctx.db.agentConfig.insert(row);
   }
-);
+});
 
-export const clearApiKey = spacetimedb.reducer(
-  { provider: t.string() },
-  (ctx, { provider }) => {
-    requireAdmin(ctx);
-    ctx.db.apiKey.provider.delete(provider);
+const setApiKeyArgs = { provider: t.string(), key: t.string() };
+export const setApiKey: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof setApiKeyArgs
+> = spacetimedb.reducer(setApiKeyArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  requireKnownProvider(args.provider);
+  if (args.key.length === 0) throw new SenderError(errors.invalidApiKey);
+  const row = {
+    provider: args.provider,
+    key: args.key,
+    updatedAt: ctx.timestamp,
+  };
+  if (ctx.db.apiKey.provider.find(args.provider)) {
+    ctx.db.apiKey.provider.update(row);
+  } else {
+    ctx.db.apiKey.insert(row);
   }
-);
+});
 
+const clearApiKeyArgs = { provider: t.string() };
+export const clearApiKey: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof clearApiKeyArgs
+> = spacetimedb.reducer(clearApiKeyArgs, (ctx, { provider }) => {
+  requireAdmin(ctx);
+  ctx.db.apiKey.provider.delete(provider);
+});
+
+const setAgentOverrideArgs = {
+  agentName: t.string(),
+  provider: t.option(t.string()),
+  model: t.option(t.string()),
+  systemPrompt: t.option(t.string()),
+  maxTurns: t.option(t.u32()),
+  maxHistoryMessages: t.option(t.u32()),
+  maxTokens: t.option(t.u32()),
+  retries: t.option(t.u32()),
+};
 // Overrides for names that no client agent defines are stored but unused.
-export const setAgentOverride = spacetimedb.reducer(
-  {
-    agentName: t.string(),
-    provider: t.option(t.string()),
-    model: t.option(t.string()),
-    systemPrompt: t.option(t.string()),
-    maxTurns: t.option(t.u32()),
-    maxHistoryMessages: t.option(t.u32()),
-    maxTokens: t.option(t.u32()),
-    retries: t.option(t.u32()),
-  },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (args.provider !== undefined) requireKnownProvider(args.provider);
-    if (args.maxTurns === 0) throw new SenderError(errors.invalidMaxTurns);
-    if (args.maxHistoryMessages === 0) {
-      throw new SenderError(errors.invalidMaxHistory);
-    }
-    const row = {
-      agentName: args.agentName,
-      provider: args.provider,
-      model: args.model,
-      systemPrompt: args.systemPrompt,
-      maxTurns: args.maxTurns,
-      maxHistoryMessages: args.maxHistoryMessages,
-      maxTokens: args.maxTokens,
-      retries: args.retries,
-      updatedAt: ctx.timestamp,
-    };
-    if (ctx.db.agentOverride.agentName.find(args.agentName)) {
-      ctx.db.agentOverride.agentName.update(row);
-    } else {
-      ctx.db.agentOverride.insert(row);
-    }
+export const setAgentOverride: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof setAgentOverrideArgs
+> = spacetimedb.reducer(setAgentOverrideArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  if (args.provider !== undefined) requireKnownProvider(args.provider);
+  if (args.maxTurns === 0) throw new SenderError(errors.invalidMaxTurns);
+  if (args.maxHistoryMessages === 0) {
+    throw new SenderError(errors.invalidMaxHistory);
   }
-);
-
-export const clearAgentOverride = spacetimedb.reducer(
-  { agentName: t.string() },
-  (ctx, { agentName }) => {
-    requireAdmin(ctx);
-    ctx.db.agentOverride.agentName.delete(agentName);
+  const row = {
+    agentName: args.agentName,
+    provider: args.provider,
+    model: args.model,
+    systemPrompt: args.systemPrompt,
+    maxTurns: args.maxTurns,
+    maxHistoryMessages: args.maxHistoryMessages,
+    maxTokens: args.maxTokens,
+    retries: args.retries,
+    updatedAt: ctx.timestamp,
+  };
+  if (ctx.db.agentOverride.agentName.find(args.agentName)) {
+    ctx.db.agentOverride.agentName.update(row);
+  } else {
+    ctx.db.agentOverride.insert(row);
   }
-);
+});
 
-export const addAgentAdminIdentity = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, { identity }) => {
-    requireAdmin(ctx);
-    if (ctx.db.agentAdminIdentity.identity.find(identity) == null) {
-      ctx.db.agentAdminIdentity.insert({
-        identity,
-        addedAt: ctx.timestamp,
-      });
-    }
+const clearAgentOverrideArgs = { agentName: t.string() };
+export const clearAgentOverride: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof clearAgentOverrideArgs
+> = spacetimedb.reducer(clearAgentOverrideArgs, (ctx, { agentName }) => {
+  requireAdmin(ctx);
+  ctx.db.agentOverride.agentName.delete(agentName);
+});
+
+const addAgentAdminIdentityArgs = { identity: t.identity() };
+export const addAgentAdminIdentity: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof addAgentAdminIdentityArgs
+> = spacetimedb.reducer(addAgentAdminIdentityArgs, (ctx, { identity }) => {
+  requireAdmin(ctx);
+  if (ctx.db.agentAdminIdentity.identity.find(identity) == null) {
+    ctx.db.agentAdminIdentity.insert({
+      identity,
+      addedAt: ctx.timestamp,
+    });
   }
-);
+});
 
-export const removeAgentAdminIdentity = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, { identity }) => {
-    requireAdmin(ctx);
-    if (ctx.db.agentAdminIdentity.identity.find(identity) == null) return;
-    if (ctx.db.agentAdminIdentity.count() <= 1n) {
-      throw new SenderError(errors.cannotRemoveLastAdmin);
-    }
-    ctx.db.agentAdminIdentity.identity.delete(identity);
+const removeAgentAdminIdentityArgs = { identity: t.identity() };
+export const removeAgentAdminIdentity: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof removeAgentAdminIdentityArgs
+> = spacetimedb.reducer(removeAgentAdminIdentityArgs, (ctx, { identity }) => {
+  requireAdmin(ctx);
+  if (ctx.db.agentAdminIdentity.identity.find(identity) == null) return;
+  if (ctx.db.agentAdminIdentity.count() <= 1n) {
+    throw new SenderError(errors.cannotRemoveLastAdmin);
   }
-);
+  ctx.db.agentAdminIdentity.identity.delete(identity);
+});
 
+const clearThreadLockArgs = { threadId: t.u64() };
 // Bypasses ownership to clear a wedged lock.
-export const clearThreadLock = spacetimedb.reducer(
-  { threadId: t.u64() },
-  (ctx, { threadId }) => {
-    requireAdmin(ctx);
-    ctx.db.threadLock.threadId.delete(threadId);
-  }
-);
+export const clearThreadLock: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof clearThreadLockArgs
+> = spacetimedb.reducer(clearThreadLockArgs, (ctx, { threadId }) => {
+  requireAdmin(ctx);
+  ctx.db.threadLock.threadId.delete(threadId);
+});
 
-export const threadLockSweep = spacetimedb.reducer(
+const threadLockSweepArgs: { arg: typeof threadLockSweeperTick.rowType } = {
+  arg: threadLockSweeperTick.rowType,
+};
+export const threadLockSweep: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof threadLockSweepArgs
+> = spacetimedb.reducer(
   { onSchedule: threadLockSweeperTick },
-  { arg: threadLockSweeperTick.rowType },
+  threadLockSweepArgs,
   ctx => {
     const thresholdSecs =
       ctx.db.agentConfig.singleton.find(true)?.staleLockThresholdSecs ??

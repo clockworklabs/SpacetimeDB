@@ -1,4 +1,14 @@
-import { schema, t, table } from 'spacetimedb/server';
+import {
+  schema,
+  t,
+  table,
+  type ArrayBuilder,
+  type Infer,
+  type ProcedureExport,
+  type ReducerExport,
+  type ViewCtx,
+  type ViewExport,
+} from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import { install } from './install.js';
 import {
@@ -14,15 +24,27 @@ import {
 import * as auth from '../procedures.js';
 import { findCallerUser, getCallerUserId } from '../caller.js';
 
-const authSweeperTick = table(
-  { name: 'auth_sweeper_tick' },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
-);
+const authSweeperTickOptions = { name: 'auth_sweeper_tick' };
+const authSweeperTickColumns = {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+};
+const authSweeperTick: ReturnType<
+  typeof table<typeof authSweeperTickColumns, typeof authSweeperTickOptions>
+> = table(authSweeperTickOptions, authSweeperTickColumns);
 
-const spacetimedb = schema({
+const tables: {
+  rateLimit: typeof rateLimit;
+  authUser: typeof authUser;
+  authSession: typeof authSession;
+  authAccount: typeof authAccount;
+  authVerification: typeof authVerification;
+  authOauthState: typeof authOauthState;
+  authConfig: typeof authConfig;
+  authConnectionBinding: typeof authConnectionBinding;
+  authAdminIdentity: typeof authAdminIdentity;
+  authSweeperTick: typeof authSweeperTick;
+} = {
   rateLimit,
   authUser,
   authSession,
@@ -33,85 +55,105 @@ const spacetimedb = schema({
   authConnectionBinding,
   authAdminIdentity,
   authSweeperTick,
-});
+};
+const spacetimedb: ReturnType<typeof schema<typeof tables>> = schema(tables);
 export default spacetimedb;
 
-export const init = spacetimedb.init(ctx => {
-  install(ctx);
-});
-
-export const setAuthConfig = spacetimedb.reducer(
-  auth.setAuthConfigParams,
-  auth.setAuthConfig
+export const init: ReturnType<typeof spacetimedb.init> = spacetimedb.init(
+  ctx => {
+    install(ctx);
+  }
 );
 
-export const addAuthAdmin = spacetimedb.reducer(
-  auth.adminParams,
-  auth.addAuthAdmin
-);
+export const setAuthConfig: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.setAuthConfigParams
+> = spacetimedb.reducer(auth.setAuthConfigParams, auth.setAuthConfig);
 
-export const removeAuthAdmin = spacetimedb.reducer(
-  auth.adminParams,
-  auth.removeAuthAdmin
-);
+export const addAuthAdmin: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.adminParams
+> = spacetimedb.reducer(auth.adminParams, auth.addAuthAdmin);
 
-export const getAuthPublicKey = spacetimedb.procedure(
+export const removeAuthAdmin: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.adminParams
+> = spacetimedb.reducer(auth.adminParams, auth.removeAuthAdmin);
+
+export const getAuthPublicKey: ProcedureExport<
+  typeof spacetimedb.schemaType,
   {},
-  auth.authPublicKey,
-  auth.getAuthPublicKey
-);
+  typeof auth.authPublicKey
+> = spacetimedb.procedure({}, auth.authPublicKey, auth.getAuthPublicKey);
 
-export const linkConnection = spacetimedb.reducer(
-  auth.linkConnectionParams,
-  auth.linkConnection
-);
+export const linkConnection: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.linkConnectionParams
+> = spacetimedb.reducer(auth.linkConnectionParams, auth.linkConnection);
 
-export const unlinkConnection = spacetimedb.reducer({}, auth.unlinkConnection);
+export const unlinkConnection: ReducerExport<
+  typeof spacetimedb.schemaType,
+  {}
+> = spacetimedb.reducer({}, auth.unlinkConnection);
 
-export const updateProfile = spacetimedb.reducer(
-  auth.updateProfileParams,
-  auth.updateProfile
-);
+export const updateProfile: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.updateProfileParams
+> = spacetimedb.reducer(auth.updateProfileParams, auth.updateProfile);
 
-export const revokeSession = spacetimedb.reducer(
-  auth.sessionIdParams,
-  auth.revokeSession
-);
+export const revokeSession: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.sessionIdParams
+> = spacetimedb.reducer(auth.sessionIdParams, auth.revokeSession);
 
-export const listMySessions = spacetimedb.procedure(
+export const listMySessions: ProcedureExport<
+  typeof spacetimedb.schemaType,
   {},
-  auth.mySessions,
-  auth.listMySessions
-);
+  typeof auth.mySessions
+> = spacetimedb.procedure({}, auth.mySessions, auth.listMySessions);
 
-export const revokeMySession = spacetimedb.reducer(
-  auth.sessionIdParams,
-  auth.revokeMySession
-);
+export const revokeMySession: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof auth.sessionIdParams
+> = spacetimedb.reducer(auth.sessionIdParams, auth.revokeMySession);
 
-export const authSweep = spacetimedb.reducer(
+const authSweepArgs: { arg: typeof authSweeperTick.rowType } = {
+  arg: authSweeperTick.rowType,
+};
+export const authSweep: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof authSweepArgs
+> = spacetimedb.reducer(
   { onSchedule: authSweeperTick },
-  { arg: authSweeperTick.rowType },
+  authSweepArgs,
   auth.authSweep
 );
 
-export const myAuthUser = spacetimedb.view(
+const myAuthUserResult: ArrayBuilder<typeof authUser.rowType> = t.array(
+  authUser.rowType
+);
+export const myAuthUser: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof myAuthUserResult>
+> = spacetimedb.view(
   { name: 'my_auth_user', public: true },
-  t.array(authUser.rowType),
+  myAuthUserResult,
   ctx => {
     const row = findCallerUser(ctx);
     return row ? [row] : [];
   }
 );
 
-export const whoami = spacetimedb.procedure(
+const whoamiResult = t.object('WhoAmI', {
+  userId: t.option(t.string()),
+  senderIdentityHex: t.string(),
+});
+export const whoami: ProcedureExport<
+  typeof spacetimedb.schemaType,
   {},
-  t.object('WhoAmI', {
-    userId: t.option(t.string()),
-    senderIdentityHex: t.string(),
-  }),
-  ctx => ({
-    userId: getCallerUserId(ctx) ?? undefined,
-    senderIdentityHex: ctx.sender.toHexString(),
-  })
-);
+  typeof whoamiResult
+> = spacetimedb.procedure({}, whoamiResult, ctx => ({
+  userId: getCallerUserId(ctx) ?? undefined,
+  senderIdentityHex: ctx.sender.toHexString(),
+}));
