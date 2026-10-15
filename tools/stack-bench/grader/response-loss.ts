@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { request, type BrowserContext, type WebSocketRoute } from 'playwright';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { viteToken } from '../container/browser-network-proxy.js';
+import { connectBrowserSocket, installSocketDeliveryGate } from '../src/actions/browser-socket-delivery.js';
 
 // Install before the actor opens its connection. This gate changes delivery,
 // never request contents, database state, or the application's retry policy.
@@ -23,6 +24,18 @@ export async function installResponseLoss(context: BrowserContext) {
       bytes: Buffer.byteLength(data), sha256: createHash('sha256').update(data).digest('hex'),
     }), ...(status === undefined ? {} : { status }) });
   };
+  installSocketDeliveryGate(context, (page, server) => {
+    const pair = { page, server }, path = new URL(page.url()).pathname;
+    if (state !== 'finished') sockets.add(pair);
+    return {
+      sent(data) { if (state === 'armed') record('ws-send', path, data); },
+      received(data) {
+        if (state !== 'armed') return true;
+        record('ws-drop', path, data); return false;
+      },
+      closed() { sockets.delete(pair); },
+    };
+  });
   // The isolated actor loses write replies on all its HTTP paths and inbound
   // WebSocket messages. This also covers SDK retries and proxy URLs unchanged.
   await context.route('**/*', route => {
@@ -51,28 +64,24 @@ export async function installResponseLoss(context: BrowserContext) {
     // Closing Vite's verified tooling connection reloads the document. It is
     // not an application reply; unknown tokens still take the fault path.
     if (token && await viteToken(url.host, token)) { page.connectToServer(); return; }
-    const server = page.connectToServer(), pair = { page, server };
-    sockets.add(pair);
-    const path = new URL(page.url()).pathname;
+    const delivery = connectBrowserSocket(context, page), { server } = delivery;
     page.onMessage(data => {
       try {
-        if (state === 'armed') record('ws-send', path, data);
-        server.send(data);
+        delivery.send(data);
       } catch { errors.add('WebSocket request forwarding failed'); }
     });
     server.onMessage(data => {
       try {
-        if (state === 'armed') record('ws-drop', path, data);
-        else page.send(data);
+        if (delivery.receive(data)) page.send(data);
       } catch { errors.add('WebSocket response forwarding failed'); }
     });
     page.onClose(async (code, reason) => {
-      sockets.delete(pair);
+      delivery.closed();
       try { await server.close({ code, reason }); }
       catch { errors.add('WebSocket server close failed'); }
     });
     server.onClose(async (code, reason) => {
-      sockets.delete(pair);
+      delivery.closed();
       try { await page.close({ code, reason }); }
       catch { errors.add('WebSocket client close failed'); }
     });

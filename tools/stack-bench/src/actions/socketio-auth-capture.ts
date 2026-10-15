@@ -1,5 +1,6 @@
 import type { Page, Request } from 'playwright';
 import { withBrowserRequest } from './browser-request.js';
+import { connectBrowserSocket } from './browser-socket-delivery.js';
 
 interface ConnectCall {
   packet: string;
@@ -128,19 +129,20 @@ export async function installSocketIoAuthCapture(page: Page): Promise<Capture> {
     } catch { active.fail(); await route.abort().catch(() => {}); }
   });
   await page.routeWebSocket(url => socketIoTransport(url.href, 'websocket'), client => {
-    const server = client.connectToServer();
+    const delivery = connectBrowserSocket(page.context(), client), { server } = delivery;
     let session = sessionFor(client.url());
     client.onMessage(data => {
       session ??= sessionFor(client.url());
-      if (typeof data !== 'string') { owner?.fail(); server.send(data); return; }
-      server.send(send(session, data, true));
+      if (typeof data !== 'string') { owner?.fail(); delivery.send(data); return; }
+      delivery.send(send(session, data, true));
     });
     server.onMessage(data => {
+      if (!delivery.receive(data)) return;
       session ??= sessionFor(client.url());
       if (typeof data === 'string') session = receive(client.url(), data, session);
       client.send(data);
     });
-    const closed = () => { if (session) finish(session, null); };
+    const closed = () => { delivery.closed(); if (session) finish(session, null); };
     client.onClose(async (code, reason) => { closed(); await server.close({ code, reason }).catch(closed); });
     server.onClose(async (code, reason) => { closed(); await client.close({ code, reason }).catch(closed); });
   });

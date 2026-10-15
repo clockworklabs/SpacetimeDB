@@ -6,6 +6,7 @@ import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import type { LeasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import { inconclusive } from '../../actions/actor-action-runtime.js';
 import { withBrowserRequest } from '../../actions/browser-request.js';
+import { connectBrowserSocket } from '../../actions/browser-socket-delivery.js';
 
 interface Reader { readonly offset: number; readonly remaining: number }
 interface Writer { getBuffer(): Uint8Array }
@@ -154,7 +155,7 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
   });
   await inspector.send('Network.enable');
   await page.routeWebSocket(/\/v1\/database\/[^/]+\/subscribe(?:\?|$)/, client => {
-    const server = client.connectToServer();
+    const delivery = connectBrowserSocket(page.context(), client), { server } = delivery;
     const socket: Socket = { url: client.url(), server, closed: false, invalid: false,
       identified: false, calls: [], ids: new Set(), nextId: 0xffffffff };
     capture.sockets = capture.sockets.filter(item => !item.closed);
@@ -170,12 +171,14 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
       capture.auth?.fail();
     };
     const close = () => {
+      delivery.closed();
       socket.closed = true;
       socket.invalid = true;
       for (const item of socket.calls) if (item.observation && !item.result) {
         item.observation.failed = true;
         item.observation.finishWait();
       }
+      for (const item of socket.calls) if (!item.result) capture.authResult?.(socket, item.call.requestId, 'unknown');
       socket.pending?.finish('unknown');
       socket.authPending?.finish('unknown');
     };
@@ -215,9 +218,10 @@ export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
         invalidate();
         if (patchActive) return;
       }
-      try { server.send(outbound); } catch { invalidate(); }
+      try { delivery.send(outbound); } catch { invalidate(); }
     });
     server.onMessage(bytes => {
+      if (!delivery.receive(bytes)) return;
       try {
         for (const message of decode(wire, wire.ServerMessage, serverBytes(bytes))) {
           if (message.tag === 'InitialConnection') {

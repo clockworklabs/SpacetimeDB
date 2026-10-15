@@ -6,6 +6,7 @@ import { browserApplicationBoundary } from './browser-boundary.js';
 import { startSpacetimeAuthPatch, startSpacetimeAuthWriteCapture } from '../stacks/backends/spacetime-browser-session.js';
 import { withBrowserRequest } from './browser-request.js';
 import { installSocketIoAuthCapture, socketIoAuthCapture, socketIoTransport } from './socketio-auth-capture.js';
+import { connectBrowserSocket } from './browser-socket-delivery.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
@@ -124,7 +125,8 @@ type SocketPatch = {
 const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
 
 // Install before navigation: Playwright cannot route an already-open socket.
-// Context routing lets the later response-loss gate replace this passive route.
+// Page routing keeps native capture installed when the context fault gate is added.
+// Both use one delivery path; a lost reply cannot become a captured receipt.
 export async function installAuthWebSocketCapture(page: Page, passive?: PassiveSocketFrame): Promise<void> {
   const state: { active?: SocketPatch } = {};
   socketPatches.set(page, state);
@@ -136,8 +138,8 @@ export async function installAuthWebSocketCapture(page: Page, passive?: PassiveS
       && !(owner.nativeCapture && /\/v1\/database\/[^/]+\/subscribe(?:\?|$)/.test(socket.url()))
       && !passive?.(socket.url(), frame.payload)) owner.fail();
   }));
-  await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
-    const server = client.connectToServer();
+  await page.routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
+    const delivery = connectBrowserSocket(page.context(), client), { server } = delivery;
     const awaiting = new Map<number, { owner: SocketPatch; request: object; type: string;
       changed: NonNullable<ReturnType<typeof patchAuthRequest>> }>();
     client.onMessage(data => {
@@ -157,14 +159,15 @@ export async function installAuthWebSocketCapture(page: Page, passive?: PassiveS
               awaiting.delete(id);
             } else awaiting.set(id, { owner, request, type: `${message.type}Response`,
               changed: changed ?? { body: String(data), shape: 'captured' } });
-            server.send(changed?.body ?? data);
+            delivery.send(changed?.body ?? data);
             return;
           }
         } catch { owner.fail(request); return; }
       }
-      server.send(data);
+      delivery.send(data);
     });
     server.onMessage(data => {
+      if (!delivery.receive(data)) return;
       if (awaiting.size) {
         let message: Record<string, unknown> | undefined;
         try { message = JSON.parse(String(data)); } catch { /* unrelated frame */ }
@@ -180,6 +183,7 @@ export async function installAuthWebSocketCapture(page: Page, passive?: PassiveS
       client.send(data);
     });
     const failPending = () => {
+      delivery.closed();
       for (const { owner, request } of awaiting.values()) owner.fail(request);
       awaiting.clear();
     };

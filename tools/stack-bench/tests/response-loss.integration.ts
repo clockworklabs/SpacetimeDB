@@ -1,11 +1,138 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { installResponseLoss } from '../grader/response-loss.js';
+import { installAuthWebSocketCapture, withWriteCompletion } from '../src/actions/auth-request-patch.js';
+import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { ActionInconclusive } from '../src/actions/action-contract.js';
+
+// Both observers must operate on one connection, including after reload. A
+// committed write with a suppressed reply must not satisfy browser completion.
+test('write capture and response loss compose on every native transport', { timeout: 120_000 }, async t => {
+  const codec = await import(new URL('../src/stacks/spacetime-wire-codec.js', import.meta.url).href);
+  const { wsServer } = createRequire(import.meta.url)('playwright-core/lib/utilsBundle');
+  const encode = (type: { serialize(writer: unknown, value: unknown): void }, value: unknown) => {
+    const writer = new codec.BinaryWriter(128); type.serialize(writer, value); return Buffer.from(writer.getBuffer());
+  };
+  const server = createServer((req, res) => {
+    if (req.url?.includes('/schema')) res.end(JSON.stringify({ reducers: [] }));
+    else res.end('<!doctype html><p>checkout fixture</p>');
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const sockets = new wsServer({ server });
+  const commits = new Set<string>(), forwarded: string[] = [];
+  sockets.on('connection', (socket: { on(event: string, fn: (raw: Buffer) => void): void;
+    send(data: string | Buffer): void }, req: { url: string; headers: Record<string, string> }) => {
+    const address = new URL(req.url, url), kind = address.searchParams.get('kind')!, trial = address.searchParams.get('trial')!;
+    if (kind === 'spacetime') socket.send(Buffer.concat([Buffer.from([0]), encode(codec.ServerMessage, {
+      tag: 'InitialConnection', value: { identity: { __identity__: 1n }, connectionId: { __connection_id__: 1n }, token: 'fixture' },
+    })]));
+    else if (kind === 'socketio') socket.send(`0${JSON.stringify({ sid: trial, upgrades: [], pingInterval: 25000, pingTimeout: 20000 })}`);
+    else socket.send('{"type":"ready"}');
+    socket.on('message', raw => {
+      if (kind === 'socketio' && String(raw) === '41') return;
+      const message = kind === 'spacetime' ? codec.ClientMessage.deserialize(new codec.BinaryReader(raw))
+        : kind === 'convex' ? JSON.parse(String(raw)) : JSON.parse(String(raw).slice(2));
+      const id = kind === 'spacetime' ? message.value.requestId : message.requestId;
+      const cart = kind === 'spacetime' ? message.value.args[0] : kind === 'convex' ? message.args[0].cart : message.cart;
+      const key = `${trial}:${cart}`, accepted = !commits.has(key);
+      commits.add(key); forwarded.push(createHash('sha256').update(raw).digest('hex'));
+      const reply = kind === 'spacetime' ? Buffer.concat([Buffer.from([0]), encode(codec.ServerMessage, {
+        tag: 'ReducerResult', value: { requestId: id, timestamp: { __timestamp_micros_since_unix_epoch__: 1n },
+          result: { tag: accepted ? 'OkEmpty' : 'Err', ...(accepted ? {} : { value: 'consumed' }) } },
+      })]) : kind === 'convex' ? JSON.stringify({ type: 'MutationResponse', requestId: id, success: accepted, result: null })
+        : accepted ? `40${JSON.stringify({ sid: trial })}` : '44{"message":"consumed"}';
+      setTimeout(() => socket.send(reply), 100);
+    });
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'socket-loss-composition-')), leasePath = join(dir, 'lease.json');
+  const prior = { lease: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
+  const lease = createBackendLease({ runId: 'socket-loss-composition', backend: 'spacetime', track: 'ecommerce',
+    runIndex: 0, serverUri: url, module: 'shop', dataDir: join(dir, 'data') });
+  lease.state = 'active'; writeBackendLease(leasePath, lease);
+  process.env.STACK_BENCH_LEASE = leasePath; process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  const browser = await chromium.launch({ headless: true });
+  const evidence: object[] = [];
+  try {
+    for (const kind of ['spacetime', 'convex', 'socketio']) for (const gateFirst of [false, true])
+      for (const reload of [false, true]) await t.test(`${kind}, gate first=${gateFirst}, reload=${reload}`, async () => {
+        const trial = `${kind}-${gateFirst}-${reload}`, context = await browser.newContext(), page = await context.newPage();
+        let gate: Awaited<ReturnType<typeof installResponseLoss>> | undefined;
+        try {
+          if (gateFirst) gate = await installResponseLoss(context);
+          await installAuthWebSocketCapture(page);
+          if (kind === 'spacetime') await installSpacetimeWriteCapture(page);
+          if (!gateFirst) gate = await installResponseLoss(context);
+          await page.goto(url);
+          const connect = () => page.evaluate(async ({ url, kind, trial }) => {
+            const path = kind === 'spacetime' ? '/proxy/v1/database/shop/subscribe'
+              : kind === 'convex' ? '/proxy/api/1.0.0/sync' : '/socket.io/';
+            const socket = new WebSocket(`${url.replace('http:', 'ws:')}${path}?kind=${kind}&trial=${trial}`
+              + (kind === 'socketio' ? '&EIO=4&transport=websocket' : ''), kind === 'spacetime' ? 'v3.bsatn.spacetimedb' : []);
+            socket.binaryType = 'arraybuffer'; Object.assign(window, { socket, replies: 0 });
+            await new Promise<void>(resolve => socket.addEventListener('message', () => resolve(), { once: true }));
+            socket.addEventListener('message', () => { (window as unknown as { replies: number }).replies++; });
+          }, { url, kind, trial });
+          await connect();
+          if (reload) { await page.reload(); await connect(); }
+          const send = async (id: number, cart: number) => {
+            const packet = kind === 'spacetime' ? encode(codec.ClientMessage, { tag: 'CallReducer',
+              value: { reducer: 'checkout', requestId: id, flags: 0, args: new Uint8Array([cart]) } })
+              : kind === 'convex' ? JSON.stringify({ type: 'Mutation', requestId: id, udfPath: 'shop:checkout', args: [{ cart }] })
+              : `40${JSON.stringify({ requestId: id, cart })}`;
+            await page.evaluate(({ packet, kind, id }) => {
+              const socket = (window as unknown as { socket: WebSocket }).socket;
+              if (kind === 'socketio' && id === 2) socket.send('41');
+              socket.send(typeof packet === 'string' ? packet : new Uint8Array(packet));
+            }, { packet: typeof packet === 'string' ? packet : [...packet], kind, id });
+            return createHash('sha256').update(packet).digest('hex');
+          };
+          const setup = await withWriteCompletion(page, () => send(1, 1));
+          assert.equal(setup.writes.length, 1, 'native capture must still observe setup with the fault installed');
+          assert.equal(await page.evaluate(() => (window as unknown as { replies: number }).replies), 1);
+          gate!.arm();
+          const loss = withWriteCompletion(page, () => send(2, 2)).then(() => 'complete', error => {
+            assert(error instanceof ActionInconclusive); return 'inconclusive';
+          });
+          for (let n = 0; n < 100 && !gate!.evidence().events.some(e => e.kind === 'ws-drop'); n++) await delay(10);
+          assert(commits.has(`${trial}:2`), 'independent server state must show the committed operation');
+          assert(gate!.evidence().events.some(e => e.kind === 'ws-drop'), 'fault must observe and suppress the native reply');
+          const sent = gate!.evidence().events.find(e => e.kind === 'ws-send' && e.sha256 === forwarded.at(-1));
+          assert(sent, 'the fault must record the exact bytes forwarded to the server');
+          assert.equal(await page.evaluate(() => (window as unknown as { replies: number }).replies), 1);
+          assert.equal(await Promise.race([loss, delay(50).then(() => 'waiting')]), 'waiting',
+            'a suppressed reply must not resolve capture as complete');
+          await gate!.finish(); assert.equal(await loss, 'inconclusive');
+          await connect();
+          const before = commits.size;
+          const retry = await withWriteCompletion(page, () => send(3, 2));
+          assert.equal(retry.writes.length, 1); assert.equal(commits.size, before, 'retry cannot duplicate the effect');
+          assert.deepEqual(gate!.evidence().errors, []); assert.equal(gate!.evidence().truncated, false);
+          evidence.push({ kind, gateFirst, reload, setupWrites: setup.writes.length,
+            lostReply: 'inconclusive', fault: gate!.evidence(), duplicateEffect: false });
+        } finally { await gate?.finish(); await context.close(); }
+      });
+  } finally {
+    await browser.close(); for (const socket of sockets.clients) socket.terminate(); sockets.close();
+    server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+    if (prior.lease === undefined) delete process.env.STACK_BENCH_LEASE; else process.env.STACK_BENCH_LEASE = prior.lease;
+    if (prior.token === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN; else process.env.STACK_BENCH_LEASE_TOKEN = prior.token;
+    rmSync(dir, { recursive: true, force: true });
+    if (process.env.STACK_BENCH_SOCKET_COMPOSITION_EVIDENCE) writeFileSync(process.env.STACK_BENCH_SOCKET_COMPOSITION_EVIDENCE,
+      JSON.stringify({ command: 'node --test --test-name-pattern="write capture and response loss compose" dist/tests/response-loss.integration.js',
+        cases: evidence, cleanup: 'browser, server and temporary lease closed' }, null, 2) + '\n');
+  }
+});
 
 test('a lost browser HTTP reply keeps its committed effect and does not change the write', async t => {
   // A lost reply must not apply its Set-Cookie header, even after cleanup or retry.
