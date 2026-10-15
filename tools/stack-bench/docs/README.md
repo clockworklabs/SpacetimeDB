@@ -21,6 +21,8 @@ Use the root [README](../README.md) for the product summary and
   and failure review
 - [Check categories](check-categories.md): categories and counting units
 - [Study method](study-method.md): collecting and reporting a defensible comparison
+- [Ecommerce design review](design-review.md): limits of the experimental design,
+  scoring, qualification, and supported claims
 - [Reference apps](../reference-apps/README.md): grading fixtures and qualification
 
 ## Understand the system
@@ -32,6 +34,8 @@ Use the root [README](../README.md) for the product summary and
 
 - [Development](development.md): local dependencies, source checks, and agent adapters
 - [Authoring](authoring.md): add features, checks, prompts, and rules through their existing owners
+- [Ecommerce fix proposal](grading-fix-proposal.md): proposed corrections,
+  acceptance cases, and remaining measurement questions
 - [Ecommerce composition](../tracks/ecommerce/composition/README.md): packs,
   recipes, calibration, and specification treatment
 - [Ecommerce levels](../tracks/ecommerce/LEVELS.md): sequential levels and dependency depths

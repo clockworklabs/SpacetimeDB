@@ -57,9 +57,10 @@ One word per thing. The CLI, dashboard, and artifacts use these.
   the grader scores. A feature opens when its parents pass.
 - **questline**: a named path of features through the graph, such as identity
   or fulfilment. One questline can stop while the others continue.
-- **check**: one scored criterion with a stable id such as `601b`. A **gate**
-  check must pass before the feature's descendants open; a **guarantee** check
-  costs points but never blocks.
+- **check**: one scored criterion with a stable id such as `601b`. Feature checks
+  measure product behavior; **guarantee** checks measure required properties of
+  that behavior. In progressive dependency mode, every check must pass before
+  the feature unlocks its descendants. Guarantee failures block dependent work.
 - **disclosure**: whether a specification is requested (in the prompt),
   expected (not in the prompt, scored), or observed (not in the prompt, not
   scored).

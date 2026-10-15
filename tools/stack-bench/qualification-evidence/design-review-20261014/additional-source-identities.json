@@ -1,0 +1,21 @@
+{
+  "recordedAt": "2026-10-14T23:22:08.257Z",
+  "files": {
+    "src/actions/auth-request-patch.ts": "5a7ae0225bc2dafb2623e03f27e7bb19a74d5572b3e9c00650521a0edc56c152",
+    "src/campaigns/campaign-publish.ts": "a80a73689df30e06549c50dd862eded7815ec8be7368182729f9a88fedf6988c",
+    "src/campaigns/campaign-report.ts": "10f15dad8b2fae2a6463ea24e87be0dfc5771742c11e4b093754630be68ba4a4",
+    "src/campaigns/campaign-scheduler.ts": "cb9084f05bcf7185361ed7491ac6c68b0f29c4f75133ea3229ee1f854c569b20",
+    "src/progression/progression-graph.ts": "c7f082fe5fccf3ac6e62211dca140015ad7086e07d9d66049a5a4e1c1f612bdc",
+    "tests/auth-request-patch.test.ts": "34f6156e3d038b118190ece9e617997e11344f9baa766735f7c6ab6d2d66bdba",
+    "tests/campaign-publish.contract.ts": "29cd2b143b7188e23954803dcaad325bf14d9f5596f72dd2baaff296a609222b"
+  },
+  "checks": {
+    "typescript": "passed",
+    "browserAndGraph": "probe-evidence.json",
+    "authTransport": "auth-request-patch-test.txt",
+    "publisher": "publisher-probe-test.txt"
+  },
+  "limits": [
+    "No model or Docker runs. No campaign rankings evaluated. Current working copy includes unrelated uncommitted changes."
+  ]
+}

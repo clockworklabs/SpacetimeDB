@@ -25,12 +25,11 @@ assertion failed. Several checks can stop at the same missing interface; do not
 count them as independent application defects. Other control failures still
 need review: a missing error marker does not prove that a refused write occurred.
 
-Password security remains a required account guarantee. Normal account creation,
-duplicate-account refusal, and sign-out/sign-in control access to dependent
-features. A failed password guarantee prevents full account completion, but does
-not stop otherwise usable accounts from opening later work. This policy applies
-to newly compiled dependency campaigns. It does not change frozen campaigns or
-provide scores for features that an earlier agent was never asked to build.
+Password security is a required account guarantee. In progressive dependency
+mode, all account checks must pass before account-dependent work opens. A failed
+password guarantee prevents full account completion and blocks dependent work,
+even when normal sign-in works. Frozen campaigns retain their compiled policy.
+Unassigned work receives no completion credit.
 
 Categories do not prove that a guarantee was supplied without being asked. That requires an audit of the exact delivered request, contracts, and selected skills against the [request boundaries](prompting.md#request-boundaries). A production requirement can still be explicitly disclosed.
 
