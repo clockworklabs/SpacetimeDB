@@ -270,6 +270,47 @@ mod tests {
     }
 
     #[test]
+    fn test_view_call() {
+        let uuid = spacetimedb_lib::Uuid::from_u128(1);
+        let users_by = || {
+            Table::<User>::view_call(
+                "users_by",
+                [
+                    (-5i32).to_sql_literal(),
+                    "O'Neil".to_sql_literal(),
+                    uuid.to_sql_literal(),
+                ],
+            )
+        };
+
+        let expected = r#"SELECT * FROM "users_by"(-5, 'O''Neil', '00000000-0000-0000-0000-000000000001')"#;
+        assert_eq!(users_by().build().sql, expected);
+
+        let sql = users_by().r#where(|u| u.id.eq(10)).build().sql;
+        let expected = r#"SELECT * FROM "users_by"(-5, 'O''Neil', '00000000-0000-0000-0000-000000000001') WHERE ("users_by"."id" = 10)"#;
+        assert_eq!(sql, expected);
+    }
+
+    #[test]
+    fn test_view_call_semijoin() {
+        let users_by = || Table::<User>::view_call("users_by", [1u32.to_sql_literal()]);
+        let other_by = || Table::<Other>::view_call("other_by", [true.to_sql_literal()]);
+
+        let sql = users_by().left_semijoin(other_by(), |u, o| u.id.eq(o.uid)).build().sql;
+        let expected =
+            r#"SELECT "users_by".* FROM "users_by"(1) JOIN "other_by"(TRUE) ON "users_by"."id" = "other_by"."uid""#;
+        assert_eq!(sql, expected);
+
+        let sql = users_by()
+            .r#where(|u| u.id.gt(10))
+            .right_semijoin(other_by(), |u, o| u.id.eq(o.uid))
+            .build()
+            .sql;
+        let expected = r#"SELECT "other_by".* FROM "users_by"(1) JOIN "other_by"(TRUE) ON "users_by"."id" = "other_by"."uid" WHERE ("users_by"."id" > 10)"#;
+        assert_eq!(sql, expected);
+    }
+
+    #[test]
     fn test_literals() {
         use spacetimedb_lib::{ConnectionId, Identity};
 

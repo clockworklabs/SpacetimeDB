@@ -20,6 +20,15 @@ impl RowLevelExpr {
         rls: &RawRowLevelSecurityDefV9,
     ) -> anyhow::Result<Self> {
         let (sql, _) = parse_and_type_sub(&rls.sql, &SchemaViewer::new(tx, auth_ctx), auth_ctx)?;
+
+        let (ProjectName::None(expr) | ProjectName::Some(expr, _)) = &sql;
+        let mut calls_view_with_args = false;
+        expr.for_each_relvar(|relvar| calls_view_with_args |= relvar.view_args.is_some());
+        anyhow::ensure!(
+            !calls_view_with_args,
+            "Row-level security is not supported on parameterized views: {}",
+            rls.sql
+        );
         let table_id = sql.return_table_id().unwrap();
         let schema = tx.schema_for_table(table_id)?;
 

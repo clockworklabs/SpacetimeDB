@@ -376,6 +376,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
         schema: table_schema.clone(),
         alias: table_name.clone().into(),
         delta: None,
+        view_args: None,
     });
 
     let filter = Expr::BinOp(

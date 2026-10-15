@@ -445,6 +445,9 @@ mod tests {
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
             "update t set a = 1, b = 2 where x = :sender",
+            // View calls with positional literal arguments
+            "select * from v(42)",
+            "select a from v(42, 'x') as w where w.a = 1",
         ] {
             assert!(parse_sql(sql).is_ok());
         }
