@@ -3211,6 +3211,13 @@ pub(crate) mod tests {
         assert_eq!(row.result_payload, Some(payload));
         assert_eq!(row.last_transport_error, None);
 
+        // Reject out-of-order acknowledgments before changing either the stream or its messages.
+        let stream_before = tx.st_outbound_stream_by_id(stream_id)?;
+        assert!(tx.ack_outbound_idc_msg(stream_id, 2).is_err());
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?, stream_before);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.is_some());
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_some());
+
         // Repeated acknowledgments leave later messages and other streams alone.
         let mut expected_stream = tx.st_outbound_stream_by_id(stream_id)?.unwrap();
         expected_stream.ack_prefix = 1;
@@ -3220,6 +3227,10 @@ pub(crate) mod tests {
         assert!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.is_none());
         assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_some());
         assert!(tx.outbound_msg_by_stream_seq(other.stream_id, 1)?.is_some());
+
+        tx.ack_outbound_idc_msg(stream_id, 2)?;
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?.unwrap().ack_prefix, 2);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_none());
 
         Ok(())
     }

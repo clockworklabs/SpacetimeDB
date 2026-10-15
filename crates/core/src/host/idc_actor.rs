@@ -130,19 +130,6 @@ impl LoadedMessage {
     }
 }
 
-fn http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        // The local proxy handles routing. A redirect is not an IDC result.
-        .redirect(reqwest::redirect::Policy::none())
-        .http2_prior_knowledge()
-        .http2_keep_alive_interval(Some(Duration::from_millis(200)))
-        .http2_keep_alive_timeout(Duration::from_secs(5))
-        .http2_keep_alive_while_idle(true)
-        .timeout(Duration::from_secs(5))
-        .build()
-        .expect("failed to build IDC reqwest client")
-}
-
 /// Process one message at a time per stream. Other streams can run at the same time.
 ///
 /// For each message:
@@ -242,10 +229,38 @@ async fn run_idc_loop(
     Ok(())
 }
 
+/// Keep the stream active through delivery, callback, and cleanup.
+/// Errors leave the message pending for retry. A saved result skips the HTTP request.
+async fn handle_message(
+    db: &RelationalDB,
+    client: &reqwest::Client,
+    database_identity: Identity,
+    config: &IdcConfig,
+    module_host: &WeakModuleHost,
+    msg: LoadedMessage,
+) -> anyhow::Result<()> {
+    let delivered = match msg {
+        LoadedMessage::Pending(msg) => {
+            deliver_message_and_record_result(db, client, database_identity, config, msg).await?
+        }
+        LoadedMessage::Delivered(msg) => Some(msg),
+    };
+    let Some(delivered) = delivered else {
+        // A late reply arrived after the message was already cleaned up.
+        return Ok(());
+    };
+
+    let host = module_host
+        .upgrade()
+        .context("IDC module host is no longer available")?;
+    host.run_idc_callback_and_cleanup(delivered).await
+}
+
 /// Take the next ready message and mark its stream as active until processing finishes.
 fn take_ready_message(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<Option<LoadedMessage>> {
     while let Some(stream_id) = streams.pop_ready() {
-        match read_next_ordered_message(db, stream_id)
+        // With 1 inflight msg per stream, ack_prefix + 1 selects the next message or retry.
+        match read_next_message(db, stream_id, None)
             .with_context(|| format!("failed to read next message for stream {stream_id}"))?
         {
             Some(msg) => {
@@ -261,32 +276,126 @@ fn take_ready_message(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyho
     Ok(None)
 }
 
-/// Keep the stream active through delivery, callback, and cleanup.
-/// Errors leave the message pending for retry. A saved result skips the HTTP request.
-async fn handle_message(
-    db: &RelationalDB,
-    client: &reqwest::Client,
-    database_identity: Identity,
-    config: &IdcConfig,
-    module_host: &WeakModuleHost,
-    msg: LoadedMessage,
-) -> anyhow::Result<()> {
-    let msg = match msg {
-        LoadedMessage::Pending(msg) => {
-            let Some(delivered) = deliver_message_and_record_result(db, client, database_identity, config, msg).await?
-            else {
-                return Ok(());
-            };
-            delivered
+/// Restore pending streams at startup without loading message bodies.
+fn restore_pending_streams(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<()> {
+    for stream_id in read_pending_streams(db)? {
+        streams.push(stream_id);
+    }
+    Ok(())
+}
+
+fn read_pending_streams(db: &RelationalDB) -> anyhow::Result<Vec<StreamId>> {
+    let tx = db.begin_tx(Workload::Internal);
+    let mut pending = Vec::new();
+    for stream in db.st_outbound_streams(&tx)? {
+        let stream = stream?;
+        // next_seq - 1 is the last assigned sequence, so anything beyond ack_prefix is still pending.
+        if stream.ack_prefix < stream.next_seq - 1 {
+            pending.push(StreamId(stream.stream_id));
         }
-        LoadedMessage::Delivered(msg) => msg,
+    }
+    Ok(pending)
+}
+
+/// Read the message after `after_seq`, or resume from the acknowledgment prefix when absent.
+fn read_next_message(
+    db: &RelationalDB,
+    stream_id: StreamId,
+    after_seq: Option<u64>,
+) -> anyhow::Result<Option<LoadedMessage>> {
+    let tx = db.begin_tx(Workload::Internal);
+    // An insert may have rolled back or cleanup may have finished before we read its notification.
+    let Some(stream) = db.st_outbound_stream_by_id(&tx, stream_id.0)? else {
+        return Ok(None);
     };
-    finalize_message(module_host, msg).await
+    let after_seq = after_seq.unwrap_or(stream.ack_prefix);
+    anyhow::ensure!(
+        after_seq >= stream.ack_prefix,
+        "IDC stream {stream_id} cursor {after_seq} is behind acknowledgment {}",
+        stream.ack_prefix
+    );
+    let seq = after_seq
+        .checked_add(1)
+        .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} sequence overflow"))?;
+    if seq == stream.next_seq {
+        // No new row
+        return Ok(None);
+    }
+    anyhow::ensure!(
+        seq < stream.next_seq,
+        "IDC stream {stream_id} requested sequence {seq} exceeds its next sequence {}",
+        stream.next_seq
+    );
+    // A missing pending row is not an acknowledgment. Never skip a gap in the stream.
+    let row = db
+        .outbound_msg_by_stream_seq(&tx, stream_id.0, seq)?
+        .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} is missing pending sequence {seq}"))?;
+    let row = StOutboundMsgRow::try_from(row)?;
+    load_pending_message(db, tx, &stream, row).map(Some)
+}
+
+fn load_pending_message(
+    db: &RelationalDB,
+    tx: Tx,
+    stream: &StOutboundStreamRow,
+    message_row: StOutboundMsgRow,
+) -> anyhow::Result<LoadedMessage> {
+    let schema = db.schema_for_table(&tx, stream.outbox_table_id)?;
+    let outbox = schema
+        .outbox
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("table is no longer an outbox"))?;
+    let outbox_row = db
+        .outbox_row(&tx, stream.outbox_table_id, message_row.msg_id)?
+        .ok_or_else(|| anyhow::anyhow!("pending IDC message has no outbox row {}", message_row.msg_id))?;
+    let reducer_args = encode_reducer_args(&outbox_row, &outbox.arg_columns).into();
+    let (_, metrics, reducer) = db.release_tx(tx);
+    db.report_read_tx_metrics(reducer, metrics);
+
+    let message = PendingMessage {
+        stream_id: StreamId(message_row.stream_id),
+        message_id: message_row.msg_id,
+        sequence: message_row.seq,
+        outbox_table_id: stream.outbox_table_id,
+        target_identity: stream.target_identity.0,
+        ack_prefix: stream.ack_prefix,
+        target_reducer: outbox.remote_reducer.clone(),
+        signature_hash: Hash::from_hex(&outbox.signature_hash)?,
+        reducer_args,
+        outbox_row,
+        on_result_reducer: outbox.on_result_reducer.clone(),
+    };
+
+    match (message_row.result_status, message_row.result_payload) {
+        (None, None) => Ok(LoadedMessage::Pending(message)),
+        (Some(status), Some(payload)) => Ok(LoadedMessage::Delivered(DeliveredMessage {
+            message,
+            result: MessageResult { status, payload },
+        })),
+        _ => anyhow::bail!("pending IDC message has an incomplete stored result"),
+    }
+}
+
+/// Encode the mapped columns as a BSATN reducer argument product.
+///
+/// `arg_columns` lists columns in receiver parameter order. BSATN products store fields
+/// back to back, without names or a field count. Write only the mapped columns.
+fn encode_reducer_args(row: &ProductValue, arg_columns: &[ColId]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for col in arg_columns {
+        let elem = row
+            .elements
+            .get(col.idx())
+            .expect("validated outbox arg column should exist in row");
+        spacetimedb_sats::bsatn::to_writer(&mut out, elem).expect("writing outbox row args to BSATN should never fail");
+    }
+    out
 }
 
 /// Send the message and save its result before running the callback.
 /// Saving the result does not advance `ack_prefix`. That happens during callback and cleanup.
-/// A saved result lets us resume after a restart without sending the request again.
+/// A saving result is more important in pipelined version, where responses can arrive in any order.
+/// but we need to hold them to run callbacks serially.
 /// Returns `None` for a late reply to a message we already cleaned up and acknowledged.
 async fn deliver_message_and_record_result(
     db: &RelationalDB,
@@ -311,6 +420,58 @@ async fn deliver_message_and_record_result(
             Err(error)
         }
     }
+}
+
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        // The local proxy handles routing. A redirect is not an IDC result.
+        .redirect(reqwest::redirect::Policy::none())
+        .http2_prior_knowledge()
+        .http2_keep_alive_interval(Some(Duration::from_millis(200)))
+        .http2_keep_alive_timeout(Duration::from_secs(5))
+        .http2_keep_alive_while_idle(true)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("failed to build IDC reqwest client")
+}
+
+/// Send a request through localhost and let the host's proxy route it to the receiver.
+///
+/// The request body is the BSATN argument product in [`PendingMessage::reducer_args`].
+/// Response bodies use the format described by [`MessageResult::payload`].
+///
+/// Read the full body before interpreting the HTTP status with [`IdcResponse`]. Errors leave
+/// the message pending, even when someone needs to fix the underlying problem.
+async fn attempt_delivery(
+    client: &reqwest::Client,
+    database_identity: Identity,
+    config: &IdcConfig,
+    msg: &PendingMessage,
+) -> anyhow::Result<IdcResponse> {
+    let token = config
+        .token_signer
+        .sign(database_identity, msg.target_identity)
+        .context("IDC signing failed")?;
+    let target_db_hex = msg.target_identity.to_hex();
+    let url = format!(
+        "http://localhost:{}/v1/database/{target_db_hex}/call-from-database/{}?stream_id={}&seq={}&ack_prefix={}",
+        config.http_port, msg.target_reducer, msg.stream_id, msg.sequence, msg.ack_prefix,
+    );
+    let resp = client
+        .post(&url)
+        .query(&[("signature_hash", msg.signature_hash.to_hex().as_str())])
+        .bearer_auth(token)
+        .header("Content-Type", "application/octet-stream")
+        .body(msg.reducer_args.clone())
+        .send()
+        .await?;
+
+    let status = resp.status();
+    let payload = resp
+        .bytes()
+        .await
+        .with_context(|| format!("HTTP {status}: failed to read response"))?;
+    Ok(IdcResponse::from_http_parts(status, payload))
 }
 
 /// Save the receiver's result. Ignore `AlreadyAcked` only if local cleanup already finished.
@@ -347,18 +508,43 @@ fn record_delivery_response(
     Ok(Some(result))
 }
 
-/// Run the callback and cleanup on the module instance, using the same transaction
-/// checks as scheduled work. If the host has stopped, keep the saved result for restart.
-async fn finalize_message(module_host: &WeakModuleHost, msg: DeliveredMessage) -> anyhow::Result<()> {
-    let host = module_host
-        .upgrade()
-        .context("IDC module host is no longer available")?;
-    host.run_idc_callback_and_cleanup(msg).await
+/// Save the receiver's result and clear the last transport error. Keep the message
+/// until its callback and acknowledgment are handled.
+fn record_delivery_result(db: &RelationalDB, msg: &PendingMessage, result: &MessageResult) -> anyhow::Result<()> {
+    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    tx.record_outbound_idc_result(msg.stream_id.0, msg.sequence, result.status, result.payload.clone())?;
+    db.commit_tx(tx)?;
+    Ok(())
+}
+
+/// Save the latest transport error and increment the retry count. Keep the message
+/// pending even if saving the error fails.
+fn record_transport_error(db: &RelationalDB, msg: &PendingMessage, reason: String) {
+    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    if let Err(e) = tx.record_outbound_idc_transport_error(msg.stream_id.0, msg.sequence, reason) {
+        log::error!(
+            "idc_actor: sender_identity={} stream_id={} sequence={}: failed to record transport error: {e:#}",
+            db.database_identity().to_hex(),
+            msg.stream_id,
+            msg.sequence,
+        );
+        let _ = db.rollback_mut_tx(tx);
+    } else if let Err(e) = db.commit_tx(tx) {
+        log::error!(
+            "idc_actor: sender_identity={} stream_id={} sequence={}: failed to commit transport error: {e:#}",
+            db.database_identity().to_hex(),
+            msg.stream_id,
+            msg.sequence,
+        );
+    }
 }
 
 /// Runs on the module executor. Check the row and run the callback in the same
 /// transaction so the callback cannot run for a deleted or replaced row.
-pub(super) fn finish_message_with_instance(
+/// Successful callback changes commit atomically with cleanup: deleting the matching
+/// outbox row and pending message, and advancing `ack_prefix`.
+/// If the callback fails, roll back its changes and attempt cleanup in a new transaction.
+pub(super) fn run_callback_and_cleanup(
     info: &ModuleInfo,
     msg: DeliveredMessage,
     common: &mut InstanceCommon,
@@ -371,7 +557,7 @@ pub(super) fn finish_message_with_instance(
     let mut trapped = false;
     let result = (|| {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        if !pending_message_exists(db, &tx, &msg.message)? {
+        if !message_exists(db, &tx, &msg.message)? {
             return Ok(());
         }
 
@@ -484,7 +670,7 @@ fn callback_params(info: &ModuleInfo, msg: &DeliveredMessage, name: &str) -> any
     ))
 }
 
-fn pending_message_exists(db: &RelationalDB, tx: &MutTxId, msg: &PendingMessage) -> anyhow::Result<bool> {
+fn message_exists(db: &RelationalDB, tx: &MutTxId, msg: &PendingMessage) -> anyhow::Result<bool> {
     Ok(db
         .outbound_msg_by_stream_seq(tx, msg.stream_id.0, msg.sequence)?
         .is_some())
@@ -500,7 +686,7 @@ fn current_row_matches(db: &RelationalDB, tx: &MutTxId, msg: &PendingMessage) ->
 /// Leave replacement rows alone.
 fn cleanup_message(db: &RelationalDB, tx: &mut MutTxId, delivered: &DeliveredMessage) -> anyhow::Result<()> {
     let msg = &delivered.message;
-    if !pending_message_exists(db, tx, msg)? {
+    if !message_exists(db, tx, msg)? {
         return Ok(());
     }
     if current_row_matches(db, tx, msg)? {
@@ -508,181 +694,6 @@ fn cleanup_message(db: &RelationalDB, tx: &mut MutTxId, delivered: &DeliveredMes
     }
     tx.ack_outbound_idc_msg(msg.stream_id.0, msg.sequence)?;
     Ok(())
-}
-
-/// Restore pending streams at startup without loading message bodies.
-fn restore_pending_streams(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<()> {
-    for stream_id in read_pending_streams(db)? {
-        streams.push(stream_id);
-    }
-    Ok(())
-}
-
-fn read_pending_streams(db: &RelationalDB) -> anyhow::Result<Vec<StreamId>> {
-    let tx = db.begin_tx(Workload::Internal);
-    let mut pending = Vec::new();
-    for stream in db.st_outbound_streams(&tx)? {
-        let stream = stream?;
-        // next_seq - 1 is the last assigned sequence, so anything beyond ack_prefix is still pending.
-        if stream.ack_prefix < stream.next_seq - 1 {
-            pending.push(StreamId(stream.stream_id));
-        }
-    }
-    Ok(pending)
-}
-
-/// Read ack_prefix + 1 for both delivery and callback processing.
-/// Even with a saved result, this message must finish cleanup before the next one starts.
-fn read_next_ordered_message(db: &RelationalDB, stream_id: StreamId) -> anyhow::Result<Option<LoadedMessage>> {
-    let tx = db.begin_tx(Workload::Internal);
-    // An insert may have rolled back or cleanup may have finished before we read its notification.
-    let Some(stream) = db.st_outbound_stream_by_id(&tx, stream_id.0)? else {
-        return Ok(None);
-    };
-    let seq = stream
-        .ack_prefix
-        .checked_add(1)
-        .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} sequence overflow"))?;
-    if seq == stream.next_seq {
-        return Ok(None);
-    }
-    anyhow::ensure!(
-        seq < stream.next_seq,
-        "IDC stream {stream_id} acknowledgment exceeds its sequence"
-    );
-    // A missing pending row is not an acknowledgment. Never skip a gap in the stream.
-    let row = db
-        .outbound_msg_by_stream_seq(&tx, stream_id.0, seq)?
-        .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} is missing pending sequence {seq}"))?;
-    let row = StOutboundMsgRow::try_from(row)?;
-    load_pending_message(db, tx, &stream, row).map(Some)
-}
-
-fn load_pending_message(
-    db: &RelationalDB,
-    tx: Tx,
-    stream: &StOutboundStreamRow,
-    message_row: StOutboundMsgRow,
-) -> anyhow::Result<LoadedMessage> {
-    let schema = db.schema_for_table(&tx, stream.outbox_table_id)?;
-    let outbox = schema
-        .outbox
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("table is no longer an outbox"))?;
-    let outbox_row = db
-        .outbox_row(&tx, stream.outbox_table_id, message_row.msg_id)?
-        .ok_or_else(|| anyhow::anyhow!("pending IDC message has no outbox row {}", message_row.msg_id))?;
-    let reducer_args = encode_reducer_args(&outbox_row, &outbox.arg_columns).into();
-    db.release_tx(tx);
-
-    let message = PendingMessage {
-        stream_id: StreamId(message_row.stream_id),
-        message_id: message_row.msg_id,
-        sequence: message_row.seq,
-        outbox_table_id: stream.outbox_table_id,
-        target_identity: stream.target_identity.0,
-        ack_prefix: stream.ack_prefix,
-        target_reducer: outbox.remote_reducer.clone(),
-        signature_hash: Hash::from_hex(&outbox.signature_hash)?,
-        reducer_args,
-        outbox_row,
-        on_result_reducer: outbox.on_result_reducer.clone(),
-    };
-
-    match (message_row.result_status, message_row.result_payload) {
-        (None, None) => Ok(LoadedMessage::Pending(message)),
-        (Some(status), Some(payload)) => Ok(LoadedMessage::Delivered(DeliveredMessage {
-            message,
-            result: MessageResult { status, payload },
-        })),
-        _ => anyhow::bail!("pending IDC message has an incomplete stored result"),
-    }
-}
-
-/// Encode the mapped columns as a BSATN reducer argument product.
-///
-/// `arg_columns` lists columns in receiver parameter order. BSATN products store fields
-/// back to back, without names or a field count. Write only the mapped columns.
-fn encode_reducer_args(row: &ProductValue, arg_columns: &[ColId]) -> Vec<u8> {
-    let mut out = Vec::new();
-    for col in arg_columns {
-        let elem = row
-            .elements
-            .get(col.idx())
-            .expect("validated outbox arg column should exist in row");
-        spacetimedb_sats::bsatn::to_writer(&mut out, elem).expect("writing outbox row args to BSATN should never fail");
-    }
-    out
-}
-
-/// Send a request through localhost and let the host's proxy route it to the receiver.
-///
-/// The request body is the BSATN argument product in [`PendingMessage::reducer_args`].
-/// Response bodies use the format described by [`MessageResult::payload`].
-///
-/// Read the full body before interpreting the HTTP status with [`IdcResponse`]. Errors leave
-/// the message pending, even when someone needs to fix the underlying problem.
-async fn attempt_delivery(
-    client: &reqwest::Client,
-    database_identity: Identity,
-    config: &IdcConfig,
-    msg: &PendingMessage,
-) -> anyhow::Result<IdcResponse> {
-    let token = config
-        .token_signer
-        .sign(database_identity, msg.target_identity)
-        .context("IDC signing failed")?;
-    let target_db_hex = msg.target_identity.to_hex();
-    let url = format!(
-        "http://localhost:{}/v1/database/{target_db_hex}/call-from-database/{}?stream_id={}&seq={}&ack_prefix={}",
-        config.http_port, msg.target_reducer, msg.stream_id, msg.sequence, msg.ack_prefix,
-    );
-    let resp = client
-        .post(&url)
-        .query(&[("signature_hash", msg.signature_hash.to_hex().as_str())])
-        .bearer_auth(token)
-        .header("Content-Type", "application/octet-stream")
-        .body(msg.reducer_args.clone())
-        .send()
-        .await?;
-
-    let status = resp.status();
-    let payload = resp
-        .bytes()
-        .await
-        .with_context(|| format!("HTTP {status}: failed to read response"))?;
-    Ok(IdcResponse::from_http_parts(status, payload))
-}
-
-/// Save the receiver's result and clear the last transport error. Keep the message
-/// until its callback and acknowledgment are handled.
-fn record_delivery_result(db: &RelationalDB, msg: &PendingMessage, result: &MessageResult) -> anyhow::Result<()> {
-    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-    tx.record_outbound_idc_result(msg.stream_id.0, msg.sequence, result.status, result.payload.clone())?;
-    db.commit_tx(tx)?;
-    Ok(())
-}
-
-/// Save the latest transport error and increment the retry count. Keep the message
-/// pending even if saving the error fails.
-fn record_transport_error(db: &RelationalDB, msg: &PendingMessage, reason: String) {
-    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-    if let Err(e) = tx.record_outbound_idc_transport_error(msg.stream_id.0, msg.sequence, reason) {
-        log::error!(
-            "idc_actor: sender_identity={} stream_id={} sequence={}: failed to record transport error: {e:#}",
-            db.database_identity().to_hex(),
-            msg.stream_id,
-            msg.sequence,
-        );
-        let _ = db.rollback_mut_tx(tx);
-    } else if let Err(e) = db.commit_tx(tx) {
-        log::error!(
-            "idc_actor: sender_identity={} stream_id={} sequence={}: failed to commit transport error: {e:#}",
-            db.database_identity().to_hex(),
-            msg.stream_id,
-            msg.sequence,
-        );
-    }
 }
 
 #[cfg(test)]
@@ -787,7 +798,7 @@ mod tests {
     fn next_message(db: &RelationalDB) -> anyhow::Result<PendingMessage> {
         let streams = read_pending_streams(db)?;
         assert_eq!(streams.len(), 1);
-        let LoadedMessage::Pending(message) = read_next_ordered_message(db, streams[0])?.unwrap() else {
+        let LoadedMessage::Pending(message) = read_next_message(db, streams[0], None)?.unwrap() else {
             anyhow::bail!("expected a message without a result");
         };
         Ok(message)
@@ -813,6 +824,41 @@ mod tests {
         };
         record_delivery_result(db, &message, &result)?;
         Ok(DeliveredMessage { message, result })
+    }
+
+    #[test]
+    fn idc_actor_reads_after_cursor_before_acknowledgment() -> anyhow::Result<()> {
+        let db = open_test_db();
+        let table = insert_outbox_message(&db, Identity::ONE, 42)?;
+        insert_outbox_row(&db, table, Identity::ONE, 8, 43)?;
+        let first = store_success(&db, next_message(&db)?)?;
+        let stream_id = first.message.stream_id;
+
+        // Recovery still finds the first message's saved result until cleanup commits.
+        assert!(matches!(
+            read_next_message(&db, stream_id, None)?,
+            Some(LoadedMessage::Delivered(_))
+        ));
+        // A caller can load the next message while the first awaits cleanup.
+        let second = read_next_message(&db, stream_id, Some(first.message.sequence))?.unwrap();
+        assert!(matches!(second, LoadedMessage::Pending(_)));
+        assert_eq!(second.message().sequence, 2);
+        assert_eq!(second.message().ack_prefix, 0);
+        assert!(read_next_message(&db, stream_id, Some(2))?.is_none());
+        assert!(read_next_message(&db, stream_id, Some(u64::MAX)).is_err());
+
+        cleanup_without_module(&db, first)?;
+        for cursor in [None, Some(1)] {
+            assert_eq!(
+                read_next_message(&db, stream_id, cursor)?.unwrap().message().sequence,
+                2
+            );
+        }
+        let error = read_next_message(&db, stream_id, Some(0))
+            .err()
+            .expect("a cursor behind acknowledgment must fail");
+        assert!(error.to_string().contains("cursor 0 is behind acknowledgment 1"));
+        Ok(())
     }
 
     #[test]
@@ -859,16 +905,13 @@ mod tests {
         let _ = db.rollback_mut_tx(tx);
         let msg = starter.rx.try_recv()?;
         let stream_id = StreamId(msg.stream_id);
-        assert_eq!(
-            read_next_ordered_message(&db, stream_id)?.unwrap().message().sequence,
-            1
-        );
+        assert_eq!(read_next_message(&db, stream_id, None)?.unwrap().message().sequence, 1);
 
         // After cleaning up the first message, the rolled-back insert leaves no work.
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         cleanup_message(&db, &mut tx, &first)?;
         db.commit_tx(tx)?;
-        assert!(read_next_ordered_message(&db, stream_id)?.is_none());
+        assert!(read_next_message(&db, stream_id, None)?.is_none());
 
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let (tx, result) = env.tx.clone().set(tx, || {
@@ -878,7 +921,7 @@ mod tests {
         db.commit_tx(tx)?;
         let msg = starter.rx.try_recv()?;
         assert_eq!(StreamId(msg.stream_id), stream_id);
-        let next = read_next_ordered_message(&db, stream_id)?.unwrap();
+        let next = read_next_message(&db, stream_id, None)?.unwrap();
         assert_eq!(next.message().message_id, 8);
         assert_eq!(next.message().sequence, 2);
         let next = store_success(&db, next_message(&db)?)?;
@@ -887,7 +930,7 @@ mod tests {
         cleanup_message(&db, &mut tx, &next)?;
         cleanup_message(&db, &mut tx, &next)?;
         db.commit_tx(tx)?;
-        assert!(read_next_ordered_message(&db, stream_id)?.is_none());
+        assert!(read_next_message(&db, stream_id, None)?.is_none());
         assert!(read_pending_streams(&db)?.is_empty());
 
         // Rolling back the first insert of another stream leaves no stream to wake.
@@ -898,7 +941,7 @@ mod tests {
         result?;
         let _ = db.rollback_mut_tx(tx);
         let msg = starter.rx.try_recv()?;
-        assert!(read_next_ordered_message(&db, StreamId(msg.stream_id))?.is_none());
+        assert!(read_next_message(&db, StreamId(msg.stream_id), None)?.is_none());
         Ok(())
     }
 
@@ -916,7 +959,7 @@ mod tests {
         assert!(!current_row_matches(&db, &tx, &msg.message)?);
         cleanup_message(&db, &mut tx, &msg)?;
         cleanup_message(&db, &mut tx, &msg)?;
-        assert!(!pending_message_exists(&db, &tx, &msg.message)?);
+        assert!(!message_exists(&db, &tx, &msg.message)?);
         assert_eq!(db.iter_mut(&tx, table)?.next().unwrap().to_product_value(), replacement);
         db.commit_tx(tx)?;
 
@@ -1021,7 +1064,7 @@ mod tests {
             assert_eq!(delivered.result.payload.as_ref(), b"receiver detail");
 
             // A stored result does not advance the sequence until cleanup commits.
-            let stored = read_next_ordered_message(&db, delivered.message.stream_id)?.unwrap();
+            let stored = read_next_message(&db, delivered.message.stream_id, None)?.unwrap();
             let LoadedMessage::Delivered(stored) = stored else {
                 panic!("a stored result must load as a delivered message");
             };
@@ -1145,7 +1188,7 @@ mod tests {
             row.result_payload = result_payload;
             db.insert(&mut tx, ST_OUTBOUND_MSG_ID, &to_vec(&row)?)?;
             db.commit_tx(tx)?;
-            let error = read_next_ordered_message(&db, message.stream_id)
+            let error = read_next_message(&db, message.stream_id, None)
                 .err()
                 .expect("partial result must fail");
             assert!(error.to_string().contains("incomplete stored result"));
