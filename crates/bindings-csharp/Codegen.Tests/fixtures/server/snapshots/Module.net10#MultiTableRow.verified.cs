@@ -82,16 +82,7 @@ partial struct MultiTableRow
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as MultiTableRow?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is MultiTableRow t && Equals(t);
     }
 
     public static bool operator ==(MultiTableRow this_, MultiTableRow that)

@@ -113,16 +113,7 @@ partial struct TestUnsupportedType
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestUnsupportedType?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestUnsupportedType t && Equals(t);
     }
 
     public static bool operator ==(TestUnsupportedType this_, TestUnsupportedType that)

@@ -82,16 +82,7 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as RegressionMultipleUniqueIndexesHadSameName?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is RegressionMultipleUniqueIndexesHadSameName t && Equals(t);
     }
 
     public static bool operator ==(

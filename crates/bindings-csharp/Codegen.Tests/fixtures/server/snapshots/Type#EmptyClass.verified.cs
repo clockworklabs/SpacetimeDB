@@ -59,16 +59,7 @@ partial class EmptyClass : System.IEquatable<EmptyClass>, SpacetimeDB.BSATN.IStr
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as EmptyClass;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is EmptyClass t && Equals(t);
     }
 
     public static bool operator ==(EmptyClass? this_, EmptyClass? that)

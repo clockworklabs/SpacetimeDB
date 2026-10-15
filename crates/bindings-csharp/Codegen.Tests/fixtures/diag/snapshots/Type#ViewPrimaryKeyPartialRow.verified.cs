@@ -77,16 +77,7 @@ partial class ViewPrimaryKeyPartialRow
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as ViewPrimaryKeyPartialRow;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is ViewPrimaryKeyPartialRow t && Equals(t);
     }
 
     public static bool operator ==(ViewPrimaryKeyPartialRow? this_, ViewPrimaryKeyPartialRow? that)

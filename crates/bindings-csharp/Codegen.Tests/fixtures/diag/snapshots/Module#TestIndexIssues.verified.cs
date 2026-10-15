@@ -83,16 +83,7 @@ partial struct TestIndexIssues
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestIndexIssues?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestIndexIssues t && Equals(t);
     }
 
     public static bool operator ==(TestIndexIssues this_, TestIndexIssues that)
