@@ -13,7 +13,7 @@ separate lists for rooms or groups and control who sees them.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/presence spacetimedb@^2.12.0
+npm install @spacetimedb/presence
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

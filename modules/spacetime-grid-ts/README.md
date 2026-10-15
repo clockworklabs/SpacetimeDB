@@ -12,7 +12,7 @@ move it.
 Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-npm install @spacetimedb/grid spacetimedb@^2.12.0
+npm install @spacetimedb/grid
 ```
 
 Requires SpacetimeDB SDK, CLI, and server 2.12 or later.

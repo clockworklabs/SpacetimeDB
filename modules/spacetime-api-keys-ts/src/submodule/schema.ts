@@ -65,6 +65,7 @@ export const apiKeyAdminIdentity: ReturnType<
   >
 > = table(apiKeyAdminIdentityOptions, apiKeyAdminIdentityColumns);
 
+// Created by setApiKeysConfig. `counter` advances with every derived secret.
 const apiKeyConfigOptions = { name: 'api_key_config', public: false };
 const apiKeyConfigColumns = {
   singleton: t.bool().primaryKey(),
@@ -73,7 +74,6 @@ const apiKeyConfigColumns = {
   usageRetentionSeconds: t.u32(),
   updatedAt: t.timestamp(),
 };
-// Created by setApiKeysConfig. `counter` advances with every derived secret.
 export const apiKeyConfig: ReturnType<
   typeof table<typeof apiKeyConfigColumns, typeof apiKeyConfigOptions>
 > = table(apiKeyConfigOptions, apiKeyConfigColumns);
