@@ -11,8 +11,16 @@
 //! sections (`.init_array` on ELF, `__mod_init_func` on Mach-O, `.CRT$XCU`
 //! on Windows). No explicit setup or initialization call is needed.
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::BTreeMap;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Arc, Weak};
 
+#[cfg(not(target_arch = "wasm32"))]
+use spacetimedb_lib::db::raw_def::v10::{RawEnvVarTypeV10, RawEnvironmentDeclarationV10, RawModuleDefV10Section};
 use spacetimedb_lib::RawModuleDef;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -285,6 +293,107 @@ impl From<TestDatastoreError> for TestQueryError {
     }
 }
 
+/// Errors returned when changing a test environment.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, PartialEq, Eq)]
+pub enum TestEnvError {
+    /// The module's `#[spacetimedb::env]` declaration does not contain this key.
+    UndeclaredKey(String),
+    /// The value is not allowed by the declared type of this key.
+    InvalidValue(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::fmt::Display for TestEnvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UndeclaredKey(key) => write!(f, "environment key is not declared by the module: {key}"),
+            Self::InvalidValue(key) => write!(f, "value is not allowed for environment key: {key}"),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::error::Error for TestEnvError {}
+
+/// Environment values for one [`TestContext`] (and its clones).
+#[cfg(not(target_arch = "wasm32"))]
+struct TestEnvironment {
+    id: u64,
+    declarations: Vec<RawEnvironmentDeclarationV10>,
+    values: Mutex<BTreeMap<String, String>>,
+}
+
+/// Live test environments, keyed by id so that [`crate::Environment`] can stay `Copy`.
+#[cfg(not(target_arch = "wasm32"))]
+static TEST_ENVIRONMENTS: Mutex<BTreeMap<u64, Weak<TestEnvironment>>> = Mutex::new(BTreeMap::new());
+
+#[cfg(not(target_arch = "wasm32"))]
+static NEXT_TEST_ENVIRONMENT_ID: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TestEnvironment {
+    fn new(raw: &RawModuleDef) -> Arc<Self> {
+        let declarations = match raw {
+            RawModuleDef::V10(module) => module
+                .sections
+                .iter()
+                .find_map(|section| match section {
+                    RawModuleDefV10Section::Environment(declarations) => Some(declarations.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let environment = Arc::new(Self {
+            id: NEXT_TEST_ENVIRONMENT_ID.fetch_add(1, Ordering::Relaxed),
+            declarations,
+            values: Mutex::new(BTreeMap::new()),
+        });
+        TEST_ENVIRONMENTS
+            .lock()
+            .unwrap()
+            .insert(environment.id, Arc::downgrade(&environment));
+        environment
+    }
+
+    fn declaration(&self, key: &str) -> Result<&RawEnvironmentDeclarationV10, TestEnvError> {
+        self.declarations
+            .iter()
+            .find(|declaration| declaration.name == key)
+            .ok_or_else(|| TestEnvError::UndeclaredKey(key.to_owned()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for TestEnvironment {
+    fn drop(&mut self) {
+        TEST_ENVIRONMENTS.lock().unwrap().remove(&self.id);
+    }
+}
+
+/// Handle from a [`crate::Environment`] to the [`TestContext`] environment it reads.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TestEnvironmentId(u64);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TestEnvironmentId {
+    /// Mirrors the host: undeclared keys panic, absent keys read as `None`.
+    pub(crate) fn get(self, key: &str) -> Option<String> {
+        let environment = TEST_ENVIRONMENTS
+            .lock()
+            .unwrap()
+            .get(&self.0)
+            .and_then(Weak::upgrade)
+            .expect("environment read after its TestContext was dropped");
+        if let Err(error) = environment.declaration(key) {
+            panic!("{error}");
+        }
+        environment.values.lock().unwrap().get(key).cloned()
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 type AfterTxCommitHook = Box<dyn FnMut(&TestContext) -> anyhow::Result<()>>;
 
@@ -383,6 +492,7 @@ pub struct TestContext {
     pub rng: TestRng,
     pub identity: crate::Identity,
     datastore: std::sync::Arc<TestDatastore>,
+    environment: Arc<TestEnvironment>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -395,6 +505,7 @@ impl Clone for TestContext {
             rng: self.rng.clone(),
             identity: self.identity,
             datastore: self.datastore.clone(),
+            environment: self.environment.clone(),
         }
     }
 }
@@ -408,6 +519,7 @@ impl TestContext {
 
     /// Create a test context from `raw`.
     pub fn from_module_def(raw: RawModuleDef) -> Result<Self, TestDatastoreError> {
+        let environment = TestEnvironment::new(&raw);
         let datastore = std::sync::Arc::new(TestDatastore::from_module_def(raw)?);
         Ok(Self {
             db: crate::Local::__test(datastore.clone()),
@@ -416,7 +528,37 @@ impl TestContext {
             rng: TestRng::default(),
             identity: crate::Identity::ZERO,
             datastore,
+            environment,
         })
+    }
+
+    /// Set a value declared by the module's `#[spacetimedb::env]` struct.
+    ///
+    /// The value is visible through `ctx.env` in every context created from this
+    /// test context or its clones, including contexts created before this call.
+    pub fn set_env(&self, key: &str, value: impl Into<String>) -> Result<(), TestEnvError> {
+        let value = value.into();
+        let allowed = match &self.environment.declaration(key)?.ty {
+            RawEnvVarTypeV10::String => true,
+            RawEnvVarTypeV10::StringLiteral(literal) => *literal == value,
+            RawEnvVarTypeV10::Union(literals) => literals.contains(&value),
+        };
+        if !allowed {
+            return Err(TestEnvError::InvalidValue(key.to_owned()));
+        }
+        self.environment.values.lock().unwrap().insert(key.to_owned(), value);
+        Ok(())
+    }
+
+    /// Remove a value declared by the module's `#[spacetimedb::env]` struct.
+    pub fn unset_env(&self, key: &str) -> Result<(), TestEnvError> {
+        self.environment.declaration(key)?;
+        self.environment.values.lock().unwrap().remove(key);
+        Ok(())
+    }
+
+    fn env(&self) -> crate::Environment {
+        crate::Environment::__test(TestEnvironmentId(self.environment.id))
     }
 
     /// The underlying in-memory datastore.
@@ -446,12 +588,12 @@ impl TestContext {
     /// Create a [`ViewContext`](crate::ViewContext) backed by this test context's datastore.
     pub fn view_context(&self, auth: TestAuth) -> crate::ViewContext {
         let (_, _, sender) = auth.into_parts(self.identity);
-        crate::ViewContext::__test(sender, crate::LocalReadOnly::__test(self.datastore.clone()))
+        crate::ViewContext::__test(self.env(), sender, crate::LocalReadOnly::__test(self.datastore.clone()))
     }
 
     /// Create an [`AnonymousViewContext`](crate::AnonymousViewContext) backed by this test context's datastore.
     pub fn anonymous_view_context(&self) -> crate::AnonymousViewContext {
-        crate::AnonymousViewContext::__test(crate::LocalReadOnly::__test(self.datastore.clone()))
+        crate::AnonymousViewContext::__test(self.env(), crate::LocalReadOnly::__test(self.datastore.clone()))
     }
 
     #[cfg(feature = "unstable")]
@@ -469,6 +611,7 @@ impl TestContext {
         body: impl FnOnce(&crate::ReducerContext) -> Result<T, E>,
     ) -> Result<T, E> {
         with_reducer_tx(
+            self.env(),
             &self.datastore,
             self.identity,
             self.clock.now(),
@@ -505,6 +648,7 @@ impl TestContext {
     ) -> crate::ProcedureContext {
         let (auth, connection_id, sender) = auth.into_parts(self.identity);
         crate::ProcedureContext::__test(
+            self.env(),
             self.datastore.clone(),
             sender,
             auth,
@@ -522,6 +666,7 @@ impl TestContext {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn with_reducer_tx<T, E>(
+    env: crate::Environment,
     datastore: &std::sync::Arc<TestDatastore>,
     identity: crate::Identity,
     timestamp: crate::Timestamp,
@@ -549,6 +694,7 @@ fn with_reducer_tx<T, E>(
 
     let (auth, connection_id, sender) = auth.into_parts(identity);
     let ctx = crate::ReducerContext::__test(
+        env,
         crate::Local::__test_tx(test_tx.clone()),
         sender,
         auth,
