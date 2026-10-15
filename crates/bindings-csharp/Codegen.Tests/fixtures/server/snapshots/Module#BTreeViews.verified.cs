@@ -56,7 +56,7 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
                     new("Id", IdRW.GetAlgebraicType(registrar)),
                     new("X", XRW.GetAlgebraicType(registrar)),
                     new("Y", YRW.GetAlgebraicType(registrar)),
-                    new("Faction", FactionRW.GetAlgebraicType(registrar))
+                    new("Faction", FactionRW.GetAlgebraicType(registrar)),
                 }
             ));
 

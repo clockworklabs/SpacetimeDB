@@ -47,7 +47,7 @@ partial struct NonEquatableViewPrimaryKey
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Value", ValueRW.GetAlgebraicType(registrar))
+                        new("Value", ValueRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

@@ -165,7 +165,7 @@ partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.I
                     new(
                         "NullableReferenceField",
                         NullableReferenceFieldRW.GetAlgebraicType(registrar)
-                    )
+                    ),
                 }
             ));
 

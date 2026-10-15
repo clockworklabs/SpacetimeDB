@@ -470,7 +470,7 @@ public static class SpacetimeDbFieldDiscovery
         typeSyntax
             .Members.OfType<FieldDeclarationSyntax>()
             .SelectMany(f => f.Declaration.Variables)
-            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Select(v => type.GetMembers(v.Identifier.ValueText).OfType<IFieldSymbol>().Single())
             .Where(f => !f.IsStatic);
 
     public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
