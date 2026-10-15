@@ -11,9 +11,10 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
-    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult,
-    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, IdcDeliveryFailure,
+    IdcMessageParams, IdcReducerCallOutcome, InitDatabaseResult, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult, ViewCallResult, ViewCommand, ViewCommandResult,
+    ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -39,6 +40,7 @@ use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
@@ -58,6 +60,7 @@ use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
@@ -528,17 +531,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(in crate::host) fn call_reducer_with_success_action(
+    pub(in crate::host) fn call_idc_reducer(
         &mut self,
         params: CallReducerParams,
+        delivery: IdcMessageParams,
         on_success: ReducerSuccessAction,
-    ) -> ReducerCallResultWithTxOffset {
-        let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let (result, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
             self.common
-                .call_reducer_with_success_action(params, &mut self.instance, on_success)
+                .call_idc_reducer(params, delivery, &mut self.instance, on_success)
         });
         self.trapped = trapped;
-        res
+        result
     }
 
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
@@ -1092,11 +1096,66 @@ impl InstanceCommon {
 
     pub(crate) fn call_reducer_with_success_action<I: WasmInstance>(
         &mut self,
+        tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
         on_success: ReducerSuccessAction,
     ) -> (ReducerCallResultWithTxOffset, bool) {
-        self.call_reducer_with_tx_inner(None, params, inst, Some(on_success))
+        self.call_reducer_with_tx_inner(tx, params, inst, Some(on_success))
+    }
+
+    /// Execute the next IDC delivery or return its previously recorded outcome.
+    /// Failed execution is rolled back before recording its outcome in a new transaction.
+    /// The boolean reports an execution trap, even if recording the failure also fails.
+    pub(in crate::host) fn call_idc_reducer<I: WasmInstance>(
+        &mut self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        inst: &mut I,
+        on_success: ReducerSuccessAction,
+    ) -> (Result<IdcReducerCallOutcome, IdcDeliveryFailure>, bool) {
+        let db = inst.replica_ctx().relational_db();
+        let workload = Workload::Reducer(ReducerContext {
+            name: self.info.module_def.reducer_by_id(params.reducer_id).name.clone(),
+            caller_identity: params.caller_identity,
+            caller_connection_id: params.caller_connection_id,
+            timestamp: params.timestamp,
+            arg_bsatn: params.args.get_bsatn().clone(),
+        });
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, workload);
+        let tx = match ModuleHost::check_idc_delivery(db, tx, delivery) {
+            Ok(ControlFlow::Continue(tx)) => tx,
+            Ok(ControlFlow::Break(outcome)) => return (Ok(outcome), false),
+            Err(error) => return (Err(error), false),
+        };
+
+        // Keep the sequence check, reducer writes, and success hook in one transaction.
+        let (attempt, trapped) = self.call_reducer_with_success_action(Some(tx), params, inst, on_success);
+        let (status, payload) = match &attempt.result.outcome {
+            ReducerOutcome::Committed => return (Ok(IdcReducerCallOutcome::Recorded(attempt)), trapped),
+            ReducerOutcome::Failed(error) => (StInboundMsgResultStatus::Err, Bytes::copy_from_slice(error.as_bytes())),
+            ReducerOutcome::BudgetExceeded => (
+                StInboundMsgResultStatus::BudgetExceeded,
+                Bytes::from_static(b"Module energy budget exhausted."),
+            ),
+        };
+
+        // Execution rolled back. Record the failure in a new transaction, checking
+        // for a competing outcome before writing. Recorded always means a persisted outcome.
+        let db = inst.replica_ctx().relational_db();
+        let recorded = ModuleHost::record_idc_terminal_error(db, delivery, status, payload);
+        let outcome = recorded.map(|outcome| match outcome {
+            IdcReducerCallOutcome::Recorded(recorded) => {
+                // Use this attempt's result and metrics with the failure commit's offset.
+                IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+                    result: attempt.result,
+                    tx_offset: recorded.tx_offset,
+                })
+            }
+            // Another request won after rollback. Return its outcome unchanged.
+            other => other,
+        });
+        (outcome, trapped)
     }
 
     fn call_reducer_with_tx_inner<I: WasmInstance>(

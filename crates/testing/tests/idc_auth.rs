@@ -110,6 +110,19 @@ fn idc_receiver_runs_connection_lifecycle_without_jwt() {
             .await;
             assert_counts(3, 1, 3).await;
 
+            // Changing the arguments cannot replace an already-recorded failure.
+            // The reducer would succeed now, but this sequence must not run again.
+            call_idc(
+                Identity::ONE,
+                2,
+                false,
+                signature_hash,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "delivery rejected",
+            )
+            .await;
+            assert_counts(4, 1, 4).await;
+
             // A signature mismatch is recorded as a terminal outcome without reducer execution.
             call_idc(
                 Identity::ONE,
@@ -120,7 +133,7 @@ fn idc_receiver_runs_connection_lifecycle_without_jwt() {
                 "",
             )
             .await;
-            assert_counts(4, 1, 4).await;
+            assert_counts(5, 1, 5).await;
         },
     );
 }

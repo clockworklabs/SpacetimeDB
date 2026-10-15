@@ -1,11 +1,68 @@
 //! Signature failures are durable decisions, not transport failures. Retries must
-//! replay those decisions without consulting a potentially different reducer schema.
+//! replay those decisions even when the reducer schema has changed.
 use spacetimedb::host::{FunctionArgs, IdcDeliveryFailure, IdcReducerCallOutcome};
 use spacetimedb_lib::{hash_bytes, ConnectionId, Hash, Identity};
 use spacetimedb_schema::def::reducer_signature_hash;
-use spacetimedb_testing::modules::{CompilationMode, CompiledModule, DEFAULT_CONFIG};
+use spacetimedb_testing::modules::{CompilationMode, CompiledModule, DEFAULT_CONFIG, IN_MEMORY_CONFIG};
+
+/// A duplicate must replay, not execute and fail while inserting its outcome.
+#[test]
+#[serial_test::serial]
+fn concurrent_idc_deliveries_commit_once() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |handle| async move {
+            let host = handle.client.module();
+            let (_, reducer, _) = host.info.module_def.reducer_by_name_with_module("add").unwrap();
+            let hash = host.info.reducer_signature_hash(&reducer.name);
+            let args = spacetimedb_lib::bsatn::to_vec(&spacetimedb_lib::sats::product!["idc duplicate", 42u8]).unwrap();
+            let calls = (0..8).map(|_| {
+                host.call_idc_reducer(
+                    Identity::ZERO,
+                    ConnectionId::from_u128(1),
+                    "add",
+                    FunctionArgs::Bsatn(args.clone().into()),
+                    1,
+                    1,
+                    0,
+                    hash,
+                )
+            });
+            let outcomes = tokio::time::timeout(std::time::Duration::from_secs(10), futures::future::join_all(calls))
+                .await
+                .unwrap();
+            let mut applied = 0;
+            for outcome in outcomes {
+                match outcome.unwrap() {
+                    IdcReducerCallOutcome::Recorded(result) => {
+                        assert!(result.result.outcome.into_result().is_ok());
+                        applied += 1;
+                    }
+                    IdcReducerCallOutcome::Replayed(result) => assert!(result.result_payload.is_empty()),
+                    IdcReducerCallOutcome::AlreadyAcked => panic!("no request acknowledged this message"),
+                }
+            }
+            assert_eq!(applied, 1);
+
+            // add allocates a new row ID each time, so duplicate committed effects
+            // would leave multiple rows even though the arguments are identical.
+            let rows = spacetimedb::sql::execute::run(
+                host.relational_db().clone(),
+                "SELECT * FROM person WHERE name = 'idc duplicate'".into(),
+                spacetimedb_lib::identity::AuthCtx::for_current(host.info.owner_identity),
+                Some(host.info.subscriptions.clone()),
+                Some(host.clone()),
+                &mut vec![],
+            )
+            .await
+            .unwrap();
+            assert_eq!(rows.rows.len(), 1);
+        },
+    );
+}
 
 #[test]
+#[serial_test::serial]
 fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
     CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
@@ -39,21 +96,21 @@ fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
 
             // The first message has the wrong signature, so the receiver records a
             // terminal outcome for seq 1 instead of retrying it forever.
-            let IdcReducerCallOutcome::Applied(failed) = call("add", 1, outdated).await.unwrap() else {
+            let IdcReducerCallOutcome::Recorded(failed) = call("add", 1, outdated).await.unwrap() else {
                 panic!("new message must record a terminal decision");
             };
             let error = failed.result.outcome.into_result().unwrap_err().to_string();
             assert!(error.contains("signature mismatch"), "{error}");
             let offset = failed.tx_offset.await.unwrap();
 
-            // Retrying seq 1 replays the stored signature error before reducer lookup.
+            // Retrying seq 1 replays the stored signature error despite a failed reducer lookup.
             // A changed route/schema and invalid arguments cannot replace the answer.
             let IdcReducerCallOutcome::Replayed(replayed) =
                 call("removed_reducer", 1, hash_bytes(b"different signature"))
                     .await
                     .unwrap()
             else {
-                panic!("decided message must replay before reducer lookup");
+                panic!("decided message must replay despite a failed reducer lookup");
             };
             assert_eq!(&replayed.result_payload[..], error.as_bytes());
             assert!(
@@ -62,7 +119,7 @@ fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
             );
 
             // The next sequence can now advance and records its own terminal error.
-            let IdcReducerCallOutcome::Applied(missing) = call("removed_reducer", 2, outdated).await.unwrap() else {
+            let IdcReducerCallOutcome::Recorded(missing) = call("removed_reducer", 2, outdated).await.unwrap() else {
                 panic!("missing reducer must produce a terminal decision");
             };
             assert!(missing
@@ -80,7 +137,7 @@ fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
                 &reducer.err_return_type,
                 owning.typespace(),
             );
-            let IdcReducerCallOutcome::Applied(invalid_args) = call("add", 3, hash).await.unwrap() else {
+            let IdcReducerCallOutcome::Recorded(invalid_args) = call("add", 3, hash).await.unwrap() else {
                 panic!("invalid arguments must produce a terminal decision");
             };
             let error = invalid_args.result.outcome.into_result().unwrap_err().to_string();
@@ -102,7 +159,7 @@ fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
                 &reducer.err_return_type,
                 owning.typespace(),
             );
-            let IdcReducerCallOutcome::Applied(valid) = host
+            let IdcReducerCallOutcome::Recorded(valid) = host
                 .call_idc_reducer(
                     Identity::ZERO,
                     connection,
@@ -129,6 +186,27 @@ fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
             assert!(replayed.tx_offset >= offset);
             assert!(matches!(
                 call("removed_reducer", 1, outdated).await.unwrap(),
+                IdcReducerCallOutcome::AlreadyAcked
+            ));
+
+            // Cleanup commits separately even when the accompanying delivery is
+            // out of order and its sequence-check transaction is rolled back.
+            assert!(matches!(
+                host.call_idc_reducer(
+                    Identity::ZERO,
+                    connection,
+                    "say_hello",
+                    FunctionArgs::Nullary,
+                    42,
+                    6,
+                    4,
+                    hash,
+                )
+                .await,
+                Err(IdcDeliveryFailure::OutOfOrder { expected: 5, actual: 6 })
+            ));
+            assert!(matches!(
+                call("removed_reducer", 4, outdated).await.unwrap(),
                 IdcReducerCallOutcome::AlreadyAcked
             ));
         },

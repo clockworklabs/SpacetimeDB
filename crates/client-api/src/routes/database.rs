@@ -353,7 +353,7 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
         );
 
         let (tx_offset, response) = match result {
-            IdcReducerCallOutcome::Applied(result) => {
+            IdcReducerCallOutcome::Recorded(result) => {
                 let tx_offset = if durable_offset.is_some() {
                     Some(result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?)
                 } else {

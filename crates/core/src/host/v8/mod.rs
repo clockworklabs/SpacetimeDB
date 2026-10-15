@@ -65,8 +65,8 @@ use self::syscall::{
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
-    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
-    ModuleWithInstance, UpdateEnvironmentResult,
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, IdcDeliveryFailure, IdcMessageParams,
+    IdcReducerCallOutcome, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance, UpdateEnvironmentResult,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -85,9 +85,7 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ReducerSuccessAction, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{
-    InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, ReducerCallResultWithTxOffset, Scheduler,
-};
+use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -507,13 +505,18 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
-    pub(in crate::host) async fn call_reducer_with_success_action(
+    pub(in crate::host) async fn call_idc_reducer(
         &self,
         params: CallReducerParams,
+        delivery: IdcMessageParams,
         on_success: ReducerSuccessAction,
-    ) -> ReducerCallResultWithTxOffset {
-        self.request(CallReducerWithSuccessActionRequest { params, on_success })
-            .await
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        self.request(CallIdcReducerRequest {
+            params,
+            delivery,
+            on_success,
+        })
+        .await
     }
 
     pub(in crate::host) async fn call_scheduled_reducer(
@@ -669,16 +672,17 @@ js_main_request! {
 }
 
 js_main_request! {
-    CallReducerWithSuccessActionRequest {
-        params: CallReducerParams,
-        on_success: ReducerSuccessAction,
-    } => "call_reducer_with_success_action", ReducerCallResultWithTxOffset, CallReducerWithSuccessAction
-}
-
-js_main_request! {
     ScheduledReducerRequest {
         params: ScheduledFunctionParams,
     } => "scheduled_reducer", CallScheduledFunctionResult, ScheduledReducer
+}
+
+js_main_request! {
+    CallIdcReducerRequest {
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    } => "call_idc_reducer", Result<IdcReducerCallOutcome, IdcDeliveryFailure>, CallIdcReducer
 }
 
 js_main_request! {
@@ -863,10 +867,11 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
     },
-    /// See [`JsMainInstance::call_reducer_with_success_action`].
-    CallReducerWithSuccessAction {
-        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
+    /// See [`JsMainInstance::call_idc_reducer`].
+    CallIdcReducer {
+        reply_tx: JsReplyTx<Result<IdcReducerCallOutcome, IdcDeliveryFailure>>,
         params: CallReducerParams,
+        delivery: IdcMessageParams,
         on_success: ReducerSuccessAction,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
@@ -1475,12 +1480,13 @@ fn handle_main_worker_request(
                 call_reducer(None, params)
             })
         }
-        JsMainWorkerRequest::CallReducerWithSuccessAction {
+        JsMainWorkerRequest::CallIdcReducer {
             reply_tx,
             params,
+            delivery,
             on_success,
-        } => handle_worker_request("call_reducer", reply_tx, || {
-            instance_common.call_reducer_with_success_action(params, inst, on_success)
+        } => handle_worker_request("call_idc_reducer", reply_tx, || {
+            instance_common.call_idc_reducer(params, delivery, inst, on_success)
         }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
