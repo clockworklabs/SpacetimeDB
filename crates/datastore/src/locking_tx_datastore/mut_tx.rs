@@ -331,6 +331,30 @@ impl ViewInstanceTxState {
         }
     }
 
+    /// Retrieves a writable pending change for `call` if it has an instance.
+    /// Unlike `get_or_create_change_mut`, this never creates or recreates an instance, so it takes no `args`.
+    fn get_change_mut(
+        &mut self,
+        committed_state: &CommittedState,
+        call: ViewCallInfo,
+    ) -> Option<&mut ViewInstanceChange> {
+        use spacetimedb_data_structures::map::hash_map::Entry;
+
+        match self.changes.entry(call) {
+            Entry::Occupied(entry) => match entry.into_mut() {
+                ViewInstanceChange::Deleted => None,
+                change => Some(change),
+            },
+            Entry::Vacant(entry) => {
+                if committed_state.view_instance(entry.key()).is_some() {
+                    Some(entry.insert(ViewInstanceChange::Updated(ViewInstanceDelta::default())))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     fn remove(&mut self, call: ViewCallInfo) {
         self.changes.insert(call, ViewInstanceChange::Deleted);
     }
@@ -3233,9 +3257,9 @@ impl MutTxId {
 
     /// Decrement this subscriber's refcount for a materialized view argument.
     pub fn unsubscribe_view(&mut self, call: ViewCallInfo, subscriber: Identity) -> Result<()> {
-        let Some((args, count)) = self
+        let Some(count) = self
             .get_view_instance(&call)
-            .map(|state| (state.args().clone(), state.subscriber_count(&subscriber)))
+            .map(|state| state.subscriber_count(&subscriber))
         else {
             return Ok(());
         };
@@ -3243,10 +3267,13 @@ impl MutTxId {
             return Ok(());
         }
 
+        let Some(change) = self
+            .view_instances
+            .get_change_mut(&self.committed_state_write_lock, call)
+        else {
+            return Ok(());
+        };
         let last_used = now_timestamp();
-        let change =
-            self.view_instances
-                .get_or_create_change_mut(&self.committed_state_write_lock, call, args, last_used);
         change.set_subscriber_count(subscriber, count.saturating_sub(1));
         change.set_last_used(last_used);
         Ok(())
