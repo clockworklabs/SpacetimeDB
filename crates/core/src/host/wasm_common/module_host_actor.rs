@@ -640,11 +640,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(in crate::host) fn finish_idc_message(
+    pub(in crate::host) fn run_idc_callback_and_cleanup(
         &mut self,
         msg: crate::host::idc_actor::DeliveredMessage,
     ) -> anyhow::Result<()> {
-        let (result, trapped) = self.common.finish_idc_message(msg, &mut self.instance);
+        let (result, trapped) = self.common.run_idc_callback_and_cleanup(msg, &mut self.instance);
         self.trapped = trapped;
         result
     }
@@ -1796,7 +1796,7 @@ impl InstanceCommon {
         crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
     }
 
-    pub(in crate::host) fn finish_idc_message<I: WasmInstance>(
+    pub(in crate::host) fn run_idc_callback_and_cleanup<I: WasmInstance>(
         &mut self,
         msg: crate::host::idc_actor::DeliveredMessage,
         inst: &mut I,
