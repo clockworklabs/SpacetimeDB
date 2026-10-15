@@ -96,26 +96,16 @@ export function makeAgentDispatch<
       };
     }
 
-    try {
-      const run = tool[RUN_KEY] as (ctx: Tx, args: unknown) => string;
-      const result = run(ctx, parsed);
-      if (typeof result !== 'string') {
-        return { result: 'tool returned a non-string result', isError: true };
-      }
-      if (result.length > MAX_TOOL_RESULT_LENGTH) {
-        return {
-          result: 'tool result exceeds 65536 characters',
-          isError: true,
-        };
-      }
-      return { result, isError: false };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        result: message.slice(0, MAX_TOOL_RESULT_LENGTH),
-        isError: true,
-      };
+    // Execution failures must escape the transaction so tool writes roll back.
+    const run = tool[RUN_KEY] as (ctx: Tx, args: unknown) => string;
+    const result = run(ctx, parsed);
+    if (typeof result !== 'string') {
+      throw new Error('tool returned a non-string result');
     }
+    if (result.length > MAX_TOOL_RESULT_LENGTH) {
+      throw new Error('tool result exceeds 65536 characters');
+    }
+    return { result, isError: false };
   }
 
   return { llmToolDefs, invoke };

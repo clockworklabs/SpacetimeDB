@@ -15,4 +15,5 @@ export default __t.row({
   owner: __t.string(),
   lockedAt: __t.timestamp().name("locked_at"),
   cancelRequested: __t.bool().name("cancel_requested"),
+  runId: __t.string().name("run_id"),
 });

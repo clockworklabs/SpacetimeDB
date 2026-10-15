@@ -182,14 +182,15 @@ export function client<Tx extends { timestamp: Timestamp }>(
       responseFormat: s.def.defaultResponseFormat,
       context: undefined,
     };
-    db(tx).threadLock.insert({
+    const lock = db(tx).threadLock.insert({
       threadId,
+      runId: config.submodule(tx).newUuidV4().toString(),
       owner,
       lockedAt: tx.timestamp,
       cancelRequested: false,
     });
     db(tx).thread.id.update({ ...thread, updatedAt: tx.timestamp });
-    return { run, cfg };
+    return { run, cfg, runId: lock.runId };
   }
 
   function embedMessage(
@@ -362,17 +363,28 @@ export function client<Tx extends { timestamp: Timestamp }>(
     };
   }
 
-  // Releases the thread lock however the run ends.
+  // Every transaction checks ownership, including writes after a provider call.
   function runLocked(
     ctx: AgentsProcedureCtx<Tx>,
-    started: { run: AgentRun; cfg: LoopConfig },
+    started: { run: AgentRun; cfg: LoopConfig; runId: string },
     userMessageId?: bigint
   ): void {
-    const { run, cfg } = started;
+    const { run, cfg, runId } = started;
+    const lockedCtx: AgentsProcedureCtx<Tx> = {
+      http: ctx.http,
+      withTx: fn =>
+        ctx.withTx(tx => {
+          if (db(tx).threadLock.threadId.find(run.threadId)?.runId !== runId) {
+            fail(errors.threadNotRunning, run.threadId);
+          }
+          return fn(tx);
+        }),
+    };
     try {
-      if (userMessageId !== undefined) embedMessage(ctx, run, userMessageId);
-      summarize(ctx, run);
-      const context = ctx.withTx(tx =>
+      if (userMessageId !== undefined)
+        embedMessage(lockedCtx, run, userMessageId);
+      summarize(lockedCtx, run);
+      const context = lockedCtx.withTx(tx =>
         buildContextMessage(
           db(tx).thread.id.find(run.threadId)?.summary,
           retrieveSnippets(tx, run)
@@ -380,13 +392,17 @@ export function client<Tx extends { timestamp: Timestamp }>(
       );
       runAgentLoop({
         http: ctx.http,
-        withTx: fn => ctx.withTx(tx => fn(loopTx(tx, run))),
+        withTx: fn => lockedCtx.withTx(tx => fn(loopTx(tx, run))),
         llmToolDefs: registry.llmToolDefsFor(run.agentName),
         cfg: { ...cfg, context },
         threadId: run.threadId,
       });
     } finally {
-      ctx.withTx(tx => db(tx).threadLock.threadId.delete(run.threadId));
+      ctx.withTx(tx => {
+        if (db(tx).threadLock.threadId.find(run.threadId)?.runId === runId) {
+          db(tx).threadLock.threadId.delete(run.threadId);
+        }
+      });
     }
   }
 

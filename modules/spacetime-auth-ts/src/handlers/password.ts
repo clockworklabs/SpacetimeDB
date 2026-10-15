@@ -45,7 +45,13 @@ export function passwordSignup(
   options: AuthHttpOptions
 ): SyncResponse {
   const body = safeJson<SignupBody>(req);
-  if (!body?.email || !body?.password)
+  if (
+    typeof body?.email !== 'string' ||
+    !body.email ||
+    typeof body.password !== 'string' ||
+    !body.password ||
+    (body.name !== undefined && typeof body.name !== 'string')
+  )
     throw new HttpError('invalid_request', 400);
   if (body.password.length < MIN_PASSWORD_LEN)
     throw new HttpError('password_too_short', 400);
@@ -116,7 +122,12 @@ export function passwordLogin(
   options: AuthHttpOptions
 ): SyncResponse {
   const body = safeJson<LoginBody>(req);
-  if (!body?.email || !body?.password)
+  if (
+    typeof body?.email !== 'string' ||
+    !body.email ||
+    typeof body.password !== 'string' ||
+    !body.password
+  )
     throw new HttpError('invalid_request', 400);
   if (body.password.length > MAX_PASSWORD_LEN)
     throw new HttpError('invalid_credentials', 401);
