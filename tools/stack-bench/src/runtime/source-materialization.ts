@@ -63,14 +63,17 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   };
   // Startup may add runtime state such as a build marker; it must not change or remove accepted files.
   const digest = (root: string, file: string) => hashFiles([join(root, file)], { base: root }).sha256;
-  // A lock file decides what is installed. npm also copies the package's own name, version and
-  // licence into it and rewrites them on a plain install after package.json was edited by hand.
-  // With those apart, an identical lock installs the same application; its accepted bytes go back.
+  // A lock file decides what is installed. npm also copies the package's own name, version,
+  // licence and declared ranges into it and rewrites them on a plain install after package.json
+  // was edited by hand. With those apart, an identical lock installs the same packages; its
+  // accepted bytes go back.
   const installs = (path: string): string | null => {
     try {
       const lock = JSON.parse(readFileSync(path, 'utf8'));
       const root = lock.packages?.[''] ?? {};
-      for (const holder of [lock, root]) for (const key of ['name', 'version', 'license']) delete holder[key];
+      for (const key of ['name', 'version']) delete lock[key];
+      for (const key of ['name', 'version', 'license', 'dependencies', 'devDependencies',
+        'optionalDependencies', 'peerDependencies']) delete root[key];
       return JSON.stringify(lock);
     } catch { return null; }
   };
