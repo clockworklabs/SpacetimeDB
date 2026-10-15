@@ -9,9 +9,9 @@ import TabItem from '@theme/TabItem';
 
 # Unit Test Modules
 
-A module's reducers, procedures and views are ordinary functions, and most of what they do is read and write tables. SpacetimeDB includes a test harness that runs those functions against an in-memory datastore built from your module's schema, so you can unit test them without publishing a database or running a SpacetimeDB host.
+A module's reducers, procedures and views are ordinary functions, and most of what they do is read and write tables. Spacetime includes a test harness that runs those functions against an in-memory datastore built from your module's schema, so you can unit test them without publishing a database or running a Spacetime host.
 
-The datastore is the real one, not a mock or a simulator, so tables enforce their constraints and transactions roll back exactly as they would in production. Because it runs in-process, a fresh test database takes about a millisecond to create. Each test can have its own, and tests are fast, isolated and deterministic.
+The datastore is the real one, not a mock or a simulator, so tables enforce their constraints and transactions roll back exactly as they would in production. Because it runs in-process and in-memory, a fresh test database takes about a millisecond to create. Each test can have its own, and tests are fast, isolated and deterministic.
 
 The harness controls everything a function would otherwise get from the host: who the caller is, what time it is, the random number seed and, for procedures, the replies to outgoing HTTP requests.
 
@@ -19,7 +19,7 @@ The test utilities are available in the `spacetimedb` module libraries starting 
 
 ## Set up and test a reducer
 
-The examples below use a small message table adapted from the [Rust chat template](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-rs/spacetimedb/src/lib.rs) and [TypeScript chat tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-react-ts/spacetimedb/src/index.test.ts). Run the commands from your module directory, usually `spacetimedb/`.
+The examples below use a small message table adapted from the [Rust chat template tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-rs/spacetimedb/src/lib.rs) and [TypeScript chat template tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-react-ts/spacetimedb/src/index.test.ts). Run the commands from your module directory, usually `spacetimedb/`.
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
@@ -44,7 +44,7 @@ Your `package.json` should use `"type": "module"`. Add a test script alongside a
 }
 ```
 
-Module code imports host functions from `spacetime:sys`, which only exists inside a SpacetimeDB host. The `spacetimedbModuleTestPlugin` replaces those imports with the in-memory datastore. Create this configuration in the module directory, not the client project:
+Module code imports host functions from `spacetime:sys`, which only exists inside a Spacetime host. The `spacetimedbModuleTestPlugin` replaces those imports with the in-memory datastore. Create this configuration in the module directory, not the client project:
 
 ```typescript title="vitest.config.ts"
 import { defineConfig, type Plugin } from 'vitest/config';
@@ -295,39 +295,30 @@ cargo test
 
 `TestContext` exposes the database's tables as `test.db`, the test clock as `test.clock` and the random number source as `test.rng`. The database's own identity is always `Identity::ZERO`.
 
-:::note Fresh dependency resolution with 2.12.0
-If a fresh `Cargo.lock` selects ICU 2.3, the native test dependencies can fail to compile `temporal_rs` with missing ICU calendar types such as `AnyCalendarDifferenceError`. For this dependency combination, add these compatibility pins alongside the entries in `[dev-dependencies]`, then run `cargo test` again:
-
-```toml
-icu_calendar = "=2.1.1"
-icu_locale = "=2.1.1"
-```
-
-Keep the resulting `Cargo.lock` for reproducible test builds. These pins work around a transitive dependency incompatibility, not a requirement of the module test API.
-:::
-
 </TabItem>
 </Tabs>
 
 The rollback examples deliberately call the reducer twice inside one test transaction to demonstrate atomicity. Calls from clients normally run in separate transactions; use one transaction per call when testing that behavior. Running several reducers in one transaction is still useful for setting up a scenario in a single step.
 
-The rest of this guide shows fragments rather than whole files. Code marked `// In the module:` extends the module above, with any new tables added to its `schema({ ... })` call. Tests extend the test file above and import the module functions they call.
+The rest of this guide shows fragments rather than whole files. Code marked `// In the module:` extends the module above; in TypeScript, add any new tables to its `schema({ ... })` call. Tests extend the test file above, importing the module functions they call in TypeScript, or inside its `mod tests` module in Rust.
 
 ## Choose the caller
 
-Every call into the module is made by someone, which decides `ctx.sender`. The first argument to `withReducerTx` / `with_reducer_tx` is a `TestAuth`, which offers two kinds of caller:
+Every call into the module is made by someone, which decides `ctx.sender`. Each test call takes a `TestAuth` saying who the caller is, and there are two kinds of caller:
 
-- **The database itself:** `TestAuth.internal()` / `TestAuth::internal()`. Use it for [scheduled reducers](#test-scheduled-reducers), which the database calls on its own behalf. The sender is the module identity, there is no connection ID or JWT, and `ctx.senderAuth.isInternal` is `true`. 
-- **A client:** `TestAuth.fromJwtPayload` / `TestAuth::from_jwt_payload` takes a JSON claims payload, not a signed token, and a connection ID. Use it for reducers that clients call, and for the client connected and client disconnected lifecycle reducers. The sender is derived from the `iss` and `sub` claims, so the same issuer and subject always give the same identity. The reducer sees the claims in `ctx.senderAuth.jwt` as it would for a real connection, including any custom claims. This tests module logic that reads claims; it does not test production JWT signature verification.
+- **The database itself.** Use it for [scheduled reducers](#test-scheduled-reducers), which the database calls on its own behalf. The sender is the module identity, there is no connection ID or JWT, and the reducer's context reports the call as internal.
+- **A client**, built from a JSON claims payload, not a signed token, and a connection ID. Use it for reducers that clients call, and for the client connected and client disconnected lifecycle reducers. The sender is derived from the `iss` and `sub` claims, so the same issuer and subject always give the same identity. The reducer sees the claims as it would for a real connection, including any custom claims. This tests module logic that reads claims; it does not test production JWT signature verification.
 
-The `init` [lifecycle reducer](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) is neither. On a published database its sender is the identity that owns the database, usually whoever published it, not the module identity. If your `init` ignores `ctx.sender`, either caller will do. If it reads the sender, for example to record an owner who alone may call admin reducers, call it as a client standing in for the publisher, and use that same client for the owner's calls later in the test. Calling it with `TestAuth.internal()` would record the module identity as the owner, and the test's owner-only calls would then be refused.
+The `init` [lifecycle reducer](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) is neither. On a published database its sender is the identity that owns the database, usually whoever published it, not the module identity. If your `init` ignores `ctx.sender`, either caller will do. If it reads the sender, for example to record an owner who alone may call admin reducers, call it as a client standing in for the publisher, and use that same client for the owner's calls later in the test. Calling it as the database itself would record the module identity as the owner, and the test's owner-only calls would then be refused.
 
 The harness does not simulate clients connecting or automatically call your initialization or connection reducers. Invoke those functions explicitly inside a test transaction when they are part of your setup, as the chat templates do.
+
+A small helper keeps tests readable. Put it alongside your tests. It gives each client its own connection ID:
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
 
-A small helper keeps tests readable. Put it alongside your tests. It gives each client its own connection ID:
+The `TestAuth` is the first argument to `withReducerTx`. `TestAuth.internal()` is the database itself, and `TestAuth.fromJwtPayload(payload, connectionId)` is a client. In the reducer, `ctx.senderAuth.isInternal` is `true` for an internal call, and `ctx.senderAuth.jwt` holds a client's claims.
 
 ```typescript
 import { ConnectionId } from 'spacetimedb';
@@ -351,7 +342,47 @@ export function principal(
 }
 ```
 
-To find the identity a `TestAuth` will have before calling a reducer, read the sender from a view context. This is how to give a client a role that a reducer checks for. For a module that records admins in a `user` table:
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+The `TestAuth` is the first argument to `with_reducer_tx`. `TestAuth::internal()` is the database itself, and `TestAuth::from_jwt_payload(payload, connection_id)` is a client; it returns a `Result`, which fails if the payload isn't valid JSON claims. In the reducer, `ctx.sender_auth().is_internal()` is `true` for an internal call, and `ctx.sender_auth().jwt()` holds a client's claims.
+
+The helper builds its claims with `serde_json`, so add it to `[dev-dependencies]`:
+
+```toml title="Cargo.toml (excerpt)"
+[dev-dependencies]
+serde_json = "1"
+```
+
+The Rust test fragments in the rest of this guide go inside the `mod tests` module above:
+
+```rust
+use serde_json::{json, Value};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
+
+/// A client signed in as `subject`, with any extra claims.
+fn principal(subject: &str, claims: Value) -> TestAuth {
+    let mut payload = json!({ "iss": "https://auth.example.com", "sub": subject });
+    if let (Value::Object(payload), Value::Object(extra)) = (&mut payload, claims) {
+        payload.extend(extra);
+    }
+    let connection = NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed);
+    TestAuth::from_jwt_payload(payload.to_string(), ConnectionId::from_u128(connection.into()))
+        .expect("valid test claims")
+}
+```
+
+</TabItem>
+</Tabs>
+
+### Give a client a role
+
+To give a client a role that a reducer checks for, the test needs the identity the client will have before it calls anything. Read it as the sender of a view context for that client. For a module that records admins in a `user` table, a test can make `alice` an admin before calling any reducers:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 // In the module:
@@ -360,8 +391,6 @@ const user = table(
   { identity: t.identity().primaryKey(), admin: t.bool() }
 );
 ```
-
-a test can make `alice` an admin before calling any reducers:
 
 ```typescript
 const test = createModuleTestHarness(spacetimedb, moduleExports);
@@ -372,18 +401,89 @@ test.db.user.insert({ identity: test.viewContext(alice).sender, admin: true });
 // Reducers called as `alice` now find an admin row for the caller.
 ```
 
-A client connected reducer runs as the connecting client, so a test can check which tokens it accepts. This connect reducer turns away tokens issued for another application, and throwing from it is what rejects the connection:
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// In the module:
+#[spacetimedb::table(accessor = user)]
+pub struct User {
+    #[primary_key]
+    identity: Identity,
+    admin: bool,
+}
+```
+
+```rust
+let test = TestContext::new().expect("test database");
+let alice = test.view_context(principal("alice", json!({}))).sender();
+
+test.db.user().insert(User { identity: alice, admin: true });
+
+// Reducers called as `alice` now find an admin row for the caller.
+```
+
+`Identity::from_claims(issuer, subject)` computes the same identity without a view context.
+
+</TabItem>
+</Tabs>
+
+### Check which tokens a client may connect with
+
+A client connected reducer runs as the connecting client, so a test can check which tokens it accepts. This connect reducer accepts only tokens from your own auth provider that were issued for your application, and returning an error from it is what rejects the connection. It checks both claims: the issuer says who signed the token, and the audience says which application it was meant for. Checking only one would let a token from another provider, or one issued for another application, through. See [Restricting auth providers](../../00200-core-concepts/00500-authentication/00500-usage.md#example-restricting-auth-providers) for the full guidance.
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 // In the module:
+const ISSUER = 'https://auth.example.com';
 const CLIENT_ID = 'my-app';
 
 export const onConnect = spacetimedb.clientConnected(ctx => {
-  if (!ctx.senderAuth.jwt?.audience.includes(CLIENT_ID)) {
+  const jwt = ctx.senderAuth.jwt;
+  if (jwt == null) {
+    throw new SenderError('A token is required to connect');
+  }
+  if (jwt.issuer !== ISSUER) {
+    throw new SenderError('This token was issued by another provider');
+  }
+  if (!jwt.audience.includes(CLIENT_ID)) {
     throw new SenderError('This token was issued for another application');
   }
 });
 ```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// In the module:
+const ISSUER: &str = "https://auth.example.com";
+const CLIENT_ID: &str = "my-app";
+
+#[spacetimedb::reducer(client_connected)]
+pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
+    let Some(jwt) = ctx.sender_auth().jwt() else {
+        return Err("A token is required to connect".to_string());
+    };
+    if jwt.issuer() != ISSUER {
+        return Err("This token was issued by another provider".to_string());
+    }
+    if !jwt.audience().iter().any(|aud| aud == CLIENT_ID) {
+        return Err("This token was issued for another application".to_string());
+    }
+    Ok(())
+}
+```
+
+</TabItem>
+</Tabs>
+
+The tests connect with a token for this application, a token for another application, and a token from another provider:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 it('accepts a token issued for this application', () => {
@@ -405,12 +505,53 @@ it('rejects a token issued for another application', () => {
     )
   ).toThrow('This token was issued for another application');
 });
+
+it('rejects a token from another provider', () => {
+  const test = createModuleTestHarness(spacetimedb, moduleExports);
+
+  expect(() =>
+    test.withReducerTx(
+      principal('alice', { iss: 'https://evil.example.com', aud: 'my-app' }),
+      ctx => onConnect(ctx, {})
+    )
+  ).toThrow('This token was issued by another provider');
+});
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-To find the identity a `TestAuth` will have before calling a reducer, read it from a view context with `test.view_context(auth).sender()`, or compute it with `Identity::from_claims(issuer, subject)`.
+```rust
+#[test]
+fn accepts_a_token_issued_for_this_application() {
+    let test = TestContext::new().expect("test database");
+    let auth = principal("alice", json!({ "aud": "my-app" }));
+
+    assert_eq!(test.with_reducer_tx(auth, on_connect), Ok(()));
+}
+
+#[test]
+fn rejects_a_token_issued_for_another_application() {
+    let test = TestContext::new().expect("test database");
+    let auth = principal("alice", json!({ "aud": "another-app" }));
+
+    assert_eq!(
+        test.with_reducer_tx(auth, on_connect),
+        Err("This token was issued for another application".to_string())
+    );
+}
+
+#[test]
+fn rejects_a_token_from_another_provider() {
+    let test = TestContext::new().expect("test database");
+    let auth = principal("alice", json!({ "iss": "https://evil.example.com", "aud": "my-app" }));
+
+    assert_eq!(
+        test.with_reducer_tx(auth, on_connect),
+        Err("This token was issued by another provider".to_string())
+    );
+}
+```
 
 </TabItem>
 </Tabs>
@@ -458,10 +599,10 @@ When a procedure sleeps, the harness advances the test clock to the wake time in
 
 Reducers and procedures get their random numbers from their context, which the harness seeds from a test random number source. Each call into the module draws a fresh seed from that source, so successive calls see different numbers, but the whole sequence depends only on the source's seed. The same seed always gives the same numbers, which lets a test state exactly what a reducer that rolls dice or shuffles a list will produce.
 
+Choose the seed before the first call, and reseed during a test to start the sequence again:
+
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
-
-Pass `rngSeed` to `createModuleTestHarness` to choose the seed, as in [Harness options and properties](#harness-options-and-properties). `test.rng.setSeed(seed)` reseeds it during a test, which starts the sequence again:
 
 ```typescript
 it('rolls the same dice for the same seed', () => {
@@ -480,24 +621,45 @@ it('rolls the same dice for the same seed', () => {
 });
 ```
 
-A seed can be a `bigint`, a `number` or a `Uint8Array`. `test.rng.seed()` returns the current seed.
+`rngSeed` is a [harness option](#harness-options-and-properties). A seed can be a `bigint`, a `number` or a `Uint8Array`. `test.rng.seed()` returns the current seed.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-`test.rng.set_seed(seed)` takes a `u64` and starts the sequence again. `test.rng` requires the `rand` feature, which is enabled by default.
+```rust
+#[test]
+fn rolls_the_same_dice_for_the_same_seed() {
+    use spacetimedb::rand::Rng;
+
+    let test = TestContext::new().expect("test database");
+    test.rng.set_seed(42);
+    let roll_dice = || {
+        test.with_reducer_tx(TestAuth::internal(), |ctx| {
+            Ok::<_, String>([1, 2, 3].map(|_| ctx.rng().gen_range(1..=6)))
+        })
+        .expect("successful reducer")
+    };
+    let first = roll_dice();
+
+    test.rng.set_seed(42);
+
+    assert_eq!(roll_dice(), first);
+}
+```
+
+`test.rng.set_seed(seed)` takes a `u64`. `test.rng` requires the `rand` feature, which is enabled by default.
 
 </TabItem>
 </Tabs>
 
 ## Test scheduled reducers
 
-The harness stores rows in [schedule tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) like any other rows, but never runs them: no timer fires during a test. To test a scheduled reducer, call it directly as the database itself, passing a row of its schedule table as the argument. Calling it as a client instead checks that the reducer refuses callers other than the scheduler.
+The harness stores rows in [schedule tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) like any other rows, but never runs them: no timer fires during a test. To test a scheduled reducer, call it directly as the database itself, passing a row of its schedule table as the argument.
+
+This module takes edits more than 15 minutes old out of the live set, every five minutes:
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
-
-This module takes edits more than 15 minutes old out of the live set, every five minutes:
 
 ```typescript
 // In the module:
@@ -517,9 +679,6 @@ export const expireOldEdits = spacetimedb.reducer(
   { onSchedule: expireTimer },
   { timer: expireTimer.rowType },
   ctx => {
-    if (!ctx.senderAuth.isInternal) {
-      throw new SenderError('Only the scheduler may expire edits');
-    }
     for (const e of ctx.db.edit.iter()) {
       if (e.live && ctx.timestamp.since(e.editedAt).micros > FIFTEEN_MINUTES) {
         ctx.db.edit.id.update({ ...e, live: false });
@@ -529,7 +688,50 @@ export const expireOldEdits = spacetimedb.reducer(
 );
 ```
 
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// In the module:
+use spacetimedb::ScheduleAt;
+use std::time::Duration;
+
+#[spacetimedb::table(accessor = edit)]
+pub struct Edit {
+    #[primary_key]
+    id: u64,
+    edited_at: Timestamp,
+    live: bool,
+}
+
+#[spacetimedb::table(accessor = expire_timer, scheduled(expire_old_edits))]
+pub struct ExpireTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+}
+
+const FIFTEEN_MINUTES: Duration = Duration::from_secs(15 * 60);
+
+#[spacetimedb::reducer]
+pub fn expire_old_edits(ctx: &ReducerContext, _timer: ExpireTimer) {
+    for e in ctx.db.edit().iter() {
+        let age = ctx.timestamp.duration_since(e.edited_at);
+        if e.live && age.is_some_and(|age| age > FIFTEEN_MINUTES) {
+            ctx.db.edit().id().update(Edit { live: false, ..e });
+        }
+    }
+}
+```
+
+</TabItem>
+</Tabs>
+
 The test writes the edits straight into the table, calls the reducer with a timer row, and checks which edits are still live:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 import { ScheduleAt, Timestamp } from 'spacetimedb';
@@ -557,16 +759,37 @@ it('takes edits more than 15 minutes old out of the live set', () => {
   const edits = [...test.db.edit.iter()].sort((a, b) => Number(a.id - b.id));
   expect(edits.map(e => e.live)).toEqual([false, true, true]);
 });
+```
 
-it('may only be called by the scheduler', () => {
-  const test = createModuleTestHarness(spacetimedb, moduleExports);
+</TabItem>
+<TabItem value="rust" label="Rust">
 
-  expect(() =>
-    test.withReducerTx(principal('mallory'), ctx =>
-      expireOldEdits(ctx, { timer: EXPIRE_TIMER })
-    )
-  ).toThrow('Only the scheduler may expire edits');
-});
+```rust
+#[test]
+fn takes_edits_more_than_15_minutes_old_out_of_the_live_set() {
+    let test = TestContext::new().expect("test database");
+    let now = Timestamp::parse_from_rfc3339("2026-10-12T12:00:00Z").expect("valid time");
+    let minutes_ago = |minutes: u64| now - Duration::from_secs(minutes * 60);
+    test.clock.set(now);
+
+    test.db.edit().insert(Edit { id: 1, edited_at: minutes_ago(16), live: true });
+    test.db.edit().insert(Edit { id: 2, edited_at: minutes_ago(15), live: true });
+    test.db.edit().insert(Edit { id: 3, edited_at: minutes_ago(1), live: true });
+
+    let timer = ExpireTimer {
+        scheduled_id: 1,
+        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5 * 60).into()),
+    };
+    test.with_reducer_tx(TestAuth::internal(), |ctx| {
+        expire_old_edits(ctx, timer);
+        Ok::<(), String>(())
+    })
+    .expect("successful reducer");
+
+    let mut edits = test.db.edit().iter().collect::<Vec<_>>();
+    edits.sort_by_key(|e| e.id);
+    assert_eq!(edits.iter().map(|e| e.live).collect::<Vec<_>>(), [false, true, true]);
+}
 ```
 
 </TabItem>
@@ -574,18 +797,27 @@ it('may only be called by the scheduler', () => {
 
 ## Test procedures and HTTP
 
-A [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) runs outside a transaction and opens its own, so the harness gives it a procedure context rather than wrapping it in a transaction. Rust procedure APIs additionally require the `unstable` feature on the dev-dependency: `features = ["test-utils", "unstable"]`.
-
-Procedures can make HTTP requests, which no test should send to a real server. Instead, the test supplies a responder, which answers each request the procedure makes. No real HTTP request is made, and a request made without a responder fails with `no test HTTP responder configured`.
+A [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) runs outside a transaction and opens its own, so the harness gives it a procedure context rather than wrapping it in a transaction. Create a procedure context for a caller and call the procedure with it.
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
 
-Create a procedure context with `test.procedureContext(auth)` and call the procedure with it. Inside the procedure, `ctx.withTx(...)` does the database work.
+Create a procedure context with `test.procedureContext(auth)`. Inside the procedure, `ctx.withTx(...)` does the database work.
 
-To test outbound HTTP, use `procedureContextBuilder`. Add this test to the TypeScript example above:
+</TabItem>
+<TabItem value="rust" label="Rust">
 
-```typescript title="src/index.test.ts (continued)"
+Procedure APIs require the `unstable` feature on the dev-dependency: `features = ["test-utils", "unstable"]`. Create a procedure context with `test.procedure_context(auth)`. Use `ctx.try_with_tx(...)` for database work; `ctx.with_tx(...)` currently panics in tests ([#6296](https://github.com/clockworklabs/SpacetimeDB/pull/6296)).
+
+</TabItem>
+</Tabs>
+
+Procedures can make HTTP requests, which no test should send to a real server. Instead, the test supplies a responder, which answers each request the procedure makes. No real HTTP request is made, and a request made without a responder fails with `no test HTTP responder configured`. Install the responder with the procedure context builder:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
 it('reads a mocked HTTP response body', () => {
   const test = createModuleTestHarness(spacetimedb, moduleExports);
   const ctx = test
@@ -609,7 +841,39 @@ it('reads a mocked HTTP response body', () => {
 
 The responder receives the harness, request metadata, and request body bytes. Return a `TestHttpResponse`: status `code`, `headers`, `version`, and an optional `body` (`string` or `Uint8Array`). An omitted body is empty. Throwing from the responder looks like a network failure to the procedure.
 
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[test]
+fn reads_a_mocked_http_response_body() {
+    let test = TestContext::new().expect("test database");
+    let ctx = test
+        .procedure_context_builder(TestAuth::internal())
+        .http(|_, request| {
+            assert_eq!(request.uri().to_string(), "https://example.invalid/status");
+            Ok(spacetimedb::http::Response::builder()
+                .status(200)
+                .body(spacetimedb::http::Body::from("healthy"))
+                .expect("valid test response"))
+        })
+        .build();
+
+    let response = ctx.http.get("https://example.invalid/status").expect("mock response");
+    let body = response.into_body().into_string().expect("text body");
+    assert_eq!(body, "healthy");
+}
+```
+
+The responder receives the test context and the request, and returns a `Response`. Returning `Err` looks like a network failure to the procedure.
+
+</TabItem>
+</Tabs>
+
 A responder can also record the requests it receives and answer each in turn from a script. This lets a test check both what the procedure asked for and how it handled the reply, including errors and network failures. This procedure checks a service's health, and records a failure when the service returns an error status or can't be reached:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 // In the module:
@@ -634,7 +898,45 @@ export const checkStatus = spacetimedb.procedure(t.unit(), ctx => {
 });
 ```
 
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// In the module:
+use spacetimedb::ProcedureContext;
+
+#[spacetimedb::table(accessor = fetch_failure)]
+pub struct FetchFailure {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    at: Timestamp,
+}
+
+#[spacetimedb::procedure]
+pub fn check_status(ctx: &mut ProcedureContext) -> Result<(), String> {
+    // A network failure counts as not ok.
+    let ok = ctx
+        .http
+        .get("https://example.invalid/status")
+        .is_ok_and(|response| response.status().is_success());
+    if !ok {
+        ctx.try_with_tx(|tx| {
+            tx.db.fetch_failure().insert(FetchFailure { id: 0, at: tx.timestamp });
+            Ok::<(), String>(())
+        })?;
+    }
+    Ok(())
+}
+```
+
+</TabItem>
+</Tabs>
+
 A scripted responder, to put alongside your tests:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
 ```typescript
 import type { TestHttpResponse } from 'spacetimedb/server/test-utils';
@@ -662,6 +964,47 @@ function fakeServer(...replies: (object | number | Error)[]) {
 }
 ```
 
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::http::{Body, Error, Request, Response};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+
+/// Answers requests in turn from `replies`: a status code to send, or an
+/// error to return as a network failure. Records the path of each request.
+fn fake_server(
+    replies: impl IntoIterator<Item = Result<u16, &'static str>>,
+) -> (
+    impl Fn(&TestContext, Request) -> Result<Response, Error>,
+    Rc<RefCell<Vec<String>>>,
+) {
+    let replies = RefCell::new(replies.into_iter().collect::<VecDeque<_>>());
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let seen = requests.clone();
+    let responder = move |_: &TestContext, request: Request| {
+        seen.borrow_mut().push(request.uri().path().to_string());
+        match replies.borrow_mut().pop_front() {
+            Some(Ok(status)) => Ok(Response::builder()
+                .status(status)
+                .body(Body::empty())
+                .expect("valid test response")),
+            Some(Err(message)) => Err(Error::new(message)),
+            None => panic!("Unexpected request: {}", request.uri()),
+        }
+    };
+    (responder, requests)
+}
+```
+
+</TabItem>
+</Tabs>
+
+The test gives the procedure an error status, then a network failure, and checks that it asked for the right path and recorded one failure each time:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
+
 ```typescript
 it.each([
   ['an HTTP error', 503],
@@ -684,54 +1027,55 @@ it.each([
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-Create a procedure context with `test.procedure_context(auth)`. Use `ctx.try_with_tx(...)` for database work; `ctx.with_tx(...)` currently panics in tests ([#6296](https://github.com/clockworklabs/SpacetimeDB/pull/6296)).
-
-To test outbound HTTP, configure a response through `procedure_context_builder`. With `unstable` enabled, add this separate test module to `src/lib.rs`:
-
-```rust title="src/lib.rs (HTTP test)"
-#[cfg(test)]
-mod http_tests {
-    use spacetimedb::test_utils::{TestAuth, TestContext};
-
-    #[test]
-    fn reads_mocked_http_response_body() {
+```rust
+#[test]
+fn counts_http_errors_and_network_failures_as_failures() {
+    for reply in [Ok(503), Err("connection reset")] {
         let test = TestContext::new().expect("test database");
-        let ctx = test.procedure_context_builder(TestAuth::internal())
-            .http(|_, request| {
-                assert_eq!(request.uri().to_string(), "https://example.invalid/status");
-                Ok(spacetimedb::http::Response::builder()
-                    .status(200)
-                    .body(spacetimedb::http::Body::from("healthy"))
-                    .expect("valid test response"))
-            })
+        let (responder, requests) = fake_server([reply]);
+        let mut ctx = test
+            .procedure_context_builder(TestAuth::internal())
+            .http(responder)
             .build();
 
-        let response = ctx.http.get("https://example.invalid/status").expect("mock response");
-        let body = response.into_body().into_string().expect("text body");
-        assert_eq!(body, "healthy");
+        check_status(&mut ctx).expect("procedure completes");
+
+        assert_eq!(*requests.borrow(), ["/status"], "for {reply:?}");
+        assert_eq!(test.db.fetch_failure().count(), 1, "for {reply:?}");
     }
 }
 ```
 
-Returning `Err` from the responder looks like a network failure to the procedure.
-
 </TabItem>
 </Tabs>
 
-To act at points during a procedure, use `createProcedureTestHooks()` in TypeScript or `ProcedureTestHooks` in Rust, and pass them to the builder's `hooks` method. `afterTxCommit` / `after_tx_commit` runs after each transaction the procedure commits, and `onSleep` / `on_sleep` runs before each sleep. These hooks let you test code that must re-check database state between transactions without relying on wall-clock delays.
+A test can also act at points during a procedure, using hooks that run after each transaction the procedure commits and before each sleep. These let you test code that must re-check database state between transactions without relying on wall-clock delays. Pass the hooks to the procedure context builder:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
+
+Create the hooks with `createProcedureTestHooks()`, add them with `afterTxCommit` and `onSleep`, and pass them to the builder's `hooks` method.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+Create the hooks with `ProcedureTestHooks::new()`, add them with `after_tx_commit` and `on_sleep`, and pass them to the builder's `hooks` method.
+
+</TabItem>
+</Tabs>
 
 ## Test what clients will see
 
 A test can't subscribe, but it can check the [views](../../00200-core-concepts/00200-functions/00500-views.md) and queries that clients subscribe to. Call a view with a context for a chosen caller, and check what it returns. This makes per-user views testable: call the same view as two different clients and check that each sees only their own rows.
 
-For a view, use `test.viewContext(auth)` / `test.view_context(auth)`, or `test.anonymousViewContext()` / `test.anonymous_view_context()`. A view that returns rows gives them back directly. A view that returns a typed query gives back the query, which `test.runQuery(...)` / `test.run_query(...)` runs against the committed tables.
+The harness builds a view context for a chosen caller, or an anonymous one for anonymous views. A view that returns rows gives them back directly. A view that returns a typed query gives back the query, which the harness runs against the committed tables.
 
 Queries run in a test always run as the database owner, which bypasses [row-level security](./00400-row-level-security.md) and can read private tables. A query's results are therefore the rows it matches, not necessarily the rows a particular client would receive.
 
+In this module, each client sees only the notes they wrote:
+
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
-
-A view defined with `spacetimedb.view(...)` can be called as a function, taking a view context and, if the view has parameters, an object of its arguments:
 
 ```typescript
 // In the module:
@@ -750,6 +1094,40 @@ export const myNotes = spacetimedb.view(
   ctx => ctx.from.note.where(row => row.owner.eq(ctx.sender))
 );
 ```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// In the module:
+use spacetimedb::{Query, ViewContext};
+
+#[spacetimedb::table(accessor = note)]
+pub struct Note {
+    owner: Identity,
+    text: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_note(ctx: &ReducerContext, text: String) {
+    ctx.db.note().insert(Note { owner: ctx.sender(), text });
+}
+
+#[spacetimedb::view(accessor = my_notes, public)]
+pub fn my_notes(ctx: &ViewContext) -> impl Query<Note> {
+    ctx.from.note().r#where(|n| n.owner.eq(ctx.sender()))
+}
+```
+
+</TabItem>
+</Tabs>
+
+The test adds a note as each of two clients, then calls the view as each of them:
+
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
+
+A view defined with `spacetimedb.view(...)` can be called as a function, taking a view context and, if the view has parameters, an object of its arguments. Build the context with `test.viewContext(auth)` or `test.anonymousViewContext()`, and run a returned query with `test.runQuery(...)`:
 
 ```typescript
 it('shows each client only their own notes', () => {
@@ -770,6 +1148,36 @@ it('shows each client only their own notes', () => {
 ```
 
 `test.runQuery` also takes queries built directly from `test.viewContext(auth).from`, including `where` filters and semijoins. It accepts only queries that read rows.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+A view is an ordinary function, taking a view context and any parameters. Build the context with `test.view_context(auth)` or `test.anonymous_view_context()`, and run a returned query with `test.run_query(...)`:
+
+```rust
+#[test]
+fn shows_each_client_only_their_own_notes() {
+    let test = TestContext::new().expect("test database");
+    for (subject, text) in [("alice", "from Alice"), ("bob", "from Bob")] {
+        test.with_reducer_tx(principal(subject, json!({})), |ctx| {
+            add_note(ctx, text.to_string());
+            Ok::<(), String>(())
+        })
+        .expect("successful reducer");
+    }
+
+    let notes_for = |subject: &str| {
+        let ctx = test.view_context(principal(subject, json!({})));
+        let notes: Vec<Note> = test.run_query(my_notes(&ctx)).expect("query runs");
+        notes.into_iter().map(|n| n.text).collect::<Vec<_>>()
+    };
+
+    assert_eq!(notes_for("alice"), ["from Alice"]);
+    assert_eq!(notes_for("bob"), ["from Bob"]);
+}
+```
+
+`test.run_query` also takes queries built directly from a `QueryBuilder`, including `r#where` filters and semijoins.
 
 </TabItem>
 </Tabs>
