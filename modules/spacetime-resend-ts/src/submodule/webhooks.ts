@@ -1,10 +1,6 @@
 import * as v from 'valibot';
 import { Timestamp } from 'spacetimedb';
-import type {
-  ReducerExport,
-  StringBuilder,
-  OptionBuilder,
-} from 'spacetimedb/server';
+import type { ReducerExport } from 'spacetimedb/server';
 import {
   EmailStatus,
   WebhookEventStatus,
@@ -339,23 +335,18 @@ function applyResendWebhook(
   return outcome.status;
 }
 
+const ingestResendWebhookArgs = {
+  eventId: t.string(),
+  eventType: t.string(),
+  payloadJson: t.string(),
+  signatureHeader: t.option(t.string()),
+  timestampHeader: t.option(t.string()),
+};
 export const ingestResendWebhook: ReducerExport<
   typeof spacetimedb.schemaType,
-  {
-    eventId: StringBuilder;
-    eventType: StringBuilder;
-    payloadJson: StringBuilder;
-    signatureHeader: OptionBuilder<StringBuilder>;
-    timestampHeader: OptionBuilder<StringBuilder>;
-  }
+  typeof ingestResendWebhookArgs
 > = spacetimedb.reducer(
-  {
-    eventId: t.string(),
-    eventType: t.string(),
-    payloadJson: t.string(),
-    signatureHeader: t.option(t.string()),
-    timestampHeader: t.option(t.string()),
-  },
+  ingestResendWebhookArgs,
   (ctx, { eventType, ...args }) => {
     if (eventType !== parseResendEventType(args.payloadJson)) {
       throwSenderError(errors.webhookMetadataMismatch);
@@ -403,10 +394,11 @@ export function makeResendWebhookHandler() {
   };
 }
 
+const replayWebhookEventArgs = { eventId: t.string() };
 export const replayWebhookEvent: ReducerExport<
   typeof spacetimedb.schemaType,
-  { eventId: StringBuilder }
-> = spacetimedb.reducer({ eventId: t.string() }, (ctx, { eventId }) => {
+  typeof replayWebhookEventArgs
+> = spacetimedb.reducer(replayWebhookEventArgs, (ctx, { eventId }) => {
   // Administrators may run this operation over stored events.
   requireAdmin(ctx, ctx.sender);
   const event = ctx.db.resendWebhookEvent.eventId.find(eventId);

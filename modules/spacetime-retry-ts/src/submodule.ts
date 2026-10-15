@@ -52,10 +52,10 @@ function retryTaskTable(
   return table({ name: 'retry_task', public: false }, retryTaskColumns(args));
 }
 
-type RetryHistoryStatus = SumBuilder<
+type RetryHistoryStatusBuilder = SumBuilder<
   Record<'Ok' | 'Failed' | 'GaveUp', ReturnType<typeof t.unit>>
 >;
-const historyStatus: RetryHistoryStatus = t.enum('RetryHistoryStatus', {
+const historyStatus: RetryHistoryStatusBuilder = t.enum('RetryHistoryStatus', {
   Ok: t.unit(),
   Failed: t.unit(),
   GaveUp: t.unit(),

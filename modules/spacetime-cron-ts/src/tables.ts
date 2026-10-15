@@ -17,10 +17,10 @@ const cronSchedule = t.enum('CronSchedule', {
   }),
 });
 
-type CronRunStatus = SumBuilder<
+type CronRunStatusBuilder = SumBuilder<
   Record<'Ok' | 'Failed', ReturnType<typeof t.unit>>
 >;
-const cronRunStatus: CronRunStatus = t.enum('CronRunStatus', {
+const cronRunStatus: CronRunStatusBuilder = t.enum('CronRunStatus', {
   Ok: t.unit(),
   Failed: t.unit(),
 });

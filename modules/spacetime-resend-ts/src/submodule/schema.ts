@@ -14,18 +14,21 @@ import { install } from './install.js';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
 // Ignored = event type this submodule does not handle. Failed = invalid payload.
-type WebhookStatus = SumBuilder<
+type WebhookEventStatusBuilder = SumBuilder<
   Record<
     'Received' | 'Processed' | 'Ignored' | 'Failed',
     ReturnType<typeof t.unit>
   >
 >;
-export const webhookEventStatus: WebhookStatus = t.enum('WebhookEventStatus', {
-  Received: t.unit(),
-  Processed: t.unit(),
-  Ignored: t.unit(),
-  Failed: t.unit(),
-});
+export const webhookEventStatus: WebhookEventStatusBuilder = t.enum(
+  'WebhookEventStatus',
+  {
+    Received: t.unit(),
+    Processed: t.unit(),
+    Ignored: t.unit(),
+    Failed: t.unit(),
+  }
+);
 export const WebhookEventStatus = {
   Received: { tag: 'Received' as const },
   Processed: { tag: 'Processed' as const },
@@ -134,105 +137,64 @@ export const resendAdminIdentityRow = {
   addedAt: t.timestamp(),
 };
 
+const resendEmailOptions = {
+  name: 'resend_email',
+  public: false,
+  indexes: [
+    { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] } as const,
+    { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] } as const,
+    { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] } as const,
+  ],
+};
 export const resendEmailTable: ReturnType<
-  typeof table<
-    typeof resendEmailRow,
-    {
-      indexes: [
-        {
-          readonly accessor: 'byUserId';
-          readonly algorithm: 'btree';
-          readonly columns: readonly ['userId'];
-        },
-        {
-          readonly accessor: 'byOrgId';
-          readonly algorithm: 'btree';
-          readonly columns: readonly ['orgId'];
-        },
-        {
-          readonly accessor: 'byStatus';
-          readonly algorithm: 'btree';
-          readonly columns: readonly ['status'];
-        },
-      ];
-    }
-  >
-> = table(
-  {
-    name: 'resend_email',
-    public: false,
-    indexes: [
-      { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
-      { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
-      { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
-    ],
-  },
-  resendEmailRow
-);
+  typeof table<typeof resendEmailRow, typeof resendEmailOptions>
+> = table(resendEmailOptions, resendEmailRow);
 
-export const resendDeliveryEventTable: ReturnType<
-  typeof table<
-    typeof resendDeliveryEventRow,
+const resendDeliveryEventOptions = {
+  name: 'resend_delivery_event',
+  public: false,
+  indexes: [
     {
-      indexes: [
-        {
-          readonly accessor: 'byResendId';
-          readonly algorithm: 'btree';
-          readonly columns: readonly ['resendId'];
-        },
-      ];
-    }
-  >
-> = table(
-  {
-    name: 'resend_delivery_event',
-    public: false,
-    indexes: [
-      { accessor: 'byResendId', algorithm: 'btree', columns: ['resendId'] },
-    ],
-  },
-  resendDeliveryEventRow
-);
+      accessor: 'byResendId',
+      algorithm: 'btree',
+      columns: ['resendId'],
+    } as const,
+  ],
+};
+export const resendDeliveryEventTable: ReturnType<
+  typeof table<typeof resendDeliveryEventRow, typeof resendDeliveryEventOptions>
+> = table(resendDeliveryEventOptions, resendDeliveryEventRow);
 
 // Private because the raw payload and signature headers are operational data.
 // Host modules can expose an admin-only view when needed.
+const resendWebhookEventOptions = {
+  name: 'resend_webhook_event',
+  public: false,
+  indexes: [
+    { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] } as const,
+  ],
+};
 export const resendWebhookEventTable: ReturnType<
-  typeof table<
-    typeof resendWebhookEventRow,
-    {
-      indexes: [
-        {
-          readonly accessor: 'byStatus';
-          readonly algorithm: 'btree';
-          readonly columns: readonly ['status'];
-        },
-      ];
-    }
-  >
-> = table(
-  {
-    name: 'resend_webhook_event',
-    public: false,
-    indexes: [
-      { accessor: 'byStatus', algorithm: 'btree', columns: ['status'] },
-    ],
-  },
-  resendWebhookEventRow
-);
+  typeof table<typeof resendWebhookEventRow, typeof resendWebhookEventOptions>
+> = table(resendWebhookEventOptions, resendWebhookEventRow);
 
+const resendConfigOptions = {
+  name: 'resend_config',
+  public: false,
+  indexes: [],
+};
 export const resendConfigTable: ReturnType<
-  typeof table<typeof resendConfigRow, { indexes: [] }>
-> = table(
-  { name: 'resend_config', public: false, indexes: [] },
-  resendConfigRow
-);
+  typeof table<typeof resendConfigRow, typeof resendConfigOptions>
+> = table(resendConfigOptions, resendConfigRow);
 
+const resendAdminIdentityOptions = {
+  name: 'resend_admin_identity',
+  public: false,
+  indexes: [],
+};
 export const resendAdminIdentityTable: ReturnType<
-  typeof table<typeof resendAdminIdentityRow, { indexes: [] }>
-> = table(
-  { name: 'resend_admin_identity', public: false, indexes: [] },
-  resendAdminIdentityRow
-);
+  typeof table<typeof resendAdminIdentityRow, typeof resendAdminIdentityOptions>
+> = table(resendAdminIdentityOptions, resendAdminIdentityRow);
 
 const tables: {
   resendEmail: typeof resendEmailTable;
@@ -249,6 +211,8 @@ const tables: {
 };
 export const spacetimedb: ReturnType<typeof schema<typeof tables>> =
   schema(tables);
+
+export const unitResult: ReturnType<typeof t.unit> = t.unit();
 
 export const init: ReturnType<typeof spacetimedb.init> = spacetimedb.init(
   ctx => {

@@ -1,11 +1,8 @@
 import * as v from 'valibot';
 import type {
   ProcedureExport,
-  StringBuilder,
   OptionBuilder,
   ArrayBuilder,
-  ProductBuilder,
-  U16Builder,
 } from 'spacetimedb/server';
 import {
   EmailStatus,
@@ -16,6 +13,7 @@ import {
   sendEmailResult,
   spacetimedb,
   t,
+  unitResult,
   vSendEmailResponse,
   type ProcedureModuleCtx,
   type WriteCtx,
@@ -256,11 +254,12 @@ export const sendEmail: ProcedureExport<
   return sendEmailRequest(ctx, args);
 });
 
+const cancelEmailArgs = { resendId: t.string() };
 export const cancelEmail: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { resendId: StringBuilder },
-  ReturnType<typeof t.unit>
-> = spacetimedb.procedure({ resendId: t.string() }, t.unit(), (ctx, args) => {
+  typeof cancelEmailArgs,
+  typeof unitResult
+> = spacetimedb.procedure(cancelEmailArgs, unitResult, (ctx, args) => {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
   denyIfNotAdmin(verdict);
   const cfg = loadConfigOrThrowFromProcedure(ctx);
@@ -287,28 +286,32 @@ export const cancelEmail: ProcedureExport<
   return {};
 });
 
+const getEmailArgs = { resendId: t.string() };
+const getEmailResult: OptionBuilder<typeof resendEmailTable.rowType> = t.option(
+  resendEmailTable.rowType
+);
 export const getEmail: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { resendId: StringBuilder },
-  OptionBuilder<typeof resendEmailTable.rowType>
-> = spacetimedb.procedure(
-  { resendId: t.string() },
-  t.option(resendEmailTable.rowType),
-  (ctx, { resendId }) => {
-    requireProcedureAdmin(ctx);
-    return ctx.withTx(
-      tx => tx.db.resendEmail.resendId.find(resendId) ?? undefined
-    );
-  }
-);
+  typeof getEmailArgs,
+  typeof getEmailResult
+> = spacetimedb.procedure(getEmailArgs, getEmailResult, (ctx, { resendId }) => {
+  requireProcedureAdmin(ctx);
+  return ctx.withTx(
+    tx => tx.db.resendEmail.resendId.find(resendId) ?? undefined
+  );
+});
 
+const getWebhookEventArgs = { eventId: t.string() };
+const getWebhookEventResult: OptionBuilder<
+  typeof resendWebhookEventTable.rowType
+> = t.option(resendWebhookEventTable.rowType);
 export const getWebhookEvent: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { eventId: StringBuilder },
-  OptionBuilder<typeof resendWebhookEventTable.rowType>
+  typeof getWebhookEventArgs,
+  typeof getWebhookEventResult
 > = spacetimedb.procedure(
-  { eventId: t.string() },
-  t.option(resendWebhookEventTable.rowType),
+  getWebhookEventArgs,
+  getWebhookEventResult,
   (ctx, { eventId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(
@@ -317,13 +320,18 @@ export const getWebhookEvent: ProcedureExport<
   }
 );
 
+const emailListResult: ArrayBuilder<typeof resendEmailTable.rowType> = t.array(
+  resendEmailTable.rowType
+);
+
+const listEmailsByUserIdArgs = { userId: t.string() };
 export const listEmailsByUserId: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { userId: StringBuilder },
-  ArrayBuilder<typeof resendEmailTable.rowType>
+  typeof listEmailsByUserIdArgs,
+  typeof emailListResult
 > = spacetimedb.procedure(
-  { userId: t.string() },
-  t.array(resendEmailTable.rowType),
+  listEmailsByUserIdArgs,
+  emailListResult,
   (ctx, { userId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx =>
@@ -332,26 +340,30 @@ export const listEmailsByUserId: ProcedureExport<
   }
 );
 
+const listEmailsByOrgIdArgs = { orgId: t.string() };
 export const listEmailsByOrgId: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { orgId: StringBuilder },
-  ArrayBuilder<typeof resendEmailTable.rowType>
+  typeof listEmailsByOrgIdArgs,
+  typeof emailListResult
 > = spacetimedb.procedure(
-  { orgId: t.string() },
-  t.array(resendEmailTable.rowType),
+  listEmailsByOrgIdArgs,
+  emailListResult,
   (ctx, { orgId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx => takeRows(tx.db.resendEmail.byOrgId.filter(orgId)));
   }
 );
 
+const listEmailsByStatusArgs: { status: typeof emailStatus } = {
+  status: emailStatus,
+};
 export const listEmailsByStatus: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { status: typeof emailStatus },
-  ArrayBuilder<typeof resendEmailTable.rowType>
+  typeof listEmailsByStatusArgs,
+  typeof emailListResult
 > = spacetimedb.procedure(
-  { status: emailStatus },
-  t.array(resendEmailTable.rowType),
+  listEmailsByStatusArgs,
+  emailListResult,
   (ctx, { status }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx =>
@@ -360,13 +372,17 @@ export const listEmailsByStatus: ProcedureExport<
   }
 );
 
+const listDeliveryEventsForEmailArgs = { resendId: t.string() };
+const listDeliveryEventsForEmailResult: ArrayBuilder<
+  typeof resendDeliveryEventTable.rowType
+> = t.array(resendDeliveryEventTable.rowType);
 export const listDeliveryEventsForEmail: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { resendId: StringBuilder },
-  ArrayBuilder<typeof resendDeliveryEventTable.rowType>
+  typeof listDeliveryEventsForEmailArgs,
+  typeof listDeliveryEventsForEmailResult
 > = spacetimedb.procedure(
-  { resendId: t.string() },
-  t.array(resendDeliveryEventTable.rowType),
+  listDeliveryEventsForEmailArgs,
+  listDeliveryEventsForEmailResult,
   (ctx, { resendId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx =>
@@ -375,26 +391,23 @@ export const listDeliveryEventsForEmail: ProcedureExport<
   }
 );
 
+const resendApiRequestArgs = {
+  method: t.string(),
+  path: t.string(),
+  jsonBody: t.option(t.string()),
+  idempotencyKey: t.option(t.string()),
+};
+const resendApiRequestResult = t.object('ResendApiRequestResult', {
+  status: t.u16(),
+  body: t.string(),
+});
 export const resendApiRequest: ProcedureExport<
   typeof spacetimedb.schemaType,
-  {
-    method: StringBuilder;
-    path: StringBuilder;
-    jsonBody: OptionBuilder<StringBuilder>;
-    idempotencyKey: OptionBuilder<StringBuilder>;
-  },
-  ProductBuilder<{ status: U16Builder; body: StringBuilder }>
+  typeof resendApiRequestArgs,
+  typeof resendApiRequestResult
 > = spacetimedb.procedure(
-  {
-    method: t.string(),
-    path: t.string(),
-    jsonBody: t.option(t.string()),
-    idempotencyKey: t.option(t.string()),
-  },
-  t.object('ResendApiRequestResult', {
-    status: t.u16(),
-    body: t.string(),
-  }),
+  resendApiRequestArgs,
+  resendApiRequestResult,
   (ctx, args) => {
     // Administrators may make authenticated Resend calls with the stored key.
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));

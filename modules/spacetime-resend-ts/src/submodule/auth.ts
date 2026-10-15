@@ -1,7 +1,8 @@
-import type { ProcedureExport, IdentityBuilder } from 'spacetimedb/server';
+import type { ProcedureExport } from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
+  unitResult,
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema.js';
@@ -31,13 +32,14 @@ export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
   if (!isAdmin(ctx, sender)) throwSenderError(errors.notAuthorized);
 }
 
+const addAdminIdentityArgs = { identity: t.identity() };
 export const addAdminIdentity: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { identity: IdentityBuilder },
-  ReturnType<typeof t.unit>
+  typeof addAdminIdentityArgs,
+  typeof unitResult
 > = spacetimedb.procedure(
-  { identity: t.identity() },
-  t.unit(),
+  addAdminIdentityArgs,
+  unitResult,
   (ctx: ProcedureModuleCtx, { identity }) => {
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
@@ -53,13 +55,14 @@ export const addAdminIdentity: ProcedureExport<
   }
 );
 
+const removeAdminIdentityArgs = { identity: t.identity() };
 export const removeAdminIdentity: ProcedureExport<
   typeof spacetimedb.schemaType,
-  { identity: IdentityBuilder },
-  ReturnType<typeof t.unit>
+  typeof removeAdminIdentityArgs,
+  typeof unitResult
 > = spacetimedb.procedure(
-  { identity: t.identity() },
-  t.unit(),
+  removeAdminIdentityArgs,
+  unitResult,
   (ctx: ProcedureModuleCtx, { identity }) => {
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
