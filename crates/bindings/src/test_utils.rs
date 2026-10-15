@@ -381,12 +381,9 @@ pub(crate) struct TestEnvironmentId(u64);
 impl TestEnvironmentId {
     /// Mirrors the host: undeclared keys panic, absent keys read as `None`.
     pub(crate) fn get(self, key: &str) -> Option<String> {
-        let environment = TEST_ENVIRONMENTS
-            .lock()
-            .unwrap()
-            .get(&self.0)
-            .and_then(Weak::upgrade)
-            .expect("environment read after its TestContext was dropped");
+        let environment = { TEST_ENVIRONMENTS.lock().unwrap().get(&self.0).and_then(Weak::upgrade) };
+        let environment = environment.expect("test environment has expired");
+
         if let Err(error) = environment.declaration(key) {
             panic!("{error}");
         }
