@@ -528,11 +528,11 @@ impl JsMainInstance {
         self.request(ScheduledReducerRequest { params }).await
     }
 
-    pub(in crate::host) async fn finish_idc_message(
+    pub(in crate::host) async fn run_idc_callback_and_cleanup(
         &self,
         msg: crate::host::idc_actor::DeliveredMessage,
     ) -> anyhow::Result<()> {
-        self.request(FinishIdcMessageRequest { msg }).await
+        self.request(RunIdcCallbackAndCleanupRequest { msg }).await
     }
 
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
@@ -695,9 +695,9 @@ js_main_request! {
 }
 
 js_main_request! {
-    FinishIdcMessageRequest {
+    RunIdcCallbackAndCleanupRequest {
         msg: crate::host::idc_actor::DeliveredMessage,
-    } => "finish_idc_message", anyhow::Result<()>, FinishIdcMessage
+    } => "run_idc_callback_and_cleanup", anyhow::Result<()>, RunIdcCallbackAndCleanup
 }
 
 js_main_request! {
@@ -899,7 +899,7 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
     },
-    FinishIdcMessage {
+    RunIdcCallbackAndCleanup {
         reply_tx: JsReplyTx<anyhow::Result<()>>,
         msg: crate::host::idc_actor::DeliveredMessage,
     },
@@ -1520,9 +1520,9 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
-        JsMainWorkerRequest::FinishIdcMessage { reply_tx, msg } => {
-            handle_worker_request("finish_idc_message", reply_tx, || {
-                instance_common.finish_idc_message(msg, inst)
+        JsMainWorkerRequest::RunIdcCallbackAndCleanup { reply_tx, msg } => {
+            handle_worker_request("run_idc_callback_and_cleanup", reply_tx, || {
+                instance_common.run_idc_callback_and_cleanup(msg, inst)
             })
         }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {

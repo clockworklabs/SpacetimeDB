@@ -216,7 +216,7 @@ async fn run_idc_loop(
                 // Zero means the channel is closed and drained.
                 notifications_open = count != 0;
                 for msg in notifications.drain(..) {
-                    streams.wake(StreamId(msg.stream_id));
+                    streams.push(StreamId(msg.stream_id));
                 }
             },
 
@@ -226,7 +226,7 @@ async fn run_idc_loop(
                 tokio::time::sleep(delay).await;
                 Some(stream_id)
             }, if next_retry.is_some() => {
-                streams.wake(stream_id);
+                streams.push(stream_id);
             },
 
             // The notification channel is drained and no deliveries or retries remain.
@@ -353,7 +353,7 @@ async fn finalize_message(module_host: &WeakModuleHost, msg: DeliveredMessage) -
     let host = module_host
         .upgrade()
         .context("IDC module host is no longer available")?;
-    host.finish_idc_message(msg).await
+    host.run_idc_callback_and_cleanup(msg).await
 }
 
 /// Runs on the module executor. Check the row and run the callback in the same
@@ -513,7 +513,7 @@ fn cleanup_message(db: &RelationalDB, tx: &mut MutTxId, delivered: &DeliveredMes
 /// Restore pending streams at startup without loading message bodies.
 fn restore_pending_streams(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<()> {
     for stream_id in read_pending_streams(db)? {
-        streams.wake(stream_id);
+        streams.push(stream_id);
     }
     Ok(())
 }
@@ -939,7 +939,7 @@ mod tests {
             }
             db.commit_tx(tx)?;
             let mut streams = DeliveryStreams::default();
-            streams.wake(stream_id);
+            streams.push(stream_id);
             assert!(take_ready_message(&db, &mut streams).is_err());
             assert_eq!(streams.next_retry(), None);
             let tx = db.begin_tx(Workload::Internal);

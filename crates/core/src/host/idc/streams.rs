@@ -41,6 +41,7 @@ impl OrderedStream {
 }
 
 /// Keeps stream state and the ready queue in sync. Each stream is queued at most once.
+/// It maintains a FIFO ready queue poll streams.
 #[derive(Default)]
 pub(in crate::host) struct DeliveryStreams {
     streams: HashMap<StreamId, OrderedStream>,
@@ -49,8 +50,8 @@ pub(in crate::host) struct DeliveryStreams {
 }
 
 impl DeliveryStreams {
-    /// Wake a stream after an insert or retry deadline without interrupting an active attempt or backoff.
-    pub fn wake(&mut self, stream_id: StreamId) {
+    /// Push a stream after an insert or retry deadline without interrupting an active attempt or backoff.
+    pub fn push(&mut self, stream_id: StreamId) {
         let state = self.streams.entry(stream_id).or_insert_with(OrderedStream::new);
         if state.is_ready() && self.queued.insert(stream_id) {
             self.ready.push_back(stream_id);
@@ -91,7 +92,7 @@ impl DeliveryStreams {
         state.active_seq = None;
         state.blocked_until = None;
         state.backoff = INITIAL_BACKOFF;
-        self.wake(stream_id);
+        self.push(stream_id);
     }
 
     /// End the failed attempt and return its retry delay. New inserts do not shorten this delay.
@@ -140,23 +141,23 @@ mod tests {
         let mut streams = DeliveryStreams::default();
         let first = StreamId(1);
         let second = StreamId(2);
-        streams.wake(first);
-        streams.wake(first);
-        streams.wake(second);
+        streams.push(first);
+        streams.push(first);
+        streams.push(second);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 1);
-        streams.wake(first);
+        streams.push(first);
         assert_eq!(streams.pop_ready(), Some(second));
         streams.start(second, 1);
         assert_eq!(streams.pop_ready(), None);
 
         streams.finish(first, 1);
-        streams.wake(first);
+        streams.push(first);
         assert_eq!(streams.pop_ready(), Some(first));
         assert_eq!(streams.pop_ready(), None);
         streams.remove_idle(first);
         assert!(!streams.streams.contains_key(&first));
-        streams.wake(first);
+        streams.push(first);
         assert_eq!(streams.pop_ready(), Some(first));
         assert_eq!(streams.streams[&second].active_seq, Some(1));
     }
@@ -167,13 +168,13 @@ mod tests {
         let first = StreamId(1);
         let second = StreamId(2);
         for id in [first, second] {
-            streams.wake(id);
+            streams.push(id);
             assert_eq!(streams.pop_ready(), Some(id));
             streams.start(id, 1);
             assert_eq!(streams.retry(id, 1), INITIAL_BACKOFF);
             // Use a future deadline so this check does not depend on test execution speed.
             streams.streams.get_mut(&id).unwrap().blocked_until = Some(Instant::now() + Duration::from_secs(3600));
-            streams.wake(id);
+            streams.push(id);
             assert_eq!(streams.pop_ready(), None);
         }
 
@@ -181,18 +182,18 @@ mod tests {
         streams.streams.get_mut(&first).unwrap().blocked_until = Some(now);
         streams.streams.get_mut(&second).unwrap().blocked_until = Some(now - INITIAL_BACKOFF);
         assert_eq!(streams.next_retry(), Some((second, Duration::ZERO)));
-        streams.wake(second);
+        streams.push(second);
         assert_eq!(streams.pop_ready(), Some(second));
         streams.start(second, 1);
         assert_eq!(streams.next_retry(), Some((first, Duration::ZERO)));
-        streams.wake(first);
+        streams.push(first);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 1);
         assert_eq!(streams.next_retry(), None);
         assert_eq!(streams.retry(first, 1), INITIAL_BACKOFF * 2);
 
         streams.streams.get_mut(&first).unwrap().blocked_until = Some(now);
-        streams.wake(first);
+        streams.push(first);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 1);
         streams.finish(first, 1);
