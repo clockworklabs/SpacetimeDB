@@ -197,6 +197,21 @@ test('reset empties data through the baseline function and storage files, only o
     assert.deepEqual(calls.map(call => call.input ?? call.args.slice(0, 2).join(' ')), ['inspect --format',
       'inspect --format', 'inspect --format', 'select stackbench_reset.reset();\n', `exec ${storage.id}`]);
     assert.match(calls.at(-1)!.args.at(-1)!, /find \/var\/lib\/storage -mindepth 1 -maxdepth 1 -exec rm -rf/);
+    // A deadlocked reset is rolled back by Postgres and repeated; any other error is not.
+    const failing = (message: string, times: number) => {
+      let left = times;
+      return (args: readonly string[]) => {
+        if (args.includes('psql') && left-- > 0) throw new Error(`Command failed\nERROR:  ${message}`);
+        return inspect('true\n')(args);
+      };
+    };
+    const retried: { args: string[]; input?: string }[] = [];
+    resetSupabase({ lease, exec: fakeExec(retried, failing('deadlock detected', 2)) });
+    assert.equal(retried.filter(call => call.input?.includes('reset()')).length, 3);
+    assert.throws(() => resetSupabase({ lease, exec: fakeExec([], failing('deadlock detected', 3)) }), /deadlock/);
+    const other: { args: string[]; input?: string }[] = [];
+    assert.throws(() => resetSupabase({ lease, exec: fakeExec(other, failing('permission denied', 1)) }), /permission denied/);
+    assert.equal(other.filter(call => call.input?.includes('reset()')).length, 1);
     const replaced: { args: string[]; input?: string }[] = [];
     assert.throws(() => resetSupabase({ lease, exec: fakeExec(replaced, () => 'other') }), /changed after lease creation/);
     assert(!replaced.some(call => call.input?.includes('reset()')), 'no data is reset for a replaced storage service');

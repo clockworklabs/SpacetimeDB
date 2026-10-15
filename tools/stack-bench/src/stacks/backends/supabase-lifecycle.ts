@@ -304,7 +304,16 @@ export function resetSupabase({ lease, exec = execFileSync }: { lease: BackendLe
       throw new Error(`${service.name} is not running; refusing reset`);
     }
   }
-  supabaseSql(lease, 'select stackbench_reset.reset();\n', { exec, timeoutMs: 120_000 });
+  // A platform service can take locks in another order while the drops run. Postgres rolls the
+  // deadlocked reset back whole, and reset() is safe to repeat.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      supabaseSql(lease, 'select stackbench_reset.reset();\n', { exec, timeoutMs: 120_000 });
+      break;
+    } catch (error) {
+      if (attempt === 3 || !/deadlock detected/.test(error instanceof Error ? error.message : String(error))) throw error;
+    }
+  }
   exec('docker', ['exec', storage.id, 'sh', '-ec', `test "$(readlink -f ${SUPABASE_STORAGE_ROOT})" = ${SUPABASE_STORAGE_ROOT}; `
     + `find ${SUPABASE_STORAGE_ROOT} -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +`],
   { encoding: 'utf8', stdio: 'pipe', timeout: 60_000 });
