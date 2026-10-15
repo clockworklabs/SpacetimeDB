@@ -121,30 +121,34 @@ impl ReleaseTarget for CratesRelease {
         }
 
         println!("\nStarting publish process...");
-        let client = Client::builder()
-            .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
-        let crates_io_version = self
-            .version
-            .strip_prefix('v')
-            .unwrap_or(&self.version)
-            .split('-')
-            .next()
-            .unwrap();
-        // We must only publish unpublished crates, otherwise our publish invocation will fail.
-        // This comes up in the context of re-running partially-completed releases if we hit an issue partway through.
         let mut unpublished = Vec::new();
-        println!("Checking for already-published crates..");
-        for crate_name in &crates {
-            // Pace requests to respect crates.io's API guidance.
-            std::thread::sleep(Duration::from_secs(1));
-            if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
-                println!("Crate {crate_name} already published; skipping.");
-            } else {
-                println!("Crate {crate_name} must be published.");
-                unpublished.push(crate_name);
+        if self.dry_run {
+            unpublished.extend(&crates);
+        } else {
+            let client = Client::builder()
+                .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
+                .timeout(Duration::from_secs(30))
+                .build()
+                .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
+            let crates_io_version = self
+                .version
+                .strip_prefix('v')
+                .unwrap_or(&self.version)
+                .split('-')
+                .next()
+                .unwrap();
+            // We must only publish unpublished crates, otherwise our publish invocation will fail.
+            // This comes up in the context of re-running partially-completed releases if we hit an issue partway through.
+            println!("Checking for already-published crates..");
+            for crate_name in &crates {
+                // Pace requests to respect crates.io's API guidance.
+                std::thread::sleep(Duration::from_secs(1));
+                if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
+                    println!("Crate {crate_name} already published; skipping.");
+                } else {
+                    println!("Crate {crate_name} must be published.");
+                    unpublished.push(crate_name);
+                }
             }
         }
         self.publish_crates(&workspace_root, &unpublished)?;
