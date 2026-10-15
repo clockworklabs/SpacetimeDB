@@ -9,6 +9,15 @@ create table stackbench_reset.baseline (catalog text not null, oid oid not null,
 
 -- Platform tables whose rows belong to the previous case. Migration-history
 -- tables and Realtime's tenant configuration are kept.
+-- A fresh project always has the public schema. An app that drops and recreates it
+-- makes a schema reset() removes, so reset() puts back this one.
+create table stackbench_reset.public_schema as
+  select pg_get_userbyid(nspowner) as owner, nspacl as acl, obj_description(oid, 'pg_namespace') as comment
+  from pg_namespace where nspname = 'public';
+create table stackbench_reset.public_default_acl as
+  select pg_get_userbyid(d.defaclrole) as role, d.defaclobjtype as objtype, d.defaclacl as acl
+  from pg_default_acl d join pg_namespace n on n.oid = d.defaclnamespace where n.nspname = 'public';
+
 create table stackbench_reset.data_tables (name regclass primary key);
 insert into stackbench_reset.data_tables
   select format('%I.%I', n.nspname, c.relname)::regclass
@@ -115,6 +124,27 @@ begin
     execute format('drop owned by %I cascade', r.rolname);
     execute format('drop role if exists %I', r.rolname);
   end loop;
+  if not exists (select 1 from pg_namespace where nspname = 'public') then
+    execute format('create schema public authorization %I', (select owner from stackbench_reset.public_schema));
+    for r in select a.grantee, a.privilege_type, a.is_grantable
+        from stackbench_reset.public_schema s, aclexplode(s.acl) a loop
+      execute format('grant %s on schema public to %s%s', r.privilege_type,
+        case r.grantee when 0 then 'public' else quote_ident(pg_get_userbyid(r.grantee)) end,
+        case when r.is_grantable then ' with grant option' else '' end);
+    end loop;
+    for r in select d.role, d.objtype, a.grantee, a.privilege_type, a.is_grantable
+        from stackbench_reset.public_default_acl d, aclexplode(d.acl) a loop
+      execute format('alter default privileges for role %I in schema public grant %s on %s to %s%s', r.role,
+        r.privilege_type, case r.objtype when 'r' then 'tables' when 'S' then 'sequences' when 'f' then 'functions'
+          when 'T' then 'types' end,
+        case r.grantee when 0 then 'public' else quote_ident(pg_get_userbyid(r.grantee)) end,
+        case when r.is_grantable then ' with grant option' else '' end);
+    end loop;
+    if (select comment from stackbench_reset.public_schema) is not null then
+      execute format('comment on schema public is %L', (select comment from stackbench_reset.public_schema));
+    end if;
+    insert into stackbench_reset.baseline select 'namespace', oid from pg_namespace where nspname = 'public';
+  end if;
   select string_agg(format('%I.%I', n.nspname, c.relname), ', ') into truncated
     from stackbench_reset.data_tables d join pg_class c on c.oid = d.name join pg_namespace n on n.oid = c.relnamespace;
   execute 'truncate ' || truncated || ' restart identity cascade';

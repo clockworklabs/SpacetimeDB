@@ -215,6 +215,10 @@ test('the reset baseline leaves extension objects to their extension and restore
   assert.match(baseline, /create publication supabase_realtime;\n\s+alter publication supabase_realtime owner to postgres;/);
   assert.match(baseline, /alter publication supabase_realtime add table stackbench_reset\.realtime_canary;\n\s+insert into stackbench_reset\.baseline/);
   assert(!/^\s*(begin|commit)\s*;/im.test(baseline), 'activation wraps the baseline in its own transaction');
+  // An app that drops and recreates public gets the bootstrap schema back, owner, grants and defaults.
+  assert.match(baseline, /if not exists \(select 1 from pg_namespace where nspname = 'public'\) then\n\s+execute format\('create schema public authorization %I'/);
+  assert.match(baseline, /alter default privileges for role %I in schema public grant/);
+  assert.match(baseline, /insert into stackbench_reset\.baseline select 'namespace', oid from pg_namespace where nspname = 'public';/);
 });
 
 test('Supabase identity, orchestration and crash boundary are its own', () => {
