@@ -1799,7 +1799,7 @@ impl InstanceCommon {
         msg: crate::host::idc_actor::DeliveredMessage,
         inst: &mut I,
     ) -> (anyhow::Result<()>, bool) {
-        crate::host::idc_actor::finish_message_with_instance(&self.info.clone(), msg, self, inst)
+        crate::host::idc_actor::run_callback_and_cleanup(&self.info.clone(), msg, self, inst)
     }
 }
 

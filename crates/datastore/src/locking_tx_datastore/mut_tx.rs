@@ -3729,18 +3729,26 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Retire the next consecutive message. Repeated acknowledgments are a no-op.
     pub fn ack_outbound_idc_msg(&mut self, stream_id: u64, seq: u64) -> Result<()> {
         let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
             return Ok(());
         };
         let ptr = row.pointer();
-        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        let mut stream = self
+            .st_outbound_stream_by_id(stream_id)?
+            .ok_or_else(|| anyhow!("pending IDC message has no outbound stream {stream_id}"))?;
+        if stream.ack_prefix.checked_add(1) != Some(seq) {
+            return Err(anyhow!(
+                "IDC stream {stream_id} cannot acknowledge sequence {seq} after acknowledgment {}",
+                stream.ack_prefix
+            )
+            .into());
+        }
 
-        let Some(mut stream) = self.st_outbound_stream_by_id(stream_id)? else {
-            return Ok(());
-        };
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
         self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &stream.clone().into())?;
-        stream.ack_prefix = stream.ack_prefix.max(seq);
+        stream.ack_prefix = seq;
         self.insert_via_serialize_bsatn(ST_OUTBOUND_STREAM_ID, &stream)?;
         Ok(())
     }
