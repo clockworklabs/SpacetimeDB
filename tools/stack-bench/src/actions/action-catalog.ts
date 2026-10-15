@@ -39,6 +39,8 @@ const ACTION_CATEGORY = {
   expectElementCount: 'browser-observation',
   expectForgeryRejected: 'transport',
   expectNotReceived: 'transport',
+  expectNotDelivered: 'transport',
+  markDelivery: 'transport',
   expectNumber: 'browser-observation',
   expectWarehouseInventory: 'browser-observation',
   dbRecordStock: 'database',

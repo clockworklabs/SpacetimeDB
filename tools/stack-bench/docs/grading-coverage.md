@@ -90,6 +90,18 @@ repeated request bursts; it is not a capacity test.
   At the end of the observation window, started requests and pending body reads
   get at most one second to finish. Requests still waiting for headers or bodies
   remain inconclusive. A captured leak still fails even if another request is pending.
+  Some private data has no unique text to search for, such as a row of ids and
+  flags. `markDelivery` brackets the owner's private write instead. It first waits
+  while idle and notes which kinds of records change on their own. The records the
+  owner then receives that are new, of a kind that stayed still while idle, and at
+  least 8 bytes long belong to the write. A record is a JSON object with at least
+  two plain fields, or a SpacetimeDB row read from the server message. Raw
+  deliveries are kept under their own byte bound. `expectNotDelivered` fails when
+  another actor receives any of those records. Dropped deliveries or an unreadable
+  binary frame make it inconclusive. When the write delivered nothing to its owner,
+  the step reports `measured: false` and passes, and the scenario's visible checks
+  still apply. The stock-alert check brackets only the alert request. A delivered
+  alert that reaches other clients and is filtered out by their UI is not measured.
 - **Deferred work.** Checks anchor on the original time and use early and late
   observations. Missing an observation window is unmeasured, not an app failure.
   The probes do not change the host or client clock.

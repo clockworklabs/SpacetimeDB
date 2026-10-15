@@ -1042,6 +1042,39 @@ test('a negative delivery check judges a window that has settled, and only that'
   }
 });
 
+test('a private write is recorded from what is new to its owner and must not reach another actor', async () => {
+  const json = (value: unknown) => JSON.stringify(value);
+  const publicItem = json({ id: 3, name: 'Air Purifier', stock: 0 });
+  const alert = json({ id: 7, accountId: 42, itemId: 3, delivered: false });
+  const tick = (n: number) => json({ id: 1, now: n });
+  const owner = { name: 'owner', pendingReceived: 0, deliveryMarks: new Map(), wasSent: () => false,
+    deliveries: [{ atMs: 1, payload: publicItem }] as { atMs: number; payload: string }[] };
+  let clock = 1;
+  const sleep = async () => { clock++; owner.deliveries.push({ atMs: Date.now(), payload: tick(clock) }); };
+  const actors = new Map<string, unknown>([['owner', owner]]);
+  const provided = services(actors, { sleep });
+  assert.equal((await run({ do: 'markDelivery', actor: 'owner', as: 'alert', phase: 'start' }, provided)).status, 'passed');
+  // The write: the owner receives its alert, an unchanged public item and another clock tick.
+  owner.deliveries.push({ atMs: Date.now() + 1, payload: alert }, { atMs: Date.now() + 1, payload: publicItem });
+  const ended = await run({ do: 'markDelivery', actor: 'owner', as: 'alert', phase: 'end' }, provided);
+  assert.deepEqual(ended.observation, { phase: 'end', privateRecords: 1 }, 'only the alert belongs to the write');
+  for (const [received, expected] of [[[publicItem, tick(99)], 'passed'], [[publicItem, alert], 'failed']] as const) {
+    actors.set('other', { name: 'other', pendingReceived: 0, wasSent: () => false,
+      deliveries: received.map(payload => ({ atMs: 5, payload })) });
+    const checked = await run({ do: 'expectNotDelivered', actor: 'other', from: 'owner', as: 'alert', within: 1 }, provided);
+    assert.equal(checked.status, expected, checked.summary ?? undefined);
+  }
+  actors.set('other', { name: 'other', pendingReceived: 0, wasSent: () => false,
+    deliveries: [{ atMs: 5, payload: Buffer.from([9, 0xff, 0x80]) }] });
+  assert.equal((await run({ do: 'expectNotDelivered', actor: 'other', from: 'owner', as: 'alert', within: 1 }, provided)).status,
+    'inconclusive', 'unreadable data is not absence');
+  // A write the owner never saw as a record leaves nothing to compare; the visible checks remain.
+  owner.deliveryMarks.set('silent', { startedAtMs: 0, noisyKinds: new Set(), seen: new Set(), privateRecords: [] });
+  const silent = await run({ do: 'expectNotDelivered', actor: 'other', from: 'owner', as: 'silent', within: 1 }, provided);
+  assert.equal(silent.status, 'passed');
+  assert.deepEqual(silent.observation, { measured: false });
+});
+
 test('a delivery check is inconclusive when application traffic is not observable', async () => {
   const actor = { name: 'owner', wasSent: () => false };
   const provided = services(new Map<string, unknown>([['owner', actor]]), {

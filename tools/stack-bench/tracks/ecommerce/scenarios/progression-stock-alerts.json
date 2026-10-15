@@ -37,8 +37,10 @@
         {"do":"reload","actor":"subscriber","settleMs":1000},
         {"do":"ensureSignedIn","actor":"subscriber","name":"stock-subscriber","readyTestid":"current-user"},
         { "do": "click", "actor": "subscriber", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" },
+        {"do":"markDelivery","actor":"subscriber","as":"stock-alert-request","phase":"start"},
         {"do":"click","actor":"subscriber","testid":"stock-alert","in":{"testid":"item-card","contains":"Air Purifier"}},
         {"do":"expect","actor":"subscriber","testid":"item-card","contains":"Air Purifier","attribute":"data-submit-state","value":"succeeded","within":10000},
+        {"do":"markDelivery","actor":"subscriber","as":"stock-alert-request","phase":"end"},
         {"do": "click", "actor": "admin", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["admin-link", "admin-panel"]},
         {"do":"click","actor":"admin","testid":"admin-link", "unlessVisible": "admin-panel"},
         {"do":"callAction","actor":"admin","action":"restock","namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Air Purifier","attribute":"data-restock-input"},"settleMs":0},
@@ -102,7 +104,8 @@
             {"do": "click", "actor": "other-fresh", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notifications-toggle", "notifications-panel"]},
             {"do":"click","actor":"other-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"other-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
-            {"do":"expect","actor":"other-fresh","testid":"notification-item","contains":"Air Purifier","absent":true}
+            {"do":"expect","actor":"other-fresh","testid":"notification-item","contains":"Air Purifier","absent":true},
+            {"do":"expectNotDelivered","actor":"other-fresh","from":"subscriber","as":"stock-alert-request"}
           ]
         }
       ]

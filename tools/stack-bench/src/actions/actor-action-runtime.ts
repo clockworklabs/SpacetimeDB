@@ -1,5 +1,6 @@
 import type { RefusalKind, ResponseContract } from './named-action-runtime.js';
 import type { PlatformAuthPatch } from './auth-request-patch.js';
+import type { DeliveryMark } from './private-delivery.js';
 import type { BrowserContext, Page } from 'playwright';
 import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import { finding, renderFinding } from './action-findings.js';
@@ -110,6 +111,9 @@ export interface Actor {
   readonly page: BrowserPage;
   readonly received: readonly string[];
   readonly pendingReceived: number;
+  readonly deliveries?: readonly { atMs: number; payload: string | Buffer }[];
+  readonly deliveryMarks?: Map<string, DeliveryMark>;
+  readonly deliveriesDropped?: boolean;
   readonly writes: readonly CapturedWrite[];
   actionCall?: ActionCall;
   prepareNavigation?(within: number, signal: AbortSignal): Promise<void>;

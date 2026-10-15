@@ -77,6 +77,10 @@ const meanings: Record<string, (s: GuideStep) => string> = {
   stopAppServer: () => 'Stop the application server.', startAppServer: () => 'Start the application server and wait for readiness.',
   expectReceived: s => `Require ${s.actor}'s observed incoming data to contain ${q(s.contains)}.`,
   expectNotReceived: s => `Watch ${s.actor}'s observed incoming data; reject ${q(s.contains)}. This is a bounded observation, not a proof against every possible leak.`,
+  markDelivery: s => s.phase === 'start'
+    ? `Watch ${s.actor}'s incoming data while idle, then start recording it as ${q(s.as)}.`
+    : `Stop recording ${s.actor}'s incoming data as ${q(s.as)}; records first seen during it belong to that write.`,
+  expectNotDelivered: s => `Watch ${s.actor}'s observed incoming data; reject any record recorded as ${q(s.as)} for ${s.from}. This is a bounded observation, not a proof against every possible leak.`,
   armScriptCanary: s => `Install a harmless execution marker in ${s.actor}'s browser.`,
   expectNoScriptExecution: s => `Require ${s.actor}'s execution marker to remain unchanged after the supplied content is displayed.`,
   createRoom: s => `${actor(s)}create chat room ${q(s.room)}.`, enterRoom: s => `${actor(s)}enter chat room ${q(s.room)}.`,

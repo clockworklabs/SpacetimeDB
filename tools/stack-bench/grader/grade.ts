@@ -58,6 +58,7 @@ import { captureResponses, ReceivedTransport, requestDiagnostic, urlDiagnostic }
 import { installResponseLoss } from './response-loss.js';
 import { installAuthWebSocketCapture, type PassiveSocketFrame } from '../src/actions/auth-request-patch.js';
 import type { PlatformAuthPatch } from '../src/actions/auth-request-patch.js';
+import type { DeliveryMark } from '../src/actions/private-delivery.js';
 import { applicationWrites } from '../src/actions/named-action-runtime.js';
 import { installSpacetimeWriteCapture } from '../src/stacks/backends/spacetime-browser-session.js';
 import { startNetworkInterruption, type NetworkInterruption } from '../src/actions/network-interruption.js';
@@ -325,6 +326,9 @@ export class Actor {
   get received(): readonly string[] { return this.networkInterruption?.observesHttp
     ? this.completedTransport.chunks : this.transport.chunks; }
   get pendingReceived(): number { return this.transport.pending + this.pendingHttp + this.unobservedRequests().length; }
+  get deliveries(): readonly { atMs: number; payload: string | Buffer }[] { return this.transport.deliveries; }
+  get deliveriesDropped(): boolean { return this.transport.deliveriesDropped; }
+  readonly deliveryMarks = new Map<string, DeliveryMark>();
   lastWrite: ActorWrite | null = null;
   lastWrites: Record<string, ActorWrite> = {};
   writes: ActorWrite[] = [];
@@ -1036,7 +1040,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     const patchAuthentication = steps.some(needsAuthPatch);
     const privacyActors = new Set<string>();
     const collectPrivacyActors = (step: CompiledStep): void => {
-      if (step.do === 'expectNotReceived' && step.actor) privacyActors.add(step.actor);
+      if ((step.do === 'expectNotReceived' || step.do === 'expectNotDelivered') && step.actor) privacyActors.add(step.actor);
       step.branches?.forEach(branch => branch.forEach(collectPrivacyActors));
     };
     steps.forEach(collectPrivacyActors);

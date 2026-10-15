@@ -65,6 +65,7 @@ const captures = new WeakMap<object, Capture>();
 const operation = (call: Call): string =>
   call.procedure === undefined ? `reducer:${call.reducer}` : `procedure:${call.procedure}`;
 let codec: Promise<Codec> | undefined;
+const loadCodec = (): Promise<Codec> => codec ??= import(new URL('../spacetime-wire-codec.js', import.meta.url).href);
 
 function encode(codec: Codec, type: MessageCodec, message: Message): Buffer {
   const writer = new codec.BinaryWriter(512); type.serialize(writer, message); return Buffer.from(writer.getBuffer());
@@ -86,6 +87,34 @@ function serverBytes(bytes: string | Buffer): Buffer {
   if (bytes[0] === 1) return brotliDecompressSync(bytes.subarray(1), options);
   if (bytes[0] === 2) return gunzipSync(bytes.subarray(1), options);
   throw new Error('Unsupported compression');
+}
+
+// Each row a server frame carries, with its table. Throws when the frame is not a server message.
+export async function spacetimeFrameRows(payload: Buffer): Promise<{ table: string; row: Buffer }[]> {
+  const wire = await loadCodec();
+  const rows: { table: string; row: Buffer }[] = [];
+  const walk = (item: unknown, table: string | null): void => {
+    if (Array.isArray(item)) { item.forEach(entry => walk(entry, table)); return; }
+    if (!item || typeof item !== 'object' || item instanceof Uint8Array) return;
+    const record = item as Record<string, unknown>;
+    const named = typeof record.table === 'string' ? record.table
+      : typeof record.tableName === 'string' ? record.tableName : table;
+    const hint = record.sizeHint as { tag?: string; value?: unknown } | undefined;
+    if (record.rowsData instanceof Uint8Array && hint && named) {
+      const data = Buffer.from(record.rowsData);
+      const size = Number(hint.value);
+      const starts = hint.tag === 'FixedSize' ? Array.from({ length: size ? Math.floor(data.length / size) : 0 }, (_, i) => i * size)
+        : hint.tag === 'RowOffsets' && Array.isArray(hint.value) ? hint.value.map(Number) : [];
+      starts.forEach((start, index) => {
+        const row = data.subarray(start, starts[index + 1] ?? data.length);
+        if (row.length) rows.push({ table: named, row });
+      });
+      return;
+    }
+    for (const value of Object.values(record)) walk(value, named);
+  };
+  for (const message of decode(wire, wire.ServerMessage, serverBytes(payload))) walk(message, null);
+  return rows;
 }
 
 function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeTarget,
@@ -114,7 +143,7 @@ function leasedSocket(capture: Capture, socket: Socket, target: LeasedSpacetimeT
 // traffic unchanged, including replies for native setup writes, on the SAME socket.
 export async function installSpacetimeWriteCapture(page: Page): Promise<void> {
   if (captures.has(page)) return;
-  const wire = await (codec ??= import(new URL('../spacetime-wire-codec.js', import.meta.url).href));
+  const wire = await loadCodec();
   const capture: Capture = { page, codec: wire, sockets: [], handshakes: new Map(),
     authWitnesses: [], authUnproved: new Set() }; captures.set(page, capture);
   // Read the actual server handshake outside the app's mutable JavaScript realm.

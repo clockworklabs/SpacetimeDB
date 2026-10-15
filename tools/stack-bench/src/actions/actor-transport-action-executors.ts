@@ -17,6 +17,7 @@ import type {
 } from './actor-action-runtime.js';
 import { browserApplicationBoundary, BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
+import { deliveredRecords, MIN_PRIVATE_RECORD_BYTES, sameRecord } from './private-delivery.js';
 import { createParser } from 'eventsource-parser';
 import { RUN_SCRIPT_ACTION_IMPLEMENTATION } from './application-process-action-executors.js';
 import { CHAT_ACTION_IMPLEMENTATIONS } from './chat-action-executors.js';
@@ -67,6 +68,19 @@ interface ReplayInput extends ActorInput {
 
 interface ReceiveInput extends ActorInput {
   readonly contains: string;
+  readonly within?: number;
+}
+
+interface MarkDeliveryInput extends ActorInput {
+  readonly as: string;
+  readonly phase: 'start' | 'end';
+  readonly idleMs?: number;
+  readonly settleMs?: number;
+}
+
+interface NotDeliveredInput extends ActorInput {
+  readonly from: string;
+  readonly as: string;
   readonly within?: number;
 }
 
@@ -689,11 +703,72 @@ async function expectNotReceived({ input, capabilities, signal }: TransportArgum
   return { received: false, contains: needle };
 }
 
+// Brackets an actor's private write. Before it, an idle wait shows which kinds of records
+// change on their own; after it, records the actor had not received, of kinds that did not
+// change while idle, belong to the write. Nothing else may change in the store meanwhile.
+async function markDelivery({ input, capabilities, signal }: TransportArguments<MarkDeliveryInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const transport = transportFor(capabilities);
+  if (!actor.deliveries || !actor.deliveryMarks) inconclusive('not-observed', { actor: actor.name });
+  if (input.phase === 'start') {
+    await actor.syncReceived?.();
+    const idleFrom = Date.now();
+    await transport.sleep(input.idleMs ?? 3000, signal);
+    await actor.syncReceived?.();
+    const { records } = await deliveredRecords(actor.deliveries);
+    actor.deliveryMarks.set(input.as, { startedAtMs: Date.now(), privateRecords: null,
+      noisyKinds: new Set(records.filter(record => record.atMs >= idleFrom).map(record => record.kind)),
+      seen: new Set(records.map(record => record.fingerprint)) });
+    return { phase: 'start', observedRecords: records.length };
+  }
+  const mark = actor.deliveryMarks.get(input.as);
+  if (!mark || mark.privateRecords) inconclusive('assertion-without-action', { action: 'markDelivery' });
+  await transport.sleep(input.settleMs ?? 1000, signal);
+  await actor.syncReceived?.();
+  const { records } = await deliveredRecords(actor.deliveries);
+  mark.privateRecords = records.filter(record => record.atMs >= mark.startedAtMs && !mark.seen.has(record.fingerprint)
+    && !mark.noisyKinds.has(record.kind) && record.bytes >= MIN_PRIVATE_RECORD_BYTES);
+  return { phase: 'end', privateRecords: mark.privateRecords.length };
+}
+
+// A fresh actor must not receive any record that belongs to another actor's private write.
+// When no record could be attributed to that write, there is nothing to compare and the
+// step records that the delivery was not measured; the scenario's visible checks still apply.
+async function expectNotDelivered({ input, capabilities, signal }: TransportArguments<NotDeliveredInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const owner = actorFor(capabilities, input.from);
+  const transport = transportFor(capabilities);
+  const mark = owner.deliveryMarks?.get(input.as);
+  if (!mark?.privateRecords) inconclusive('assertion-without-action', { action: 'markDelivery' });
+  if (!mark.privateRecords.length) return { measured: false };
+  if (!actor.deliveries) inconclusive('not-observed', { actor: actor.name });
+  await transport.sleep(input.within ?? transport.defaultWithin, signal);
+  await actor.syncReceived?.();
+  const drainDeadline = Date.now() + 1000;
+  let settled = !actor.pendingReceived;
+  while (!settled && Date.now() < drainDeadline) {
+    await transport.sleep(25, signal);
+    await actor.syncReceived?.();
+    settled = !actor.pendingReceived;
+  }
+  await actor.syncReceived?.();
+  const { records, unreadable } = await deliveredRecords(actor.deliveries);
+  if (records.some(record => mark.privateRecords!.some(own => sameRecord(own, record)))) {
+    fail('message-delivered', { actor: actor.name });
+  }
+  if (unreadable || actor.deliveriesDropped) inconclusive('transport-incomplete', {});
+  // The same completeness rule as a text observation: missing or pending data is not absence.
+  actor.wasSent(`\u0000no-record-${input.as}\u0000`, true, settled);
+  return { measured: true, privateRecords: mark.privateRecords.length };
+}
+
 export const ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS = Object.freeze({
   ...CHAT_ACTION_IMPLEMENTATIONS,
   ...NAMED_ACTION_IMPLEMENTATIONS,
   expectForgeryRejected: actionImplementation(expectForgeryRejected),
   expectNotReceived: actionImplementation(expectNotReceived),
+  expectNotDelivered: actionImplementation(expectNotDelivered),
+  markDelivery: actionImplementation(markDelivery),
   expectReceived: actionImplementation(browserApplicationBoundary(expectReceived)),
   expectReplayCompleted: actionImplementation(expectReplayCompleted),
   expectReplayRejected: actionImplementation(expectReplayRejected),

@@ -53,7 +53,13 @@ export function transportFrameText(payload: string | Buffer): string {
 // Bounded evidence must never turn dropped data into a privacy pass.
 export class ReceivedTransport {
   readonly chunks: string[] = [];
+  // Each distinct delivery as it arrived, for checks that compare whole records.
+  readonly deliveries: { atMs: number; payload: string | Buffer }[] = [];
   private bytes = 0;
+  // Kept apart from text evidence: dropped deliveries leave text observations unaffected.
+  deliveriesDropped = false;
+  private deliveryBytes = 0;
+  private readonly deliveryDigests = new Set<string>();
   private readonly incompleteCounts = { byteLimit: 0, bodyReadFailures: 0, unsupportedStreams: 0, navigationInterrupted: 0 };
   incomplete = false;
   pending = 0;
@@ -67,6 +73,7 @@ export class ReceivedTransport {
   }
 
   record(payload: string | Buffer, cumulative = false): void {
+    this.recordDelivery(payload, cumulative);
     const text = transportFrameText(payload);
     // Receipt checks need presence, not frequency. Reloading an identical bundle
     // adds no evidence and must not evict distinct data.
@@ -87,6 +94,31 @@ export class ReceivedTransport {
     while (this.bytes > this.limit) {
       this.markIncomplete('byteLimit');
       this.bytes -= Buffer.byteLength(this.chunks.shift()!);
+    }
+  }
+
+  // Raw bytes are kept so binary records can be decoded later. A repeat adds nothing; a growing
+  // snapshot replaces its own earlier prefix and keeps that prefix's arrival time.
+  private recordDelivery(payload: string | Buffer, cumulative: boolean): void {
+    const kept = typeof payload === 'string' ? payload : Buffer.from(payload);
+    const digest = createHash('sha256').update(typeof kept === 'string' ? `t${kept}` : Buffer.concat([Buffer.from('b'), kept]))
+      .digest('hex');
+    if (this.deliveryDigests.has(digest)) return;
+    this.deliveryDigests.add(digest);
+    const size = Buffer.byteLength(kept);
+    if (size > this.limit) { this.deliveriesDropped = true; return; }
+    const prefix = cumulative && typeof kept === 'string'
+      ? this.deliveries.findIndex(item => typeof item.payload === 'string' && kept.startsWith(item.payload)) : -1;
+    if (prefix >= 0) {
+      this.deliveryBytes += size - Buffer.byteLength(this.deliveries[prefix]!.payload);
+      this.deliveries[prefix] = { atMs: this.deliveries[prefix]!.atMs, payload: kept };
+    } else {
+      this.deliveries.push({ atMs: Date.now(), payload: kept });
+      this.deliveryBytes += size;
+    }
+    while (this.deliveryBytes > this.limit) {
+      this.deliveriesDropped = true;
+      this.deliveryBytes -= Buffer.byteLength(this.deliveries.shift()!.payload);
     }
   }
 

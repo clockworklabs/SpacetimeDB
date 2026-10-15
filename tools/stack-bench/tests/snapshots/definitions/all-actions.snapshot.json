@@ -251,6 +251,20 @@
             },
             {
               "actor": "a",
+              "as": "request",
+              "do": "markDelivery",
+              "idleMs": 1,
+              "phase": "start"
+            },
+            {
+              "actor": "b",
+              "as": "request",
+              "do": "expectNotDelivered",
+              "from": "a",
+              "within": 1
+            },
+            {
+              "actor": "a",
               "do": "expectNumber",
               "equals": 1,
               "testid": "count"

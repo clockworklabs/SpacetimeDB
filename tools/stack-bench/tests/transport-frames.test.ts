@@ -57,6 +57,7 @@ test('transport absence cannot pass after truncation, eviction, or an unreadable
   assert.deepEqual(captureFailure(bounded), {
     byteLimit: 1, bodyReadFailures: 0, unsupportedStreams: 0, navigationInterrupted: 0, pendingBodies: 0, retainedBytes: 13,
   });
+  assert.equal(bounded.deliveriesDropped, true, 'Raw deliveries have their own bound');
   const oversized = new ReceivedTransport(5);
   oversized.record('too-large');
   assert.throws(() => oversized.contains('large'), /incomplete/);
