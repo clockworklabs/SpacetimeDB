@@ -345,4 +345,4 @@ pnpm run test:module:local
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).
