@@ -11,9 +11,7 @@ A **submodule** is a SpacetimeDB module that can be included in another module's
 Submodules let you package reusable database logic as a library that any consumer can integrate without coordinating table names.
 
 :::note
-Submodules are supported in TypeScript and C#. C# composition requires **SpacetimeDB 2.13 or later**, including the `SpacetimeDB.Runtime` package, and **.NET 10 and C# 14** in both the root module and its dependencies; .NET 8 modules can only be standalone modules. Cross-language composition is not supported.
-
-Building and publishing .NET 10 C# modules currently requires Windows or Linux because the NativeAOT-LLVM toolchain does not support macOS hosts.
+Submodules are supported in TypeScript and C# (.NET 10 only). Cross-language composition is not supported.
 :::
 
 ## Writing a Submodule
@@ -206,12 +204,12 @@ The canonical namespace is part of each table's identity. Changing it removes th
 
 ## Accessing Submodule Tables and Views
 
-Submodule tables appear under a namespace accessor on `ctx.db` (TypeScript) or `ctx.Db` (C#). The accessor does not change when you pin a different canonical name. Submodule views are also accessible in client subscriptions and SQL as `<namespace>.<view_name>`, using canonical names.
-
-Under the default naming policy, `activeSessions` in TypeScript is `active_sessions` in SQL. In the C# example, the explicitly named table is `auth_data.auth_users`, and the `Users` view is `auth_data.users`. Generated bindings use language-appropriate accessors, such as `tables.myAuth.users` in TypeScript and `conn.Db.MyAuth.User` in C#.
+Submodule tables appear under a namespace accessor. The accessor does not change when you pin a different canonical name. Submodule views are also accessible in client subscriptions and SQL as `<namespace>.<view_name>`, using canonical names.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
+
+Access submodule tables through `ctx.db.myauth`. The `activeSessions` view is `myauth.active_sessions` in SQL.
 
 ```typescript
 export const example = spacetimedb.reducer((ctx) => {
@@ -227,6 +225,8 @@ export const example = spacetimedb.reducer((ctx) => {
 </TabItem>
 <TabItem value="csharp" label="C#">
 
+Access submodule tables through `ctx.Db.MyAuth`. The explicitly named table is `auth_data.auth_users` in SQL, and the `Users` view is `auth_data.users`.
+
 ```csharp
 [Reducer]
 public static void LookupAuthUser(ReducerContext ctx, uint id)
@@ -241,12 +241,18 @@ public static void LookupAuthUser(ReducerContext ctx, uint id)
 
 Root views can also query submodule tables using `ctx.From.MyAuth.User()`.
 
+```csharp
+[View(Accessor = "AuthUsers", Public = true)]
+public static IQuery<AuthLib.User> AuthUsers(AnonymousViewContext ctx) =>
+    ctx.From.MyAuth.User().Where(user => user.Score.Eq(42u));
+```
+
 </TabItem>
 </Tabs>
 
 ## Calling Submodule Functions
 
-A consumer can call public submodule functions directly. TypeScript narrows the context with `ctx.as.<alias>`. C# passes the caller's context directly: compiled library helpers resolve their own table accessors and share the caller's context and transaction. A namespace is not a security boundary between ordinary helper calls.
+A consumer can call public submodule functions directly. A namespace is not a security boundary between ordinary helper calls.
 
 ### From a Reducer
 
@@ -279,7 +285,7 @@ For reducers registered through the submodule's own schema (via `schema.reducer(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Call the library's reducer or helper as an ordinary C# method. There is no `ctx.as` step:
+Call the library's reducer or helper as an ordinary C# method. Compiled library helpers resolve their own table accessors and share the caller's context and transaction:
 
 ```csharp
 [Reducer]
@@ -480,6 +486,16 @@ conn.SubscriptionBuilder()
 
 The generated query builder translates C# accessors to canonical SQL names automatically. Subscribed rows are available through `conn.Db.MyAuth.User` and `conn.Db.MyAuth.Users`, using the same connection and cache as the root tables.
 
+```csharp
+// After the subscription has been applied, read the local cache.
+foreach (var user in conn.Db.MyAuth.User.Iter())
+{
+    Console.WriteLine($"Auth user: {user.Id}, score: {user.Score}");
+}
+
+var cachedUser = conn.Db.MyAuth.User.Id.Find(10);
+```
+
 </TabItem>
 </Tabs>
 
@@ -489,7 +505,7 @@ Submodule reducers and procedures are identified by their fully-qualified name, 
 
 ### Client SDK
 
-In generated bindings, submodule tables, views, reducers, and procedures appear under the namespace accessor. TypeScript uses the `tables`, `reducers`, and `procedures` exports; C# uses `conn.Db`, `conn.Reducers`, and `conn.Procedures`.
+In generated bindings, submodule tables, views, reducers, and procedures appear under the namespace accessor.
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -553,36 +569,68 @@ As with other C# client calls, keep processing connection events with `conn.Fram
 
 ### HTTP API
 
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
 ```
 POST /v1/database/my-database/call/myauth.verify_token
 ```
 
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```
+POST /v1/database/my-database/call/auth_data.add
+```
+
+</TabItem>
+</Tabs>
+
 ### CLI
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
 
 ```bash
 spacetime call my-database "myauth.verify_token" '"abc123"'
 ```
 
-Both parts of the wire name are canonical: the namespace prefix is the canonical namespace name
-(`myauth` here, or `my_auth` for a submodule registered as `myAuth`), and the function name after
-`.` is the canonical snake_case form of the submodule's export name -- `verifyToken` in TypeScript
-is `verify_token` on the wire. In the C# example, `Add` is `add`, so its HTTP endpoint is
-`POST /v1/database/my-database/call/auth_data.add`, and the CLI equivalent is:
+The accessor `verifyToken` becomes `verify_token` on the wire under the default naming policy.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
 
 ```bash
 spacetime call my-database "auth_data.add" 10
 ```
 
-Generated bindings expose camelCase accessors in TypeScript and PascalCase accessors in C#,
-as shown above.
+The accessor `Add` becomes `add` on the wire under the default naming policy.
+
+</TabItem>
+</Tabs>
+
+Both parts of the wire name are canonical: the namespace prefix and the function name after `.`.
 
 ## Namespace Name Rules
 
-Both the accessor name (the schema key in TypeScript or `Accessor` in C#) and the canonical name (derived from it, or given explicitly via `name` / `Name`) must be valid SpacetimeDB identifiers: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 UTF-8 bytes, case-insensitive for resolution. Two submodules cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered under the default policy. A submodule can be registered under at most one namespace per consumer module.
+Both the accessor name and the canonical name must be valid SpacetimeDB identifiers: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 UTF-8 bytes, case-insensitive for resolution. Two submodules cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered under the default policy. A submodule can be registered under at most one namespace per consumer module.
 
-The reserved namespaces `st`, `spacetimedb`, and names starting with `pg_` cannot be used. `public` is the default scope, not a named submodule namespace. C# can explicitly register a dependency there with `Accessor = "public"`, giving it flat accessors.
+The reserved namespaces `st`, `spacetimedb`, and names starting with `pg_` cannot be used. `public` is the default scope, not a named submodule namespace.
 
-C# accessors must also be valid C# identifiers. For a keyword, use its plain spelling in the attribute (`Accessor = "class"`) and escape it in expressions (`ctx.Db.@class.User`).
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+The schema key is the accessor name. The canonical name is derived from it unless explicitly set with `name`.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+`Accessor` sets the accessor name. The canonical name is derived from it unless explicitly set with `Name`. Use `Accessor = "public"` to register a dependency in the default scope with flat accessors.
+
+Accessors must also be valid C# identifiers. For a keyword, use its plain spelling in the attribute (`Accessor = "class"`) and escape it in expressions (`ctx.Db.@class.User`).
+
+</TabItem>
+</Tabs>
 
 ## Limitations
 
@@ -590,6 +638,19 @@ C# accessors must also be valid C# identifiers. For a keyword, use its plain spe
 
 Routes from named submodules are ignored. Register handlers explicitly on the root router, as shown in the [HTTP handler section](#from-an-http-handler). In C#, dependencies registered in `public` can contribute routes to root-level routing.
 
-### C# row-level security belongs in the root
+### Row-level security belongs in the root
 
-Named C# dependencies cannot declare [row-level security](../../00300-resources/00100-how-to/00400-row-level-security.md) filters. Define filters in the root instead, referring to canonical qualified table names such as `auth_data.auth_users`. Do not rely on library-defined filters to protect data in a named namespace.
+Define [row-level security](../../00300-resources/00100-how-to/00400-row-level-security.md) filters in the root, referring to canonical qualified table names. Filters declared inside named submodules do not protect their tables.
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Submodule filter declarations are accepted by the SDK, but the host does not install them. Export filters from the root schema instead, using qualified table names such as `myauth.users`.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Named dependencies cannot declare filters; the source generator rejects them. Define filters in the root instead, using qualified table names such as `auth_data.auth_users`.
+
+</TabItem>
+</Tabs>
