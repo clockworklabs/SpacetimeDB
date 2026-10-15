@@ -83,6 +83,7 @@ members = [
   "tools/ci/commands/update-flow",
   "tools/ci/commands/cli-docs",
   "tools/ci/commands/global-json-policy",
+  "tools/ci/commands/check-style",
   "tools/ci/commands/portable-datastore",
   "tools/ci/commands/publish-checks",
   "tools/ci/commands/run-spacetime",
