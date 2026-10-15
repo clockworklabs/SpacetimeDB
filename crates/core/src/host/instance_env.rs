@@ -204,10 +204,10 @@ impl ChunkedWriter {
         self.chunks
     }
 
-    pub fn collect_iter(
+    pub fn collect_iter<T: ToBsatn>(
         pool: &mut ChunkPool,
-        iter: impl Iterator<Item = impl ToBsatn>,
-    ) -> (Vec<Vec<u8>>, usize, usize) {
+        iter: impl Iterator<Item = Result<T, DatastoreError>>,
+    ) -> Result<(Vec<Vec<u8>>, usize, usize), DatastoreError> {
         // Track the number of rows and the number of bytes scanned by the iterator.
         let mut rows_scanned = 0;
         let mut bytes_scanned = 0;
@@ -216,6 +216,7 @@ impl ChunkedWriter {
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
         for item in iter {
+            let item = item?;
             // Write the item directly to the BSATN `chunked_writer` buffer.
             item.to_bsatn_extend(&mut chunked_writer.curr).unwrap();
             // Flush at item boundaries.
@@ -229,7 +230,7 @@ impl ChunkedWriter {
         // Update (BSATN) bytes scanned
         bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
 
-        (chunks, rows_scanned, bytes_scanned)
+        Ok((chunks, rows_scanned, bytes_scanned))
     }
 }
 
@@ -357,8 +358,9 @@ impl InstanceEnv {
             .iter(ST_MODULE_ID)
             .map_err(DBError::from)?
             .next()
-            .ok_or_else(|| fail("database program is not initialized"))?;
-        let current_hash = spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)
+            .ok_or_else(|| fail("database program is not initialized"))?
+            .map_err(DBError::from)?;
+        let current_hash = spacetimedb_datastore::system_tables::read_hash_from_col(&row, StModuleFields::ProgramHash)
             .map_err(DBError::from)?;
         if current_hash != *hash {
             return Err(fail("module was replaced while this function was running"));
@@ -431,7 +433,7 @@ impl InstanceEnv {
     /// and return the full length of the BSATN.
     ///
     /// Assumes that the full encoding of `cols` will fit in `buffer`.
-    fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
+    fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: &RowRef<'_>) -> usize {
         // We get back a col-list with the columns with generated values.
         // Write those back to `buffer` and then the encoded length to `row_len`.
         let (_, count) = CountWriter::run(buffer, |writer| {
@@ -463,7 +465,7 @@ impl InstanceEnv {
         let (row_len, row_ptr, insert_flags) = stdb
             .insert(tx, table_id, buffer)
             .map(|(gen_cols, row_ref, insert_flags)| {
-                let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
+                let row_len = Self::project_cols_bsatn(buffer, gen_cols, &row_ref);
                 (row_len, row_ref.pointer(), insert_flags)
             })
             .inspect_err(
@@ -552,7 +554,7 @@ impl InstanceEnv {
         let (row_len, row_ptr, update_flags) = stdb
             .update(tx, table_id, index_id, buffer)
             .map(|(gen_cols, row_ref, update_flags)| {
-                let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
+                let row_len = Self::project_cols_bsatn(buffer, gen_cols, &row_ref);
                 (row_len, row_ref.pointer(), update_flags)
             })
             .inspect_err(
@@ -593,7 +595,10 @@ impl InstanceEnv {
         let (table_id, _, iter) = stdb.index_scan_point(tx, index_id, point)?;
         Self::require_module_table(table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
-        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+        let rows_to_delete = iter
+            .map(|row_ref| row_ref.map(|rr| rr.pointer()))
+            .collect::<Result<SmallVec<[_; 1]>, DatastoreError>>()
+            .map_err(DBError::from)?;
 
         Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
     }
@@ -615,8 +620,14 @@ impl InstanceEnv {
         Self::require_module_table(table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = match iter {
-            IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
-            IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+            IndexScanPointOrRange::Point(_, iter) => iter
+                .map(|row_ref| row_ref.map(|rr| rr.pointer()))
+                .collect::<Result<_, DatastoreError>>()
+                .map_err(DBError::from)?,
+            IndexScanPointOrRange::Range(iter) => iter
+                .map(|row_ref| row_ref.map(|rr| rr.pointer()))
+                .collect::<Result<_, DatastoreError>>()
+                .map_err(DBError::from)?,
         };
 
         Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
@@ -750,7 +761,7 @@ impl InstanceEnv {
         let iter = self.relational_db().iter_mut(tx, table_id)?;
 
         // Scan the index and serialize rows to BSATN.
-        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter).map_err(DBError::from)?;
 
         // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -775,7 +786,7 @@ impl InstanceEnv {
         Self::require_module_table(table_id)?;
 
         // Scan the index and serialize rows to BSATN.
-        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter).map_err(DBError::from)?;
 
         // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
@@ -807,8 +818,13 @@ impl InstanceEnv {
 
         // Scan the index and serialize rows to BSATN.
         let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
-            IndexScanPointOrRange::Point(point, iter) => (Some(point), ChunkedWriter::collect_iter(pool, iter)),
-            IndexScanPointOrRange::Range(iter) => (None, ChunkedWriter::collect_iter(pool, iter)),
+            IndexScanPointOrRange::Point(point, iter) => (
+                Some(point),
+                ChunkedWriter::collect_iter(pool, iter).map_err(DBError::from)?,
+            ),
+            IndexScanPointOrRange::Range(iter) => {
+                (None, ChunkedWriter::collect_iter(pool, iter).map_err(DBError::from)?)
+            }
         };
 
         // Record the number of rows and the number of bytes scanned by the iterator.
@@ -1749,7 +1765,7 @@ pub(super) mod test {
             &schema,
             &BTreeMap::from([("A".into(), "uncommitted".into()), ("MISSING".into(), "".into())]),
         )?;
-        assert!(tx.views_for_refresh().any(|dependency| dependency == &view));
+        assert!(tx.views_for_refresh()?.any(|dependency| dependency == &view));
         let (_, metrics, reducer) = db.rollback_mut_tx(tx);
         db.report_mut_tx_metrics(reducer, metrics, None);
         env.start_funcall(
