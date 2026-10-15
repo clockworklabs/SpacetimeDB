@@ -10,11 +10,13 @@ failures, and lets administrators inspect delivery results.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/posthog spacetimedb
+npm install @spacetimedb/posthog spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -66,7 +68,7 @@ Call the application reducer from the client:
 await conn.reducers.completeOrder({ orderId, totalCents });
 ```
 
-See the [Context Cafe example](./example/) for event tracking and delivery
+See the [Context Cafe example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-posthog-ts/example) for event tracking and delivery
 counts.
 
 ### Standalone configuration
@@ -172,4 +174,4 @@ pnpm --dir spacetimedb run build
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

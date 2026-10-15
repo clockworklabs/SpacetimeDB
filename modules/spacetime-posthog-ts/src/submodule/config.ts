@@ -1,3 +1,4 @@
+import type { ProcedureExport } from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
@@ -25,50 +26,55 @@ export function loadConfigOrThrowFromProcedure(
   );
 }
 
-export const setPosthogConfig = spacetimedb.procedure(
-  {
-    host: t.string(),
-    projectApiKey: t.string(),
-  },
-  t.unit(),
-  (ctx, args) => {
-    const host = normalizeHost(args.host);
-    const projectApiKey = args.projectApiKey.trim();
-    if (!projectApiKey) throwSenderError(errors.invalidProjectApiKey);
-    ctx.withTx(tx => {
-      requireAdmin(tx, ctx.sender);
-      const existing = tx.db.posthogConfig.singleton.find(true);
-      const row = {
-        singleton: true,
-        host,
-        projectApiKey,
-        updatedAt: ctx.timestamp,
-      };
-      if (!existing) {
-        tx.db.posthogConfig.insert(row);
-      } else {
-        tx.db.posthogConfig.singleton.update(row);
-      }
-    });
-    return {};
-  }
-);
+const unitResult: ReturnType<typeof t.unit> = t.unit();
 
-export const getPosthogConfigStatus = spacetimedb.procedure(
+const setPosthogConfigArgs = {
+  host: t.string(),
+  projectApiKey: t.string(),
+};
+export const setPosthogConfig: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof setPosthogConfigArgs,
+  typeof unitResult
+> = spacetimedb.procedure(setPosthogConfigArgs, unitResult, (ctx, args) => {
+  const host = normalizeHost(args.host);
+  const projectApiKey = args.projectApiKey.trim();
+  if (!projectApiKey) throwSenderError(errors.invalidProjectApiKey);
+  ctx.withTx(tx => {
+    requireAdmin(tx, ctx.sender);
+    const existing = tx.db.posthogConfig.singleton.find(true);
+    const row = {
+      singleton: true,
+      host,
+      projectApiKey,
+      updatedAt: ctx.timestamp,
+    };
+    if (!existing) {
+      tx.db.posthogConfig.insert(row);
+    } else {
+      tx.db.posthogConfig.singleton.update(row);
+    }
+  });
+  return {};
+});
+
+const getPosthogConfigStatusResult = t.object('PostHogConfigStatus', {
+  isConfigured: t.bool(),
+  host: t.option(t.string()),
+  projectApiKeyLength: t.u32(),
+});
+export const getPosthogConfigStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
   {},
-  t.object('PostHogConfigStatus', {
-    isConfigured: t.bool(),
-    host: t.option(t.string()),
-    projectApiKeyLength: t.u32(),
-  }),
-  ctx =>
-    ctx.withTx(tx => {
-      requireAdmin(tx, ctx.sender);
-      const row = tx.db.posthogConfig.singleton.find(true);
-      return {
-        isConfigured: row != null,
-        host: row?.host,
-        projectApiKeyLength: row?.projectApiKey.length ?? 0,
-      };
-    })
+  typeof getPosthogConfigStatusResult
+> = spacetimedb.procedure({}, getPosthogConfigStatusResult, ctx =>
+  ctx.withTx(tx => {
+    requireAdmin(tx, ctx.sender);
+    const row = tx.db.posthogConfig.singleton.find(true);
+    return {
+      isConfigured: row != null,
+      host: row?.host,
+      projectApiKeyLength: row?.projectApiKey.length ?? 0,
+    };
+  })
 );

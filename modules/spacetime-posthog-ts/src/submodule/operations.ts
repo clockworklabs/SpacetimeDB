@@ -1,4 +1,12 @@
-import { Range } from 'spacetimedb/server';
+import {
+  Range,
+  type ArrayBuilder,
+  type Infer,
+  type ProcedureExport,
+  type ReducerExport,
+  type ViewCtx,
+  type ViewExport,
+} from 'spacetimedb/server';
 import { Timestamp } from 'spacetimedb';
 import {
   DeliverySource,
@@ -362,11 +370,20 @@ function deliverOutbox(
   });
 }
 
+const unitResult: ReturnType<typeof t.unit> = t.unit();
+
+const scheduledFlushArgs: { tick: typeof posthogFlushTick.rowType } = {
+  tick: posthogFlushTick.rowType,
+};
 /** Runs on the interval started by `install`: prunes history and delivers queued events. */
-export const scheduledFlush = spacetimedb.procedure(
+export const scheduledFlush: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof scheduledFlushArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
   { onSchedule: posthogFlushTick },
-  { tick: posthogFlushTick.rowType },
-  t.unit(),
+  scheduledFlushArgs,
+  unitResult,
   ctx => {
     if (!ctx.sender.isEqual(ctx.identity)) {
       throwSenderError(errors.notAuthorized);
@@ -385,126 +402,138 @@ export const scheduledFlush = spacetimedb.procedure(
   }
 );
 
-export const enqueueEvent = spacetimedb.reducer(
-  {
-    distinctId: t.string(),
-    event: t.string(),
-    propertiesJson: t.option(t.string()),
-    idempotencyKey: t.option(t.string()),
-  },
-  (ctx, args) => {
-    requireAdmin(ctx, ctx.sender);
-    const { error } = enqueueEventInTx(ctx, args);
-    if (error) throwSenderError(error);
-  }
-);
+const enqueueEventArgs = {
+  distinctId: t.string(),
+  event: t.string(),
+  propertiesJson: t.option(t.string()),
+  idempotencyKey: t.option(t.string()),
+};
+export const enqueueEvent: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof enqueueEventArgs
+> = spacetimedb.reducer(enqueueEventArgs, (ctx, args) => {
+  requireAdmin(ctx, ctx.sender);
+  const { error } = enqueueEventInTx(ctx, args);
+  if (error) throwSenderError(error);
+});
 
-export const captureNow = spacetimedb.procedure(
-  {
-    distinctId: t.string(),
-    event: t.string(),
-    propertiesJson: t.option(t.string()),
-  },
-  t.object('PostHogCaptureResult', {
-    ok: t.bool(),
-    statusCode: t.u16(),
-    error: t.option(t.string()),
-  }),
-  (ctx, args) => {
-    ctx.withTx(tx => requireAdmin(tx, ctx.sender));
-    const error = eventInputError(args);
-    if (error) throwSenderError(error);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const result = posthogFetch(
-      ctx,
-      cfg,
-      '/batch',
-      buildBatchBody(cfg.projectApiKey, [
-        { ...args, uuid: ctx.newUuidV7().toString(), createdAt: ctx.timestamp },
-      ])
-    );
-    ctx.withTx(tx =>
-      logDelivery(tx, DeliverySource.Direct, undefined, args, result)
-    );
-    return {
-      ok: result.ok,
-      statusCode: result.statusCode,
-      error: result.ok ? undefined : truncateForLog(result.responseBody),
-    };
-  }
-);
+const captureNowArgs = {
+  distinctId: t.string(),
+  event: t.string(),
+  propertiesJson: t.option(t.string()),
+};
+const captureNowResult = t.object('PostHogCaptureResult', {
+  ok: t.bool(),
+  statusCode: t.u16(),
+  error: t.option(t.string()),
+});
+export const captureNow: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof captureNowArgs,
+  typeof captureNowResult
+> = spacetimedb.procedure(captureNowArgs, captureNowResult, (ctx, args) => {
+  ctx.withTx(tx => requireAdmin(tx, ctx.sender));
+  const error = eventInputError(args);
+  if (error) throwSenderError(error);
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const result = posthogFetch(
+    ctx,
+    cfg,
+    '/batch',
+    buildBatchBody(cfg.projectApiKey, [
+      { ...args, uuid: ctx.newUuidV7().toString(), createdAt: ctx.timestamp },
+    ])
+  );
+  ctx.withTx(tx =>
+    logDelivery(tx, DeliverySource.Direct, undefined, args, result)
+  );
+  return {
+    ok: result.ok,
+    statusCode: result.statusCode,
+    error: result.ok ? undefined : truncateForLog(result.responseBody),
+  };
+});
 
-export const flushOutbox = spacetimedb.procedure(
-  { limit: t.u32() },
-  flushResult,
-  (ctx, { limit }) => {
-    ctx.withTx(tx => requireAdmin(tx, ctx.sender));
-    if (limit <= 0 || limit > MAX_FLUSH_LIMIT) {
-      throwSenderError(errors.invalidFlushLimit);
-    }
-    return deliverOutbox(ctx, loadConfigOrThrowFromProcedure(ctx), limit);
+const flushOutboxArgs = { limit: t.u32() };
+export const flushOutbox: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof flushOutboxArgs,
+  typeof flushResult
+> = spacetimedb.procedure(flushOutboxArgs, flushResult, (ctx, { limit }) => {
+  ctx.withTx(tx => requireAdmin(tx, ctx.sender));
+  if (limit <= 0 || limit > MAX_FLUSH_LIMIT) {
+    throwSenderError(errors.invalidFlushLimit);
   }
-);
+  return deliverOutbox(ctx, loadConfigOrThrowFromProcedure(ctx), limit);
+});
 
+const requeueFailedEventsArgs = { limit: t.u32() };
 /** Moves up to `limit` Failed events back to Queued with a fresh retry budget. */
-export const requeueFailedEvents = spacetimedb.reducer(
-  { limit: t.u32() },
-  (ctx, { limit }) => {
-    requireAdmin(ctx, ctx.sender);
-    if (limit <= 0 || limit > MAX_ADMIN_BATCH) {
-      throwSenderError(errors.invalidRequeueLimit);
-    }
-    const delta = emptyDelta();
-    for (const row of takeRows(
-      ctx.db.posthogOutbox.byStatus.filter(OutboxStatus.Failed),
-      limit
-    )) {
-      const requeued = requeueFailedRow(row, ctx.timestamp);
-      ctx.db.posthogOutbox.outboxId.update(requeued);
-      countStatusChange(delta, row.status, requeued.status);
-    }
-    applyStatsDelta(ctx, delta);
+export const requeueFailedEvents: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof requeueFailedEventsArgs
+> = spacetimedb.reducer(requeueFailedEventsArgs, (ctx, { limit }) => {
+  requireAdmin(ctx, ctx.sender);
+  if (limit <= 0 || limit > MAX_ADMIN_BATCH) {
+    throwSenderError(errors.invalidRequeueLimit);
   }
-);
+  const delta = emptyDelta();
+  for (const row of takeRows(
+    ctx.db.posthogOutbox.byStatus.filter(OutboxStatus.Failed),
+    limit
+  )) {
+    const requeued = requeueFailedRow(row, ctx.timestamp);
+    ctx.db.posthogOutbox.outboxId.update(requeued);
+    countStatusChange(delta, row.status, requeued.status);
+  }
+  applyStatsDelta(ctx, delta);
+});
 
+const clearAnalyticsArgs = { maxRows: t.u32() };
 /** Deletes up to `maxRows` outbox and delivery log rows. Events already received by PostHog remain there. */
-export const clearAnalytics = spacetimedb.reducer(
-  { maxRows: t.u32() },
-  (ctx, { maxRows }) => {
-    requireAdmin(ctx, ctx.sender);
-    if (maxRows <= 0 || maxRows > MAX_ADMIN_BATCH) {
-      throwSenderError(errors.invalidClearBatch);
-    }
-    const delta = emptyDelta();
-    const outboxRows = takeRows(ctx.db.posthogOutbox.iter(), maxRows);
-    for (const row of outboxRows) {
-      ctx.db.posthogOutbox.delete(row);
-      countStatusChange(delta, row.status, undefined);
-    }
-    for (const row of takeRows(
-      ctx.db.posthogDeliveryLog.iter(),
-      maxRows - outboxRows.length
-    )) {
-      ctx.db.posthogDeliveryLog.delete(row);
-    }
-    applyStatsDelta(ctx, delta);
+export const clearAnalytics: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof clearAnalyticsArgs
+> = spacetimedb.reducer(clearAnalyticsArgs, (ctx, { maxRows }) => {
+  requireAdmin(ctx, ctx.sender);
+  if (maxRows <= 0 || maxRows > MAX_ADMIN_BATCH) {
+    throwSenderError(errors.invalidClearBatch);
   }
-);
+  const delta = emptyDelta();
+  const outboxRows = takeRows(ctx.db.posthogOutbox.iter(), maxRows);
+  for (const row of outboxRows) {
+    ctx.db.posthogOutbox.delete(row);
+    countStatusChange(delta, row.status, undefined);
+  }
+  for (const row of takeRows(
+    ctx.db.posthogDeliveryLog.iter(),
+    maxRows - outboxRows.length
+  )) {
+    ctx.db.posthogDeliveryLog.delete(row);
+  }
+  applyStatsDelta(ctx, delta);
+});
 
-export const getFeatureFlag = spacetimedb.procedure(
-  {
-    key: t.string(),
-    distinctId: t.string(),
-    personPropertiesJson: t.option(t.string()),
-    groupsJson: t.option(t.string()),
-  },
-  t.object('PostHogFeatureFlagResult', {
-    ok: t.bool(),
-    statusCode: t.u16(),
-    enabled: t.option(t.bool()),
-    variant: t.option(t.string()),
-    error: t.option(t.string()),
-  }),
+const getFeatureFlagArgs = {
+  key: t.string(),
+  distinctId: t.string(),
+  personPropertiesJson: t.option(t.string()),
+  groupsJson: t.option(t.string()),
+};
+const getFeatureFlagResult = t.object('PostHogFeatureFlagResult', {
+  ok: t.bool(),
+  statusCode: t.u16(),
+  enabled: t.option(t.bool()),
+  variant: t.option(t.string()),
+  error: t.option(t.string()),
+});
+export const getFeatureFlag: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getFeatureFlagArgs,
+  typeof getFeatureFlagResult
+> = spacetimedb.procedure(
+  getFeatureFlagArgs,
+  getFeatureFlagResult,
   (ctx, args) => {
     ctx.withTx(tx => requireAdmin(tx, ctx.sender));
     if (!args.key.trim() || args.key.length > MAX_EVENT_NAME_LENGTH) {
@@ -559,9 +588,15 @@ function viewIsAdmin(ctx: ViewModuleCtx): boolean {
   return isAdmin(ctx, ctx.sender);
 }
 
-export const posthogOutboxAdmin = spacetimedb.view(
+const posthogOutboxAdminResult: ArrayBuilder<typeof posthogOutbox.rowType> =
+  t.array(posthogOutbox.rowType);
+export const posthogOutboxAdmin: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof posthogOutboxAdminResult>
+> = spacetimedb.view(
   { name: 'posthog_outbox_admin', public: true },
-  t.array(posthogOutbox.rowType),
+  posthogOutboxAdminResult,
   ctx => {
     if (!viewIsAdmin(ctx)) return [];
     const rows = takeRows(
@@ -580,9 +615,16 @@ export const posthogOutboxAdmin = spacetimedb.view(
   }
 );
 
-export const posthogDeliveryLogAdmin = spacetimedb.view(
+const posthogDeliveryLogAdminResult: ArrayBuilder<
+  typeof posthogDeliveryLogRow
+> = t.array(posthogDeliveryLogRow);
+export const posthogDeliveryLogAdmin: ViewExport<
+  (
+    ctx: ViewCtx<typeof spacetimedb.schemaType>
+  ) => Infer<typeof posthogDeliveryLogAdminResult>
+> = spacetimedb.view(
   { name: 'posthog_delivery_log_admin', public: true },
-  t.array(posthogDeliveryLogRow),
+  posthogDeliveryLogAdminResult,
   ctx => {
     if (!viewIsAdmin(ctx)) return [];
     return takeRows(
