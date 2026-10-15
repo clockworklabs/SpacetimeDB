@@ -1,3 +1,8 @@
+import type {
+  ArrayBuilder,
+  OptionBuilder,
+  ProcedureExport,
+} from 'spacetimedb/server';
 import {
   Range,
   t,
@@ -12,9 +17,16 @@ import {
 import { withAdminTx, takeRows } from '../operations.js';
 import { latestSubscription } from '../subscription-order.js';
 
-export const getCustomer = spacetimedb.procedure(
-  { stripeCustomerId: t.string() },
-  t.option(stripeCustomerTable.rowType),
+const getCustomerArgs = { stripeCustomerId: t.string() };
+const getCustomerResult: OptionBuilder<typeof stripeCustomerTable.rowType> =
+  t.option(stripeCustomerTable.rowType);
+export const getCustomer: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getCustomerArgs,
+  typeof getCustomerResult
+> = spacetimedb.procedure(
+  getCustomerArgs,
+  getCustomerResult,
   (ctx, { stripeCustomerId }) =>
     withAdminTx(
       ctx,
@@ -24,9 +36,17 @@ export const getCustomer = spacetimedb.procedure(
     )
 );
 
-export const getCustomerByUserId = spacetimedb.procedure(
-  { userId: t.string() },
-  t.option(stripeCustomerTable.rowType),
+const getCustomerByUserIdArgs = { userId: t.string() };
+const getCustomerByUserIdResult: OptionBuilder<
+  typeof stripeCustomerTable.rowType
+> = t.option(stripeCustomerTable.rowType);
+export const getCustomerByUserId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getCustomerByUserIdArgs,
+  typeof getCustomerByUserIdResult
+> = spacetimedb.procedure(
+  getCustomerByUserIdArgs,
+  getCustomerByUserIdResult,
   (ctx, { userId }) =>
     withAdminTx(ctx, tx => {
       for (const customer of tx.db.stripeCustomer.byUserId.filter(userId))
@@ -35,9 +55,17 @@ export const getCustomerByUserId = spacetimedb.procedure(
     })
 );
 
-export const getSubscription = spacetimedb.procedure(
-  { stripeSubscriptionId: t.string() },
-  t.option(stripeSubscriptionTable.rowType),
+const getSubscriptionArgs = { stripeSubscriptionId: t.string() };
+const getSubscriptionResult: OptionBuilder<
+  typeof stripeSubscriptionTable.rowType
+> = t.option(stripeSubscriptionTable.rowType);
+export const getSubscription: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getSubscriptionArgs,
+  typeof getSubscriptionResult
+> = spacetimedb.procedure(
+  getSubscriptionArgs,
+  getSubscriptionResult,
   (ctx, { stripeSubscriptionId }) =>
     withAdminTx(
       ctx,
@@ -48,18 +76,34 @@ export const getSubscription = spacetimedb.procedure(
     )
 );
 
-export const listSubscriptions = spacetimedb.procedure(
-  { stripeCustomerId: t.string() },
-  t.array(stripeSubscriptionTable.rowType),
+const listSubscriptionsArgs = { stripeCustomerId: t.string() };
+const listSubscriptionsResult: ArrayBuilder<
+  typeof stripeSubscriptionTable.rowType
+> = t.array(stripeSubscriptionTable.rowType);
+export const listSubscriptions: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listSubscriptionsArgs,
+  typeof listSubscriptionsResult
+> = spacetimedb.procedure(
+  listSubscriptionsArgs,
+  listSubscriptionsResult,
   (ctx, { stripeCustomerId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripeSubscription.byCustomer.filter(stripeCustomerId))
     )
 );
 
-export const getSubscriptionByOrgId = spacetimedb.procedure(
-  { orgId: t.string() },
-  t.option(stripeSubscriptionTable.rowType),
+const getSubscriptionByOrgIdArgs = { orgId: t.string() };
+const getSubscriptionByOrgIdResult: OptionBuilder<
+  typeof stripeSubscriptionTable.rowType
+> = t.option(stripeSubscriptionTable.rowType);
+export const getSubscriptionByOrgId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getSubscriptionByOrgIdArgs,
+  typeof getSubscriptionByOrgIdResult
+> = spacetimedb.procedure(
+  getSubscriptionByOrgIdArgs,
+  getSubscriptionByOrgIdResult,
   (ctx, { orgId }) =>
     withAdminTx(ctx, tx =>
       latestSubscription(
@@ -68,9 +112,17 @@ export const getSubscriptionByOrgId = spacetimedb.procedure(
     )
 );
 
-export const listSubscriptionsByOrgId = spacetimedb.procedure(
-  { orgId: t.string() },
-  t.array(stripeSubscriptionTable.rowType),
+const listSubscriptionsByOrgIdArgs = { orgId: t.string() };
+const listSubscriptionsByOrgIdResult: ArrayBuilder<
+  typeof stripeSubscriptionTable.rowType
+> = t.array(stripeSubscriptionTable.rowType);
+export const listSubscriptionsByOrgId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listSubscriptionsByOrgIdArgs,
+  typeof listSubscriptionsByOrgIdResult
+> = spacetimedb.procedure(
+  listSubscriptionsByOrgIdArgs,
+  listSubscriptionsByOrgIdResult,
   (ctx, { orgId }) =>
     withAdminTx(ctx, tx =>
       takeRows(
@@ -79,9 +131,17 @@ export const listSubscriptionsByOrgId = spacetimedb.procedure(
     )
 );
 
-export const listSubscriptionsByUserId = spacetimedb.procedure(
-  { userId: t.string() },
-  t.array(stripeSubscriptionTable.rowType),
+const listSubscriptionsByUserIdArgs = { userId: t.string() };
+const listSubscriptionsByUserIdResult: ArrayBuilder<
+  typeof stripeSubscriptionTable.rowType
+> = t.array(stripeSubscriptionTable.rowType);
+export const listSubscriptionsByUserId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listSubscriptionsByUserIdArgs,
+  typeof listSubscriptionsByUserIdResult
+> = spacetimedb.procedure(
+  listSubscriptionsByUserIdArgs,
+  listSubscriptionsByUserIdResult,
   (ctx, { userId }) =>
     withAdminTx(ctx, tx =>
       takeRows(
@@ -90,9 +150,16 @@ export const listSubscriptionsByUserId = spacetimedb.procedure(
     )
 );
 
-export const getPayment = spacetimedb.procedure(
-  { stripePaymentIntentId: t.string() },
-  t.option(stripePaymentTable.rowType),
+const getPaymentArgs = { stripePaymentIntentId: t.string() };
+const getPaymentResult: OptionBuilder<typeof stripePaymentTable.rowType> =
+  t.option(stripePaymentTable.rowType);
+export const getPayment: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getPaymentArgs,
+  typeof getPaymentResult
+> = spacetimedb.procedure(
+  getPaymentArgs,
+  getPaymentResult,
   (ctx, { stripePaymentIntentId }) =>
     withAdminTx(
       ctx,
@@ -102,59 +169,113 @@ export const getPayment = spacetimedb.procedure(
     )
 );
 
-export const listPayments = spacetimedb.procedure(
-  { stripeCustomerId: t.string() },
-  t.array(stripePaymentTable.rowType),
+const listPaymentsArgs = { stripeCustomerId: t.string() };
+const listPaymentsResult: ArrayBuilder<typeof stripePaymentTable.rowType> =
+  t.array(stripePaymentTable.rowType);
+export const listPayments: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listPaymentsArgs,
+  typeof listPaymentsResult
+> = spacetimedb.procedure(
+  listPaymentsArgs,
+  listPaymentsResult,
   (ctx, { stripeCustomerId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripePayment.byCustomer.filter(stripeCustomerId))
     )
 );
 
-export const listPaymentsByUserId = spacetimedb.procedure(
-  { userId: t.string() },
-  t.array(stripePaymentTable.rowType),
+const listPaymentsByUserIdArgs = { userId: t.string() };
+const listPaymentsByUserIdResult: ArrayBuilder<
+  typeof stripePaymentTable.rowType
+> = t.array(stripePaymentTable.rowType);
+export const listPaymentsByUserId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listPaymentsByUserIdArgs,
+  typeof listPaymentsByUserIdResult
+> = spacetimedb.procedure(
+  listPaymentsByUserIdArgs,
+  listPaymentsByUserIdResult,
   (ctx, { userId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripePayment.byUserId.filter(userId))
     )
 );
 
-export const listPaymentsByOrgId = spacetimedb.procedure(
-  { orgId: t.string() },
-  t.array(stripePaymentTable.rowType),
+const listPaymentsByOrgIdArgs = { orgId: t.string() };
+const listPaymentsByOrgIdResult: ArrayBuilder<
+  typeof stripePaymentTable.rowType
+> = t.array(stripePaymentTable.rowType);
+export const listPaymentsByOrgId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listPaymentsByOrgIdArgs,
+  typeof listPaymentsByOrgIdResult
+> = spacetimedb.procedure(
+  listPaymentsByOrgIdArgs,
+  listPaymentsByOrgIdResult,
   (ctx, { orgId }) =>
     withAdminTx(ctx, tx => takeRows(tx.db.stripePayment.byOrgId.filter(orgId)))
 );
 
-export const listInvoices = spacetimedb.procedure(
-  { stripeCustomerId: t.string() },
-  t.array(stripeInvoiceTable.rowType),
+const listInvoicesArgs = { stripeCustomerId: t.string() };
+const listInvoicesResult: ArrayBuilder<typeof stripeInvoiceTable.rowType> =
+  t.array(stripeInvoiceTable.rowType);
+export const listInvoices: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listInvoicesArgs,
+  typeof listInvoicesResult
+> = spacetimedb.procedure(
+  listInvoicesArgs,
+  listInvoicesResult,
   (ctx, { stripeCustomerId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripeInvoice.byCustomer.filter(stripeCustomerId))
     )
 );
 
-export const listInvoicesByOrgId = spacetimedb.procedure(
-  { orgId: t.string() },
-  t.array(stripeInvoiceTable.rowType),
+const listInvoicesByOrgIdArgs = { orgId: t.string() };
+const listInvoicesByOrgIdResult: ArrayBuilder<
+  typeof stripeInvoiceTable.rowType
+> = t.array(stripeInvoiceTable.rowType);
+export const listInvoicesByOrgId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listInvoicesByOrgIdArgs,
+  typeof listInvoicesByOrgIdResult
+> = spacetimedb.procedure(
+  listInvoicesByOrgIdArgs,
+  listInvoicesByOrgIdResult,
   (ctx, { orgId }) =>
     withAdminTx(ctx, tx => takeRows(tx.db.stripeInvoice.byOrgId.filter(orgId)))
 );
 
-export const listInvoicesByUserId = spacetimedb.procedure(
-  { userId: t.string() },
-  t.array(stripeInvoiceTable.rowType),
+const listInvoicesByUserIdArgs = { userId: t.string() };
+const listInvoicesByUserIdResult: ArrayBuilder<
+  typeof stripeInvoiceTable.rowType
+> = t.array(stripeInvoiceTable.rowType);
+export const listInvoicesByUserId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listInvoicesByUserIdArgs,
+  typeof listInvoicesByUserIdResult
+> = spacetimedb.procedure(
+  listInvoicesByUserIdArgs,
+  listInvoicesByUserIdResult,
   (ctx, { userId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripeInvoice.byUserId.filter(userId))
     )
 );
 
-export const getCheckoutSession = spacetimedb.procedure(
-  { stripeCheckoutSessionId: t.string() },
-  t.option(stripeCheckoutSessionTable.rowType),
+const getCheckoutSessionArgs = { stripeCheckoutSessionId: t.string() };
+const getCheckoutSessionResult: OptionBuilder<
+  typeof stripeCheckoutSessionTable.rowType
+> = t.option(stripeCheckoutSessionTable.rowType);
+export const getCheckoutSession: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getCheckoutSessionArgs,
+  typeof getCheckoutSessionResult
+> = spacetimedb.procedure(
+  getCheckoutSessionArgs,
+  getCheckoutSessionResult,
   (ctx, { stripeCheckoutSessionId }) =>
     withAdminTx(
       ctx,
@@ -165,18 +286,34 @@ export const getCheckoutSession = spacetimedb.procedure(
     )
 );
 
-export const listCheckoutSessions = spacetimedb.procedure(
-  { stripeCustomerId: t.string() },
-  t.array(stripeCheckoutSessionTable.rowType),
+const listCheckoutSessionsArgs = { stripeCustomerId: t.string() };
+const listCheckoutSessionsResult: ArrayBuilder<
+  typeof stripeCheckoutSessionTable.rowType
+> = t.array(stripeCheckoutSessionTable.rowType);
+export const listCheckoutSessions: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listCheckoutSessionsArgs,
+  typeof listCheckoutSessionsResult
+> = spacetimedb.procedure(
+  listCheckoutSessionsArgs,
+  listCheckoutSessionsResult,
   (ctx, { stripeCustomerId }) =>
     withAdminTx(ctx, tx =>
       takeRows(tx.db.stripeCheckoutSession.byCustomer.filter(stripeCustomerId))
     )
 );
 
-export const getWebhookEvent = spacetimedb.procedure(
-  { eventId: t.string() },
-  t.option(stripeWebhookEventTable.rowType),
+const getWebhookEventArgs = { eventId: t.string() };
+const getWebhookEventResult: OptionBuilder<
+  typeof stripeWebhookEventTable.rowType
+> = t.option(stripeWebhookEventTable.rowType);
+export const getWebhookEvent: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getWebhookEventArgs,
+  typeof getWebhookEventResult
+> = spacetimedb.procedure(
+  getWebhookEventArgs,
+  getWebhookEventResult,
   (ctx, { eventId }) =>
     withAdminTx(
       ctx,

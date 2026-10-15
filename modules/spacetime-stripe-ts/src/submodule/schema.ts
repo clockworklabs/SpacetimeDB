@@ -7,10 +7,17 @@ import {
   type ProcedureCtx,
   type ReducerCtx,
   type TransactionCtx,
+  type SumBuilder,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
 import { install } from './install.js';
 
+type WebhookEventStatusBuilder = SumBuilder<
+  Record<
+    'Received' | 'Processed' | 'Ignored' | 'Failed',
+    ReturnType<typeof t.unit>
+  >
+>;
 // Internal ingest lifecycle for webhook rows. Received = stored. Processed =
 // applied to the data model. Ignored = unhandled event type or an event older
 // than the stored state. Failed = a handled event type whose payload could not
@@ -21,12 +28,15 @@ import { install } from './install.js';
 // delivered by webhooks. An open string preserves new provider states.
 // Stripe's TS types lift them to literal unions on the SDK side; consumers
 // can do `subscription.status === 'active'` directly against the wire value.
-export const webhookEventStatus = t.enum('WebhookEventStatus', [
-  'Received',
-  'Processed',
-  'Ignored',
-  'Failed',
-]);
+export const webhookEventStatus: WebhookEventStatusBuilder = t.enum(
+  'WebhookEventStatus',
+  {
+    Received: t.unit(),
+    Processed: t.unit(),
+    Ignored: t.unit(),
+    Failed: t.unit(),
+  }
+);
 export const WebhookEventStatus = {
   Received: { tag: 'Received' as const },
   Processed: { tag: 'Processed' as const },
@@ -118,117 +128,131 @@ export const stripeWebhookEventRow = {
   processedAt: t.option(t.timestamp()),
 };
 
-export const stripeCustomerTable = table(
-  {
-    name: 'stripe_customer',
-    public: false,
-    indexes: [
-      { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
-    ],
-  },
-  stripeCustomerRow
-);
-export const stripeSubscriptionTable = table(
-  {
-    name: 'stripe_subscription',
-    public: false,
-    indexes: [
-      {
-        accessor: 'byCustomer',
-        algorithm: 'btree',
-        columns: ['stripeCustomerId'],
-      },
-      { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
-      {
-        accessor: 'byOrgInsertedAt',
-        algorithm: 'btree',
-        columns: ['orgId', 'insertedAt'],
-      },
-      { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
-      {
-        accessor: 'byUserInsertedAt',
-        algorithm: 'btree',
-        columns: ['userId', 'insertedAt'],
-      },
-    ],
-  },
-  stripeSubscriptionRow
-);
-export const stripeCheckoutSessionTable = table(
-  {
-    name: 'stripe_checkout_session',
-    public: false,
-    indexes: [
-      {
-        accessor: 'byCustomer',
-        algorithm: 'btree',
-        columns: ['stripeCustomerId'],
-      },
-    ],
-  },
-  stripeCheckoutSessionRow
-);
-export const stripePaymentTable = table(
-  {
-    name: 'stripe_payment',
-    public: false,
-    indexes: [
-      {
-        accessor: 'byCustomer',
-        algorithm: 'btree',
-        columns: ['stripeCustomerId'],
-      },
-      {
-        accessor: 'byInvoice',
-        algorithm: 'btree',
-        columns: ['stripeInvoiceId'],
-      },
-      { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
-      { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
-    ],
-  },
-  stripePaymentRow
-);
-export const stripeInvoiceTable = table(
-  {
-    name: 'stripe_invoice',
-    public: false,
-    indexes: [
-      {
-        accessor: 'byCustomer',
-        algorithm: 'btree',
-        columns: ['stripeCustomerId'],
-      },
-      {
-        accessor: 'bySubscription',
-        algorithm: 'btree',
-        columns: ['stripeSubscriptionId'],
-      },
-      { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] },
-      { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] },
-    ],
-  },
-  stripeInvoiceRow
-);
-export const stripeWebhookEventTable = table(
-  {
-    name: 'stripe_webhook_event',
-    public: false,
-    indexes: [
-      { accessor: 'byReceivedAt', algorithm: 'btree', columns: ['receivedAt'] },
-    ],
-  },
-  stripeWebhookEventRow
-);
+const stripeCustomerOptions = {
+  name: 'stripe_customer',
+  public: false,
+  indexes: [
+    { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] } as const,
+  ],
+};
+export const stripeCustomerTable: ReturnType<
+  typeof table<typeof stripeCustomerRow, typeof stripeCustomerOptions>
+> = table(stripeCustomerOptions, stripeCustomerRow);
+const stripeSubscriptionOptions = {
+  name: 'stripe_subscription',
+  public: false,
+  indexes: [
+    {
+      accessor: 'byCustomer',
+      algorithm: 'btree',
+      columns: ['stripeCustomerId'],
+    } as const,
+    { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] } as const,
+    {
+      accessor: 'byOrgInsertedAt',
+      algorithm: 'btree',
+      columns: ['orgId', 'insertedAt'],
+    } as const,
+    { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] } as const,
+    {
+      accessor: 'byUserInsertedAt',
+      algorithm: 'btree',
+      columns: ['userId', 'insertedAt'],
+    } as const,
+  ],
+};
+export const stripeSubscriptionTable: ReturnType<
+  typeof table<typeof stripeSubscriptionRow, typeof stripeSubscriptionOptions>
+> = table(stripeSubscriptionOptions, stripeSubscriptionRow);
+const stripeCheckoutSessionOptions = {
+  name: 'stripe_checkout_session',
+  public: false,
+  indexes: [
+    {
+      accessor: 'byCustomer',
+      algorithm: 'btree',
+      columns: ['stripeCustomerId'],
+    } as const,
+  ],
+};
+export const stripeCheckoutSessionTable: ReturnType<
+  typeof table<
+    typeof stripeCheckoutSessionRow,
+    typeof stripeCheckoutSessionOptions
+  >
+> = table(stripeCheckoutSessionOptions, stripeCheckoutSessionRow);
+const stripePaymentOptions = {
+  name: 'stripe_payment',
+  public: false,
+  indexes: [
+    {
+      accessor: 'byCustomer',
+      algorithm: 'btree',
+      columns: ['stripeCustomerId'],
+    } as const,
+    {
+      accessor: 'byInvoice',
+      algorithm: 'btree',
+      columns: ['stripeInvoiceId'],
+    } as const,
+    { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] } as const,
+    { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] } as const,
+  ],
+};
+export const stripePaymentTable: ReturnType<
+  typeof table<typeof stripePaymentRow, typeof stripePaymentOptions>
+> = table(stripePaymentOptions, stripePaymentRow);
+const stripeInvoiceOptions = {
+  name: 'stripe_invoice',
+  public: false,
+  indexes: [
+    {
+      accessor: 'byCustomer',
+      algorithm: 'btree',
+      columns: ['stripeCustomerId'],
+    } as const,
+    {
+      accessor: 'bySubscription',
+      algorithm: 'btree',
+      columns: ['stripeSubscriptionId'],
+    } as const,
+    { accessor: 'byOrgId', algorithm: 'btree', columns: ['orgId'] } as const,
+    { accessor: 'byUserId', algorithm: 'btree', columns: ['userId'] } as const,
+  ],
+};
+export const stripeInvoiceTable: ReturnType<
+  typeof table<typeof stripeInvoiceRow, typeof stripeInvoiceOptions>
+> = table(stripeInvoiceOptions, stripeInvoiceRow);
+const stripeWebhookEventOptions = {
+  name: 'stripe_webhook_event',
+  public: false,
+  indexes: [
+    {
+      accessor: 'byReceivedAt',
+      algorithm: 'btree',
+      columns: ['receivedAt'],
+    } as const,
+  ],
+};
+export const stripeWebhookEventTable: ReturnType<
+  typeof table<typeof stripeWebhookEventRow, typeof stripeWebhookEventOptions>
+> = table(stripeWebhookEventOptions, stripeWebhookEventRow);
 
+const stripeWebhookPruneTickOptions = {
+  name: 'stripe_webhook_prune_tick',
+  public: false,
+};
+const stripeWebhookPruneTickColumns = {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+};
 // Schedules the retention sweep of stripe_webhook_event.
-export const stripeWebhookPruneTickTable = table(
-  { name: 'stripe_webhook_prune_tick', public: false },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
-);
+export const stripeWebhookPruneTickTable: ReturnType<
+  typeof table<
+    typeof stripeWebhookPruneTickColumns,
+    typeof stripeWebhookPruneTickOptions
+  >
+> = table(stripeWebhookPruneTickOptions, stripeWebhookPruneTickColumns);
 
 // Singleton row holding deploy-time secrets. Private, never subscribable.
 export const stripeConfigRow = {
@@ -239,10 +263,14 @@ export const stripeConfigRow = {
   updatedAt: t.timestamp(),
 };
 
-export const stripeConfigTable = table(
-  { name: 'stripe_config', public: false, indexes: [] },
-  stripeConfigRow
-);
+const stripeConfigOptions = {
+  name: 'stripe_config',
+  public: false,
+  indexes: [],
+};
+export const stripeConfigTable: ReturnType<
+  typeof table<typeof stripeConfigRow, typeof stripeConfigOptions>
+> = table(stripeConfigOptions, stripeConfigRow);
 
 // Allowlist of identities permitted to call privileged procedures.
 export const stripeAdminIdentityRow = {
@@ -250,12 +278,26 @@ export const stripeAdminIdentityRow = {
   addedAt: t.timestamp(),
 };
 
-export const stripeAdminIdentityTable = table(
-  { name: 'stripe_admin_identity', public: false, indexes: [] },
-  stripeAdminIdentityRow
-);
+const stripeAdminIdentityOptions = {
+  name: 'stripe_admin_identity',
+  public: false,
+  indexes: [],
+};
+export const stripeAdminIdentityTable: ReturnType<
+  typeof table<typeof stripeAdminIdentityRow, typeof stripeAdminIdentityOptions>
+> = table(stripeAdminIdentityOptions, stripeAdminIdentityRow);
 
-export const spacetimedb = schema({
+const tables: {
+  stripeCustomer: typeof stripeCustomerTable;
+  stripeSubscription: typeof stripeSubscriptionTable;
+  stripeCheckoutSession: typeof stripeCheckoutSessionTable;
+  stripePayment: typeof stripePaymentTable;
+  stripeInvoice: typeof stripeInvoiceTable;
+  stripeWebhookEvent: typeof stripeWebhookEventTable;
+  stripeWebhookPruneTick: typeof stripeWebhookPruneTickTable;
+  stripeConfig: typeof stripeConfigTable;
+  stripeAdminIdentity: typeof stripeAdminIdentityTable;
+} = {
   stripeCustomer: stripeCustomerTable,
   stripeSubscription: stripeSubscriptionTable,
   stripeCheckoutSession: stripeCheckoutSessionTable,
@@ -265,11 +307,15 @@ export const spacetimedb = schema({
   stripeWebhookPruneTick: stripeWebhookPruneTickTable,
   stripeConfig: stripeConfigTable,
   stripeAdminIdentity: stripeAdminIdentityTable,
-});
+};
+export const spacetimedb: ReturnType<typeof schema<typeof tables>> =
+  schema(tables);
 
-export const init = spacetimedb.init(ctx => {
-  install(ctx);
-});
+export const init: ReturnType<typeof spacetimedb.init> = spacetimedb.init(
+  ctx => {
+    install(ctx);
+  }
+);
 
 export default spacetimedb;
 

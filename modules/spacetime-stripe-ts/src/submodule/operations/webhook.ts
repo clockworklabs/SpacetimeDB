@@ -112,5 +112,5 @@ export function handleStripeWebhook(
   }
 }
 
-export const stripeWebhookHandler =
+export const stripeWebhookHandler: ReturnType<typeof spacetimedb.httpHandler> =
   spacetimedb.httpHandler(handleStripeWebhook);

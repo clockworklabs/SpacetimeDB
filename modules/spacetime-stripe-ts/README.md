@@ -10,11 +10,13 @@ user can see.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/stripe spacetimedb
+npm install @spacetimedb/stripe spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -93,7 +95,7 @@ Administrators are the identities in `stripe_admin_identity`. `install` seeds
 the publishing identity; `stripe.add_admin_identity` adds more. Host procedures
 that need an administrator check read the same table through
 `ctx.db.stripe.stripeAdminIdentity` instead of keeping a second list. The
-[Premium Store example](./example/) shows a complete host module.
+[Premium Store example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-stripe-ts/example) shows a complete host module.
 
 ### Standalone configuration
 
@@ -309,4 +311,4 @@ pnpm run lint
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

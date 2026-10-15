@@ -1,3 +1,4 @@
+import type { ProcedureExport } from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
@@ -56,30 +57,38 @@ function upsertConfig(
   ctx.db.stripeConfig.singleton.update(row);
 }
 
-export const setStripeConfig = spacetimedb.procedure(
-  {
-    secretKey: t.string(),
-    stripeVersion: t.option(t.string()),
-    webhookSigningSecret: t.option(t.string()),
-  },
-  t.unit(),
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    ctx.withTx(tx => {
-      upsertConfig(tx, {
-        secretKey: args.secretKey,
-        stripeVersion: args.stripeVersion,
-        webhookSigningSecret: args.webhookSigningSecret,
-      });
-    });
-    return {};
-  }
-);
+const unitResult: ReturnType<typeof t.unit> = t.unit();
 
-export const setStripeWebhookSigningSecret = spacetimedb.procedure(
-  { webhookSigningSecret: t.string() },
-  t.unit(),
+const setStripeConfigArgs = {
+  secretKey: t.string(),
+  stripeVersion: t.option(t.string()),
+  webhookSigningSecret: t.option(t.string()),
+};
+export const setStripeConfig: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof setStripeConfigArgs,
+  typeof unitResult
+> = spacetimedb.procedure(setStripeConfigArgs, unitResult, (ctx, args) => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  ctx.withTx(tx => {
+    upsertConfig(tx, {
+      secretKey: args.secretKey,
+      stripeVersion: args.stripeVersion,
+      webhookSigningSecret: args.webhookSigningSecret,
+    });
+  });
+  return {};
+});
+
+const setStripeWebhookSigningSecretArgs = { webhookSigningSecret: t.string() };
+export const setStripeWebhookSigningSecret: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof setStripeWebhookSigningSecretArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  setStripeWebhookSigningSecretArgs,
+  unitResult,
   (ctx, { webhookSigningSecret }) => {
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
@@ -100,33 +109,34 @@ export const setStripeWebhookSigningSecret = spacetimedb.procedure(
   }
 );
 
-export const getStripeConfigStatus = spacetimedb.procedure(
+const getStripeConfigStatusResult = t.object('StripeConfigStatus', {
+  isConfigured: t.bool(),
+  hasWebhookSecret: t.bool(),
+  stripeVersion: t.option(t.string()),
+  secretKeyLength: t.u16(),
+});
+export const getStripeConfigStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
   {},
-  t.object('StripeConfigStatus', {
-    isConfigured: t.bool(),
-    hasWebhookSecret: t.bool(),
-    stripeVersion: t.option(t.string()),
-    secretKeyLength: t.u16(),
-  }),
-  ctx => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    return ctx.withTx(tx => {
-      const row = tx.db.stripeConfig.singleton.find(true);
-      if (!row) {
-        return {
-          isConfigured: false,
-          hasWebhookSecret: false,
-          stripeVersion: undefined,
-          secretKeyLength: 0,
-        };
-      }
+  typeof getStripeConfigStatusResult
+> = spacetimedb.procedure({}, getStripeConfigStatusResult, ctx => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  return ctx.withTx(tx => {
+    const row = tx.db.stripeConfig.singleton.find(true);
+    if (!row) {
       return {
-        isConfigured: true,
-        hasWebhookSecret: row.webhookSigningSecret !== undefined,
-        stripeVersion: row.stripeVersion,
-        secretKeyLength: row.secretKey.length,
+        isConfigured: false,
+        hasWebhookSecret: false,
+        stripeVersion: undefined,
+        secretKeyLength: 0,
       };
-    });
-  }
-);
+    }
+    return {
+      isConfigured: true,
+      hasWebhookSecret: row.webhookSigningSecret !== undefined,
+      stripeVersion: row.stripeVersion,
+      secretKeyLength: row.secretKey.length,
+    };
+  });
+});

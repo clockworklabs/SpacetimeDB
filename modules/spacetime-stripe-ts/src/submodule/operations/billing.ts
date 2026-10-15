@@ -1,3 +1,4 @@
+import type { ProcedureExport } from 'spacetimedb/server';
 import * as v from 'valibot';
 import {
   t,
@@ -38,20 +39,26 @@ import {
   createCustomerInStripeAndSync,
 } from '../operations.js';
 
-export const validateStripePrice = spacetimedb.procedure(
-  { priceId: t.string() },
-  t.object('ValidateStripePriceResult', {
-    valid: t.bool(),
-    status: t.u16(),
-    active: t.option(t.bool()),
-    currency: t.option(t.string()),
-    unitAmount: t.option(t.i64()),
-    livemode: t.option(t.bool()),
-    type: t.option(t.string()),
-    message: t.option(t.string()),
-    code: t.option(t.string()),
-    errorType: t.option(t.string()),
-  }),
+const validateStripePriceArgs = { priceId: t.string() };
+const validateStripePriceResult = t.object('ValidateStripePriceResult', {
+  valid: t.bool(),
+  status: t.u16(),
+  active: t.option(t.bool()),
+  currency: t.option(t.string()),
+  unitAmount: t.option(t.i64()),
+  livemode: t.option(t.bool()),
+  type: t.option(t.string()),
+  message: t.option(t.string()),
+  code: t.option(t.string()),
+  errorType: t.option(t.string()),
+});
+export const validateStripePrice: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof validateStripePriceArgs,
+  typeof validateStripePriceResult
+> = spacetimedb.procedure(
+  validateStripePriceArgs,
+  validateStripePriceResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
     const cfg = loadConfigOrThrowFromProcedure(ctx);
@@ -98,23 +105,29 @@ export const validateStripePrice = spacetimedb.procedure(
   }
 );
 
-export const getRemoteCheckoutSession = spacetimedb.procedure(
-  { sessionId: t.string() },
-  t.object('RemoteCheckoutSessionResult', {
-    ok: t.bool(),
-    status: t.u16(),
-    sessionId: t.option(t.string()),
-    paymentStatus: t.option(t.string()),
-    sessionStatus: t.option(t.string()),
-    mode: t.option(t.string()),
-    amountTotal: t.option(t.i64()),
-    currency: t.option(t.string()),
-    customerId: t.option(t.string()),
-    paymentIntentId: t.option(t.string()),
-    message: t.option(t.string()),
-    code: t.option(t.string()),
-    errorType: t.option(t.string()),
-  }),
+const getRemoteCheckoutSessionArgs = { sessionId: t.string() };
+const getRemoteCheckoutSessionResult = t.object('RemoteCheckoutSessionResult', {
+  ok: t.bool(),
+  status: t.u16(),
+  sessionId: t.option(t.string()),
+  paymentStatus: t.option(t.string()),
+  sessionStatus: t.option(t.string()),
+  mode: t.option(t.string()),
+  amountTotal: t.option(t.i64()),
+  currency: t.option(t.string()),
+  customerId: t.option(t.string()),
+  paymentIntentId: t.option(t.string()),
+  message: t.option(t.string()),
+  code: t.option(t.string()),
+  errorType: t.option(t.string()),
+});
+export const getRemoteCheckoutSession: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getRemoteCheckoutSessionArgs,
+  typeof getRemoteCheckoutSessionResult
+> = spacetimedb.procedure(
+  getRemoteCheckoutSessionArgs,
+  getRemoteCheckoutSessionResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
     const cfg = loadConfigOrThrowFromProcedure(ctx);
@@ -167,19 +180,31 @@ export const getRemoteCheckoutSession = spacetimedb.procedure(
   }
 );
 
+const getWebhookEventCountResult = t.i64();
 // Cheap count of stripe_webhook_event rows; exposes the metric without leaking payloads.
-export const getWebhookEventCount = spacetimedb.procedure({}, t.i64(), ctx =>
+export const getWebhookEventCount: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  {},
+  typeof getWebhookEventCountResult
+> = spacetimedb.procedure({}, getWebhookEventCountResult, ctx =>
   withAdminTx(ctx, tx => BigInt(tx.db.stripeWebhookEvent.count()))
 );
 
-export const updateSubscriptionMetadata = spacetimedb.procedure(
-  {
-    stripeSubscriptionId: t.string(),
-    metadataJson: t.string(),
-    orgId: t.option(t.string()),
-    userId: t.option(t.string()),
-  },
-  t.unit(),
+const unitResult: ReturnType<typeof t.unit> = t.unit();
+
+const updateSubscriptionMetadataArgs = {
+  stripeSubscriptionId: t.string(),
+  metadataJson: t.string(),
+  orgId: t.option(t.string()),
+  userId: t.option(t.string()),
+};
+export const updateSubscriptionMetadata: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof updateSubscriptionMetadataArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  updateSubscriptionMetadataArgs,
+  unitResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
     const parsedDetails = coerceMetadataFromJson(args.metadataJson);
@@ -391,12 +416,17 @@ export function stripeRequest(
   });
 }
 
-export const getOrCreateCustomer = spacetimedb.procedure(
-  {
-    userId: t.string(),
-    email: t.option(t.string()),
-    name: t.option(t.string()),
-  },
+const getOrCreateCustomerArgs = {
+  userId: t.string(),
+  email: t.option(t.string()),
+  name: t.option(t.string()),
+};
+export const getOrCreateCustomer: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getOrCreateCustomerArgs,
+  typeof getOrCreateCustomerResult
+> = spacetimedb.procedure(
+  getOrCreateCustomerArgs,
   getOrCreateCustomerResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
@@ -404,22 +434,27 @@ export const getOrCreateCustomer = spacetimedb.procedure(
   }
 );
 
-export const createCheckoutSession = spacetimedb.procedure(
-  {
-    items: t.array(
-      t.object('CheckoutLineItem', {
-        priceId: t.string(),
-        quantity: t.i64(),
-      })
-    ),
-    customerId: t.option(t.string()),
-    mode: t.string(),
-    successUrl: t.string(),
-    cancelUrl: t.string(),
-    metadataJson: t.option(t.string()),
-    subscriptionMetadataJson: t.option(t.string()),
-    paymentIntentMetadataJson: t.option(t.string()),
-  },
+const createCheckoutSessionArgs = {
+  items: t.array(
+    t.object('CheckoutLineItem', {
+      priceId: t.string(),
+      quantity: t.i64(),
+    })
+  ),
+  customerId: t.option(t.string()),
+  mode: t.string(),
+  successUrl: t.string(),
+  cancelUrl: t.string(),
+  metadataJson: t.option(t.string()),
+  subscriptionMetadataJson: t.option(t.string()),
+  paymentIntentMetadataJson: t.option(t.string()),
+};
+export const createCheckoutSession: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof createCheckoutSessionArgs,
+  typeof checkoutSessionResult
+> = spacetimedb.procedure(
+  createCheckoutSessionArgs,
   checkoutSessionResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
@@ -427,11 +462,16 @@ export const createCheckoutSession = spacetimedb.procedure(
   }
 );
 
-export const createCustomerPortalSession = spacetimedb.procedure(
-  {
-    customerId: t.string(),
-    returnUrl: t.string(),
-  },
+const createCustomerPortalSessionArgs = {
+  customerId: t.string(),
+  returnUrl: t.string(),
+};
+export const createCustomerPortalSession: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof createCustomerPortalSessionArgs,
+  typeof portalSessionResult
+> = spacetimedb.procedure(
+  createCustomerPortalSessionArgs,
   portalSessionResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
@@ -541,54 +581,60 @@ function syncSubscriptionObjectFromStripe(
   });
 }
 
-export const cancelSubscription = spacetimedb.procedure(
-  {
-    stripeSubscriptionId: t.string(),
-    cancelAtPeriodEnd: t.option(t.bool()),
-  },
-  t.unit(),
-  (ctx, args) => {
-    requireProcedureAdmin(ctx);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const atPeriodEnd = args.cancelAtPeriodEnd ?? true;
-    const stripeSubscription = atPeriodEnd
-      ? patchSubscriptionFromStripe(ctx, {
+const cancelSubscriptionArgs = {
+  stripeSubscriptionId: t.string(),
+  cancelAtPeriodEnd: t.option(t.bool()),
+};
+export const cancelSubscription: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof cancelSubscriptionArgs,
+  typeof unitResult
+> = spacetimedb.procedure(cancelSubscriptionArgs, unitResult, (ctx, args) => {
+  requireProcedureAdmin(ctx);
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const atPeriodEnd = args.cancelAtPeriodEnd ?? true;
+  const stripeSubscription = atPeriodEnd
+    ? patchSubscriptionFromStripe(ctx, {
+        secretKey: cfg.secretKey,
+        stripeVersion: cfg.stripeVersion,
+        stripeSubscriptionId: args.stripeSubscriptionId,
+        formBody: formPairsToBody([['cancel_at_period_end', 'true']]),
+      })
+    : (() => {
+        const response = callStripe(ctx, {
+          method: 'DELETE',
+          path: `/v1/subscriptions/${args.stripeSubscriptionId}`,
           secretKey: cfg.secretKey,
           stripeVersion: cfg.stripeVersion,
-          stripeSubscriptionId: args.stripeSubscriptionId,
-          formBody: formPairsToBody([['cancel_at_period_end', 'true']]),
-        })
-      : (() => {
-          const response = callStripe(ctx, {
-            method: 'DELETE',
-            path: `/v1/subscriptions/${args.stripeSubscriptionId}`,
-            secretKey: cfg.secretKey,
-            stripeVersion: cfg.stripeVersion,
-            idempotencyKey: undefined,
-            formBody: undefined,
-          });
-          if (response.status < 200 || response.status >= 300) {
-            throwSenderError(
-              `${errors.subscriptionCancelFailed}:${response.status}${stripeErrorSuffix(response.body)}`
-            );
-          }
-          const parsed = safeJsonParse(response.body);
-          if (!isRecord(parsed)) {
-            throwSenderError(errors.subscriptionCancelInvalidResponse);
-          }
-          return parsed;
-        })();
+          idempotencyKey: undefined,
+          formBody: undefined,
+        });
+        if (response.status < 200 || response.status >= 300) {
+          throwSenderError(
+            `${errors.subscriptionCancelFailed}:${response.status}${stripeErrorSuffix(response.body)}`
+          );
+        }
+        const parsed = safeJsonParse(response.body);
+        if (!isRecord(parsed)) {
+          throwSenderError(errors.subscriptionCancelInvalidResponse);
+        }
+        return parsed;
+      })();
 
-    syncSubscriptionObjectFromStripe(ctx, stripeSubscription);
-    return {};
-  }
-);
+  syncSubscriptionObjectFromStripe(ctx, stripeSubscription);
+  return {};
+});
 
-export const reactivateSubscription = spacetimedb.procedure(
-  {
-    stripeSubscriptionId: t.string(),
-  },
-  t.unit(),
+const reactivateSubscriptionArgs = {
+  stripeSubscriptionId: t.string(),
+};
+export const reactivateSubscription: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof reactivateSubscriptionArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  reactivateSubscriptionArgs,
+  unitResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
     const cfg = loadConfigOrThrowFromProcedure(ctx);
@@ -603,12 +649,17 @@ export const reactivateSubscription = spacetimedb.procedure(
   }
 );
 
-export const updateSubscriptionQuantity = spacetimedb.procedure(
-  {
-    stripeSubscriptionId: t.string(),
-    quantity: t.i64(),
-  },
-  t.unit(),
+const updateSubscriptionQuantityArgs = {
+  stripeSubscriptionId: t.string(),
+  quantity: t.i64(),
+};
+export const updateSubscriptionQuantity: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof updateSubscriptionQuantityArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  updateSubscriptionQuantityArgs,
+  unitResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
     const cfg = loadConfigOrThrowFromProcedure(ctx);

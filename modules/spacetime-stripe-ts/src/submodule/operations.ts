@@ -1,3 +1,4 @@
+import type { ReducerExport } from 'spacetimedb/server';
 import * as v from 'valibot';
 import { Timestamp } from 'spacetimedb';
 import {
@@ -851,14 +852,18 @@ export function createCustomerInStripeAndSync(
   return customerId;
 }
 
-export const ingestStripeWebhook = spacetimedb.reducer(
-  {
-    eventId: t.string(),
-    eventType: t.string(),
-    livemode: t.bool(),
-    payloadJson: t.string(),
-    signatureHeader: t.option(t.string()),
-  },
+const ingestStripeWebhookArgs = {
+  eventId: t.string(),
+  eventType: t.string(),
+  livemode: t.bool(),
+  payloadJson: t.string(),
+  signatureHeader: t.option(t.string()),
+};
+export const ingestStripeWebhook: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof ingestStripeWebhookArgs
+> = spacetimedb.reducer(
+  ingestStripeWebhookArgs,
   (ctx, { eventId, eventType, livemode, payloadJson, signatureHeader }) => {
     if (
       eventId.length === 0 ||
@@ -934,21 +939,28 @@ export const ingestStripeWebhook = spacetimedb.reducer(
   }
 );
 
-export const replayWebhookEvent = spacetimedb.reducer(
-  { eventId: t.string() },
-  (ctx, { eventId }) => {
-    // Administrators may run this operation over stored events.
-    requireAdmin(ctx, ctx.sender);
-    const event = ctx.db.stripeWebhookEvent.eventId.find(eventId);
-    if (!event) throwSenderError(errors.webhookEventNotFound);
-    const outcome = applyStripeEvent(ctx, event.payloadJson);
-    updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
-  }
-);
+const replayWebhookEventArgs = { eventId: t.string() };
+export const replayWebhookEvent: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof replayWebhookEventArgs
+> = spacetimedb.reducer(replayWebhookEventArgs, (ctx, { eventId }) => {
+  // Administrators may run this operation over stored events.
+  requireAdmin(ctx, ctx.sender);
+  const event = ctx.db.stripeWebhookEvent.eventId.find(eventId);
+  if (!event) throwSenderError(errors.webhookEventNotFound);
+  const outcome = applyStripeEvent(ctx, event.payloadJson);
+  updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
+});
 
-export const pruneWebhookEvents = spacetimedb.reducer(
+const pruneWebhookEventsArgs: {
+  arg: typeof stripeWebhookPruneTickTable.rowType;
+} = { arg: stripeWebhookPruneTickTable.rowType };
+export const pruneWebhookEvents: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof pruneWebhookEventsArgs
+> = spacetimedb.reducer(
   { onSchedule: stripeWebhookPruneTickTable },
-  { arg: stripeWebhookPruneTickTable.rowType },
+  pruneWebhookEventsArgs,
   ctx => {
     const cutoff = new Timestamp(
       ctx.timestamp.microsSinceUnixEpoch - WEBHOOK_EVENT_RETENTION_MICROS

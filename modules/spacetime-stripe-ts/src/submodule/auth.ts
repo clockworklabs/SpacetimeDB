@@ -1,3 +1,4 @@
+import type { ProcedureExport } from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
@@ -29,9 +30,16 @@ export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
   if (!isAdmin(ctx, sender)) throwSenderError(errors.notAuthorized);
 }
 
-export const addAdminIdentity = spacetimedb.procedure(
-  { identity: t.identity() },
-  t.unit(),
+const unitResult: ReturnType<typeof t.unit> = t.unit();
+
+const addAdminIdentityArgs = { identity: t.identity() };
+export const addAdminIdentity: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof addAdminIdentityArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  addAdminIdentityArgs,
+  unitResult,
   (ctx: ProcedureModuleCtx, { identity }) => {
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
@@ -47,9 +55,14 @@ export const addAdminIdentity = spacetimedb.procedure(
   }
 );
 
-export const removeAdminIdentity = spacetimedb.procedure(
-  { identity: t.identity() },
-  t.unit(),
+const removeAdminIdentityArgs = { identity: t.identity() };
+export const removeAdminIdentity: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof removeAdminIdentityArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  removeAdminIdentityArgs,
+  unitResult,
   (ctx: ProcedureModuleCtx, { identity }) => {
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
