@@ -9,12 +9,13 @@ who can access each conversation and how much they can spend on model calls.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/agents spacetimedb
+npm install @spacetimedb/agents spacetimedb@^2.12.0
 ```
 
-`spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
-to build the host module.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Quick start
 
@@ -93,7 +94,7 @@ An administrator sets the provider key after publishing, for example
 `spacetime call <db> agents.set_api_key
 '"openrouter"' '"<key>"'`.
 
-See the [complete example](./example/) for sign-in, attachments, and a token
+See the [complete example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-agents-ts/example) for sign-in, attachments, and a token
 quota.
 
 ## Client
@@ -238,4 +239,4 @@ The fixture uses fixed provider responses and makes no external API calls.
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

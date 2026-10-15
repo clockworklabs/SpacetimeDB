@@ -7,30 +7,31 @@ import {
 } from 'spacetimedb/server';
 import { fileBlobRow, fileRow } from '../rows.js';
 
-export const file = table(
-  {
-    name: 'file',
-    public: false,
-    indexes: [
-      {
-        accessor: 'ownerPath',
-        algorithm: 'btree',
-        columns: ['ownerUserId', 'path'] as const,
-      },
-    ] as const,
-  },
-  fileRow
-);
+const fileOptions = {
+  name: 'file',
+  public: false,
+  indexes: [
+    {
+      accessor: 'ownerPath',
+      algorithm: 'btree',
+      columns: ['ownerUserId', 'path'] as const,
+    } as const,
+  ],
+};
+export const file: ReturnType<
+  typeof table<typeof fileRow, typeof fileOptions>
+> = table(fileOptions, fileRow);
 
-export const fileBlob = table(
-  { name: 'file_blob', public: false },
-  fileBlobRow
-);
+const fileBlobOptions = { name: 'file_blob', public: false };
+export const fileBlob: ReturnType<
+  typeof table<typeof fileBlobRow, typeof fileBlobOptions>
+> = table(fileBlobOptions, fileBlobRow);
 
-const spacetimedb = schema({
+const tables: { file: typeof file; fileBlob: typeof fileBlob } = {
   file,
   fileBlob,
-});
+};
+const spacetimedb: ReturnType<typeof schema<typeof tables>> = schema(tables);
 export default spacetimedb;
 
 export type Schema = InferSchema<typeof spacetimedb>;

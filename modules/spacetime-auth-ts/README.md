@@ -11,11 +11,13 @@ key, and email delivery service.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/auth spacetimedb
+npm install @spacetimedb/auth spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -92,7 +94,7 @@ await conn.reducers.auth.linkConnection({ sessionToken: token });
 await conn.reducers.auth.updateProfile({ name: 'Ada', image: undefined });
 ```
 
-See the [Auth example](./example/) for sign-in, a log-based mailer,
+See the [Auth example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-auth-ts/example) for sign-in, a log-based mailer,
 and private notes. Before using the routes,
 configure the signing key below and any OAuth credentials you need.
 
@@ -181,4 +183,4 @@ pnpm run typecheck
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

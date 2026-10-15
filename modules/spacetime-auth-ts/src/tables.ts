@@ -86,42 +86,48 @@ export const authAdminIdentityRow = {
   addedAt: t.timestamp(),
 };
 
-export const authUserTable = table(
-  { name: 'auth_user', public: false },
-  authUserRow
-);
+const authUserOptions = { name: 'auth_user', public: false };
+export const authUserTable: ReturnType<
+  typeof table<typeof authUserRow, typeof authUserOptions>
+> = table(authUserOptions, authUserRow);
 
-export const authSessionTable = table(
-  { name: 'auth_session', public: false },
-  authSessionRow
-);
+const authSessionOptions = { name: 'auth_session', public: false };
+export const authSessionTable: ReturnType<
+  typeof table<typeof authSessionRow, typeof authSessionOptions>
+> = table(authSessionOptions, authSessionRow);
 
-export const authAccountTable = table(
-  { name: 'auth_account', public: false },
-  authAccountRow
-);
+const authAccountOptions = { name: 'auth_account', public: false };
+export const authAccountTable: ReturnType<
+  typeof table<typeof authAccountRow, typeof authAccountOptions>
+> = table(authAccountOptions, authAccountRow);
 
-export const authVerificationTable = table(
-  { name: 'auth_verification', public: false },
-  authVerificationRow
-);
+const authVerificationOptions = { name: 'auth_verification', public: false };
+export const authVerificationTable: ReturnType<
+  typeof table<typeof authVerificationRow, typeof authVerificationOptions>
+> = table(authVerificationOptions, authVerificationRow);
 
-export const authOauthStateTable = table(
-  { name: 'auth_oauth_state', public: false },
-  authOauthStateRow
-);
+const authOauthStateOptions = { name: 'auth_oauth_state', public: false };
+export const authOauthStateTable: ReturnType<
+  typeof table<typeof authOauthStateRow, typeof authOauthStateOptions>
+> = table(authOauthStateOptions, authOauthStateRow);
 
-export const authConfigTable = table(
-  { name: 'auth_config', public: false },
-  authConfigRow
-);
+const authConfigOptions = { name: 'auth_config', public: false };
+export const authConfigTable: ReturnType<
+  typeof table<typeof authConfigRow, typeof authConfigOptions>
+> = table(authConfigOptions, authConfigRow);
 
-export const authConnectionBindingTable = table(
-  { name: 'auth_connection_binding', public: false },
-  authConnectionBindingRow
-);
+const authConnectionBindingOptions = {
+  name: 'auth_connection_binding',
+  public: false,
+};
+export const authConnectionBindingTable: ReturnType<
+  typeof table<
+    typeof authConnectionBindingRow,
+    typeof authConnectionBindingOptions
+  >
+> = table(authConnectionBindingOptions, authConnectionBindingRow);
 
-export const authAdminIdentityTable = table(
-  { name: 'auth_admin_identity', public: false },
-  authAdminIdentityRow
-);
+const authAdminIdentityOptions = { name: 'auth_admin_identity', public: false };
+export const authAdminIdentityTable: ReturnType<
+  typeof table<typeof authAdminIdentityRow, typeof authAdminIdentityOptions>
+> = table(authAdminIdentityOptions, authAdminIdentityRow);

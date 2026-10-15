@@ -9,11 +9,13 @@ default total limit of 100 MB per owner.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/files spacetimedb
+npm install @spacetimedb/files spacetimedb@^2.12.0
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -48,7 +50,7 @@ export const readFileBytes = spacetimedb.procedure(
 );
 ```
 
-See the [Vault host module](./example/spacetimedb/) for folder handling,
+See the [Vault host module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts/example/spacetimedb) for folder handling,
 scoped metadata views, and an HTTP download route.
 
 Host views should return `fileSummary` rows, which omit `ownerUserId`,
@@ -205,4 +207,4 @@ pnpm run typecheck
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).
