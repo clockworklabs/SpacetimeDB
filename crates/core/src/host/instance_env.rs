@@ -544,22 +544,10 @@ impl InstanceEnv {
         Ok(())
     }
 
-    /// Outboxes are insert-only for module code. The actor removes delivered rows internally.
-    fn reject_outbox_row_mutation(tx: &MutTxId, table_id: TableId) -> Result<(), NodesError> {
-        if tx.schema_for_table(table_id).map_err(DBError::from)?.outbox.is_some() {
-            return Err(DBError::from(anyhow::anyhow!(
-                "outbox tables are insert-only; updates and deletes are not supported"
-            ))
-            .into());
-        }
-        Ok(())
-    }
-
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
         Self::require_module_table(table_id)?;
-        Self::reject_outbox_row_mutation(tx, table_id)?;
 
         let (row_len, row_ptr, update_flags) = stdb
             .update(tx, table_id, index_id, buffer)
@@ -604,7 +592,6 @@ impl InstanceEnv {
         // Find all rows in the table to delete.
         let (table_id, _, iter) = stdb.index_scan_point(tx, index_id, point)?;
         Self::require_module_table(table_id)?;
-        Self::reject_outbox_row_mutation(tx, table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
@@ -626,7 +613,6 @@ impl InstanceEnv {
         // Find all rows in the table to delete.
         let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         Self::require_module_table(table_id)?;
-        Self::reject_outbox_row_mutation(tx, table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = match iter {
             IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
@@ -669,7 +655,6 @@ impl InstanceEnv {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
         Self::require_module_table(table_id)?;
-        Self::reject_outbox_row_mutation(tx, table_id)?;
 
         // Track the number of bytes coming from the caller
         tx.metrics.bytes_scanned += relation.len();
@@ -694,7 +679,6 @@ impl InstanceEnv {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
         Self::require_module_table(table_id)?;
-        Self::reject_outbox_row_mutation(tx, table_id)?;
 
         let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
 

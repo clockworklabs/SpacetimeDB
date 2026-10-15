@@ -867,33 +867,7 @@ mod tests {
         let table = insert_outbox_message(&db, Identity::ONE, 42)?;
         let first = store_success(&db, next_message(&db)?)?;
         let (mut env, _runtime) = super::super::instance_env::test::instance_env(db.clone())?;
-        // Modules can only insert outbox rows. Delivery must wait until the insert commits.
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let index = db.schema_for_table_mut(&tx, table)?.indexes[0].index_id;
-        let (tx, result) = env.tx.clone().set(tx, || -> anyhow::Result<()> {
-            // Reject writes even before delivery starts, and even when no row matches.
-            for id in [7u64, 999] {
-                let error = env
-                    .update(table, index, &mut to_vec(&product![Identity::ONE, id, 99u32])?)
-                    .unwrap_err();
-                assert!(error.to_string().contains("outbox tables are insert-only"));
-                assert!(env
-                    .datastore_delete_by_index_scan_point_bsatn(index, &to_vec(&id)?)
-                    .is_err());
-            }
-            let rows = vec![product![Identity::ONE, 7u64, 42u32]];
-            assert!(env.datastore_delete_all_by_eq_bsatn(table, &to_vec(&rows)?).is_err());
-            let start = to_vec(&std::ops::Bound::Included(7u64))?;
-            let end = to_vec(&std::ops::Bound::Included(9u64))?;
-            assert!(env
-                .datastore_delete_by_index_scan_range_bsatn(index, &[], 0.into(), &start, &end)
-                .is_err());
-            assert!(env.clear(table).is_err());
-            Ok(())
-        });
-        result?;
-        let _ = db.rollback_mut_tx(tx);
-
+        // Delivery must wait until the insert commits.
         let (mut starter, sender) = IdcActor::open();
         env.idc_sender = sender;
 
