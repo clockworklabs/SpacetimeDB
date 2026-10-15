@@ -2060,7 +2060,7 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update);
+                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update)?;
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
@@ -2168,7 +2168,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe)?;
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -2211,7 +2211,7 @@ impl ModuleSubscriptions {
             (tx, trapped) = ModuleHost::materialize_views(tx, instance, view_collector, sender, Workload::Subscribe)?;
         };
 
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe)?;
 
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         let (a, b) = self.guard_tx(tx, opts);

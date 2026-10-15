@@ -38,6 +38,7 @@ use spacetimedb_paths::server::{ArchivedSnapshotDirPath, SnapshotDirPath, Snapsh
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
+use spacetimedb_table::tiered::PageError;
 use spacetimedb_table::{
     blob_store::{BlobHash, BlobStore, HashMapBlobStore},
     page::Page,
@@ -172,6 +173,8 @@ pub enum SnapshotError {
     Lockfile(#[from] LockfileError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Page(#[from] PageError),
 }
 
 impl SnapshotError {
@@ -445,16 +448,15 @@ impl Snapshot {
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> Result<(), SnapshotError> {
-        let pages = table
-            .iter_pages_with_hashes()
-            .map(|option| {
-                if let Some((hash, page)) = option {
-                    Self::write_page(object_repo, page, hash, prev_snapshot, counter)
-                } else {
-                    Ok(ZERO_HASH_DENOTING_ABSENT_PAGE)
-                }
-            })
-            .collect::<Result<Vec<blake3::Hash>, SnapshotError>>()?;
+        let mut pages = Vec::new();
+        for page in table.iter_pages_with_hashes() {
+            let hash = match page? {
+                None => ZERO_HASH_DENOTING_ABSENT_PAGE,
+                Some((hash, page)) => Self::write_page(object_repo, &page.read(), hash, prev_snapshot, counter)?,
+            };
+
+            pages.push(hash);
+        }
 
         self.tables.push(TableEntry {
             table_id: table.schema.table_id,

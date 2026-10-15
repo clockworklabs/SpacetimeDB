@@ -12,7 +12,7 @@ use crate::traits::TxOffset;
 use crate::{
     error::{DatastoreError, TableError},
     locking_tx_datastore::{
-        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
+        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, TableScanIter},
         IterByColEqTx, IterByColRangeTx,
     },
     traits::{InsertFlags, UpdateFlags},
@@ -43,11 +43,7 @@ use spacetimedb_schema::{
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
-use spacetimedb_table::{
-    indexes::RowPointer,
-    page_pool::PagePool,
-    table::{RowRef, TableScanIter},
-};
+use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -159,7 +155,7 @@ impl Locking {
 
         for table_id in [ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID] {
             for row in committed_state.iter(table_id)? {
-                rows.push((table_id, row.to_product_value()));
+                rows.push((table_id, row?.to_product_value()));
             }
         }
 
@@ -200,7 +196,7 @@ impl Locking {
                 // As such, this call will compute and save the schema from `st_table` and friends.
                 None => committed_state.schema_for_table(table_id)?,
             };
-            let (table, blob_store, _) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
+            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
             unsafe {
                 // Safety:
                 // - The snapshot is uncorrupted because reconstructing it verified its hashes.
@@ -209,7 +205,7 @@ impl Locking {
                 //   or it is a known schema for a system table.
                 // - We trust that the snapshot was consistent when created,
                 //   so the layout used in the `pages` must be consistent with the schema.
-                table.set_pages(pages, blob_store);
+                table.set_pages(pages, blob_store)?;
             }
 
             // Set the `rdb_num_table_rows` metric for the table.
@@ -306,7 +302,7 @@ impl Locking {
         tx: &'a TxId,
     ) -> Result<impl Iterator<Item = Result<(Identity, ConnectionId)>> + 'a> {
         let iter = self.iter_tx(tx, ST_CLIENT_ID)?.map(|row_ref| {
-            let row = StClientRow::try_from(row_ref)?;
+            let row = StClientRow::try_from(row_ref?)?;
             Ok((row.identity.0, row.connection_id.0))
         });
 
@@ -505,6 +501,7 @@ impl TxDatastore for Locking {
     fn get_all_tables_tx(&self, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
         self.iter_tx(tx, ST_TABLE_ID)?
             .map(|row_ref| {
+                let row_ref = row_ref?;
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
             })
@@ -514,6 +511,7 @@ impl TxDatastore for Locking {
     fn metadata(&self, tx: &Self::Tx) -> Result<Option<Metadata>> {
         self.iter_tx(tx, ST_MODULE_ID)?
             .next()
+            .transpose()?
             .map(metadata_from_row)
             .transpose()
     }
@@ -521,6 +519,7 @@ impl TxDatastore for Locking {
     fn program(&self, tx: &Self::Tx) -> Result<Option<Program>> {
         self.iter_tx(tx, ST_MODULE_ID)?
             .next()
+            .transpose()?
             .map(|row_ref| {
                 let StModuleRow {
                     program_kind,
@@ -761,13 +760,18 @@ impl MutTxDatastore for Locking {
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
-        tx.iter(ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+        tx.iter(ST_MODULE_ID)?
+            .next()
+            .transpose()?
+            .map(metadata_from_row)
+            .transpose()
     }
 
     fn update_program(&self, tx: &mut Self::MutTx, program: Program) -> Result<()> {
         let old = tx
             .iter(ST_MODULE_ID)?
             .next()
+            .transpose()?
             .map(|row| {
                 let ptr = row.pointer();
                 let row = StModuleRow::try_from(row)?;
@@ -1038,7 +1042,7 @@ impl MutTx for Locking {
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx`.
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>> {
-        Ok(Some(tx.commit()))
+        tx.commit().map(Some)
     }
 }
 
@@ -1071,7 +1075,7 @@ impl Locking {
 
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx_downgrade`.
-    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> Result<(TxData, TxMetrics, TxId)> {
         tx.commit_downgrade(workload)
     }
 
@@ -1082,7 +1086,7 @@ impl Locking {
         tx: MutTxId,
         before_release: impl FnOnce(&Arc<TxData>),
     ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)>> {
-        Ok(Some(tx.commit_and_then(before_release)))
+        tx.commit_and_then(before_release).map(Some)
     }
 
     /// Commit `tx`, invoke `before_downgrade` while the write lock is still held,
@@ -1092,7 +1096,7 @@ impl Locking {
         tx: MutTxId,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
+    ) -> Result<(Arc<TxData>, TxMetrics, TxId, u64)> {
         tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
@@ -1101,9 +1105,9 @@ impl Locking {
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
     Ok(Metadata {
-        database_identity: read_identity_from_col(row, StModuleFields::DatabaseIdentity)?,
-        owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
-        program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
+        database_identity: read_identity_from_col(&row, StModuleFields::DatabaseIdentity)?,
+        owner_identity: read_identity_from_col(&row, StModuleFields::OwnerIdentity)?,
+        program_hash: read_hash_from_col(&row, StModuleFields::ProgramHash)?,
     })
 }
 
@@ -1176,7 +1180,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_TABLE_ID)?
-                .map(|row| StTableRow::try_from(row).unwrap())
+                .map(|row| StTableRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -1189,7 +1193,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(ST_TABLE_ID, cols.into(), value)?
-                .map(|row| StTableRow::try_from(row).unwrap())
+                .map(|row| StTableRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -1198,7 +1202,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_COLUMN_ID)?
-                .map(|row| StColumnRow::try_from(row).unwrap())
+                .map(|row| StColumnRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -1211,7 +1215,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(ST_COLUMN_ID, cols.into(), value)?
-                .map(|row| StColumnRow::try_from(row).unwrap())
+                .map(|row| StColumnRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -1220,7 +1224,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_CONSTRAINT_ID)?
-                .map(|row| StConstraintRow::try_from(row).unwrap())
+                .map(|row| StConstraintRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
@@ -1229,7 +1233,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_SEQUENCE_ID)?
-                .map(|row| StSequenceRow::try_from(row).unwrap())
+                .map(|row| StSequenceRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
@@ -1238,7 +1242,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_INDEX_ID)?
-                .map(|row| StIndexRow::try_from(row).unwrap())
+                .map(|row| StIndexRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
@@ -1530,14 +1534,14 @@ pub(crate) mod tests {
         datastore
             .iter_mut_tx(tx, table_id)
             .unwrap()
-            .map(|r| r.to_product_value().clone())
+            .map(|r| r.unwrap().to_product_value().clone())
             .collect()
     }
 
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
         tx.iter(table_id)
             .unwrap()
-            .map(|r| r.to_product_value().clone())
+            .map(|r| r.unwrap().to_product_value().clone())
             .collect()
     }
 
@@ -1993,7 +1997,7 @@ pub(crate) mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let mut dropped_indexes = 0;
         for (pos, index) in schema.indexes.iter().enumerate() {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
@@ -2014,7 +2018,7 @@ pub(crate) mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -2057,7 +2061,7 @@ pub(crate) mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -2075,7 +2079,7 @@ pub(crate) mod tests {
         assert_eq!(tx.pending_schema_changes().len(), 6);
         let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -2359,7 +2363,7 @@ pub(crate) mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
         assert_matches!(tx.pending_schema_changes(), [PendingSchemaChange::IndexAdded(.., None)]);
         assert_st_indices(&tx, true)?;
@@ -2386,7 +2390,7 @@ pub(crate) mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
@@ -2426,7 +2430,7 @@ pub(crate) mod tests {
         // Start a transaction. Schema changes empty so far.
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
 
         // Make the table and witness `TableAdded`. Commit.
         let column = ColumnSchema::for_test(0, "id", AlgebraicType::I32);
@@ -2489,11 +2493,11 @@ pub(crate) mod tests {
         );
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx: MutTxId = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
 
         // Add the sequence and this time actually commit. Check that it exists in next tx.
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
             tx.pending_schema_changes(),
@@ -2502,7 +2506,7 @@ pub(crate) mod tests {
         );
         commit(&datastore, tx)?;
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // We have the sequence in committed state.
@@ -2512,7 +2516,7 @@ pub(crate) mod tests {
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         // The auto-inc value generated before the rollback remains available.
         insert_assert_and_remove(&mut tx, &zero, &one)?;
 
@@ -2522,7 +2526,7 @@ pub(crate) mod tests {
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
         commit(&datastore, tx)?;
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
 
         Ok(())
@@ -2543,7 +2547,7 @@ pub(crate) mod tests {
             datastore
                 .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), &AlgebraicValue::U32(1))
                 .unwrap()
-                .map(|row_ref| row_ref.to_product_value())
+                .map(|row_ref| row_ref.unwrap().to_product_value())
                 .collect::<Vec<_>>()
         };
 
@@ -2697,7 +2701,7 @@ pub(crate) mod tests {
             let key: AlgebraicValue = key.into();
             Datastore::index_scan_range(tx, table_id, index_id, &key)
                 .unwrap()
-                .map(|row| row.pointer())
+                .map(|row| row.unwrap().pointer())
                 .collect::<Vec<_>>()
         };
 
@@ -2755,7 +2759,7 @@ pub(crate) mod tests {
 
         // Remove index in tx state.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let index_id = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
         tx.drop_index(index_id)?;
         assert_matches!(
@@ -2848,7 +2852,7 @@ pub(crate) mod tests {
 
         // Now add the indices and then delete the row.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let mut indices = basic_indices();
         for (pos, index) in indices.iter_mut().enumerate() {
             index.table_id = table_id;
@@ -3116,7 +3120,7 @@ pub(crate) mod tests {
 
         let stream_rows = tx
             .iter(ST_OUTBOUND_STREAM_ID)?
-            .map(StOutboundStreamRow::try_from)
+            .map(|row| row.and_then(StOutboundStreamRow::try_from))
             .collect::<Result<Vec<_>>>()?;
         assert_eq!(stream_rows.len(), 1);
         assert_eq!(stream_rows[0].outbox_table_id, table_id);
@@ -3126,7 +3130,7 @@ pub(crate) mod tests {
 
         let mut outbound_rows = tx
             .iter(ST_OUTBOUND_MSG_ID)?
-            .map(StOutboundMsgRow::try_from)
+            .map(|row| row.and_then(StOutboundMsgRow::try_from))
             .collect::<Result<Vec<_>>>()?;
         outbound_rows.sort_by_key(|row| row.seq);
         assert_eq!(outbound_rows.iter().map(|row| row.seq).collect::<Vec<_>>(), vec![1, 2]);
@@ -3249,7 +3253,7 @@ pub(crate) mod tests {
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
             let tx = begin_tx(datastore);
             for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows) {
-                assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
+                assert_eq!(actual?.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
             Ok(())
         }
@@ -3351,7 +3355,7 @@ pub(crate) mod tests {
 
         let row = &product![42];
         let (_, first) = insert(&datastore, &mut tx, table_id, row)?;
-        let first = first.pointer();
+        let first = first.into_pointer();
         // There was a bug where this insertion caused a removal of the first row.
         insert(&datastore, &mut tx, table_id, row)?;
 
@@ -3359,7 +3363,7 @@ pub(crate) mod tests {
             datastore
                 .iter_by_col_eq_mut_tx(&tx, table_id, 0, &42i32.into())
                 .unwrap()
-                .map(|r| r.pointer())
+                .map(|r| r.unwrap().pointer())
                 .collect::<Vec<_>>(),
             [first],
         );
@@ -3378,7 +3382,7 @@ pub(crate) mod tests {
 
         // Create a transaction and drop the table and roll back.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         assert_matches!(
             tx.pending_schema_changes(),
@@ -3396,7 +3400,7 @@ pub(crate) mod tests {
 
         // Ensure the table still exists in the next transaction.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
@@ -3446,7 +3450,7 @@ pub(crate) mod tests {
 
         // Nothing should have happened.
         let tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should not exist"
@@ -3466,9 +3470,9 @@ pub(crate) mod tests {
             |tx: &MutTxId, access| assert_eq!(tx.get_schema(table_id).map(|s| s.table_access), Some(access));
         assert_access(&tx, StAccess::Public);
         tx.alter_table_access(table_id, StAccess::Private)?;
-        assert_eq!(
+        assert_matches!(
             tx.pending_schema_changes(),
-            [PendingSchemaChange::TableAlterAccess(table_id, StAccess::Public)]
+            [PendingSchemaChange::TableAlterAccess(tid, StAccess::Public)] if *tid == table_id
         );
         let _ = datastore.rollback_mut_tx(tx);
 
@@ -3570,12 +3574,10 @@ pub(crate) mod tests {
         // Change the columns in datastore and roll back.
         let mut tx = begin_mut_tx(&datastore);
         datastore.alter_table_row_type_mut_tx(&mut tx, table_id, columns.clone())?;
-        assert_eq!(
+        assert_matches!(
             tx.pending_schema_changes(),
-            [PendingSchemaChange::TableAlterRowType(
-                table_id,
-                columns_original.clone()
-            )]
+            [PendingSchemaChange::TableAlterRowType(tid, old_columns)]
+                if *tid == table_id && old_columns == &columns_original
         );
         assert_eq!(tx.get_schema(table_id).unwrap().columns, columns.clone());
         let _ = datastore.rollback_mut_tx(tx);
@@ -3624,6 +3626,7 @@ pub(crate) mod tests {
         let row_ref = datastore
             .iter_by_col_eq_tx(&tx, table_id, 1, &sum_val.into())?
             .next()
+            .unwrap()
             .unwrap();
         assert_eq!(row_ref.read_col::<u64>(0).unwrap(), id);
 
@@ -3707,7 +3710,7 @@ pub(crate) mod tests {
         let rows = tx
             .table_scan(table_id)
             .unwrap()
-            .map(|row| row.to_product_value())
+            .map(|row| row.unwrap().to_product_value())
             .collect::<Vec<_>>();
         assert_eq!(rows, old_rows, "Rows shouldn't be changed if rolledback");
         let table = tx.table_name(rollback_table_id);
@@ -3760,7 +3763,10 @@ pub(crate) mod tests {
 
         // test for auto_inc feields
         let tx = begin_mut_tx(&datastore);
-        let rows = tx.table_scan(new_table_id).unwrap().map(|row| row.to_product_value());
+        let rows = tx
+            .table_scan(new_table_id)
+            .unwrap()
+            .map(|row| row.unwrap().to_product_value());
 
         let mut last_row_auto_inc = 0;
         for row in rows {
@@ -3779,7 +3785,7 @@ pub(crate) mod tests {
         let datastore = get_datastore()?;
 
         let tx = begin_mut_tx(&datastore);
-        let (_, _, metrics, _) = tx.commit();
+        let (_, _, metrics, _) = tx.commit()?;
         assert!(metrics.committed);
 
         let tx = begin_mut_tx(&datastore);
@@ -4343,9 +4349,9 @@ pub(crate) mod tests {
             expected_len,
             "Existed path must not push a new pending schema change",
         );
-        assert_eq!(
+        assert_matches!(
             tx.tx_state.pending_schema_changes.last(),
-            Some(&PendingSchemaChange::TableAdded(TableId::SENTINEL)),
+            Some(PendingSchemaChange::TableAdded(id)) if *id == TableId::SENTINEL,
             "Existed path must not overwrite an unrelated trailing pending schema change",
         );
         Ok(())

@@ -8,6 +8,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
+use spacetimedb_table::tiered::PageError;
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
@@ -34,6 +35,9 @@ pub enum DatastoreError {
 
     #[error("ViewError: {0}")]
     View(#[from] ViewError),
+
+    #[error(transparent)]
+    Page(#[from] PageError),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -142,6 +146,7 @@ impl From<table::InsertError> for DatastoreError {
             table::InsertError::Duplicate(e) => TableError::from(e).into(),
             table::InsertError::Bflatn(e) => TableError::from(e).into(),
             table::InsertError::IndexError(e) => IndexError::from(e).into(),
+            table::InsertError::Page(e) => e.into(),
         }
     }
 }

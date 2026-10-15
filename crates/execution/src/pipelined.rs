@@ -448,11 +448,8 @@ impl PipelinedScan {
         };
         match self.delta {
             None => {
-                for tuple in table_limit_scan(self.limit.map(|n| n as usize))?
-                    .map(Row::Ptr)
-                    .map(Tuple::Row)
-                {
-                    f(tuple)?;
+                for row in table_limit_scan(self.limit.map(|n| n as usize))? {
+                    f(Tuple::Row(Row::Ptr(row?)))?;
                 }
             }
             Some(Delta::Inserts) => {
@@ -598,12 +595,12 @@ fn for_each_index_scan_row<'a, Tx: Datastore + DeltaStore>(
             match limit {
                 None => {
                     for row in scan {
-                        emit(Tuple::Row(Row::Ptr(row)))?;
+                        emit(Tuple::Row(Row::Ptr(row?)))?;
                     }
                 }
                 Some(limit) => {
                     for row in scan.take(limit as usize) {
-                        emit(Tuple::Row(Row::Ptr(row)))?;
+                        emit(Tuple::Row(Row::Ptr(row?)))?;
                     }
                 }
             }
@@ -613,12 +610,12 @@ fn for_each_index_scan_row<'a, Tx: Datastore + DeltaStore>(
             match limit {
                 None => {
                     for row in scan {
-                        emit(Tuple::Row(Row::Ptr(row)))?;
+                        emit(Tuple::Row(Row::Ptr(row?)))?;
                     }
                 }
                 Some(limit) => {
                     for row in scan.take(limit as usize) {
-                        emit(Tuple::Row(Row::Ptr(row)))?;
+                        emit(Tuple::Row(Row::Ptr(row?)))?;
                     }
                 }
             }
@@ -651,7 +648,7 @@ fn for_each_index_point<'a, Tx: Datastore + DeltaStore>(
     match source {
         IndexSource::Base => {
             for row in tx.index_scan_point(table_id, index_id, point)? {
-                f(Tuple::Row(Row::Ptr(row)))?;
+                f(Tuple::Row(Row::Ptr(row?)))?;
             }
         }
         IndexSource::Delta(delta) => {
@@ -674,6 +671,7 @@ fn first_index_point<'a, Tx: Datastore + DeltaStore>(
         IndexSource::Base => tx
             .index_scan_point(table_id, index_id, point)?
             .next()
+            .transpose()?
             .map(Row::Ptr)
             .map(Tuple::Row),
         IndexSource::Delta(delta) => tx

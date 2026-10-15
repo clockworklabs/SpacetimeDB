@@ -38,6 +38,7 @@ use self::unique_direct_index::{ToFromUsize, UniqueDirectIndex, UniqueDirectInde
 use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
+use crate::tiered::PageError;
 use crate::{read_column::ReadColumn, static_assert_size};
 use core::cmp::Ordering;
 use core::ops::{Bound, Deref, RangeBounds};
@@ -620,8 +621,8 @@ impl<'a> TypedIndexKey<'a> {
     /// 1. Caller promises that `cols` matches what was given at construction (`TableIndex::new`).
     /// 2. Caller promises that the projection of `row_ref`'s type's equals the index's key type.
     #[inline]
-    unsafe fn from_row_ref(key_type: &AlgebraicType, index: &TypedIndex, cols: &ColList, row_ref: RowRef<'_>) -> Self {
-        fn proj<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
+    unsafe fn from_row_ref(key_type: &AlgebraicType, index: &TypedIndex, cols: &ColList, row_ref: &RowRef<'_>) -> Self {
+        fn proj<T: ReadColumn>(cols: &ColList, row_ref: &RowRef<'_>) -> T {
             // Extract the column.
             let col_pos = cols.as_singleton();
             // SAFETY: Caller promised that `cols` matches what was given at construction (`Self::new`).
@@ -2475,7 +2476,7 @@ impl TableIndex {
     /// Caller promises that the projection of `row_ref`'s type's
     /// to the indexed column equals the index's key type.
     #[inline]
-    pub unsafe fn key_from_row<'a>(&self, row_ref: RowRef<'a>) -> IndexKey<'a> {
+    pub unsafe fn key_from_row<'a>(&self, row_ref: &'a RowRef<'_>) -> IndexKey<'a> {
         // SAFETY:
         // 1. We're passing the same `ColList` that was provided during construction.
         // 2. Forward caller requirements.
@@ -2485,7 +2486,7 @@ impl TableIndex {
     /// Projects `row_ref` to the columns of `self`.
     ///
     /// May panic if `row_ref` doesn't belong to the same table as this inex.
-    pub fn project_row(&self, row_ref: RowRef<'_>) -> AlgebraicValue {
+    pub fn project_row(&self, row_ref: &RowRef<'_>) -> AlgebraicValue {
         row_ref
             .project(&self.indexed_columns)
             .expect("`row_ref` should belong to the same table as this index")
@@ -2503,7 +2504,7 @@ impl TableIndex {
     /// This is entailed by an index belonging to the table's schema.
     /// It also follows from `row_ref`'s type/layout
     /// being the same as passed in on `self`'s construction.
-    pub unsafe fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
+    pub unsafe fn check_and_insert(&mut self, row_ref: &RowRef<'_>) -> Result<(), RowPointer> {
         // SAFETY: Forward the caller's proof obligation.
         let key = unsafe { self.key_from_row(row_ref).key };
         self.idx.insert(key, row_ref.pointer())
@@ -2520,7 +2521,7 @@ impl TableIndex {
     /// This is entailed by an index belonging to the table's schema.
     /// It also follows from `row_ref`'s type/layout
     /// being the same as passed in on `self`'s construction.
-    pub unsafe fn delete(&mut self, row_ref: RowRef<'_>) -> bool {
+    pub unsafe fn delete(&mut self, row_ref: &RowRef<'_>) -> bool {
         // SAFETY: Forward the caller's proof obligation.
         let key = unsafe { self.key_from_row(row_ref).key };
         self.idx.delete(&key.borrowed(), row_ref.pointer())
@@ -2589,11 +2590,16 @@ impl TableIndex {
     /// being the same as passed in on `self`'s construction.
     pub unsafe fn build_from_rows<'table>(
         &mut self,
-        rows: impl IntoIterator<Item = RowRef<'table>>,
-    ) -> Result<(), RowPointer> {
-        rows.into_iter()
+        rows: impl IntoIterator<Item = Result<RowRef<'table>, PageError>>,
+    ) -> Result<Result<(), RowPointer>, PageError> {
+        for row_ref in rows {
+            let row_ref = row_ref?;
             // SAFETY: Forward caller proof obligation.
-            .try_for_each(|row_ref| unsafe { self.check_and_insert(row_ref) })
+            if let Err(row_ptr) = unsafe { self.check_and_insert(&row_ref) } {
+                return Ok(Err(row_ptr));
+            }
+        }
+        Ok(Ok(()))
     }
 
     /// Returns an error with the first unique constraint violation that
@@ -2766,7 +2772,6 @@ impl TableIndex {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::page_pool::PagePool;
     use crate::table::Table;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::cmp::Ordering;
@@ -2816,8 +2821,8 @@ mod test {
         }
     }
 
-    fn setup(ty: ProductType) -> (Table, PagePool, HashMapBlobStore) {
-        (table(ty), PagePool::new_for_test(), HashMapBlobStore::default())
+    fn setup(ty: ProductType) -> (Table, HashMapBlobStore) {
+        (table(ty), HashMapBlobStore::default())
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {
@@ -2947,9 +2952,9 @@ mod test {
         #[test]
         fn remove_nonexistent_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let (mut table, pool, mut blob_store) = setup(ty);
-            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
-            prop_assert_eq!(unsafe { index.delete(row_ref) }, false);
+            let (mut table, mut blob_store) = setup(ty);
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
+            prop_assert_eq!(unsafe { index.delete(&row_ref) }, false);
             prop_assert!(index.idx.is_empty());
             prop_assert_eq!(index.num_keys(), 0);
             prop_assert_eq!(index.num_key_bytes(), 0);
@@ -2959,20 +2964,20 @@ mod test {
         #[test]
         fn insert_delete_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let (mut table, pool, mut blob_store) = setup(ty);
-            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+            let (mut table, mut blob_store) = setup(ty);
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             prop_assert_eq!(index.num_keys(), 0);
             prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+            prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Ok(()));
             prop_assert_eq!(index.num_keys(), 1);
             prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
-            prop_assert_eq!(unsafe { index.delete(row_ref) }, true);
+            prop_assert_eq!(unsafe { index.delete(&row_ref) }, true);
             prop_assert_eq!(index.num_keys(), 0);
             prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
@@ -2990,7 +2995,7 @@ mod test {
             let ty = ProductType::from(ty.into_boxed_slice());
 
             let mut index = new_index(&ty, &cols, false, kind);
-            let (mut table, pool, mut blob_store) = setup(ty);
+            let (mut table, mut blob_store) = setup(ty);
 
             let num_vals = vals.len();
             for val in vals {
@@ -2998,10 +3003,10 @@ mod test {
                 key.push(val.into());
                 let key = ProductValue::from(key);
 
-                let row_ref = table.insert(&pool, &mut blob_store, &key).unwrap().1;
+                let row_ref = table.insert(&mut blob_store, &key).unwrap().1;
 
                 // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
-                prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+                prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Ok(()));
             }
 
             assert_eq!(index.num_keys(), 1);
@@ -3011,8 +3016,8 @@ mod test {
         #[test]
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind) {
             let mut index = new_index(&ty, &cols, true, kind);
-            let (mut table, pool, mut blob_store) = setup(ty);
-            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+            let (mut table, mut blob_store) = setup(ty);
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
@@ -3025,7 +3030,7 @@ mod test {
 
             // Insert.
             // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
-            prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+            prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Ok(()));
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.num_keys(), 1);
@@ -3036,7 +3041,7 @@ mod test {
                 [row_ref.pointer()]
             );
             // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
-            prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Err(row_ref.pointer()));
+            prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Err(row_ref.pointer()));
             prop_assert_eq!(index.num_keys(), 1);
             prop_assert_eq!(index.num_rows(), 1);
         }
@@ -3048,7 +3053,7 @@ mod test {
             let cols = 0.into();
             let ty = ProductType::from_iter([AlgebraicType::U64]);
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let (mut table, pool, mut blob_store) = setup(ty);
+            let (mut table, mut blob_store) = setup(ty);
 
             let prev = needle - 1;
             let next = needle + 1;
@@ -3059,10 +3064,10 @@ mod test {
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {
                 let row = product![x];
-                let row_ref = table.insert(&pool, &mut blob_store, &row).unwrap().1;
+                let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, row_ref.pointer());
                 // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
-                prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+                prop_assert_eq!(unsafe { index.check_and_insert(&row_ref) }, Ok(()));
             }
 
             assert_eq!(index.num_keys(), 3);
@@ -3152,15 +3157,15 @@ mod test {
             let mut index = new_index(&row_ty, &[0].into(), is_unique, kind);
 
             // Construct the table and add `val` as a row.
-            let (mut table, pool, mut blob_store) = setup(row_ty);
+            let (mut table, mut blob_store) = setup(row_ty);
             let pv = product![val.clone()];
-            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
 
             // Add the row to the index.
             assert_eq!(index.num_keys(), 0);
             assert_eq!(index.num_rows(), 0);
             assert_eq!(index.num_key_bytes(), 0);
-            unsafe { index.check_and_insert(row_ref).unwrap(); }
+            unsafe { index.check_and_insert(&row_ref).unwrap(); }
             assert_eq!(index.num_keys(), 1);
             assert_eq!(index.num_rows(), 1);
 
@@ -3194,9 +3199,9 @@ mod test {
             let row = product![prefix_val.clone(), middle.clone(), suffix_val.clone()];
 
             // Make a table, add the index, and insert the row.
-            let (mut table, pool, mut blob_store) = setup(ty);
+            let (mut table, mut blob_store) = setup(ty);
             unsafe { table.add_index(IndexId::SENTINEL, index) };
-            let (_, row_ref) = table.insert(&pool, &mut blob_store, &row).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &row).unwrap();
             let row_ptr = row_ref.pointer();
             let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
 
@@ -3254,9 +3259,9 @@ mod test {
             let other_row = product![prefix_val, excluded, suffix_val];
 
             // Make a table, add the index, and insert the row.
-            let (mut table, pool, mut blob_store) = setup(ty);
+            let (mut table, mut blob_store) = setup(ty);
             unsafe { table.add_index(IndexId::SENTINEL, index) };
-            let (_, row_ref) = table.insert(&pool, &mut blob_store, &row).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &row).unwrap();
             let row_ptr = row_ref.pointer();
             let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
 
