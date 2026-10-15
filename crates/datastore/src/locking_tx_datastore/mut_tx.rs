@@ -3447,6 +3447,13 @@ impl MutTxId {
         .map(|row| row.pointer())
     }
 
+    /// The offset this transaction will have if it commits and consumes one.
+    ///
+    /// No other transaction can commit while this one holds the write lock, so the offset can't change.
+    pub fn next_tx_offset(&self) -> u64 {
+        self.committed_state_write_lock.next_tx_offset
+    }
+
     pub fn insert_via_serialize_bsatn<'a, T: Serialize>(
         &'a mut self,
         table_id: TableId,

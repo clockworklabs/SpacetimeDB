@@ -15,6 +15,7 @@ pub mod db;
 mod direct_index_key;
 pub mod environment;
 pub mod error;
+pub mod file;
 mod filterable_value;
 pub mod http;
 pub mod identity;
@@ -35,6 +36,7 @@ pub mod type_value {
 
 pub use connection_id::ConnectionId;
 pub use direct_index_key::{assert_column_type_valid_for_direct_index, DirectIndexKey};
+pub use file::{FileId, FileMetadata, FileRef, UploadRequest};
 #[doc(hidden)]
 pub use filterable_value::Private;
 pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, TermBound, ViewPrimaryKeyColumn};

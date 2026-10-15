@@ -33,10 +33,10 @@ pub(super) fn register_table(builder: &mut RawModuleDefV9Builder) {
 pub(crate) fn st_env_schema() -> TableSchema {
     st_schema(ST_ENV_NAME, ST_ENV_ID)
 }
-/// Module code must use env_get even when it guesses numeric identifiers.
+/// Module code must use env_get, and the file syscalls, even when it guesses numeric identifiers.
 pub fn is_module_restricted_table(table: TableId) -> bool {
-    table == ST_ENV_ID
+    table == ST_ENV_ID || super::file::is_file_table(table)
 }
 pub fn is_module_restricted_index(index: IndexId) -> bool {
-    index == IndexId(30)
+    index == IndexId(30) || super::file::is_file_index(index)
 }

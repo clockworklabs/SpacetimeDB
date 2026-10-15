@@ -12,7 +12,7 @@ use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile, ModuleHttpConfig, V8Config, WasmConfig};
 use spacetimedb::db;
-use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
+use spacetimedb::db::persistence::{DurabilityConfig, FileStoreConfig, LocalPersistenceProvider};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::module_host::UpdateEnvironmentResult;
 use spacetimedb::host::{DiskStorage, HostController, HostRuntimeConfig, MigratePlanResult, UpdateDatabaseResult};
@@ -42,10 +42,11 @@ use std::time::Duration;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub durability: DurabilityConfig,
+    pub file_store: FileStoreConfig,
     pub websocket: WebSocketOptions,
     pub module_http: ModuleHttpConfig,
     pub wasm: WasmConfig,
@@ -82,8 +83,11 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let persistence_provider =
-            Arc::new(LocalPersistenceProvider::new(data_dir.clone()).with_durability_config(config.durability));
+        let persistence_provider = Arc::new(
+            LocalPersistenceProvider::new(data_dir.clone())
+                .with_durability_config(config.durability)
+                .with_file_store_config(config.file_store),
+        );
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
@@ -739,13 +743,14 @@ mod tests {
                 page_pool_max_size: None,
             },
             durability: DurabilityConfig::default(),
+            file_store: FileStoreConfig::default(),
             websocket: WebSocketOptions::default(),
             module_http: ModuleHttpConfig::default(),
             wasm: WasmConfig::default(),
             v8: V8Config::default(),
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
+        let _env = StandaloneEnv::init(config.clone(), &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
         // Ensure that we have a lock.
         assert!(
             StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores())

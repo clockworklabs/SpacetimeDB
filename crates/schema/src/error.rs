@@ -28,6 +28,8 @@ pub enum ValidationError {
     DuplicateTypeName { name: ScopedTypeName },
     #[error("Multiple reducers defined for lifecycle event {lifecycle:?}")]
     DuplicateLifecycle { lifecycle: Lifecycle },
+    #[error("the allow_upload reducer `{reducer}` must take exactly one `UploadRequest`")]
+    AllowUploadSignature { reducer: RawIdentifier },
     #[error("module contains invalid identifier: {error}")]
     IdentifierError { error: IdentifierError },
     #[error("table `{}` has unnamed column `{}`, which is forbidden.", column.table, column.column)]

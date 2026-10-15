@@ -137,6 +137,16 @@ impl ReplicaDir {
     pub fn commit_log(&self) -> CommitLogDir {
         CommitLogDir(self.0.join("clog"))
     }
+
+    pub fn files(&self) -> FileStoreDir {
+        FileStoreDir(self.0.join("files"))
+    }
+}
+
+path_type! {
+    /// The directory holding the bytes of a database's files, when they are stored locally.
+    /// `{data-dir}/replicas/$replica_id/files/`
+    FileStoreDir: dir
 }
 
 path_type! {

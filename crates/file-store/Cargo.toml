@@ -1,0 +1,29 @@
+[package]
+name = "spacetimedb-file-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Content-addressed storage for the bytes of SpacetimeDB files"
+
+[features]
+# An S3-compatible store, for hosts that keep file bytes in object storage.
+s3 = ["dep:object_store"]
+
+[dependencies]
+spacetimedb-lib.workspace = true
+
+async-trait.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+futures.workspace = true
+log.workspace = true
+object_store = { workspace = true, optional = true }
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

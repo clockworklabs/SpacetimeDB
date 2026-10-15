@@ -4,6 +4,10 @@ pub mod persistence {
     pub use spacetimedb_engine::persistence::*;
 }
 
+pub mod files {
+    pub use spacetimedb_engine::files::*;
+}
+
 pub mod relational_db {
     pub use spacetimedb_engine::relational_db::*;
 }

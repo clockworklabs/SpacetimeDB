@@ -434,6 +434,41 @@ declare_tests_with_suffix!(typescript, "-ts");
 declare_tests_with_suffix!(csharp, "-cs");
 declare_tests_with_suffix!(cpp, "-cpp");
 
+/// Tests of the file API, using <./files-client> and <../../../modules/sdk-test-files>.
+///
+/// The file API needs HTTP, which the browser backend doesn't support yet.
+#[cfg(not(feature = "browser"))]
+mod file_tests {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-files";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/files-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        super::platform_test_builder(CLIENT, Some(subcommand))
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .build()
+    }
+
+    #[test]
+    fn upload_and_download() {
+        make_test("upload-and-download").run();
+    }
+
+    #[test]
+    fn reducer_created_files() {
+        make_test("reducer-created-files").run();
+    }
+
+    #[test]
+    fn rejected_uploads() {
+        make_test("rejected-uploads").run();
+    }
+}
+
 /// Tests of event table functionality, using <./event-table-client> and <../../../modules/sdk-test>.
 ///
 /// These are separate from the existing client because as of writing (2026-02-07),

@@ -14,6 +14,7 @@ mod callbacks;
 mod client_cache;
 mod compression;
 mod db_connection;
+mod files;
 mod metrics;
 mod spacetime_module;
 mod subscription;
@@ -29,10 +30,12 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
+pub use files::{ByteStream, Files, FilesError, ServeOptions, UploadBody, UploadError, UploadOptions, Url};
 pub use table::{EventTable, Table, TableAccessor, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
 pub use spacetimedb_client_api_messages::websocket::v1::Compression;
+pub use spacetimedb_lib::file::{FileMetadata, FileRef};
 pub use spacetimedb_lib::{ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp, Uuid};
 pub use spacetimedb_sats::{i256, u256};
 
@@ -62,8 +65,8 @@ pub mod __codegen {
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::table::{TableLike, WithDelete, WithInsert, WithUpdate};
     pub use crate::{
-        ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, Identity, ReducerEvent, ScheduleAt, Table,
-        TableAccessor, TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
+        ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, FileRef, Files, Identity, ReducerEvent,
+        ScheduleAt, Table, TableAccessor, TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
     };
 }
 

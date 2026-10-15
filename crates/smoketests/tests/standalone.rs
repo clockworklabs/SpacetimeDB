@@ -14,6 +14,7 @@ mod standalone {
     mod csharp_module;
     mod default_module_clippy;
     mod detect_wasm_bindgen;
+    mod file_storage;
     mod http_egress;
     mod pg_wire;
     mod restart;

@@ -11,7 +11,7 @@ use axum::extract::{DefaultBodyLimit, Extension};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
-use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig};
+use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig, FileStoreConfig};
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
@@ -104,6 +104,8 @@ struct ConfigFile {
     commitlog: CommitlogConfig,
     #[serde(default)]
     websocket: WebSocketOptions,
+    #[serde(default, rename = "file-store")]
+    file_store: FileStoreConfig,
 }
 
 impl ConfigFile {
@@ -189,6 +191,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
                 commitlog: config.commitlog,
             },
             websocket: config.websocket,
+            file_store: config.file_store,
             module_http: config.common.module_http,
             wasm: config.common.wasm,
             v8: config.common.v8,
@@ -208,6 +211,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     db_routes.db_reset = db_routes.db_reset.layer(DefaultBodyLimit::disable());
+    db_routes.files_post = db_routes.files_post.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
