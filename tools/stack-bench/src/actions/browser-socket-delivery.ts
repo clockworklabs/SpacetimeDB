@@ -19,11 +19,13 @@ export function installSocketDeliveryGate(context: BrowserContext,
 
 export function connectBrowserSocket(context: BrowserContext, client: WebSocketRoute) {
   const server = client.connectToServer();
-  const gate = gates.get(context)?.(client, server);
+  // Found on each frame, so a socket opened before the gate is installed is still gated.
+  let gate: DeliveryGate | undefined;
+  const current = () => gate ??= gates.get(context)?.(client, server);
   return {
     server,
-    send(data: string | Buffer) { gate?.sent(data); server.send(data); },
-    receive(data: string | Buffer) { return gate?.received(data) ?? true; },
+    send(data: string | Buffer) { current()?.sent(data); server.send(data); },
+    receive(data: string | Buffer) { return current()?.received(data) ?? true; },
     closed() { gate?.closed(); },
   };
 }
