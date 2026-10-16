@@ -159,6 +159,7 @@ function mount(framework: string, initial: ConnectionState): MountedHook {
           return state().connectionId;
         },
         getConnection: connection,
+        reconnect: () => {},
       };
       let snapshot: () => Snapshot = () => ({ ready: false, names: [] });
       SolidContext.Provider({
@@ -234,6 +235,7 @@ function fixture(framework: string) {
     isActive: connection.isActive,
     connectionId: connection.connectionId,
     getConnection: () => connection,
+    reconnect: () => {},
   });
   const notify = () => hook?.update(snapshot());
   const build = () =>
