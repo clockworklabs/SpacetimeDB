@@ -686,14 +686,7 @@ impl CommittedState {
                 Either::Left((deletes, source)) => {
                     let count = deletes.map_or(0, |deletes| deletes.len() as u64);
                     let deletes = deletes.map(|deletes| deletes.iter());
-                    PreparedCommit::apply_resident(
-                        table,
-                        blob_store,
-                        count,
-                        deletes,
-                        source,
-                        &tx_state.blob_store,
-                    )
+                    PreparedCommit::apply_resident(table, blob_store, count, deletes, source, &tx_state.blob_store)
                 }
                 Either::Right(commit) => commit.apply(table, blob_store),
             };

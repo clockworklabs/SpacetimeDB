@@ -432,10 +432,7 @@ impl PageManager {
         self.resident.has_unlimited_budget()
     }
 
-    pub(super) fn reserve_resident(
-        &self,
-        fixed_row_size: Size,
-    ) -> Result<(Box<Page>, BudgetPermit), BudgetExceeded> {
+    pub(super) fn reserve_resident(&self, fixed_row_size: Size) -> Result<(Box<Page>, BudgetPermit), BudgetExceeded> {
         if !self.has_unlimited_budget() {
             let permit = self.resident.acquire_resident_page()?;
             return Ok((self.pool.take_with_fixed_row_size(fixed_row_size), permit));
@@ -467,9 +464,8 @@ impl PageManager {
     }
 
     pub fn new(resident: Arc<ResidentObjects>, pool: PagePool, storage: Arc<TieredStorage>) -> Self {
-        let resident_cache = Pool::new(
-            usize::try_from(pool.capacity()).expect("existing pool capacity fits the address space"),
-        );
+        let resident_cache =
+            Pool::new(usize::try_from(pool.capacity()).expect("existing pool capacity fits the address space"));
         Self {
             pool,
             resident_cache,

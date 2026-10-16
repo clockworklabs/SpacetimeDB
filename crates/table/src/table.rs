@@ -2,8 +2,8 @@ use crate::{
     bflatn_to::required_var_len_granules_for_row,
     page,
     tiered::{
-        BlobError, BlobReadSet, BlobSet, DeleteRowError, PageBorrow, PageError, PageEvictionPolicy,
-        PageHandle, PageManager, PageRef, PageSet, PreparedCommit, ReservedPage,
+        BlobError, BlobReadSet, BlobSet, DeleteRowError, PageBorrow, PageError, PageEvictionPolicy, PageHandle,
+        PageManager, PageRef, PageSet, PreparedCommit, ReservedPage,
     },
 };
 
@@ -256,11 +256,7 @@ impl TableInner {
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
     #[inline]
-    fn is_row_present(
-        &self,
-        squashed_offset: SquashedOffset,
-        ptr: RowPointer,
-    ) -> Result<bool, PageError> {
+    fn is_row_present(&self, squashed_offset: SquashedOffset, ptr: RowPointer) -> Result<bool, PageError> {
         if squashed_offset != ptr.squashed_offset() {
             return Ok(false);
         }
@@ -273,10 +269,7 @@ impl TableInner {
         Ok(page.with_page(|page| page.has_row_offset(self.row_layout.size(), offset)))
     }
 
-    fn try_page_and_offset(
-        &self,
-        ptr: RowPointer,
-    ) -> Result<Option<(PageRef<'_>, PageOffset)>, PageError> {
+    fn try_page_and_offset(&self, ptr: RowPointer) -> Result<Option<(PageRef<'_>, PageOffset)>, PageError> {
         let page = self.pages.get_page(ptr.page_index())?;
         Ok(page.map(|page| (page, ptr.page_offset())))
     }
@@ -287,7 +280,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 328);
+static_assert_size!(Table, 336);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -1334,14 +1327,8 @@ impl Table {
         needle_ptr: RowPointer,
     ) -> Result<bool, PageError> {
         if target_table.inner.pages.is_resident() && needle_table.inner.pages.is_resident() {
-            let target = target_table
-                .inner
-                .pages
-                .resident_page(target_ptr.page_index());
-            let needle = needle_table
-                .inner
-                .pages
-                .resident_page(needle_ptr.page_index());
+            let target = target_table.inner.pages.resident_page(target_ptr.page_index());
+            let needle = needle_table.inner.pages.resident_page(needle_ptr.page_index());
             // SAFETY: Both tables are borrowed and cannot evict these pages. The
             // caller guarantees that both rows are live and their layouts match.
             return Ok(unsafe {
@@ -2424,9 +2411,7 @@ impl Serialize for RowRef<'_> {
         let (page, offset) = self.page_and_offset();
         // SAFETY: We have a `RowRef`, so `ptr` points to a valid row in this table
         // so safety requirements 1-3 flow from that.
-        page.with_page(|page| unsafe {
-            serialize_row_from_page(ser, page, &self.blobs, offset, &table.row_layout)
-        })
+        page.with_page(|page| unsafe { serialize_row_from_page(ser, page, &self.blobs, offset, &table.row_layout) })
     }
 }
 
@@ -2496,9 +2481,7 @@ impl PartialEq for RowRef<'_> {
         // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
         // and `static_bsatn_layout` is derived from `a_ty`.
         page_a.with_page(|a| {
-            page_b.with_page(|b| unsafe {
-                eq_row_in_page(a, b, offset_a, offset_b, a_ty, static_layout)
-            })
+            page_b.with_page(|b| unsafe { eq_row_in_page(a, b, offset_a, offset_b, a_ty, static_layout) })
         })
     }
 }
@@ -2559,11 +2542,7 @@ impl<'a> CurrentPage<'a> {
                 rows: page.iter_fixed_len(row_size),
             },
             PageRef::Tiered(handle) => {
-                let rows = handle
-                    .read()
-                    .iter_fixed_len(row_size)
-                    .collect::<Vec<_>>()
-                    .into_iter();
+                let rows = handle.read().iter_fixed_len(row_size).collect::<Vec<_>>().into_iter();
                 Self::Tiered { handle, rows }
             }
         }
@@ -2575,12 +2554,8 @@ impl<'a> Iterator for CurrentPage<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Resident { page, rows } => {
-                rows.next().map(|offset| (PageRef::Resident(page), offset))
-            }
-            Self::Tiered { handle, rows } => rows
-                .next()
-                .map(|offset| (PageRef::Tiered(handle.clone()), offset)),
+            Self::Resident { page, rows } => rows.next().map(|offset| (PageRef::Resident(page), offset)),
+            Self::Tiered { handle, rows } => rows.next().map(|offset| (PageRef::Tiered(handle.clone()), offset)),
         }
     }
 }
@@ -2638,8 +2613,7 @@ impl<'a> Iterator for TableScanIter<'a> {
                         }
                         match self.table.pages().get_page(self.current_page_idx) {
                             Ok(Some(next_page)) => {
-                                self.current_page =
-                                    Some(CurrentPage::new(next_page, self.table.row_size()));
+                                self.current_page = Some(CurrentPage::new(next_page, self.table.row_size()));
 
                                 break 'find_next_page;
                             }

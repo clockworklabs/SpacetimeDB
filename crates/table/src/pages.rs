@@ -136,11 +136,7 @@ impl Pages {
         }
     }
 
-    pub(crate) fn find_non_full_page(
-        &self,
-        fixed_row_size: Size,
-        granules: usize,
-    ) -> Option<PageIndex> {
+    pub(crate) fn find_non_full_page(&self, fixed_row_size: Size, granules: usize) -> Option<PageIndex> {
         self.non_full_pages
             .range((granules, PageIndex(0))..)
             .find_map(|&(_, index)| {
@@ -151,11 +147,7 @@ impl Pages {
             })
     }
 
-    pub(crate) fn take_non_full_page(
-        &mut self,
-        fixed_row_size: Size,
-        granules: usize,
-    ) -> Option<PageIndex> {
+    pub(crate) fn take_non_full_page(&mut self, fixed_row_size: Size, granules: usize) -> Option<PageIndex> {
         let index = self.find_non_full_page(fixed_row_size, granules)?;
         self.non_full_pages
             .remove(&(self.get(index).unwrap().available_var_len_granules(), index));
@@ -168,9 +160,7 @@ impl Pages {
         fixed_row_size: Size,
         f: impl FnOnce(&mut Page) -> T,
     ) -> T {
-        self.with_updating_non_full_pages(index, fixed_row_size, |pages| {
-            f(pages.get_mut(index).unwrap())
-        })
+        self.with_updating_non_full_pages(index, fixed_row_size, |pages| f(pages.get_mut(index).unwrap()))
     }
 
     /// Get a reference to fixed-len row data.
