@@ -97,6 +97,8 @@ test('dependency diagnostics bind the rejected first-build source and its own ch
     assert.throws(() => inspectGradeSource(output, { level: 2 }), /check/);
     assert.throws(() => inspectGradeSource(output, { level: 3, checkKeys: [check] }), /level|depth|candidate/);
     assert.throws(() => inspectGradeSource(output, { level: 2, checkKeys: ['never-attempted'] }), /scope|check/);
+    assert.equal(inspectGradeSource(output, { level: 2, checkKeys: ['added-since-the-run'] }).source.sha256,
+      source.sha256);
     run.levels.push(run.levels[0]!);
     save();
     assert.throws(() => inspectGradeSource(output, { level: 2, checkKeys: [check] }), /unique|ambiguous|exactly one/);

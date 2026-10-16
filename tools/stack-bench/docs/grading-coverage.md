@@ -344,7 +344,9 @@ the new controller and backend identity in the diagnostic record.
 
 The source run must have finished and must not be contaminated. The selected
 depth must identify one saved first-build candidate with matching source and
-grading evidence. Checks must belong to that candidate's original scored scope.
+grading evidence. Checks must belong to that candidate's original scored scope,
+or be checks added since the run was planned. The current definition still refuses
+a check outside the candidate's requested features.
 Missing evidence, changed source, ambiguous depths, and overlapping output paths
 are errors. An inconclusive original measurement can be investigated; the replay
 does not make that original result valid.

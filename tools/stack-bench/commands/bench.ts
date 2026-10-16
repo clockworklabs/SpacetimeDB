@@ -864,6 +864,7 @@ export function inspectGradeSource(directory: string,
     || !Array.isArray(declared.selection.scoredChecks)) {
     throw new Error('saved run lacks a source checkpoint or a bound modular grading scope');
   }
+  const planned = new Set(declared.selection.scoredChecks.map(check => check.stableKey));
   const child = (name: string): string => {
     const path = realpathSync(resolve(root, name));
     const rel = relative(root, path);
@@ -914,7 +915,10 @@ export function inspectGradeSource(directory: string,
       throw new Error('saved source or checkpoint does not match its parent run');
     }
   }
-  if (options.checkKeys?.some(key => !declared.selection.scoredChecks!.some(check => check.stableKey === key))) {
+  // A dependency replay may also run a check added since the run was planned. Resolving the
+  // current definition from the saved requested features still refuses checks outside that task.
+  if (options.checkKeys?.some(key => !declared.selection.scoredChecks!.some(check => check.stableKey === key)
+    && (!dependency || planned.has(key)))) {
     throw new Error('regrade checks must belong to the original scored scope');
   }
   const aliases = condition?.guidance.credentialAliases;
