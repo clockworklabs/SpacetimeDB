@@ -50,8 +50,8 @@ pub(in crate::host) struct DeliveryStreams {
 }
 
 impl DeliveryStreams {
-    /// Push a stream after an insert or retry deadline without interrupting an active attempt or backoff.
-    pub fn push(&mut self, stream_id: StreamId) {
+    /// Wake a stream after an insert or retry deadline without interrupting an active attempt or backoff.
+    pub fn wake(&mut self, stream_id: StreamId) {
         let state = self.streams.entry(stream_id).or_insert_with(OrderedStream::new);
         if state.is_ready() && self.queued.insert(stream_id) {
             self.ready.push_back(stream_id);
@@ -92,16 +92,16 @@ impl DeliveryStreams {
         state.active_seq = None;
         state.blocked_until = None;
         state.backoff = INITIAL_BACKOFF;
-        self.push(stream_id);
+        self.wake(stream_id);
     }
 
     /// End the failed attempt and return its retry delay. New inserts do not shorten this delay.
-    pub fn retry(&mut self, stream_id: StreamId, seq: u64) -> Duration {
+    pub fn fail(&mut self, stream_id: StreamId, seq: u64) -> Duration {
         let state = self
             .streams
             .get_mut(&stream_id)
             .expect("active stream has delivery state");
-        assert_eq!(state.active_seq, Some(seq), "retry must match the active sequence");
+        assert_eq!(state.active_seq, Some(seq), "failure must match the active sequence");
         // Clear the active sequence so the same message can run again after backoff.
         state.active_seq = None;
         let delay = state.backoff;
@@ -122,7 +122,7 @@ impl DeliveryStreams {
     }
 
     /// Find the next stream to retry and how long it needs to wait.
-    pub fn next_retry(&self) -> Option<(StreamId, Duration)> {
+    pub fn next_retry_delay(&self) -> Option<(StreamId, Duration)> {
         self.streams
             .iter()
             .filter(|(_, state)| state.active_seq.is_none())
@@ -141,23 +141,23 @@ mod tests {
         let mut streams = DeliveryStreams::default();
         let first = StreamId(1);
         let second = StreamId(2);
-        streams.push(first);
-        streams.push(first);
-        streams.push(second);
+        streams.wake(first);
+        streams.wake(first);
+        streams.wake(second);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 1);
-        streams.push(first);
+        streams.wake(first);
         assert_eq!(streams.pop_ready(), Some(second));
         streams.start(second, 1);
         assert_eq!(streams.pop_ready(), None);
 
         streams.finish(first, 1);
-        streams.push(first);
+        streams.wake(first);
         assert_eq!(streams.pop_ready(), Some(first));
         assert_eq!(streams.pop_ready(), None);
         streams.remove_idle(first);
         assert!(!streams.streams.contains_key(&first));
-        streams.push(first);
+        streams.wake(first);
         assert_eq!(streams.pop_ready(), Some(first));
         assert_eq!(streams.streams[&second].active_seq, Some(1));
     }
@@ -168,37 +168,37 @@ mod tests {
         let first = StreamId(1);
         let second = StreamId(2);
         for id in [first, second] {
-            streams.push(id);
+            streams.wake(id);
             assert_eq!(streams.pop_ready(), Some(id));
             streams.start(id, 1);
-            assert_eq!(streams.retry(id, 1), INITIAL_BACKOFF);
+            assert_eq!(streams.fail(id, 1), INITIAL_BACKOFF);
             // Use a future deadline so this check does not depend on test execution speed.
             streams.streams.get_mut(&id).unwrap().blocked_until = Some(Instant::now() + Duration::from_secs(3600));
-            streams.push(id);
+            streams.wake(id);
             assert_eq!(streams.pop_ready(), None);
         }
 
         let now = Instant::now();
         streams.streams.get_mut(&first).unwrap().blocked_until = Some(now);
         streams.streams.get_mut(&second).unwrap().blocked_until = Some(now - INITIAL_BACKOFF);
-        assert_eq!(streams.next_retry(), Some((second, Duration::ZERO)));
-        streams.push(second);
+        assert_eq!(streams.next_retry_delay(), Some((second, Duration::ZERO)));
+        streams.wake(second);
         assert_eq!(streams.pop_ready(), Some(second));
         streams.start(second, 1);
-        assert_eq!(streams.next_retry(), Some((first, Duration::ZERO)));
-        streams.push(first);
+        assert_eq!(streams.next_retry_delay(), Some((first, Duration::ZERO)));
+        streams.wake(first);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 1);
-        assert_eq!(streams.next_retry(), None);
-        assert_eq!(streams.retry(first, 1), INITIAL_BACKOFF * 2);
+        assert_eq!(streams.next_retry_delay(), None);
+        assert_eq!(streams.fail(first, 1), INITIAL_BACKOFF * 2);
 
         streams.streams.get_mut(&first).unwrap().blocked_until = Some(now);
-        streams.push(first);
+        streams.wake(first);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 1);
         streams.finish(first, 1);
         assert_eq!(streams.pop_ready(), Some(first));
         streams.start(first, 2);
-        assert_eq!(streams.retry(first, 2), INITIAL_BACKOFF);
+        assert_eq!(streams.fail(first, 2), INITIAL_BACKOFF);
     }
 }
