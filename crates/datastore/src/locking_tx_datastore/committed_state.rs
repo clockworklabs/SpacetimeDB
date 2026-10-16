@@ -575,11 +575,7 @@ impl CommittedState {
         }
     }
 
-    pub(super) fn prepare_merge(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
-        self.prepare_merge_inner(tx_state)
-    }
-
-    fn prepare_merge_inner(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
+    fn prepare_merge(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
         // Prepare transaction-local blobs before planning page mutations. This
         // installs and pins their frames without publishing logical references.
         let blobs: Box<[BlobHandle]> = self.storage.merge_blobs_from(&tx_state.blob_store)?;
@@ -651,12 +647,18 @@ impl CommittedState {
 
     pub(super) fn merge(
         &mut self,
-        prepared: PreparedMerge,
         tx_state: TxState,
         read_sets: ViewReadSets,
         view_instances: ViewInstanceTxState,
         ctx: &ExecutionContext,
-    ) -> TxData {
+    ) -> Result<TxData> {
+        let prepared = match self.prepare_merge(&tx_state) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.rollback(tx_state);
+                return Err(error);
+            }
+        };
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
@@ -755,7 +757,7 @@ impl CommittedState {
             self.next_tx_offset += 1;
         }
 
-        tx_data
+        Ok(tx_data)
     }
 
     fn merge_read_sets(&mut self, read_sets: ViewReadSets) {
