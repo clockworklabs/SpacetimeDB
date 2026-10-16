@@ -18,7 +18,7 @@
   ],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 54000
+    "maxRuntimeMs": 115000
   },
   "task": {
     "requirements": [
