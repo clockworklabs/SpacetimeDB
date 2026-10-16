@@ -383,6 +383,9 @@ impl ReservedPage {
     }
 }
 
+/// A cached page remains allocated and charged to its original memory budget.
+/// Moving its permit with it avoids locking the accounting counter on every reuse.
+/// Dropping this pair when the cache is full or destroyed releases both resources.
 #[derive(Debug)]
 struct CachedResidentPage {
     page: Box<Page>,
@@ -444,6 +447,7 @@ impl PageManager {
         if self.has_unlimited_budget() {
             self.resident_cache.put(CachedResidentPage { page, permit });
         } else {
+            // Idle pages must not keep consuming a finite memory allowance.
             self.pool.put(page);
             drop(permit);
         }
@@ -454,6 +458,7 @@ impl PageManager {
     }
 
     pub fn new(resident: Arc<ResidentObjects>, pool: PagePool, storage: Arc<TieredStorage>) -> Self {
+        // Bound this cache by the configured page-pool capacity.
         let resident_cache =
             Pool::new(usize::try_from(pool.capacity()).expect("existing pool capacity fits the address space"));
         Self {

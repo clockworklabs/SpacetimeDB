@@ -32,6 +32,8 @@ use crate::{
 pub struct BlobSet {
     resident: Arc<mem::ResidentObjects>,
     storage: Arc<TieredStorage>,
+    // Only the enclosing BlobSet is shared, so this map needs no independent Arc.
+    // Keeping the lock inline avoids an allocation even for an empty transaction store.
     entries: RwLock<ObjectMap<BlobEntry>>,
     evictable: Mutex<Vec<BlobEvictionCandidate>>,
 }
@@ -448,6 +450,8 @@ impl Deref for BlobHandle {
 /// be fallible due to faults.
 #[derive(Clone, Default)]
 pub struct BlobReadSet {
+    // Rows without external blobs need no Arc allocation or reference counting.
+    // Non-empty sets share their pins when a RowRef is cloned.
     inner: Option<Arc<SmallHashMap<BlobHash, BlobHandle, 4, 16>>>,
 }
 

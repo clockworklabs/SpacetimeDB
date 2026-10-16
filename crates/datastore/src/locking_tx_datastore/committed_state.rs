@@ -564,6 +564,9 @@ impl CommittedState {
         // installs and pins their frames without publishing logical references.
         let blobs: Box<[BlobHandle]> = self.storage.merge_blobs_from(&tx_state.blob_store)?;
         let mut prepared = PreparedMerge::with_pinned_blobs(blobs);
+        // Skip row planning only if every modified table can be applied without
+        // faults or memory-limit errors. Otherwise prepare the whole transaction
+        // before mutating rows, so a later failure cannot leave a partial commit.
         prepared.resident = tx_state.tx_tables().all(|tx| {
             let count = tx.inserts.map_or(0, Table::num_rows);
             self.get_table(tx.id)
@@ -646,6 +649,8 @@ impl CommittedState {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
+        // The direct path borrows source rows, so keep tx_state and its pages alive
+        // until all changes have been applied to the committed tables.
         let commits = if prepared.resident {
             Either::Left(
                 tx_state
