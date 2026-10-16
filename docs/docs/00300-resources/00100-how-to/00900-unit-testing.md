@@ -201,7 +201,16 @@ spacetimedb = "2.12.0"
 
 [dev-dependencies]
 spacetimedb = { version = "2.12.0", features = ["test-utils"] }
+icu_calendar = ">=2.1, <2.2"
 ```
+
+:::note
+The test datastore depends on `temporal_rs` 0.1.2, which needs `icu_calendar` 2.1.x specifically. Cargo will try to download the latest version (2.2.x) unless we pin it.
+
+If you see `error[E0432]: unresolved import icu_calendar::cal::AnyCalendarDifferenceError`, check you've pinned `icu_calendar` as shown, or run `cargo update -p icu_calendar --precise 2.1.1`.
+
+This won't be needed once [#6317](https://github.com/clockworklabs/SpacetimeDB/issues/6317) is fixed.
+:::
 
 Run these tests natively with `cargo test`, not with a WebAssembly target. The feature enables module registration and the in-memory test datastore without requiring a running host.
 
