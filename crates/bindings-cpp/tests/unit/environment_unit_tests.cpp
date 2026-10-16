@@ -10,6 +10,11 @@ using namespace SpacetimeDB;
 namespace {
 size_t payload_offset;
 std::string payload;
+const std::array<uint8_t, 32> database_bytes{0xdb};
+}
+
+extern "C" void identity(uint8_t* out) {
+    std::memcpy(out, database_bytes.data(), database_bytes.size());
 }
 
 extern "C" Status env_get(const uint8_t* key, uint32_t key_len, BytesSource* out) {
@@ -70,4 +75,38 @@ TEST_CASE(jwt_source_keeps_final_bytes_from_a_single_read) {
     ASSERT_TRUE(ctx.has_jwt());
     ASSERT_EQ(std::string("short"), ctx.get_jwt()->subject());
     ASSERT_EQ(payload.size(), payload_offset);
+}
+
+TEST_CASE(auth_ctx_is_internal_exactly_when_sender_is_the_database) {
+    payload = R"({"sub":"connection"})";
+    const Identity database(database_bytes);
+    auto internal = AuthCtx::from_connection_id(ConnectionId(5), database);
+    ASSERT_TRUE(internal.is_internal());
+    ASSERT_TRUE(!internal.has_jwt());
+    ASSERT_TRUE(!internal.get_jwt().has_value());
+    ASSERT_TRUE(internal.get_caller_identity() == database);
+
+    // Like init, whose sender is the owner and which has no ConnectionId.
+    const Identity owner(std::array<uint8_t, 32>{1});
+    auto init = AuthCtx::from_connection_id_opt(std::nullopt, owner);
+    ASSERT_TRUE(!init.is_internal());
+    ASSERT_TRUE(!init.has_jwt());
+    ASSERT_TRUE(init.get_caller_identity() == owner);
+}
+
+TEST_CASE(handler_transactions_use_the_sender_and_the_jwt_read_when_the_handler_starts) {
+    payload = R"({"sub":"handler"})";
+    payload_offset = 0;
+    const Identity sender(std::array<uint8_t, 32>{2});
+    HandlerContext handler(sender, BytesSource{1}, Timestamp{});
+    ASSERT_EQ(payload.size(), payload_offset);
+    ASSERT_TRUE(handler.sender() == sender);
+    for (int i = 0; i < 2; ++i) {
+        handler.with_tx([&](TxContext& tx) {
+            ASSERT_TRUE(tx.sender() == sender);
+            ASSERT_TRUE(!tx.sender_auth().is_internal());
+            ASSERT_EQ(std::string("handler"), tx.sender_auth().get_jwt()->subject());
+            ASSERT_TRUE(tx.sender_auth().get_caller_identity() == sender);
+        });
+    }
 }

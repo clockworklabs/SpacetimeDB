@@ -221,6 +221,12 @@ export type HandlerAliasViews<SchemaDef extends UntypedSchemaDef> =
 
 export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
   readonly env: EnvironmentFor<S>;
+  /**
+   * The random `Identity` that the host created for this request.
+   *
+   * Each request has a different sender, which is also the sender of the transactions it opens.
+   */
+  readonly sender: Identity;
   readonly timestamp: Timestamp;
   readonly http: HttpClient;
   readonly identity: Identity;

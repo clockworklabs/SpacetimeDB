@@ -103,12 +103,15 @@ public static class Module
 #else
         null;
 #endif
-    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
+    private static Func<
+        Identity,
+        string?,
+        Random,
+        Timestamp,
+        SpacetimeDB.HandlerContextBase
+    >? newHandlerContext =
 #if NET10_0_OR_GREATER
-    (
-        random,
-        time
-    ) => new HandlerContext(random, time);
+    (sender, senderJwt, random, time) => new HandlerContext(sender, senderJwt, random, time);
 #else
         null;
 #endif
@@ -136,7 +139,7 @@ public static class Module
     ) => newProcedureContext = ctor;
 
     public static void SetHandlerContextConstructor(
-        Func<Random, Timestamp, SpacetimeDB.HandlerContextBase> ctor
+        Func<Identity, string?, Random, Timestamp, SpacetimeDB.HandlerContextBase> ctor
     ) => newHandlerContext = ctor;
 
     public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
@@ -356,11 +359,21 @@ public static class Module
         return newProcedureContext!(sender, connectionId, random, time);
     }
 
-    public static SpacetimeDB.HandlerContextBase CreateHandlerContext(Timestamp timestamp)
+    public static SpacetimeDB.HandlerContextBase CreateHandlerContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        BytesSource sender_jwt,
+        Timestamp timestamp
+    )
     {
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
+        // Read the JWT now, since the host reuses bytes source ids in later calls.
+        var senderJwt = AuthCtx.ReadJwt(sender_jwt);
         var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
         var time = timestamp.ToStd();
-        return newHandlerContext!(random, time);
+        return newHandlerContext!(sender, senderJwt, random, time);
     }
 
     public static IViewContext CreateViewContext(

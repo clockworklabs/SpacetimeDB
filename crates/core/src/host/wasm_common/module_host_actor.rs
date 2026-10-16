@@ -997,6 +997,7 @@ impl InstanceCommon {
     ) -> (Result<(st_http::Response, Bytes), HttpHandlerCallError>, bool) {
         let CallHttpHandlerParams {
             timestamp,
+            caller_auth,
             handler_id,
             request,
             request_body,
@@ -1022,6 +1023,8 @@ impl InstanceCommon {
         let op = HttpHandlerOp {
             id: handler_id,
             name: handler_name.clone().into(),
+            caller_identity: caller_auth.identity,
+            caller_jwt_payload: caller_auth.jwt_payload.unwrap_or_default(),
             timestamp,
             request_bytes,
             request_body_bytes: request_body,
@@ -2227,6 +2230,8 @@ impl InstanceOp for ProcedureOp {
 pub struct HttpHandlerOp {
     pub id: HttpHandlerId,
     pub name: NamespacedIdentifier,
+    pub caller_identity: Identity,
+    pub caller_jwt_payload: Box<str>,
     pub timestamp: Timestamp,
     pub request_bytes: Bytes,
     pub request_body_bytes: Bytes,
