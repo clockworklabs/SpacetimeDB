@@ -23,8 +23,6 @@ pub trait CanBeLookupTable: HasIxCols {}
 
 pub struct Table<T> {
     pub(super) table_name: TableNameStr,
-    /// The arguments of a parameterized view call, rendered as `(a, b)`.
-    pub(super) view_args: Option<String>,
     _marker: PhantomData<T>,
 }
 
@@ -32,18 +30,6 @@ impl<T> Table<T> {
     pub fn new(table_name: TableNameStr) -> Self {
         Self {
             table_name,
-            view_args: None,
-            _marker: PhantomData,
-        }
-    }
-
-    /// A call to the parameterized view `view_name` with `args`.
-    /// Columns are still referenced by the view's name, which is the call's default alias.
-    pub fn view_call(view_name: TableNameStr, args: impl IntoIterator<Item = LiteralValue>) -> Self {
-        let args = args.into_iter().map(|arg| arg.0).collect::<Vec<_>>().join(", ");
-        Self {
-            table_name: view_name,
-            view_args: Some(format!("({args})")),
             _marker: PhantomData,
         }
     }
@@ -139,26 +125,20 @@ impl<T> Clone for ColumnRef<T> {
 
 pub struct FromWhere<T> {
     pub(super) table_name: TableNameStr,
-    pub(super) view_args: Option<String>,
     pub(super) expr: BoolExpr<T>,
 }
 
 impl<T: HasCols> Query<T> for Table<T> {
     fn into_sql(self) -> String {
-        format!(
-            r#"SELECT * FROM "{}"{}"#,
-            self.table_name,
-            self.view_args.as_deref().unwrap_or_default()
-        )
+        format!(r#"SELECT * FROM "{}""#, self.table_name)
     }
 }
 
 impl<T: HasCols> Query<T> for FromWhere<T> {
     fn into_sql(self) -> String {
         format!(
-            r#"SELECT * FROM "{}"{} WHERE {}"#,
+            r#"SELECT * FROM "{}" WHERE {}"#,
             self.table_name,
-            self.view_args.as_deref().unwrap_or_default(),
             format_expr(&self.expr)
         )
     }
@@ -166,11 +146,7 @@ impl<T: HasCols> Query<T> for FromWhere<T> {
 
 impl<T: HasCols> Table<T> {
     pub fn build(self) -> RawQuery<T> {
-        RawQuery::new(format!(
-            r#"SELECT * FROM "{}"{}"#,
-            self.table_name,
-            self.view_args.as_deref().unwrap_or_default()
-        ))
+        RawQuery::new(format!(r#"SELECT * FROM "{}""#, self.table_name))
     }
 
     pub fn r#where<F, E>(self, f: F) -> FromWhere<T>
@@ -181,7 +157,6 @@ impl<T: HasCols> Table<T> {
         let expr = f(&T::cols(self.table_name)).into();
         FromWhere {
             table_name: self.table_name,
-            view_args: self.view_args,
             expr,
         }
     }
@@ -205,7 +180,6 @@ impl<T: HasCols> FromWhere<T> {
         let extra = f(&T::cols(self.table_name)).into();
         Self {
             table_name: self.table_name,
-            view_args: self.view_args,
             expr: self.expr.and(extra),
         }
     }
@@ -221,11 +195,43 @@ impl<T: HasCols> FromWhere<T> {
 
     pub fn build(self) -> RawQuery<T> {
         let sql = format!(
-            r#"SELECT * FROM "{}"{} WHERE {}"#,
+            r#"SELECT * FROM "{}" WHERE {}"#,
             self.table_name,
-            self.view_args.as_deref().unwrap_or_default(),
             format_expr(&self.expr)
         );
         RawQuery::new(sql)
+    }
+}
+
+/// A call to a view that takes arguments.
+///
+/// The server only accepts such a call as `SELECT * FROM v(...)`,
+/// so unlike a [`Table`] it can't be filtered or joined.
+pub struct ViewCall<T> {
+    view_name: TableNameStr,
+    /// The arguments, rendered as `a, b`
+    args: String,
+    _marker: PhantomData<T>,
+}
+
+impl<T> ViewCall<T> {
+    pub fn new(view_name: TableNameStr, args: impl IntoIterator<Item = LiteralValue>) -> Self {
+        Self {
+            view_name,
+            args: args.into_iter().map(|arg| arg.0).collect::<Vec<_>>().join(", "),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: HasCols> Query<T> for ViewCall<T> {
+    fn into_sql(self) -> String {
+        format!(r#"SELECT * FROM "{}"({})"#, self.view_name, self.args)
+    }
+}
+
+impl<T: HasCols> ViewCall<T> {
+    pub fn build(self) -> RawQuery<T> {
+        RawQuery::new(self.into_sql())
     }
 }

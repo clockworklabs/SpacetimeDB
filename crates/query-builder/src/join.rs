@@ -51,9 +51,7 @@ impl<T, V> IxCol<T, V> {
 // Left semijoin: filters and returns left table rows
 pub struct LeftSemiJoin<L> {
     pub(super) left_col: ColumnRef<L>,
-    pub(super) left_view_args: Option<String>,
     pub(super) right_table: &'static str,
-    pub(super) right_view_args: Option<String>,
     pub(super) right_col: &'static str,
     pub(super) where_expr: Option<BoolExpr<L>>,
 }
@@ -61,9 +59,7 @@ pub struct LeftSemiJoin<L> {
 // Right semijoin: returns right table rows, but remembers left conditions
 pub struct RightSemiJoin<R, L> {
     pub(super) left_col: ColumnRef<L>,
-    pub(super) left_view_args: Option<String>,
     pub(super) right_col: ColumnRef<R>,
-    pub(super) right_view_args: Option<String>,
     pub(super) left_where_expr: Option<BoolExpr<L>>,
     pub(super) right_where_expr: Option<BoolExpr<R>>,
     _left_marker: PhantomData<L>,
@@ -78,9 +74,7 @@ impl<L: HasIxCols> Table<L> {
         let join = on(&L::ix_cols(self.name()), &R::ix_cols(right.name()));
         LeftSemiJoin {
             left_col: join.lhs_col,
-            left_view_args: self.view_args,
             right_table: right.name(),
-            right_view_args: right.view_args,
             right_col: join.rhs_col.column_name(),
             where_expr: None,
         }
@@ -94,9 +88,7 @@ impl<L: HasIxCols> Table<L> {
         let join = on(&L::ix_cols(self.name()), &R::ix_cols(right.name()));
         RightSemiJoin {
             left_col: join.lhs_col,
-            left_view_args: self.view_args,
             right_col: join.rhs_col,
-            right_view_args: right.view_args,
             left_where_expr: None,
             right_where_expr: None,
             _left_marker: PhantomData,
@@ -113,9 +105,7 @@ impl<L: HasIxCols> super::FromWhere<L> {
         let join = on(&L::ix_cols(self.table_name), &R::ix_cols(right.name()));
         LeftSemiJoin {
             left_col: join.lhs_col,
-            left_view_args: self.view_args,
             right_table: right.name(),
-            right_view_args: right.view_args,
             right_col: join.rhs_col.column_name(),
             where_expr: Some(self.expr),
         }
@@ -129,9 +119,7 @@ impl<L: HasIxCols> super::FromWhere<L> {
         let join = on(&L::ix_cols(self.table_name), &R::ix_cols(right.name()));
         RightSemiJoin {
             left_col: join.lhs_col,
-            left_view_args: self.view_args,
             right_col: join.rhs_col,
-            right_view_args: right.view_args,
             left_where_expr: Some(self.expr),
             right_where_expr: None,
             _left_marker: PhantomData,
@@ -165,9 +153,7 @@ impl<L: HasCols> LeftSemiJoin<L> {
         };
         Self {
             left_col: self.left_col,
-            left_view_args: self.left_view_args,
             right_table: self.right_table,
-            right_view_args: self.right_view_args,
             right_col: self.right_col,
             where_expr: new,
         }
@@ -189,12 +175,10 @@ impl<L: HasCols> LeftSemiJoin<L> {
             .unwrap_or_default();
 
         let sql = format!(
-            r#"SELECT "{}".* FROM "{}"{} JOIN "{}"{} ON "{}"."{}" = "{}"."{}"{}"#,
+            r#"SELECT "{}".* FROM "{}" JOIN "{}" ON "{}"."{}" = "{}"."{}"{}"#,
             self.left_col.table_name(),
             self.left_col.table_name(),
-            self.left_view_args.as_deref().unwrap_or_default(),
             self.right_table,
-            self.right_view_args.as_deref().unwrap_or_default(),
             self.left_col.table_name(),
             self.left_col.column_name(),
             self.right_table,
@@ -219,9 +203,7 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
         };
         Self {
             left_col: self.left_col,
-            left_view_args: self.left_view_args,
             right_col: self.right_col,
-            right_view_args: self.right_view_args,
             left_where_expr: self.left_where_expr,
             right_where_expr: new,
             _left_marker: PhantomData,
@@ -255,12 +237,10 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
         };
 
         let sql = format!(
-            r#"SELECT "{}".* FROM "{}"{} JOIN "{}"{} ON "{}"."{}" = "{}"."{}"{}"#,
+            r#"SELECT "{}".* FROM "{}" JOIN "{}" ON "{}"."{}" = "{}"."{}"{}"#,
             self.right_col.table_name(),
             self.left_col.table_name(),
-            self.left_view_args.as_deref().unwrap_or_default(),
             self.right_col.table_name(),
-            self.right_view_args.as_deref().unwrap_or_default(),
             self.left_col.table_name(),
             self.left_col.column_name(),
             self.right_col.table_name(),

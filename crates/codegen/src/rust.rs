@@ -972,13 +972,13 @@ fn implement_query_view_call_accessor(
         /// Implemented for [`__sdk::QueryTableAccessor`].
         pub trait {query_accessor_trait} {{
             #[allow(non_snake_case)]
-            /// Get a query builder for a call to the view `{struct_name}` with the given arguments.
-            fn {accessor_method}(&self, {arglist_no_delimiters}) -> __sdk::__query_builder::Table<{struct_name}>;
+            /// Get a query for a call to the view `{struct_name}` with the given arguments.
+            fn {accessor_method}(&self, {arglist_no_delimiters}) -> __sdk::__query_builder::ViewCall<{struct_name}>;
         }}
 
         impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
-            fn {accessor_method}(&self, {arglist_no_delimiters}) -> __sdk::__query_builder::Table<{struct_name}> {{
-                __sdk::__query_builder::Table::view_call({view_name:?}, [{args}])
+            fn {accessor_method}(&self, {arglist_no_delimiters}) -> __sdk::__query_builder::ViewCall<{struct_name}> {{
+                __sdk::__query_builder::ViewCall::new({view_name:?}, [{args}])
             }}
         }}
 "
