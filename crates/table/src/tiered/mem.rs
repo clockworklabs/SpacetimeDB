@@ -209,7 +209,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn redeem_blob(&self, ReservedBlob { frame }: ReservedBlob) -> Arc<BlobFrame> {
-        let key = frame.hash.into();
+        let key = frame.hash;
         let mut blobs = self.blobs.lock().unwrap();
         // Transaction and committed blob sets share this registry. Reuse live
         // frames and replace stale weak entries when a hash becomes resident again.
