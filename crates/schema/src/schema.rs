@@ -988,11 +988,11 @@ impl Schema for TableSchema {
             constraints,
             sequences,
             schedule,
+            outbox,
             table_type,
             table_access,
             is_event,
             accessor_name,
-            outbox,
             ..
         } = def;
 
