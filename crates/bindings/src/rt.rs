@@ -1098,6 +1098,7 @@ pub fn register_migration<T: MigrationModule>() {
         T::describe_tables(&mut migration);
         module.inner.add_migration(RawMigrationDefV10 {
             schema_hash: T::HASH,
+            name: ["migration_", &T::HASH.to_hex()].concat().into(),
             dropped: migration.inner.finish(),
         });
         module.functions.migrations.push(T::invoke);

@@ -1282,5 +1282,6 @@ impl RawTableDefBuilderV10<'_> {
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawMigrationDefV10 {
     pub schema_hash: Hash,
+    pub name: RawIdentifier,
     pub dropped: RawModuleDefV10,
 }

@@ -85,7 +85,7 @@ impl Identifier {
     /// Prefer [`Identifier::new`]. This exists only for names that were already
     /// validated on the way in and are being reconstructed from storage or from
     /// the wire; using it anywhere else defeats the point of the type.
-    pub fn new_unsafe_assume_valid(name: RawIdentifier) -> Self {
+    pub const fn new_unsafe_assume_valid(name: RawIdentifier) -> Self {
         Self { id: name }
     }
 
@@ -193,10 +193,9 @@ impl NamespacedIdentifier {
             !segments.is_empty(),
             "NamespacedIdentifier must have at least one segment"
         );
-        let joined = segments.iter().map(|s| &**s).collect::<Vec<_>>().join(".");
         Self {
+            joined: segments.join(".").into(),
             segments: segments.into(),
-            joined: joined.into(),
         }
     }
 
