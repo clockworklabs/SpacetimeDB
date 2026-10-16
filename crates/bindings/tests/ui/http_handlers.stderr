@@ -157,12 +157,6 @@ help: the trait `spacetimedb::rt::HttpHandlerReturn` is implemented for `http::r
    | impl HttpHandlerReturn for crate::http::Response {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0599]: no method named `sender` found for mutable reference `&mut HandlerContext` in the current scope
-  --> tests/ui/http_handlers.rs:41:23
-   |
-41 |     let _sender = ctx.sender();
-   |                       ^^^^^^ method not found in `&mut HandlerContext`
-
 error[E0599]: no method named `connection_id` found for mutable reference `&mut HandlerContext` in the current scope
   --> tests/ui/http_handlers.rs:42:24
    |

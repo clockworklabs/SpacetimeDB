@@ -1311,6 +1311,8 @@ impl CallProcedureParams {
 
 pub struct CallHttpHandlerParams {
     pub timestamp: Timestamp,
+    /// The random identity the host created for this request, and its token.
+    pub caller_auth: ConnectionAuthCtx,
     pub handler_id: HttpHandlerId,
     pub request: HttpRequest,
     pub request_body: Bytes,
@@ -3451,6 +3453,7 @@ impl ModuleHost {
 
     pub async fn call_http_handler(
         &self,
+        caller_auth: ConnectionAuthCtx,
         handler_id: HttpHandlerId,
         request: HttpRequest,
         request_body: Bytes,
@@ -3461,6 +3464,7 @@ impl ModuleHost {
 
         let params = CallHttpHandlerParams {
             timestamp: Timestamp::now(),
+            caller_auth,
             handler_id,
             request,
             request_body,

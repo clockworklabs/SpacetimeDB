@@ -3414,8 +3414,8 @@ public class Module : IIncrementalGenerator
                             public new global::SpacetimeDB.ModuleEnvironment Env => default;
                             private readonly Local _db = new();
 
-                            internal HandlerContext(Random random, Timestamp time)
-                                : base(random, time) {}
+                            internal HandlerContext(Identity sender, string? senderJwt, Random random, Timestamp time)
+                                : base(sender, senderJwt, random, time) {}
 
                             protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
                             protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(Internal.TxContext inner) =>
@@ -3541,13 +3541,18 @@ public class Module : IIncrementalGenerator
 
                             public static global::SpacetimeDB.Internal.Errno CallLocalHttpHandler(
                                 int id,
+                                ulong sender_0,
+                                ulong sender_1,
+                                ulong sender_2,
+                                ulong sender_3,
+                                global::SpacetimeDB.Internal.BytesSource sender_jwt,
                                 global::SpacetimeDB.Timestamp timestamp,
                                 global::SpacetimeDB.Internal.BytesSource request,
                                 global::SpacetimeDB.Internal.BytesSource request_body,
                                 global::SpacetimeDB.Internal.BytesSink response_sink,
                                 global::SpacetimeDB.Internal.BytesSink response_body_sink
                             ) => global::ModuleRegistration.CallLocalHttpHandler(
-                                id, timestamp, request, request_body, response_sink, response_body_sink
+                                id, sender_0, sender_1, sender_2, sender_3, sender_jwt, timestamp, request, request_body, response_sink, response_body_sink
                             );
 
                             public static global::SpacetimeDB.Internal.Errno CallLocalView(
@@ -3668,7 +3673,7 @@ public class Module : IIncrementalGenerator
                             SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.Internal.LocalReadOnly()));
                             SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly()));
                             SpacetimeDB.Internal.Module.SetProcedureContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ProcedureContext(identity, connectionId, random, time));
-                            SpacetimeDB.Internal.Module.SetHandlerContextConstructor((random, time) => new SpacetimeDB.HandlerContext(random, time));
+                            SpacetimeDB.Internal.Module.SetHandlerContextConstructor((sender, senderJwt, random, time) => new SpacetimeDB.HandlerContext(sender, senderJwt, random, time));
                             #endif
 
                             #if NET10_0_OR_GREATER
@@ -3822,6 +3827,11 @@ public class Module : IIncrementalGenerator
                             addHttpHandlers.Select((h, i) =>
                                 $$"""
                                 private static SpacetimeDB.Internal.Errno __call_http_handler_{{i}}(
+                                    ulong sender_0,
+                                    ulong sender_1,
+                                    ulong sender_2,
+                                    ulong sender_3,
+                                    SpacetimeDB.Internal.BytesSource sender_jwt,
                                     SpacetimeDB.Timestamp timestamp,
                                     SpacetimeDB.Internal.BytesSource request,
                                     SpacetimeDB.Internal.BytesSource request_body,
@@ -3829,7 +3839,7 @@ public class Module : IIncrementalGenerator
                                     SpacetimeDB.Internal.BytesSink response_body_sink
                                 ) {
                                     try {
-                                        var ctx = SpacetimeDB.Internal.Module.CreateHandlerContext(timestamp);
+                                        var ctx = SpacetimeDB.Internal.Module.CreateHandlerContext(sender_0, sender_1, sender_2, sender_3, sender_jwt, timestamp);
                                         var response = {{EscapeIdentifier(h.Name)}}.Invoke(
                                             ctx,
                                             SpacetimeDB.Internal.Module.ReadHttpRequest(request, ref httpRequestBuffer, request_body, ref httpRequestBodyBuffer)
@@ -3988,6 +3998,11 @@ public class Module : IIncrementalGenerator
                     #endif
                         public static SpacetimeDB.Internal.Errno __call_http_handler__(
                             int id,
+                            ulong sender_0,
+                            ulong sender_1,
+                            ulong sender_2,
+                            ulong sender_3,
+                            SpacetimeDB.Internal.BytesSource sender_jwt,
                             SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource request,
                             SpacetimeDB.Internal.BytesSource request_body,
@@ -3995,14 +4010,19 @@ public class Module : IIncrementalGenerator
                             SpacetimeDB.Internal.BytesSink response_body_sink
                         ) {
                             #if NET10_0_OR_GREATER
-                            {{IndentGeneratedCode(GenerateDispatchRouting("HttpHandler", "timestamp, request, request_body, response_sink, response_body_sink", "throw new System.ArgumentOutOfRangeException(nameof(id), id, \"Unknown HTTP handler id\");"), 8)}}
+                            {{IndentGeneratedCode(GenerateDispatchRouting("HttpHandler", "sender_0, sender_1, sender_2, sender_3, sender_jwt, timestamp, request, request_body, response_sink, response_body_sink", "throw new System.ArgumentOutOfRangeException(nameof(id), id, \"Unknown HTTP handler id\");"), 8)}}
                             #else
-                            return CallLocalHttpHandler(id, timestamp, request, request_body, response_sink, response_body_sink);
+                            return CallLocalHttpHandler(id, sender_0, sender_1, sender_2, sender_3, sender_jwt, timestamp, request, request_body, response_sink, response_body_sink);
                             #endif
                         }
 
                         internal static SpacetimeDB.Internal.Errno CallLocalHttpHandler(
                             int id,
+                            ulong sender_0,
+                            ulong sender_1,
+                            ulong sender_2,
+                            ulong sender_3,
+                            SpacetimeDB.Internal.BytesSource sender_jwt,
                             SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource request,
                             SpacetimeDB.Internal.BytesSource request_body,
@@ -4012,7 +4032,7 @@ public class Module : IIncrementalGenerator
                             {{IndentGeneratedCode(string.Join(
                                 "\n",
                                 addHttpHandlers.Select((h, i) =>
-                                    $"{i} => __call_http_handler_{i}(timestamp, request, request_body, response_sink, response_body_sink),"
+                                    $"{i} => __call_http_handler_{i}(sender_0, sender_1, sender_2, sender_3, sender_jwt, timestamp, request, request_body, response_sink, response_body_sink),"
                                 )
                             ), 8)}}
                             _ => throw new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown HTTP handler id")

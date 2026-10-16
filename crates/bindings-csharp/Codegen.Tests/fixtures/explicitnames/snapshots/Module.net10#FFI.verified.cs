@@ -226,8 +226,8 @@ namespace SpacetimeDB
         public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
-        internal HandlerContext(Random random, Timestamp time)
-            : base(random, time) { }
+        internal HandlerContext(Identity sender, string? senderJwt, Random random, Timestamp time)
+            : base(sender, senderJwt, random, time) { }
 
         protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
 
@@ -381,6 +381,11 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
         public static global::SpacetimeDB.Internal.Errno CallLocalHttpHandler(
             int id,
+            ulong sender_0,
+            ulong sender_1,
+            ulong sender_2,
+            ulong sender_3,
+            global::SpacetimeDB.Internal.BytesSource sender_jwt,
             global::SpacetimeDB.Timestamp timestamp,
             global::SpacetimeDB.Internal.BytesSource request,
             global::SpacetimeDB.Internal.BytesSource request_body,
@@ -389,6 +394,11 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
         ) =>
             global::ModuleRegistration.CallLocalHttpHandler(
                 id,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                sender_jwt,
                 timestamp,
                 request,
                 request_body,
@@ -893,7 +903,8 @@ static class ModuleRegistration
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
-            (random, time) => new SpacetimeDB.HandlerContext(random, time)
+            (sender, senderJwt, random, time) =>
+                new SpacetimeDB.HandlerContext(sender, senderJwt, random, time)
         );
 #endif
 
@@ -1258,6 +1269,11 @@ static class ModuleRegistration
 #endif
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
         int id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource sender_jwt,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource request,
         SpacetimeDB.Internal.BytesSource request_body,
@@ -1282,6 +1298,11 @@ static class ModuleRegistration
         )
             return global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.AssemblyDescriptor.CallLocalHttpHandler(
                 localId,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                sender_jwt,
                 timestamp,
                 request,
                 request_body,
@@ -1297,6 +1318,11 @@ static class ModuleRegistration
 #else
         return CallLocalHttpHandler(
             id,
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            sender_jwt,
             timestamp,
             request,
             request_body,
@@ -1308,6 +1334,11 @@ static class ModuleRegistration
 
     internal static SpacetimeDB.Internal.Errno CallLocalHttpHandler(
         int id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource sender_jwt,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource request,
         SpacetimeDB.Internal.BytesSource request_body,
