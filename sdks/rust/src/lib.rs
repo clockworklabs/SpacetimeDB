@@ -25,7 +25,7 @@ pub mod error;
 pub mod event;
 pub mod table;
 
-pub use db_connection::DbConnectionBuilder;
+pub use db_connection::{DbConnectionBuilder, DisconnectIntent};
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
