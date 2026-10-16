@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { Timestamp } from 'spacetimedb';
+import type { ReducerExport } from 'spacetimedb/server';
 import {
   EmailStatus,
   WebhookEventStatus,
@@ -334,14 +335,18 @@ function applyResendWebhook(
   return outcome.status;
 }
 
-export const ingestResendWebhook = spacetimedb.reducer(
-  {
-    eventId: t.string(),
-    eventType: t.string(),
-    payloadJson: t.string(),
-    signatureHeader: t.option(t.string()),
-    timestampHeader: t.option(t.string()),
-  },
+const ingestResendWebhookArgs = {
+  eventId: t.string(),
+  eventType: t.string(),
+  payloadJson: t.string(),
+  signatureHeader: t.option(t.string()),
+  timestampHeader: t.option(t.string()),
+};
+export const ingestResendWebhook: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof ingestResendWebhookArgs
+> = spacetimedb.reducer(
+  ingestResendWebhookArgs,
   (ctx, { eventType, ...args }) => {
     if (eventType !== parseResendEventType(args.payloadJson)) {
       throwSenderError(errors.webhookMetadataMismatch);
@@ -389,14 +394,15 @@ export function makeResendWebhookHandler() {
   };
 }
 
-export const replayWebhookEvent = spacetimedb.reducer(
-  { eventId: t.string() },
-  (ctx, { eventId }) => {
-    // Administrators may run this operation over stored events.
-    requireAdmin(ctx, ctx.sender);
-    const event = ctx.db.resendWebhookEvent.eventId.find(eventId);
-    if (!event) throwSenderError(`${errors.webhookEventNotFound}:${eventId}`);
-    const outcome = applyResendEvent(ctx, eventId, event.payloadJson);
-    updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
-  }
-);
+const replayWebhookEventArgs = { eventId: t.string() };
+export const replayWebhookEvent: ReducerExport<
+  typeof spacetimedb.schemaType,
+  typeof replayWebhookEventArgs
+> = spacetimedb.reducer(replayWebhookEventArgs, (ctx, { eventId }) => {
+  // Administrators may run this operation over stored events.
+  requireAdmin(ctx, ctx.sender);
+  const event = ctx.db.resendWebhookEvent.eventId.find(eventId);
+  if (!event) throwSenderError(`${errors.webhookEventNotFound}:${eventId}`);
+  const outcome = applyResendEvent(ctx, eventId, event.payloadJson);
+  updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
+});

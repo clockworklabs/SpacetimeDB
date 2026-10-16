@@ -1,14 +1,12 @@
 use crate::targets::{util, ReleaseTarget};
-use anyhow::Result;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use reqwest::blocking::Client;
+use reqwest::StatusCode;
+use std::path::Path;
 use std::process::Command;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", "spacetimedb-devops"];
-const CRATES_IO_POLL_INTERVAL: Duration = Duration::from_secs(15);
-const CRATES_IO_POLL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const CRATES_IO_API: &str = "https://crates.io/api/v1";
 
 pub struct CratesRelease {
     pub version: String,
@@ -20,94 +18,39 @@ impl CratesRelease {
         Self { version, dry_run }
     }
 
-    /// Publishes a single crate to crates.io
-    fn publish_crate(&self, crate_name: &str, manifest_map: &HashMap<String, PathBuf>) -> Result<(), String> {
-        println!("Publishing crate: {}", crate_name);
-
-        let manifest_path = manifest_map
-            .get(crate_name)
-            .ok_or_else(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
-
-        let crate_dir = manifest_path
-            .parent()
-            .ok_or_else(|| format!("Failed to get parent directory of {}", manifest_path.display()))?;
-
-        let mut cmd_args = vec!["publish", "--allow-dirty"];
-        if self.dry_run {
-            cmd_args.push("--dry-run");
-            cmd_args.push("--no-verify");
+    fn publish_crates(&self, workspace_root: &Path, crates: &[&String]) -> Result<(), String> {
+        if crates.is_empty() {
+            println!("All selected crates are already published; nothing to publish.");
+            return Ok(());
         }
-
+        // Workaround for some weird bug where dry runs fail if you don't run them in a sterile home dir
+        let cargo_home = if self.dry_run {
+            Some(tempfile::tempdir().map_err(|err| format!("Failed to create temporary Cargo home: {err}"))?)
+        } else {
+            None
+        };
+        // NOTE: We must keep all crates in one publish invocation.
+        // Without this, dry-run doesn't work properly: every crate will look for its deps on crates.io
+        // and fail, but if they're on one invocation then they're able to resolve properly.
         let mut cmd = Command::new("cargo");
-        cmd.args(&cmd_args).current_dir(crate_dir);
+        cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
+        for crate_name in crates {
+            cmd.args(["-p", crate_name]);
+        }
+        if self.dry_run {
+            cmd.arg("--dry-run");
+        }
+        if let Some(home) = &cargo_home {
+            cmd.env("CARGO_HOME", home.path());
+        }
         util::print_command(&cmd);
-
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Failed to execute cargo publish: {}", e))?;
-
-        if output.status.success() {
-            return Ok(());
+        let status = cmd
+            .status()
+            .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
+        if !status.success() {
+            return Err(format!("cargo publish failed: {status}"));
         }
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stderr.contains("already exists on crates.io index") {
-            println!(
-                "Crate {} already published on crates.io; skipping (treating as success).\n{}{}",
-                crate_name, stdout, stderr
-            );
-            return Ok(());
-        }
-
-        Err(format!(
-            "Failed to publish crate: {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-            crate_name, stdout, stderr
-        ))
-    }
-
-    fn wait_for_crate_available(&self, crate_name: &str, version: &str) -> Result<(), String> {
-        let spec = format!("{}@{}", crate_name, version);
-        let deadline = Instant::now() + CRATES_IO_POLL_TIMEOUT;
-        let mut attempt = 1;
-
-        println!(
-            "Waiting for {} to be visible in the crates.io index before publishing dependent crates...",
-            spec
-        );
-
-        loop {
-            let mut cmd = Command::new("cargo");
-            cmd.args(["info", "--registry", "crates-io", &spec]);
-            util::print_command(&cmd);
-
-            let output = cmd
-                .output()
-                .map_err(|e| format!("Failed to execute cargo info {}: {}", spec, e))?;
-
-            if output.status.success() {
-                println!("{} is visible in the crates.io index.", spec);
-                return Ok(());
-            }
-
-            if Instant::now() >= deadline {
-                return Err(format!(
-                    "Timed out waiting for {} to become visible in the crates.io index\n--- stdout ---\n{}\n--- stderr ---\n{}",
-                    spec,
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-
-            println!(
-                "{} is not visible yet; retrying in {}s (attempt {}).",
-                spec,
-                CRATES_IO_POLL_INTERVAL.as_secs(),
-                attempt
-            );
-            attempt += 1;
-            thread::sleep(CRATES_IO_POLL_INTERVAL);
-        }
+        Ok(())
     }
 
     fn add_crate_owners(&self, crate_name: &str) -> Result<(), String> {
@@ -145,18 +88,26 @@ impl CratesRelease {
     }
 }
 
+fn is_published(client: &Client, api: &str, crate_name: &str, version: &str) -> Result<bool, String> {
+    let url = format!("{}/crates/{crate_name}/{version}", api.trim_end_matches('/'));
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|err| format!("Failed to query {url}: {err}"))?;
+    match response.status() {
+        StatusCode::OK => Ok(true),
+        StatusCode::NOT_FOUND => Ok(false),
+        status => Err(format!("Failed to query {url}: {status}")),
+    }
+}
+
 impl ReleaseTarget for CratesRelease {
     fn release(&self) -> Result<(), String> {
         println!("Finding crates to publish to crates.io...");
 
-        // Get the workspace root and manifest map
         let workspace_root = crate::crates_resolver::find_workspace_root()
             .map_err(|e| format!("Failed to find workspace root: {}", e))?;
-        let manifest_map = crate::crates_resolver::get_crate_manifest_map(&workspace_root)
-            .map_err(|e| format!("Failed to get crate manifest map: {}", e))?;
 
-        // TODO(bfops): we could pass manifest_map into get_crates_to_publish and then it wouldn't need to compute workspace_root or manifest_map again
-        // alternatively, it could return richer data (e.g. including the crate path) and then we wouldn't need to compute manifest_map here
         let crates = crate::crates_resolver::get_crates_to_publish()
             .map_err(|e| format!("Failed to find crates to publish: {}", e))?;
 
@@ -167,28 +118,70 @@ impl ReleaseTarget for CratesRelease {
 
         if self.dry_run {
             println!("\nDRY RUN: No crates will be published");
-            return Ok(());
         }
 
         println!("\nStarting publish process...");
-        let crates_io_version = self
-            .version
-            .strip_prefix('v')
-            .unwrap_or(&self.version)
-            .split('-')
-            .next()
-            .unwrap();
-        for crate_name in &crates {
-            self.publish_crate(crate_name, &manifest_map)?;
-            self.wait_for_crate_available(crate_name, crates_io_version)?;
-            self.add_crate_owners(crate_name)?;
+        let mut unpublished = Vec::new();
+        if self.dry_run {
+            unpublished.extend(&crates);
+        } else {
+            let client = Client::builder()
+                .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
+                .timeout(Duration::from_secs(30))
+                .build()
+                .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
+            let crates_io_version = self
+                .version
+                .strip_prefix('v')
+                .unwrap_or(&self.version)
+                .split('-')
+                .next()
+                .unwrap();
+            // We must only publish unpublished crates, otherwise our publish invocation will fail.
+            // This comes up in the context of re-running partially-completed releases if we hit an issue partway through.
+            println!("Checking for already-published crates..");
+            for crate_name in &crates {
+                // Pace requests to respect crates.io's API guidance.
+                std::thread::sleep(Duration::from_secs(1));
+                if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
+                    println!("Crate {crate_name} already published; skipping.");
+                } else {
+                    println!("Crate {crate_name} must be published.");
+                    unpublished.push(crate_name);
+                }
+            }
+        }
+        self.publish_crates(&workspace_root, &unpublished)?;
+        if !self.dry_run {
+            for crate_name in &crates {
+                self.add_crate_owners(crate_name)?;
+            }
         }
 
-        println!("\nAll crates published successfully!");
+        if self.dry_run {
+            println!("\nDry run completed successfully!");
+        } else {
+            println!("\nAll crates published successfully!");
+        }
         Ok(())
     }
 
     fn name(&self) -> &'static str {
         "crates"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_selection_skips_cargo_in_both_modes() {
+        for dry_run in [false, true] {
+            // A nonexistent workspace proves we return before invoking Cargo.
+            CratesRelease::new("1.2.3".into(), dry_run)
+                .publish_crates(Path::new("/nonexistent-release-workspace"), &[])
+                .unwrap();
+        }
     }
 }

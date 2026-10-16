@@ -84,16 +84,7 @@ partial struct FormerlyForbiddenFieldNames
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as FormerlyForbiddenFieldNames?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is FormerlyForbiddenFieldNames t && Equals(t);
     }
 
     public static bool operator ==(

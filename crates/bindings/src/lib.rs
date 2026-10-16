@@ -980,6 +980,9 @@ pub use spacetimedb_bindings_macro::EnvironmentValue;
 /// Values are stored in plaintext and may be read by database collaborators.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Environment {
+    /// In native unit tests, reads come from this `TestContext` environment instead of the host.
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test: Option<test_utils::TestEnvironmentId>,
     _private: (),
 }
 
@@ -991,7 +994,19 @@ impl Environment {
     ///
     /// Panics if the key is undeclared, invalid, or inaccessible in the current host call.
     pub fn get(&self, key: &str) -> Option<String> {
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(test) = self.test {
+            return test.get(key);
+        }
         rt::env_get(key)
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(test: test_utils::TestEnvironmentId) -> Self {
+        Self {
+            test: Some(test),
+            _private: (),
+        }
     }
 }
 
@@ -1017,9 +1032,9 @@ impl Default for AnonymousViewContext {
 impl AnonymousViewContext {
     #[doc(hidden)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    pub fn __test(db: LocalReadOnly) -> Self {
+    pub fn __test(env: Environment, db: LocalReadOnly) -> Self {
         Self {
-            env: Environment::default(),
+            env,
             db,
             from: QueryBuilder {},
         }
@@ -1052,10 +1067,10 @@ impl ViewContext {
 
     #[doc(hidden)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    pub fn __test(sender: Identity, db: LocalReadOnly) -> Self {
+    pub fn __test(env: Environment, sender: Identity, db: LocalReadOnly) -> Self {
         Self {
             sender,
-            env: Environment::default(),
+            env,
             db,
             from: QueryBuilder {},
         }
@@ -1185,7 +1200,9 @@ impl ReducerContext {
 
     #[doc(hidden)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    #[allow(clippy::too_many_arguments)]
     pub fn __test(
+        env: Environment,
         db: Local,
         sender: Identity,
         sender_auth: AuthCtx,
@@ -1195,7 +1212,7 @@ impl ReducerContext {
         #[cfg(feature = "rand08")] rng_seed: Option<u64>,
     ) -> Self {
         Self {
-            env: Environment::default(),
+            env,
             db,
             sender,
             timestamp,
@@ -1343,6 +1360,7 @@ impl Deref for TxContext {
 /// We need to passthrough identity and connection_id because procedures can be invoked by users.
 /// For [HttpContext] this is always anonymous ([Identity::ZERO]).
 /// Construct the inner [ReducerContext] with the appropriate caller information.
+#[cfg(feature = "unstable")]
 fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
@@ -1396,6 +1414,7 @@ fn try_with_tx<T, E>(
     res
 }
 
+#[cfg(feature = "unstable")]
 fn with_tx<T>(
     body: impl Fn(&TxContext) -> T,
     identity: Identity,
@@ -1493,6 +1512,7 @@ impl ProcedureContext {
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     pub fn __test(
+        env: Environment,
         datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>,
         sender: Identity,
         sender_auth: AuthCtx,
@@ -1508,7 +1528,7 @@ impl ProcedureContext {
             sender,
             timestamp,
             connection_id,
-            env: Environment::default(),
+            env,
             sender_auth,
             module_identity,
             test_datastore: Some(datastore),
@@ -1646,7 +1666,11 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id(), false)
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
     }
 
     /// Acquire a mutable transaction
@@ -1692,6 +1716,7 @@ impl ProcedureContext {
 
                 let test_tx = std::rc::Rc::new(datastore.begin_mut_tx());
                 let tx = ReducerContext::__test(
+                    self.env,
                     Local::__test_tx(test_tx.clone()),
                     self.sender,
                     self.sender_auth.clone(),

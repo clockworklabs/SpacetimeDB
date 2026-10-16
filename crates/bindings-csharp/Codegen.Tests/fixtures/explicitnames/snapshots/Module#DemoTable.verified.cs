@@ -74,16 +74,7 @@ partial struct DemoTable : System.IEquatable<DemoTable>, SpacetimeDB.BSATN.IStru
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as DemoTable?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is DemoTable t && Equals(t);
     }
 
     public static bool operator ==(DemoTable this_, DemoTable that)

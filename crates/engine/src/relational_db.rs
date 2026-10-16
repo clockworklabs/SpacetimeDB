@@ -4460,7 +4460,7 @@ mod tests {
         assert_eq!(user_table_names, expected_table_names);
 
         db.with_auto_commit(Workload::ForTests, |tx| {
-            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt")
+            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, Some("invalid_jwt"))
                 .unwrap();
             Ok::<(), DBError>(())
         })?;

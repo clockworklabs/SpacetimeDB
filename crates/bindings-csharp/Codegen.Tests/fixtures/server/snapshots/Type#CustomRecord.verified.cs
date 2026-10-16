@@ -113,16 +113,7 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as CustomRecord;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is CustomRecord t && Equals(t);
     }
 
     public static bool operator ==(CustomRecord? this_, CustomRecord? that)
