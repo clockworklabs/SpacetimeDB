@@ -2,7 +2,7 @@ use super::ast::SchemaViewer;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_expr::check::parse_and_type_sub;
-use spacetimedb_expr::expr::ProjectName;
+use spacetimedb_expr::expr::{ProjectName, RelExpr, Relvar};
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::RawRowLevelSecurityDefV9;
 use spacetimedb_lib::identity::AuthCtx;
@@ -21,11 +21,10 @@ impl RowLevelExpr {
     ) -> anyhow::Result<Self> {
         let (sql, _) = parse_and_type_sub(&rls.sql, &SchemaViewer::new(tx, auth_ctx), auth_ctx)?;
 
+        // Type checking only allows a view call with args as a lone relvar
         let (ProjectName::None(expr) | ProjectName::Some(expr, _)) = &sql;
-        let mut calls_view_with_args = false;
-        expr.for_each_relvar(|relvar| calls_view_with_args |= relvar.view_args.is_some());
         anyhow::ensure!(
-            !calls_view_with_args,
+            !matches!(expr, RelExpr::RelVar(Relvar { view_args: Some(_), .. })),
             "Row-level security is not supported on parameterized views: {}",
             rls.sql
         );

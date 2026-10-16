@@ -106,7 +106,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                         schema: rhs_schema,
                         alias: rhs_alias,
                         delta,
-                        view_args,
+                        ..
                     },
             },
             FieldProject { table: u, field: a, .. },
@@ -119,7 +119,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                         schema: rhs_schema.inner(),
                         limit: None,
                         delta,
-                        view_args: bound_view_args(view_args),
+                        view_args: None,
                     },
                     var.label(&rhs_alias),
                 )),
@@ -144,7 +144,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     schema: rhs_schema,
                     alias: rhs_alias,
                     delta,
-                    view_args,
+                    ..
                 },
         }) => {
             let lhs = compile_rel_expr(var, *lhs);
@@ -153,7 +153,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                     schema: rhs_schema.inner(),
                     limit: None,
                     delta,
-                    view_args: bound_view_args(view_args),
+                    view_args: None,
                 },
                 var.label(&rhs_alias),
             );

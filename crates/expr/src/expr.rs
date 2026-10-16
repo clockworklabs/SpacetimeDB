@@ -319,29 +319,16 @@ impl RelExpr {
     /// Sets the `arg_hash` of every parameterized view call in this expression.
     /// Sender-scoped views hash the `caller` with their args, and anonymous views hash only their args.
     pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
-        self.for_each_relvar_mut(|relvar| {
-            if let Some(view_args) = &mut relvar.view_args {
-                let sender = (!relvar.schema.is_anonymous_view()).then_some(caller);
+        self.visit_mut(&mut |expr| {
+            if let Self::RelVar(Relvar {
+                schema,
+                view_args: Some(view_args),
+                ..
+            }) = expr
+            {
+                let sender = (!schema.is_anonymous_view()).then_some(caller);
                 view_args.arg_hash = Some(view_instance_arg_hash_value(sender, &view_args.args));
             }
-        });
-    }
-
-    pub fn for_each_relvar(&self, mut f: impl FnMut(&Relvar)) {
-        self.visit(&mut |expr| match expr {
-            Self::RelVar(relvar)
-            | Self::LeftDeepJoin(LeftDeepJoin { rhs: relvar, .. })
-            | Self::EqJoin(LeftDeepJoin { rhs: relvar, .. }, ..) => f(relvar),
-            Self::Select(..) => {}
-        });
-    }
-
-    pub fn for_each_relvar_mut(&mut self, mut f: impl FnMut(&mut Relvar)) {
-        self.visit_mut(&mut |expr| match expr {
-            Self::RelVar(relvar)
-            | Self::LeftDeepJoin(LeftDeepJoin { rhs: relvar, .. })
-            | Self::EqJoin(LeftDeepJoin { rhs: relvar, .. }, ..) => f(relvar),
-            Self::Select(..) => {}
         });
     }
 

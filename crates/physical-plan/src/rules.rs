@@ -849,7 +849,6 @@ impl RewriteRule for HashToIxJoin {
 
                 let (rhs_plan, rhs_filters) = peel_filters_owned(*join.rhs);
                 let (rhs, rhs_label, rhs_delta) = match rhs_plan {
-                    // A view's `arg_hash` filter is already among `rhs_filters`
                     PhysicalPlan::TableScan(
                         TableScan {
                             schema: rhs,
