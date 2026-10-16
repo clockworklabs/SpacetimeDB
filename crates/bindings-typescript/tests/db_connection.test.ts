@@ -1,4 +1,4 @@
-import { assertType, beforeEach, describe, expect, test } from 'vitest';
+import { assertType, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   BinaryWriter,
   ConnectionId,
@@ -211,6 +211,111 @@ describe('DbConnection', () => {
 
     expect(callbackIsActive).toBe(false);
     expect(client.isActive).toBe(false);
+  });
+
+  test('logs an error thrown by a callback and keeps the connection open', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onDisconnect = vi.fn();
+    const secondOnConnect = vi.fn();
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnect(() => {
+        throw new Error('callback failed');
+      })
+      .onConnect(secondOnConnect)
+      .onDisconnect(onDisconnect)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    // Node rethrows errors from WebSocket listeners on the next tick, which
+    // crashes the host process.
+    expect(() =>
+      wsAdapter.sendToClient(
+        ServerMessage.InitialConnection({
+          identity: anIdentity,
+          token: 'a-token',
+          connectionId: ConnectionId.random(),
+        })
+      )
+    ).not.toThrow();
+
+    expect(secondOnConnect).toHaveBeenCalledOnce();
+    expect(client.isActive).toBe(true);
+    expect(wsAdapter.closed).toBe(false);
+    expect(onDisconnect).not.toHaveBeenCalled();
+  });
+
+  test('reports a row it cannot decode through onDisconnect instead of throwing', async () => {
+    const onDisconnectPromise = new Deferred<Error | undefined>();
+    const wsAdapter = new WebsocketTestAdapter();
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect((_ctx, error) => onDisconnectPromise.resolve(error))
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    expect(client.isActive).toBe(true);
+    const inserted: number[] = [];
+    client.db.player.onInsert((_ctx, player) => inserted.push(player.id));
+    const inFlight = client.reducers.createPlayer({
+      name: 'drogus',
+      location: { x: 0, y: 0 },
+    });
+
+    // A `player` row one byte short, as when the client's bindings are out of
+    // step with the module's schema.
+    const truncatedPlayer = encodePlayer({
+      id: 1,
+      userId: anIdentity,
+      name: 'drogus',
+      location: { x: 0, y: 0 },
+    }).slice(0, -1);
+    expect(() =>
+      wsAdapter.sendToClient(
+        ServerMessage.TransactionUpdate({
+          querySets: [makeQuerySetUpdate(0, 'player', truncatedPlayer)],
+        })
+      )
+    ).not.toThrow();
+
+    expect(await onDisconnectPromise.promise).toBeInstanceOf(RangeError);
+    expect(client.isActive).toBe(false);
+    expect(wsAdapter.closed).toBe(true);
+
+    // A call in flight settles, and a message that arrives later is ignored.
+    await expect(inFlight).rejects.toThrow();
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'player',
+            encodePlayer({
+              id: 2,
+              userId: anIdentity,
+              name: 'drogus',
+              location: { x: 0, y: 0 },
+            })
+          ),
+        ],
+      })
+    );
+    expect(inserted).toEqual([]);
   });
 
   test('marks disconnect as requested when disconnect() is called', async () => {
