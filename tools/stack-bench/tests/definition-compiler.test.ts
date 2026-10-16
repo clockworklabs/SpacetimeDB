@@ -336,6 +336,16 @@ test('named-action overrides accept only declared locator fields', () => {
   }
 });
 
+test('a named-action input can name the container that holds its control', () => {
+  const input = { testid: 'support-refund', attribute: 'data-action-input',
+    in: { testid: 'support-ticket', contains: 'Witness refund case' } };
+  const call = { do: 'callAction', actor: 'a', action: 'refund', input };
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario(call)));
+  for (const scope of [{ testid: '' }, { testid: 'support-ticket', attribute: 'data-entity-id' }]) {
+    assert.throws(() => compileScenarioDefinition(scenario({ ...call, input: { ...input, in: scope } })));
+  }
+});
+
 test('named-action input fields name distinct declared parameters', () => {
   const namedAction = { id: 'cart', path: '/api/cart/:itemId', method: 'PATCH', reducer: 'update_cart_quantity',
     args: [0, 2], params: [{ name: 'itemId', in: 'path', placeholder: ':itemId' }, { name: 'quantity', in: 'body' }] };

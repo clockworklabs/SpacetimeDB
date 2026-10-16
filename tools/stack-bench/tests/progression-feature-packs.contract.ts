@@ -201,13 +201,11 @@ test('refund accounting proves one persisted effect after a same-staff replay', 
     assert(observations.some(step => step.do === 'expectNumber' && step.actor === 'owner-fresh'
       && step.testid === testid && step.relativeTo === 'paid-total' && step.plus === 0));
   }
+  // Refund records are counted inside each order, where the contract places them.
   assert(observations.some(step => step.do === 'expectElementCount'
-    && step.testid === 'refund-entry' && step.equals === 1));
-  assert(observations.some(step => step.do === 'expectNumber'
-    && step.testid === 'order-refund-total' && step.equals === 0
-    && step.in?.contains === 'Mouse'));
+    && step.testid === 'refund-entry' && step.in?.contains === 'Keyboard' && step.equals === 1));
   assert(observations.some(step => step.do === 'expectElementCount'
-    && step.testid === 'refund-entry' && step.contains === 'Mouse' && step.equals === 0));
+    && step.testid === 'refund-entry' && step.in?.contains === 'Mouse' && step.equals === 0));
   const access = selectedCriteria(requiredPack('ecommerce.spec.access-control')).find(criterion => criterion.id === '615c');
   assert(access?.steps.some(step => step.do === 'expectActionOutcome'
     && step.outcome === 'refused'));

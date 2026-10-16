@@ -187,7 +187,8 @@ async function visibleSupportCases(account: ProgressionAccount | null) {
   const where = account.isAdmin || account.isStaff ? "TRUE" : "sc.account_id = $1";
   const values = account.isAdmin || account.isStaff ? [] : [account.id];
   const cases = await deps.pool.query(
-    `SELECT sc.*, o.total AS order_total
+    `SELECT sc.*, o.total AS order_total,
+       (SELECT string_agg(oi.item_name, ', ' ORDER BY oi.id) FROM order_item oi WHERE oi.order_id = sc.order_id) AS order_items
      FROM support_case sc LEFT JOIN orders o ON o.id = sc.order_id
      WHERE ${where} ORDER BY sc.created_at DESC`,
     values,
@@ -208,6 +209,7 @@ async function visibleSupportCases(account: ProgressionAccount | null) {
     priority: entry.priority,
     status: entry.status,
     orderId: entry.order_id,
+    orderItems: entry.order_items,
     refundTotal: Number(entry.refund_total),
     replies: replies.rows.filter((reply) => reply.case_id === entry.id).map((reply) => ({
       id: reply.id,

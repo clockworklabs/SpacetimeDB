@@ -42,6 +42,8 @@ interface CallActionInput {
     readonly attribute: string;
     readonly contains?: string;
     readonly testid: string;
+    // The container that holds the control, when the page shows several of them.
+    readonly in?: { readonly testid: string; readonly contains?: string };
     // The parameters the attribute supplies; the rest keep the step's arguments.
     readonly fields?: readonly string[];
     readonly overrides?: Readonly<Record<string, {
@@ -97,8 +99,9 @@ async function readActionValues(capabilities: NamedActionCapabilities, source: A
 
   const named = capabilities['named-actions'];
   const deadline = named.now() + within;
-  const readAttribute = async (actor: Actor, selector: { testid: string; contains?: string; attribute: string }) => {
-    const target = actor.loc(selector.testid, { contains: selector.contains });
+  const readAttribute = async (actor: Actor,
+    selector: { testid: string; contains?: string; attribute: string; in?: { testid: string; contains?: string } }) => {
+    const target = actor.loc(selector.testid, { contains: selector.contains, ...(selector.in ? { scope: selector.in } : {}) });
     const missing = (): never => fail('interface-missing', {
       control: selector.testid, attribute: selector.attribute, action: input.action,
     });

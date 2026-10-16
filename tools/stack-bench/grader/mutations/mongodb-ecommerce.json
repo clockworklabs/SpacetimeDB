@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "3ad6189302d954e78c23d69bfb81bb4056a0da86e60ef49e94760948671dda99",
+  "fixtureSha256": "8a167a23e422534dcf58d664edcd0506ec454c5880b54e170da391c600dfe6c2",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
@@ -3333,6 +3333,315 @@
           "file": "server/src/index.ts",
           "find": "app.post(\"/api/auth/signup\", async (req, res) => {",
           "replace": "app.post(\"/api/auth/signup\", async (req, res) => {\n  return res.status(403).json({ error: \"Registration disabled\" });"
+        }
+      ]
+    },
+    {
+      "id": "inactive-cart-expiry-reset-by-reservation-release",
+      "scenario": "tracks/ecommerce/scenarios/03-cart-expiration.json",
+      "targets": [
+        "ecommerce.l3.cart-expiration.cart-expiration.304a"
+      ],
+      "desc": "Treat the server releasing an expired reservation as cart activity, so an abandoned cart is still full after five minutes.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        } } }, { $set: { \"items.$.reservedWarehouseIds\": [] } }, { timestamps: false });",
+          "replace": "        } } }, { $set: { \"items.$.reservedWarehouseIds\": [], inactiveExpiresAt: new Date(Date.now() + 300_000) } }, { timestamps: false });"
+        }
+      ]
+    },
+    {
+      "id": "shipped-order-delivery-waits-an-hour",
+      "scenario": "tracks/ecommerce/scenarios/03-order-delivery.json",
+      "targets": [
+        "ecommerce.l3.order-delivery.order-delivery.303a"
+      ],
+      "desc": "Deliver a shipped order after an hour instead of after 60 seconds.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "const shipped = await Order.find({ status: \"shipped\", updatedAt: { $lte: new Date(Date.now() - 60_000) } });",
+          "replace": "const shipped = await Order.find({ status: \"shipped\", updatedAt: { $lte: new Date(Date.now() - 3_600_000) } });"
+        }
+      ]
+    },
+    {
+      "id": "delivery-timer-advances-cancelled-orders",
+      "scenario": "tracks/ecommerce/scenarios/03-order-delivery.json",
+      "targets": [
+        "ecommerce.l3.order-delivery.order-delivery.305a"
+      ],
+      "desc": "The delivery timer advances cancelled orders to delivered as well as shipped ones.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "const shipped = await Order.find({ status: \"shipped\", updatedAt: { $lte: new Date(Date.now() - 60_000) } });",
+          "replace": "const shipped = await Order.find({ status: { $in: [\"shipped\", \"cancelled\"] }, updatedAt: { $lte: new Date(Date.now() - 60_000) } });"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-save-reorder-rule",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.automatic-reorder-access.502c"
+      ],
+      "desc": "The reorder rule endpoint omits its staff check, so a customer can overwrite a rule.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "app.put(\"/api/reorders/:itemId\", auth, staff, async (req: Request, res) => {",
+          "replace": "app.put(\"/api/reorders/:itemId\", auth, async (req: Request, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "automatic-restock-dedupe-keyed-by-stock-level",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder-duplicate.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.automatic-reorder-deduplication.502b"
+      ],
+      "desc": "Deduplicate automatic restocks by the stock level that triggered them, so each further sale below the threshold adds another pending restock.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      const pending = await ScheduledRestock.exists({ itemId: rule.itemId, status: \"pending\" });",
+          "replace": "      const pending = await ScheduledRestock.exists({ itemId: rule.itemId, status: \"pending\",\n        source: `automatic:${total[0]?.total || 0}` });"
+        },
+        {
+          "find": "          dueAt: new Date(Date.now() + 60_000), source: \"automatic\" });",
+          "replace": "          dueAt: new Date(Date.now() + 60_000), source: `automatic:${total[0]?.total || 0}` });"
+        }
+      ]
+    },
+    {
+      "id": "automatic-restock-skips-threshold-boundary",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder.json",
+      "targets": [
+        "ecommerce.progression.automatic-reorder.automatic-reorder.502a"
+      ],
+      "desc": "Create an automatic restock only when stock falls below the threshold, not when it reaches it.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      if ((total[0]?.total || 0) > rule.threshold) continue;",
+          "replace": "      if ((total[0]?.total || 0) >= rule.threshold) continue;"
+        }
+      ]
+    },
+    {
+      "id": "full-cart-restore-shows-unavailable-warning",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-recovery.json",
+      "targets": [
+        "ecommerce.progression.cart-recovery.cart-recovery.503a"
+      ],
+      "desc": "Show the unavailable-items warning after every restore, even when every item was restored.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "          setRestoreWarning(result.unavailable.join(\", \"));",
+          "replace": "          setRestoreWarning(`Unavailable: ${result.unavailable.join(\", \")}`);"
+        }
+      ]
+    },
+    {
+      "id": "partial-restore-drops-unavailable-silently",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-recovery.json",
+      "targets": [
+        "ecommerce.progression.cart-recovery.cart-recovery.503b"
+      ],
+      "desc": "Skip an unavailable item during a cart restore without naming it.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "            if (!held) { unavailable.push(item.name); continue; }",
+          "replace": "            if (!held) continue;"
+        }
+      ]
+    },
+    {
+      "id": "delivery-notifications-are-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "targets": [
+        "ecommerce.spec.access-control.delivery-notification-privacy.501b"
+      ],
+      "desc": "Notification reads return every account's notifications, so another customer sees the owner's delivery.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "user ? Notification.find({ userId: user._id }).sort({ createdAt: -1 }) : [],",
+          "replace": "user ? Notification.find({}).sort({ createdAt: -1 }) : [],"
+        }
+      ]
+    },
+    {
+      "id": "pending-order-shows-return-button",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-return-boundary.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3e"
+      ],
+      "desc": "Offer item return buttons on every order that is not cancelled, including pending ones.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "                  {[\"shipped\", \"delivered\"].includes(order.status) &&\n                    order.items",
+          "replace": "                  {order.status !== \"cancelled\" &&\n                    order.items"
+        }
+      ]
+    },
+    {
+      "id": "support-order-link-skips-order-ownership",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-support-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-support-ownership.614b"
+      ],
+      "desc": "Link any order to a support case without checking that the order belongs to the case owner.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    const order = await Order.findOne({ _id: orderId, userId: req.progressionUser._id });",
+          "replace": "    const order = await Order.findById(orderId);"
+        }
+      ]
+    },
+    {
+      "id": "support-order-link-is-not-saved",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-support-owned.json",
+      "targets": [
+        "ecommerce.progression.order-support.order-support-owned.614a"
+      ],
+      "desc": "Accept an order link on a support case without saving it.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    ticket.orderId = order._id;\n    await ticket.save();",
+          "replace": "    ticket.orderId = order._id;"
+        }
+      ]
+    },
+    {
+      "id": "promotion-redemption-counted-when-applied",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-reporting.json",
+      "targets": [
+        "ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a"
+      ],
+      "desc": "Count a promotion redemption when the code is applied to the cart and again at checkout.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    const cart = await Cart.findOneAndUpdate({ userId: req.progressionUser._id },\n      { $set: { promotionCode: code, discount: promotion.discount } }, { new: true });",
+          "replace": "    await Promotion.updateOne({ code }, { $inc: { redemptions: 1 } });\n    const cart = await Cart.findOneAndUpdate({ userId: req.progressionUser._id },\n      { $set: { promotionCode: code, discount: promotion.discount } }, { new: true });"
+        }
+      ]
+    },
+    {
+      "id": "promotion-revenue-records-undiscounted-subtotal",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-reporting.json",
+      "targets": [
+        "ecommerce.progression.promotion-reporting.promotion-report-revenue.622b"
+      ],
+      "desc": "Record the subtotal before the discount as promotion revenue.",
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "{ $inc: { redemptions: 1, revenue: totalMinor / 100 } }",
+          "replace": "{ $inc: { redemptions: 1, revenue: subtotal } }"
+        }
+      ]
+    },
+    {
+      "id": "recommendation-dismissals-are-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.spec.access-control.recommendation-feedback-privacy.504b"
+      ],
+      "desc": "Recommendations exclude items dismissed by any account, not only the viewer's own dismissals.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const dismissedItemIds = new Set((await Dismissal.find({ userId })).map(entry => entry.itemId.toString()));",
+          "replace": "const dismissedItemIds = new Set((await Dismissal.find({})).map(entry => entry.itemId.toString()));"
+        }
+      ]
+    },
+    {
+      "id": "catalog-creation-not-recorded-in-activity",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-activity.json",
+      "targets": [
+        "ecommerce.progression.staff-activity.staff-activity.624a"
+      ],
+      "desc": "Create a catalog item without recording it in staff activity.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    await recordActivity(req.progressionUser, \"created catalog item\", name);\n    changed();",
+          "replace": "    changed();"
+        }
+      ]
+    },
+    {
+      "id": "customer-sees-staff-activity-tools",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-activity.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-activity-privacy.624b"
+      ],
+      "desc": "Render the staff tools, including the activity link, for every signed-in account.",
+      "edits": [
+        {
+          "file": "client/src/App.tsx",
+          "find": "{!activeView && (currentUser?.isStaff || currentUser?.isAdmin) &&",
+          "replace": "{!activeView && currentUser &&"
+        },
+        {
+          "file": "client/src/ProgressionPanel.tsx",
+          "find": "    if (!(user?.isStaff || user?.isAdmin)) return null;",
+          "replace": "    if (!user) return null;"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-issue-support-refund",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-refund-access.615c"
+      ],
+      "desc": "The support refund endpoint omits its staff check, so the case owner can refund their own order.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "  supportRouter.post(\"/cases/:caseId/refund\", auth, staff, async (req: Request, res) => {",
+          "replace": "  supportRouter.post(\"/cases/:caseId/refund\", auth, async (req: Request, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-replay-overwrites-case-total",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-accounting.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.support-refund-accounting.615b"
+      ],
+      "desc": "Accept a repeated refund on an already refunded case, which rewrites the case's refunded amount.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        if (!ticket?.orderId || ticket.refundTotal > 0) throw new Error('No refundable order-linked case');",
+          "replace": "        if (!ticket?.orderId) throw new Error('No refundable order-linked case');"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-leaves-case-open",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-resolution.json",
+      "targets": [
+        "ecommerce.progression.support-refunds.support-refunds-resolution.615a"
+      ],
+      "desc": "Refund the linked order but leave the support case open.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        ticket.status = 'resolved'; ticket.refundTotal = amount;",
+          "replace": "        ticket.refundTotal = amount;"
         }
       ]
     }

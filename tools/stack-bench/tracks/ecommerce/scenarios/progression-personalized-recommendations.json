@@ -121,17 +121,46 @@
               "within": 10000
             },
             {
-              "do": "expectSequence",
+              "do": "expectElementCount",
               "actor": "computing-customer",
               "testid": "recommended-item",
               "in": {
                 "testid": "recommendations"
               },
-              "equals": [
-                "Gaming Mouse",
-                "Laptop Stand",
-                "Webcam"
-              ],
+              "equals": 3,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "computing-customer",
+              "testid": "recommendation-rank",
+              "in": {
+                "testid": "recommended-item",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 1,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "computing-customer",
+              "testid": "recommendation-rank",
+              "in": {
+                "testid": "recommended-item",
+                "contains": "Laptop Stand"
+              },
+              "equals": 2,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "computing-customer",
+              "testid": "recommendation-rank",
+              "in": {
+                "testid": "recommended-item",
+                "contains": "Webcam"
+              },
+              "equals": 3,
               "within": 10000
             }
           ]
@@ -174,17 +203,46 @@
               "within": 10000
             },
             {
-              "do": "expectSequence",
+              "do": "expectElementCount",
               "actor": "computing-customer",
               "testid": "recommended-item",
               "in": {
                 "testid": "recommendations"
               },
-              "equals": [
-                "Gaming Mouse",
-                "Laptop Stand",
-                "Webcam"
-              ],
+              "equals": 3,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "computing-customer",
+              "testid": "recommendation-rank",
+              "in": {
+                "testid": "recommended-item",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 1,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "computing-customer",
+              "testid": "recommendation-rank",
+              "in": {
+                "testid": "recommended-item",
+                "contains": "Laptop Stand"
+              },
+              "equals": 2,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "computing-customer",
+              "testid": "recommendation-rank",
+              "in": {
+                "testid": "recommended-item",
+                "contains": "Webcam"
+              },
+              "equals": 3,
               "within": 10000
             }
           ]

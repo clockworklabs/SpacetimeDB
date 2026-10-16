@@ -223,19 +223,26 @@ async function buildRecommended(accountId: number | null) {
     return catalog.slice(0, 10);
   }
   const categoriesResult = await pool.query(
-    `SELECT DISTINCT i.category
+    `SELECT DISTINCT i.category, oi.item_id
      FROM order_item oi JOIN orders o ON o.id = oi.order_id JOIN item i ON i.id = oi.item_id
      WHERE o.account_id = $1 AND oi.returned = false AND o.status != 'cancelled'`,
     [accountId]
   );
   const categories = new Set(categoriesResult.rows.map((r) => r.category));
   if (categories.size === 0) return [];
+  const purchased = new Set(categoriesResult.rows.map((r) => r.item_id));
   const cartItemsResult = await pool.query(
     `SELECT ci.item_id FROM cart c JOIN cart_item ci ON ci.cart_id = c.id WHERE c.account_id = $1`,
     [accountId]
   );
   const inCart = new Set(cartItemsResult.rows.map((r) => r.item_id));
-  return catalog.filter((i) => categories.has(i.category) && !inCart.has(i.id)).slice(0, 10);
+  const dismissedResult = await pool.query(
+    `SELECT item_id FROM recommendation_dismissal WHERE account_id = $1`,
+    [accountId]
+  );
+  const dismissed = new Set(dismissedResult.rows.map((r) => r.item_id));
+  return catalog.filter((i) => categories.has(i.category) && !purchased.has(i.id)
+    && !inCart.has(i.id) && !dismissed.has(i.id)).slice(0, 10);
 }
 
 async function buildItemReviews(itemId: number) {

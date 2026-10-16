@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+  "fixtureSha256": "49228b28eb8296ed954a2b0e327f20655b148a5441efbf03a6f618373791d907",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -3483,6 +3483,251 @@
           "file": "server/src/index.ts",
           "find": "\"/api/auth/signup\",\n  asyncHandler(async (req, res) => {",
           "replace": "\"/api/auth/signup\",\n  asyncHandler(async (req, res) => {\n    res.status(403).json({ error: \"Registration disabled\" }); return;"
+        }
+      ]
+    },
+    {
+      "id": "expired-cart-keeps-its-lines",
+      "scenario": "tracks/ecommerce/scenarios/03-cart-expiration.json",
+      "targets": [
+        "ecommerce.l3.cart-expiration.cart-expiration.304a"
+      ],
+      "desc": "Save an inactive cart for recovery when it expires but leave its lines in the cart.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cart.id]);",
+          "replace": "      // Mutation: keep the expired cart lines in the cart."
+        }
+      ]
+    },
+    {
+      "id": "delivery-interval-uses-minutes",
+      "scenario": "tracks/ecommerce/scenarios/03-order-delivery.json",
+      "targets": [
+        "ecommerce.l3.order-delivery.order-delivery.303a"
+      ],
+      "desc": "Wait sixty minutes instead of sixty seconds before marking a shipped order delivered.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "       WHERE status = 'shipped' AND shipped_at <= now() - interval '60 seconds'",
+          "replace": "       WHERE status = 'shipped' AND shipped_at <= now() - interval '60 minutes'"
+        }
+      ]
+    },
+    {
+      "id": "delivery-job-delivers-cancelled-orders",
+      "scenario": "tracks/ecommerce/scenarios/03-order-delivery.json",
+      "targets": [
+        "ecommerce.l3.order-delivery.order-delivery.305a"
+      ],
+      "desc": "Mark cancelled orders delivered along with shipped orders once the delivery interval passes.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "       WHERE status = 'shipped' AND shipped_at <= now() - interval '60 seconds'",
+          "replace": "       WHERE status IN ('shipped', 'cancelled') AND COALESCE(shipped_at, created_at) <= now() - interval '60 seconds'"
+        }
+      ]
+    },
+    {
+      "id": "reorder-rule-save-allows-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.automatic-reorder-access.502c"
+      ],
+      "desc": "Accept a reorder rule change from any signed-in customer because only the interface hides the form.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "app.put(\"/api/reorders/:itemId\", dependencies.requireStaff,",
+          "replace": "app.put(\"/api/reorders/:itemId\", dependencies.requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "sale-schedules-reorder-without-pending-check",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder-duplicate.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.automatic-reorder-deduplication.502b"
+      ],
+      "desc": "Schedule an automatic restock from every sale at or below the threshold without checking for one already pending.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "        [orderId, itemId, name, price, warehouseId]\n      );\n      await client.query(\"COMMIT\");",
+          "replace": "        [orderId, itemId, name, price, warehouseId]\n      );\n      await client.query(\n        `INSERT INTO scheduled_restock (item_id, warehouse_id, quantity, due_at, automatic, created_by)\n         SELECT rr.item_id, (SELECT id FROM warehouse ORDER BY id LIMIT 1), rr.quantity, now() + interval '60 seconds', true, rr.created_by\n         FROM reorder_rule rr WHERE rr.item_id = $1 AND rr.enabled = true\n         AND (SELECT COALESCE(SUM(quantity), 0) FROM stock WHERE item_id = $1) <= rr.threshold`,\n        [itemId]\n      );\n      await client.query(\"COMMIT\");"
+        }
+      ]
+    },
+    {
+      "id": "reorder-waits-for-stock-below-threshold",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder.json",
+      "targets": [
+        "ecommerce.progression.automatic-reorder.automatic-reorder.502a"
+      ],
+      "desc": "Schedule an automatic restock only when stock falls below the threshold, not when it reaches it.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      if (rule.available > rule.threshold) continue;",
+          "replace": "      if (rule.available >= rule.threshold) continue;"
+        }
+      ]
+    },
+    {
+      "id": "cart-restore-checks-stock-without-reserving",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-recovery.json",
+      "targets": [
+        "ecommerce.progression.cart-recovery.cart-recovery.503a"
+      ],
+      "desc": "Restore an expired cart line after checking that stock is available but without reserving it again.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        try {\n          await allocateReservation(client, inserted.rows[0].id, saved.itemId, saved.quantity);\n        } catch {",
+          "replace": "        try {\n          const available = await client.query(`SELECT COALESCE(SUM(quantity), 0)::int AS total FROM stock WHERE item_id = $1`, [saved.itemId]);\n          if (available.rows[0].total < saved.quantity) throw new Error(\"not enough stock\");\n        } catch {"
+        }
+      ]
+    },
+    {
+      "id": "notifications-not-scoped-to-account",
+      "scenario": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "targets": [
+        "ecommerce.spec.access-control.delivery-notification-privacy.501b"
+      ],
+      "desc": "Send every account's notifications to each signed-in customer.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    account ? deps.pool.query(`SELECT * FROM notification WHERE account_id = $1 ORDER BY created_at DESC`, [account.id]) : { rows: [] },",
+          "replace": "    account ? deps.pool.query(`SELECT * FROM notification ORDER BY created_at DESC`) : { rows: [] },"
+        }
+      ]
+    },
+    {
+      "id": "pending-order-shows-return-button",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-return-boundary.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3e"
+      ],
+      "desc": "Offer a return button on every order line that is not cancelled, including pending orders.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(o.status === \"shipped\" || o.status === \"delivered\") && !l.returned && !l.isBundle && (",
+          "replace": "{o.status !== \"cancelled\" && !l.returned && !l.isBundle && ("
+        }
+      ]
+    },
+    {
+      "id": "promotion-redemption-counted-at-apply",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-reporting.json",
+      "targets": [
+        "ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a"
+      ],
+      "desc": "Count a promotion redemption when the code is applied to the cart and again at checkout.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    res.json({ ok: true, discount: Number(promotion.discount_percent) });",
+          "replace": "    await deps.pool.query(`UPDATE promotion SET redemptions = redemptions + 1 WHERE id = $1`, [promotion.id]);\n    res.json({ ok: true, discount: Number(promotion.discount_percent) });"
+        }
+      ]
+    },
+    {
+      "id": "promotion-revenue-records-subtotal",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-reporting.json",
+      "targets": [
+        "ecommerce.progression.promotion-reporting.promotion-report-revenue.622b"
+      ],
+      "desc": "Add the undiscounted subtotal to the promotion revenue instead of the discounted total.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        `UPDATE promotion SET redemptions = redemptions + 1, revenue = revenue + $1 WHERE id = $2`,\n        [total, promotionId],",
+          "replace": "        `UPDATE promotion SET redemptions = redemptions + 1, revenue = revenue + $1 WHERE id = $2`,\n        [subtotal, promotionId],"
+        }
+      ]
+    },
+    {
+      "id": "product-creation-not-recorded-in-activity",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-activity.json",
+      "targets": [
+        "ecommerce.progression.staff-activity.staff-activity.624a"
+      ],
+      "desc": "Create a product without writing a staff activity entry.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      await recordActivity(client, req.account!.id, \"create product\", name);",
+          "replace": "      // Mutation: product creation is not recorded."
+        }
+      ]
+    },
+    {
+      "id": "staff-activity-sent-to-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-activity.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-activity-privacy.624b"
+      ],
+      "desc": "Send staff activity history to every signed-in account and show the activity link whenever that history arrives.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    isStaff ? deps.pool.query(\n      `SELECT sa.*, a.username FROM staff_activity sa JOIN account a ON a.id = sa.account_id",
+          "replace": "    account ? deps.pool.query(\n      `SELECT sa.*, a.username FROM staff_activity sa JOIN account a ON a.id = sa.account_id"
+        },
+        {
+          "file": "client/src/ProgressionPanel.tsx",
+          "find": "{staff && <a data-role=\"activity-link\" href=\"#activity\">Activity</a>}",
+          "replace": "{(staff || (state?.activity?.length ?? 0) > 0) && <a data-role=\"activity-link\" href=\"#activity\">Activity</a>}"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-allows-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-refund-access.615c"
+      ],
+      "desc": "Accept a support refund from any signed-in customer because only the interface hides the refund button.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/support/cases/:id/refund\", dependencies.requireStaff,",
+          "replace": "app.post(\"/api/support/cases/:id/refund\", dependencies.requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-refunds-every-customer-order",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-accounting.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.support-refund-accounting.615b"
+      ],
+      "desc": "Mark every one of the customer's orders refunded when the support case refunds one linked order.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`UPDATE orders SET refund_total = total, status = CASE WHEN status='pending' THEN 'refunded' ELSE status END WHERE id = $1`, [order.rows[0].id]);",
+          "replace": "      await client.query(`UPDATE orders SET refund_total = total, status = CASE WHEN status='pending' THEN 'refunded' ELSE status END WHERE account_id = $1 AND status != 'cancelled'`, [order.rows[0].account_id]);"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-leaves-case-open",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-resolution.json",
+      "targets": [
+        "ecommerce.progression.support-refunds.support-refunds-resolution.615a"
+      ],
+      "desc": "Record the refund amount on the support case without resolving the case.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`UPDATE support_case SET refund_total = $1, status = 'resolved', updated_at = now() WHERE id = $2`, [amount, caseId]);",
+          "replace": "      await client.query(`UPDATE support_case SET refund_total = $1, updated_at = now() WHERE id = $2`, [amount, caseId]);"
         }
       ]
     }

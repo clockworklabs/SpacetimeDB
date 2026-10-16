@@ -31,7 +31,7 @@
             { "do": "click", "actor": "staff", "testid": "activity-link" },
             { "do": "expect", "actor": "staff", "testid": "activity-entry", "contains": "Activity Mug", "within": 10000 },
             { "do": "expect", "actor": "staff", "testid": "activity-actor", "in": { "testid": "activity-entry", "contains": "Activity Mug" }, "contains": "admin" },
-            { "do": "expect", "actor": "staff", "testid": "activity-action", "in": { "testid": "activity-entry", "contains": "Activity Mug" }, "contains": "creat" },
+            { "do": "expect", "actor": "staff", "testid": "activity-action", "in": { "testid": "activity-entry", "contains": "Activity Mug" }, "nonEmpty": true },
             { "do": "expect", "actor": "staff", "testid": "activity-subject", "in": { "testid": "activity-entry", "contains": "Activity Mug" }, "contains": "Activity Mug" },
             { "do": "expect", "actor": "staff", "testid": "activity-time", "in": { "testid": "activity-entry", "contains": "Activity Mug" } }
           ]

@@ -225,8 +225,8 @@ async function getRecommendedItems(userId: string | null) {
   const cartItemIds = new Set((cart?.items || []).map((l) => l.itemId.toString()));
   const dismissedItemIds = new Set((await Dismissal.find({ userId })).map(entry => entry.itemId.toString()));
 
-  return itemsLive.filter((it) => categories.has(it.category) && !cartItemIds.has(it.id)
-    && !dismissedItemIds.has(it.id));
+  return itemsLive.filter((it) => categories.has(it.category) && !purchasedItemIds.includes(it.id)
+    && !cartItemIds.has(it.id) && !dismissedItemIds.has(it.id));
 }
 
 async function getFulfilmentQueue() {

@@ -1516,7 +1516,9 @@ export const staffRoles = spacetimedb.view(
   }
 );
 
+// Each payment keeps its own id, so two equal payments stay two rows on the client.
 const PaymentView = t.object('PaymentView', {
+  id: t.u64(),
   orderId: t.u64(),
   amount: t.f64(),
   status: t.string(),
@@ -1530,7 +1532,7 @@ export const myPayments = spacetimedb.view(
     if (accountId === null) return [];
     const orderIds = new Set([...ctx.db.customerOrder.accountId.filter(accountId)].map(row => row.id));
     return [...ctx.db.paymentRecord.iter()].filter(row => orderIds.has(row.orderId))
-      .map(row => ({ orderId: row.orderId, amount: row.amount, status: row.status }));
+      .map(row => ({ id: row.id, orderId: row.orderId, amount: row.amount, status: row.status }));
   }
 );
 
@@ -1565,6 +1567,7 @@ const SupportTicketView = t.object('SupportTicketView', {
   priority: t.string(),
   assignee: t.string(),
   orderId: t.option(t.u64()),
+  orderItemNames: t.array(t.string()),
   refundTotal: t.f64(),
 });
 
@@ -1586,6 +1589,8 @@ export const visibleSupportTickets = spacetimedb.view(
         priority: row.priority,
         assignee: row.assigneeId === undefined ? '' : ctx.db.account.id.find(row.assigneeId)?.username ?? '',
         orderId: row.orderId,
+        orderItemNames: row.orderId === undefined ? []
+          : [...ctx.db.orderItem.orderId.filter(row.orderId)].map(itemRow => itemRow.itemName),
         refundTotal: row.refundTotal,
       }));
   }

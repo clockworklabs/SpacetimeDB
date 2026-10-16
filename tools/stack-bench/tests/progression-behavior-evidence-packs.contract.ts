@@ -170,14 +170,20 @@ test('personalized recommendations prove sales ordering, name ties, and isolatio
   assert.equal(feature.setup.filter(step => step.do === 'click'
     && step.actor === 'sales-helper' && step.contains === undefined
     && step.in?.contains === 'Desk Lamp').length, 3);
+  // Each item holds its rank, so the list order is the rank of each named item in a list of three.
   const expectedNameOrder = ['Gaming Mouse', 'Laptop Stand', 'Webcam'];
+  const assertRankedList = (steps: typeof feature.setup) => {
+    assert(steps.some(step => step.do === 'expectElementCount' && step.actor === 'computing-customer'
+      && step.testid === 'recommended-item' && step.equals === expectedNameOrder.length));
+    expectedNameOrder.forEach((name, index) => assert(steps.some(step => step.do === 'expectNumber'
+      && step.actor === 'computing-customer' && step.testid === 'recommendation-rank'
+      && step.in?.contains === name && step.equals === index + 1), name));
+  };
   const ordering = criterion(feature, '403a').steps;
   assert(ordering.some(step => step.do === 'expectNumber'
     && step.actor === 'home-customer' && step.testid === 'recommendation-rank'
     && step.in?.contains === 'Desk Lamp' && step.equals === 1));
-  assert(ordering.some(step => step.do === 'expectSequence'
-    && step.actor === 'computing-customer'
-    && JSON.stringify(step.equals) === JSON.stringify(expectedNameOrder)));
+  assertRankedList(ordering);
   assert(ordering.some(step => step.do === 'expect' && step.actor === 'audio-customer'
     && step.contains === 'Headphones'));
 
@@ -187,9 +193,7 @@ test('personalized recommendations prove sales ordering, name ties, and isolatio
   assert(isolation.some(step => step.do === 'expectNumber'
     && step.actor === 'home-customer' && step.testid === 'recommendation-rank'
     && step.in?.contains === 'Desk Lamp' && step.equals === 1));
-  assert(isolation.some(step => step.do === 'expectSequence'
-    && step.actor === 'computing-customer'
-    && JSON.stringify(step.equals) === JSON.stringify(expectedNameOrder)));
+  assertRankedList(isolation);
 });
 
 function requiredPackName(index: number): string {

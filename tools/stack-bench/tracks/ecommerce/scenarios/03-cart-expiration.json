@@ -27,6 +27,7 @@
         {"do":"reload","actor":"watcher","settleMs":1000},
         {"do":"expectNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Air Purifier"},"relativeTo":"before","plus":0,"within":30000},
         {"do":"openClient","actor":"customer","settleMs":3000},
+        {"do":"ensureSignedIn","actor":"customer","name":"cart-expiry","readyTestid":"current-user"},
         {"do":"expect","actor":"customer","testid":"cart-expired-notice","within":10000},
         {"do":"expectNumber","actor":"customer","testid":"cart-count","equals":0}
       ]

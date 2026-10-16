@@ -24,6 +24,7 @@ export function ProgressionPanel({
   const [signin, setSignin] = useState({ username: "", password: "" });
   const [support, setSupport] = useState({ email: "", subject: "", message: "" });
   const [createdReference, setCreatedReference] = useState("");
+  const [unrestored, setUnrestored] = useState<string[]>([]);
   const [catalog, setCatalog] = useState({ name: "", category: "", price: "", variants: "" });
   const [promotion, setPromotion] = useState({ code: "", discount: "", start: "", end: "", limit: "" });
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "90" });
@@ -61,7 +62,6 @@ export function ProgressionPanel({
       <a data-role="support-link" href="#support">Support</a>
       {staff && <a data-role="promotions-link" href="#promotions">Promotions</a>}
       {staff && <a data-role="activity-link" href="#activity">Activity</a>}
-      {staff && <a data-role="reorder-link" href="#reorders">Reorders</a>}
     </nav>
     {message && <p className="progression-error" data-role="progression-error"><span data-role="promotion-error">{message}</span></p>}
 
@@ -145,7 +145,7 @@ export function ProgressionPanel({
           {account && supportOrders[entry.id] && <button data-role="support-link-order"
             data-action-input={JSON.stringify({ caseId: entry.id, orderId: supportOrders[entry.id] })}
             onClick={() => run(() => request(`/api/support/cases/${entry.id}/order`, "POST", { orderId: supportOrders[entry.id] }))}>Link order</button>}
-          {entry.orderId && <span data-role="support-order">Order {entry.orderId}</span>}
+          {entry.orderId && <span data-role="support-order">{entry.orderItems || `Order ${entry.orderId}`}</span>}
           {staff && entry.orderId && <button data-role="support-refund"
             data-action-input={JSON.stringify({ caseId: entry.id })}
             onClick={() => run(() => request(`/api/support/cases/${entry.id}/refund`, "POST"))}>Refund order</button>}
@@ -200,9 +200,11 @@ export function ProgressionPanel({
 
       {(state?.expiredCarts ?? []).map((cart: any) => <article className="progression-card" data-role="expired-cart" key={cart.id}>
         <h3>Expired cart</h3>
-        <button data-role="restore-cart" onClick={() => run(() => request(`/api/cart/recover/${cart.id}`, "POST"))}>Restore</button>
-        <span data-role="cart-restore-warning">Only available items are restored.</span>
+        <button data-role="restore-cart" onClick={() => run(async () => {
+          const restored = await request(`/api/cart/recover/${cart.id}`, "POST"); setUnrestored(restored.unavailable);
+        })}>Restore</button>
       </article>)}
+      {unrestored.length > 0 && <p data-role="cart-restore-warning">Could not restore: {unrestored.join(", ")}</p>}
 
       {staff && <>
         <article className="progression-card" id="promotions">

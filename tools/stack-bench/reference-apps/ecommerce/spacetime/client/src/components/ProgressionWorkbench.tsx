@@ -10,7 +10,7 @@ interface Profile { name: string; address: string }
 interface StaffRole { accountId: bigint; username: string; role: string }
 interface SupportTicket {
   id: bigint; reference: string; subject: string; status: string; priority: string;
-  assignee: string; orderId?: bigint; refundTotal: number;
+  assignee: string; orderId?: bigint; orderItemNames: string[]; refundTotal: number;
 }
 interface SupportReply { ticketId: bigint; author: string; body: string }
 interface Preferences { orderEnabled: boolean; stockEnabled: boolean }
@@ -209,7 +209,7 @@ export default function ProgressionWorkbench(props: Props) {
                 <button className="btn btn-danger btn-sm" data-role="support-refund" data-action-input={actionInput}
                   onClick={() => reducers?.supportRefund({ ticketId: ticket.id })}>Refund order</button>
               )}
-              <span data-role="support-order">{ticket.orderId === undefined ? '' : `Order ${String(ticket.orderId)}`}</span>
+              <span data-role="support-order">{ticket.orderId === undefined ? '' : `Order ${String(ticket.orderId)}: ${ticket.orderItemNames.join(', ')}`}</span>
               <span data-role="support-refund-total">{formatMoney(ticket.refundTotal)}</span>
               {supportReplies.filter(reply => reply.ticketId === ticket.id).map((reply, index) => (
                 <div data-role="support-reply-item" key={index}>{reply.author}: {reply.body}</div>
@@ -327,7 +327,7 @@ export default function ProgressionWorkbench(props: Props) {
       {expiredCart.length > 0 && (
         <section className="feature-card" data-role="expired-cart">
           <h2>Expired cart</h2>
-          {expiredCart.map(row => <div data-role="cart-item" key={String(row.itemId)}>{itemName(row.itemId)} <span data-role="cart-item-expired">expired</span></div>)}
+          {expiredCart.map(row => <div key={String(row.itemId)}>{itemName(row.itemId)} <span data-role="cart-item-expired">expired</span></div>)}
           <div data-role="cart-expired-notice">Your reserved cart expired.</div>
           <div data-role="cart-restore-warning">Unavailable: {expiredCart.map(row => itemName(row.itemId)).join(', ')}</div>
           <button className="btn btn-primary btn-sm" data-role="restore-cart" onClick={() => reducers?.restoreExpiredCart({})}>Restore cart</button>

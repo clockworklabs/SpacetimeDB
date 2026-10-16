@@ -340,10 +340,15 @@ function validateNamedTarget(value: unknown, at: string): void {
 }
 
 function validateActionInput(value: unknown, at: string): void {
-  strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'fields', 'overrides']));
+  strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'in', 'fields', 'overrides']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
   if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
+  if (value.in !== undefined) {
+    strictObject(value.in, `${at}.in`, new Set(['testid', 'contains']));
+    if (!nonEmptyString(value.in.testid)) fail(`${at}.in.testid`, 'must be a non-empty string');
+    if (value.in.contains !== undefined && !string(value.in.contains)) fail(`${at}.in.contains`, 'must be a string');
+  }
   if (value.fields !== undefined && (!stringArray(value.fields) || !value.fields.length
     || value.fields.some(field => !field) || new Set(value.fields).size !== value.fields.length)) {
     fail(`${at}.fields`, 'must be a non-empty array of distinct parameter names');

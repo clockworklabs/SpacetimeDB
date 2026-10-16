@@ -495,6 +495,8 @@ export default function App() {
       <SubscriptionPanel key={account?.id ?? 'guest'} signedIn={Boolean(account)} />
       <ToastArea toasts={toasts} />
       <main className="main">
+        {account && (cart.expiredAt || cart.items.some((line) => line.expired)) &&
+          <div data-role="cart-expired-notice">The cart expired.</div>}
         {detailItem && itemDetail && (
           <ItemDetailPanel
             item={detailItem}
@@ -717,6 +719,11 @@ function Header(props: {
         {account && (account.isStaff || account.isAdmin) && (
           <button className="btn btn-ghost btn-sm" data-role="staff-link" onClick={onFulfilmentToggle}>
             Fulfilment
+          </button>
+        )}
+        {account && (account.isStaff || account.isAdmin) && (
+          <button className="btn btn-ghost btn-sm" data-role="reorder-link" onClick={onFulfilmentToggle}>
+            Reorders
           </button>
         )}
       </div>
@@ -1028,7 +1035,6 @@ function CartPanel(props: {
           ))}
         </div>
       )}
-      {(cart.expiredAt || cart.items.some((line) => line.expired)) && <div data-role="cart-expired-notice">The cart expired.</div>}
       <div className="stack">
         <input className="input" data-role="cart-promotion" value={promotionCode}
           placeholder="Promotion code" onChange={(event) => setPromotionCode(event.target.value)} />

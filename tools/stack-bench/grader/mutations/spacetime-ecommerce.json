@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "cc656ead8e4c506e5e41a5a52a8e4f09969533bf403d8e9a6c14f2b3c557ba02",
+  "fixtureSha256": "7f4e32fc92fc816833ada35b0e625722bf72a6f22fbf5825b444e2233fe2b27e",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
@@ -3350,6 +3350,357 @@
           "file": "backend/spacetimedb/src/auth.ts",
           "find": "if (!validInput(name, password) || !/^[a-f0-9]{64}$/.test(salt)) return false;",
           "replace": "if (!validInput(name, password) || !/^[a-f0-9]{64}$/.test(salt) || name.length > 0) return false;"
+        }
+      ]
+    },
+    {
+      "id": "cart-inactivity-timeout-fifty-minutes",
+      "scenario": "tracks/ecommerce/scenarios/03-cart-expiration.json",
+      "targets": [
+        "ecommerce.l3.cart-expiration.cart-expiration.304a"
+      ],
+      "desc": "Set the cart inactivity timeout to fifty minutes instead of five, so an abandoned cart is never moved to the expired cart while its item reservations still lapse.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const expiresMicros = nowMicros(ctx) + 300n * SECOND;",
+          "replace": "const expiresMicros = nowMicros(ctx) + 3000n * SECOND;"
+        }
+      ]
+    },
+    {
+      "id": "delivery-scheduled-an-hour-after-shipment",
+      "scenario": "tracks/ecommerce/scenarios/03-order-delivery.json",
+      "targets": [
+        "ecommerce.l3.order-delivery.order-delivery.303a"
+      ],
+      "desc": "Schedule delivery sixty minutes after shipment instead of sixty seconds, so a shipped order stays shipped.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const schedule = { orderId, dueMicros: nowMicros(ctx) + 60n * SECOND, completed: false };",
+          "replace": "const schedule = { orderId, dueMicros: nowMicros(ctx) + 60n * 60n * SECOND, completed: false };"
+        }
+      ]
+    },
+    {
+      "id": "delivery-clock-advances-cancelled-orders",
+      "scenario": "tracks/ecommerce/scenarios/03-order-delivery.json",
+      "targets": [
+        "ecommerce.l3.order-delivery.order-delivery.305a"
+      ],
+      "desc": "Start the delivery clock when an order is placed and let the delivery job advance any order that is not yet delivered, so a cancelled order becomes delivered.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  processReorderRules(ctx, itemId);",
+          "replace": "  ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  ctx.db.deliverySchedule.insert({ orderId: order.id, dueMicros: nowMicros(ctx) + 60n * SECOND, completed: false });\n  processReorderRules(ctx, itemId);"
+        },
+        {
+          "find": "    if (order && order.status === 'shipped') {",
+          "replace": "    if (order && order.status !== 'delivered') {"
+        }
+      ]
+    },
+    {
+      "id": "reorder-rule-replayable-by-customer",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.automatic-reorder-access.502c"
+      ],
+      "desc": "Accept a reorder rule from any signed-in account; only the interface hides the reorder tools from customers.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    requireStaffOrAdmin(ctx);\n    const warehouse = [...ctx.db.warehouse.iter()]",
+          "replace": "    requireAccount(ctx);\n    const warehouse = [...ctx.db.warehouse.iter()]"
+        }
+      ]
+    },
+    {
+      "id": "reorder-dedupe-checks-wrong-status",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder-duplicate.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.automatic-reorder-deduplication.502b"
+      ],
+      "desc": "Look for an existing automatic restock with status 'scheduled' instead of 'pending', so every further sale below the threshold schedules another restock.",
+      "file": "backend/spacetimedb/src/progression-policy.ts",
+      "edits": [
+        {
+          "find": "return rows.some(row => row.reorderRuleId === ruleId && row.status === 'pending');",
+          "replace": "return rows.some(row => row.reorderRuleId === ruleId && row.status === 'scheduled');"
+        }
+      ]
+    },
+    {
+      "id": "reorder-threshold-requires-stock-below",
+      "scenario": "tracks/ecommerce/scenarios/progression-automatic-reorder.json",
+      "targets": [
+        "ecommerce.progression.automatic-reorder.automatic-reorder.502a"
+      ],
+      "desc": "Trigger an automatic restock only when stock falls below the threshold, so stock that reaches the threshold exactly schedules nothing.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (rule.itemId !== itemId || totalStock(ctx, itemId) > rule.threshold) continue;",
+          "replace": "if (rule.itemId !== itemId || totalStock(ctx, itemId) >= rule.threshold) continue;"
+        }
+      ]
+    },
+    {
+      "id": "cart-restore-warning-shown-after-full-restore",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-recovery.json",
+      "targets": [
+        "ecommerce.progression.cart-recovery.cart-recovery.503a"
+      ],
+      "desc": "Render the cart restore warning for every signed-in customer instead of only while expired items remain, so a full restore still shows a warning.",
+      "file": "client/src/components/ProgressionWorkbench.tsx",
+      "edits": [
+        {
+          "find": "          <div data-role=\"cart-restore-warning\">Unavailable: {expiredCart.map(row => itemName(row.itemId)).join(', ')}</div>\n          <button className=\"btn btn-primary btn-sm\" data-role=\"restore-cart\" onClick={() => reducers?.restoreExpiredCart({})}>Restore cart</button>\n        </section>\n      )}",
+          "replace": "          <button className=\"btn btn-primary btn-sm\" data-role=\"restore-cart\" onClick={() => reducers?.restoreExpiredCart({})}>Restore cart</button>\n        </section>\n      )}\n      {isSignedIn && <div data-role=\"cart-restore-warning\">Unavailable: {expiredCart.map(row => itemName(row.itemId)).join(', ')}</div>}"
+        }
+      ]
+    },
+    {
+      "id": "cart-restore-drops-unavailable-items-silently",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-recovery.json",
+      "targets": [
+        "ecommerce.progression.cart-recovery.cart-recovery.503b"
+      ],
+      "desc": "Clear each expired cart line before checking its stock, so an unavailable item is dropped without being named.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (findCartLine(ctx,acc.id,row.itemId)) continue;",
+          "replace": "    ctx.db.expiredCartItem.id.delete(row.id);\n    if (findCartLine(ctx,acc.id,row.itemId)) continue;"
+        },
+        {
+          "find": "      bundlePrice:row.bundlePrice,bundleComponentsJson:row.bundleComponentsJson});\n    ctx.db.expiredCartItem.id.delete(row.id);",
+          "replace": "      bundlePrice:row.bundlePrice,bundleComponentsJson:row.bundleComponentsJson});"
+        }
+      ]
+    },
+    {
+      "id": "notifications-view-missing-owner-filter",
+      "scenario": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "targets": [
+        "ecommerce.spec.access-control.delivery-notification-privacy.501b"
+      ],
+      "desc": "Return every stored notification to each signed-in account instead of only the account owner's notifications.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "return [...ctx.db.notification.accountId.filter(accountId)].map(row => ({",
+          "replace": "return [...ctx.db.notification.iter()].map(row => ({"
+        }
+      ]
+    },
+    {
+      "id": "return-button-shown-for-pending-order",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-return-boundary.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3e"
+      ],
+      "desc": "Offer the return button on every order that is not cancelled, including one that has not shipped.",
+      "file": "client/src/components/OrdersPanel.tsx",
+      "edits": [
+        {
+          "find": "                    {['shipped', 'delivered'].includes(order.status) && !item.returned && !item.isBundle && (",
+          "replace": "                    {order.status !== 'cancelled' && !item.returned && !item.isBundle && ("
+        }
+      ]
+    },
+    {
+      "id": "support-order-link-skips-order-owner-check",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-support-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-support-ownership.614b"
+      ],
+      "desc": "Attach any existing order to a support case the caller can access, without checking that the caller owns the order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const order = requireOrderOwner(ctx, orderId);\n    ctx.db.supportTicket.id.update({ ...ticket, orderId: order.id });",
+          "replace": "    const order = ctx.db.customerOrder.id.find(orderId);\n    if (!order) throw new SenderError('Order not found.');\n    ctx.db.supportTicket.id.update({ ...ticket, orderId: order.id });"
+        }
+      ]
+    },
+    {
+      "id": "support-order-link-requires-staff",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-support-owned.json",
+      "targets": [
+        "ecommerce.progression.order-support.order-support-owned.614a"
+      ],
+      "desc": "Allow only staff to attach an order to a support case, so a customer cannot link their own order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const ticket = requireSupportAccess(ctx, ticketId).ticket;",
+          "replace": "    requireStaffOrAdmin(ctx);\n    const ticket = requireSupportAccess(ctx, ticketId).ticket;"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-capped-at-highest-price-paid",
+      "scenario": "tracks/ecommerce/scenarios/progression-personalized-recommendations.json",
+      "targets": [
+        "ecommerce.progression.personalized-recommendations.personalized-recommendations.403a"
+      ],
+      "desc": "Recommend only items priced at or below the most the customer has paid for one item, so higher-priced items in the customer's categories are missing.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const purchasedItemIds = new Set<bigint>();",
+          "replace": "    const purchasedItemIds = new Set<bigint>();\n    let maxPaid = 0;"
+        },
+        {
+          "find": "        purchasedItemIds.add(li.itemId);",
+          "replace": "        purchasedItemIds.add(li.itemId);\n        maxPaid = Math.max(maxPaid, li.unitPrice);"
+        },
+        {
+          "find": "      if (!it) continue;\n      candidates.push(",
+          "replace": "      if (!it || it.price > maxPaid) continue;\n      candidates.push("
+        }
+      ]
+    },
+    {
+      "id": "recommendations-blend-latest-store-order",
+      "scenario": "tracks/ecommerce/scenarios/progression-personalized-recommendations.json",
+      "targets": [
+        "ecommerce.spec.access-control.recommendation-profile-isolation.403b"
+      ],
+      "desc": "Add the category of the store's most recent order, placed by anyone, to each customer's recommendation categories, so another customer's purchase changes them.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (purchasedCategoryIds.size === 0) return [];",
+          "replace": "    if (purchasedCategoryIds.size === 0) return [];\n    let latestOrderId = 0n;\n    for (const order of ctx.db.customerOrder.iter()) if (order.id > latestOrderId) latestOrderId = order.id;\n    for (const li of ctx.db.orderItem.orderId.filter(latestOrderId)) {\n      const link = ctx.db.itemCategory.itemId.find(li.itemId);\n      if (link) purchasedCategoryIds.add(link.categoryId);\n    }"
+        }
+      ]
+    },
+    {
+      "id": "promotion-redemption-counted-on-apply",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-reporting.json",
+      "targets": [
+        "ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a"
+      ],
+      "desc": "Count a redemption when the code is applied to a cart and again at checkout, so one order reports two redemptions.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (existing) ctx.db.cartPromotion.accountId.update(row);\n  else ctx.db.cartPromotion.insert(row);",
+          "replace": "  if (existing) ctx.db.cartPromotion.accountId.update(row);\n  else ctx.db.cartPromotion.insert(row);\n  ctx.db.promotion.id.update({ ...promo, redemptions: promo.redemptions + 1 });"
+        }
+      ]
+    },
+    {
+      "id": "promotion-report-uses-pre-discount-revenue",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-reporting.json",
+      "targets": [
+        "ecommerce.progression.promotion-reporting.promotion-report-revenue.622b"
+      ],
+      "desc": "Report promotion revenue before the discount instead of the discounted amount paid.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": ".reduce((total, order) => total + order.total, 0),",
+          "replace": ".reduce((total, order) => total + order.total + order.discount, 0),"
+        }
+      ]
+    },
+    {
+      "id": "recommendation-dismissals-shared-across-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.spec.access-control.recommendation-feedback-privacy.504b"
+      ],
+      "desc": "Apply every customer's dismissals when building each customer's recommendations.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    for (const row of ctx.db.recommendationDismissal.byAccountItem.filter(accountId)) {\n      dismissedItemIds.add(row.itemId);",
+          "replace": "    for (const row of ctx.db.recommendationDismissal.iter()) {\n      dismissedItemIds.add(row.itemId);"
+        }
+      ]
+    },
+    {
+      "id": "activity-history-shows-viewer-as-actor",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-activity.json",
+      "targets": [
+        "ecommerce.progression.staff-activity.staff-activity.624a"
+      ],
+      "desc": "Show the account viewing the history as the actor of every entry instead of the account that made the change.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      actor: ctx.db.account.id.find(row.actorAccountId)?.username ?? 'unknown',",
+          "replace": "      actor: actor.username,"
+        }
+      ]
+    },
+    {
+      "id": "activity-history-open-to-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-activity.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-activity-privacy.624b"
+      ],
+      "desc": "Return staff activity history to every signed-in account and show the Activity link whenever history is present.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (!actor || (!actor.isAdmin && !actor.isStaff)) return [];\n    return [...ctx.db.staffActivity.iter()].map(row => ({",
+          "replace": "    if (!actor) return [];\n    return [...ctx.db.staffActivity.iter()].map(row => ({"
+        },
+        {
+          "file": "client/src/components/ProgressionWorkbench.tsx",
+          "find": "        {(isStaff || isAdmin) && <button className=\"btn btn-ghost btn-sm\" data-role=\"activity-link\">Activity</button>}",
+          "replace": "        {activity.length > 0 && <button className=\"btn btn-ghost btn-sm\" data-role=\"activity-link\">Activity</button>}"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-allowed-for-case-owner",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-refund-access.615c"
+      ],
+      "desc": "Let anyone with access to a support case issue its refund, including the customer who opened it.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    requireStaffOrAdmin(ctx);\n    const ticket = ctx.db.supportTicket.id.find(ticketId);\n    if (!ticket || ticket.orderId === undefined) throw new SenderError('The case has no linked order.');",
+          "replace": "    const { ticket } = requireSupportAccess(ctx, ticketId);\n    if (ticket.orderId === undefined) throw new SenderError('The case has no linked order.');"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-repeats-full-payout",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-accounting.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.support-refund-accounting.615b"
+      ],
+      "desc": "Skip the already-refunded check and refund the full order total on every request, so a repeated refund records a second payout.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (order.status === 'cancelled' || ticket.refundTotal > 0) throw new SenderError('The order was already refunded.');\n    const amount = order.total - order.refundedTotal;",
+          "replace": "    if (order.status === 'cancelled') throw new SenderError('The order was already refunded.');\n    const amount = order.total;"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-leaves-order-status",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-refunds-resolution.json",
+      "targets": [
+        "ecommerce.progression.support-refunds.support-refunds-resolution.615a"
+      ],
+      "desc": "Resolve the support case and record the refund without marking the order refunded.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "refundedTotal: order.total, status: order.status === 'pending' ? 'refunded' : order.status });",
+          "replace": "refundedTotal: order.total, status: order.status });"
         }
       ]
     }

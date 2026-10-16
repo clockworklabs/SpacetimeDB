@@ -657,7 +657,7 @@ export default function App() {
 
           <section style={{ marginTop: 32 }}>
             <h2 className="section-title">Recommended for you</h2>
-            <div className="item-list" data-role="recommended-list">
+            <div className="item-list" data-role="recommended-list" id="recommendations">
               {recommended.length === 0 ? (
                 <div className="empty-state">Nothing recommended yet</div>
               ) : (
