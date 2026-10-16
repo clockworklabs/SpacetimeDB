@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpacetimeDB Daytona</title>
+    <link rel="icon" href="/assets/logo.svg" />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="https://spacetimedb.com">
+          <img src="/assets/logo.svg" alt="SpacetimeDB" />Daytona
+        </a>
+        <nav aria-label="Playground controls">
+          <span id="connection" role="status">Connecting</span>
+          <details id="examples" class="menu" name="controls">
+            <summary>Examples</summary>
+            <div>
+              <button id="load-report">Build report</button>
+              <button id="load-read">Read report</button>
+              <p>
+                Build a report from CSV data, then read the saved file. You can
+                edit either script.
+              </p>
+            </div>
+          </details>
+          <details class="menu" name="controls">
+            <summary>Sandbox</summary>
+            <div>
+              <div id="sandboxes"></div>
+              <p>
+                Expires after 10 minutes. Outbound network access is blocked.
+                Deletion removes its files and command output.
+              </p>
+            </div>
+          </details>
+          <button id="create" disabled>Create sandbox</button>
+          <button id="run" form="run-form" disabled hidden>Run</button>
+        </nav>
+      </header>
+      <p id="error" role="alert" hidden></p>
+      <section id="access" hidden>
+        <h2>Authorize this browser</h2>
+        <p>
+          The database owner must grant access before you can create paid
+          resources.
+        </p>
+        <code id="grant"></code>
+      </section>
+      <p id="run-hint" role="status">Connect to SpacetimeDB to continue.</p>
+      <div class="workspace">
+        <section class="editor-pane" aria-label="Python editor">
+          <h1>Python</h1>
+          <form id="run-form">
+            <textarea
+              id="command"
+              aria-label="Python code"
+              rows="16"
+              maxlength="4096"
+              spellcheck="false"
+              wrap="off"
+              autocapitalize="off"
+            ></textarea>
+          </form>
+        </section>
+        <section class="result-pane" aria-labelledby="result-title">
+          <div class="result-heading">
+            <h2 id="result-title">Output</h2>
+            <span id="result-meta" role="status"></span>
+          </div>
+          <p id="output-status" role="status">Run Python to see output.</p>
+          <pre id="output" tabindex="0" aria-label="Command output"></pre>
+          <button id="retry-output" hidden>Retry output</button>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
