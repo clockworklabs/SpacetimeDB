@@ -446,13 +446,10 @@ impl ViewReadSets {
         self.view_removals.insert(view_id);
     }
 
-    /// Removes keys for exactly the `calls` from the read set, in one pass.
-    fn remove_view_calls(&mut self, calls: &HashSet<ViewCallInfo>) {
-        if calls.is_empty() {
-            return;
-        }
+    /// Removes keys for exactly `call` from the read set.
+    fn remove_view_call(&mut self, call: &ViewCallInfo) {
         self.tables.retain(|_, readset| {
-            readset.remove_view_calls(calls);
+            readset.remove_view_call(call);
             !readset.is_empty()
         });
     }
@@ -463,9 +460,13 @@ impl ViewReadSets {
             self.remove_view(view_id);
         }
 
-        let mut calls = readset.removals;
-        calls.extend(readset.replacements);
-        self.remove_view_calls(&calls);
+        for call in readset.removals {
+            self.remove_view_call(&call);
+        }
+
+        for call in readset.replacements {
+            self.remove_view_call(&call);
+        }
 
         for (table_id, rs) in readset.tables {
             self.tables.entry(table_id).or_default().merge(rs);
@@ -552,13 +553,13 @@ impl TableReadSet {
         });
     }
 
-    /// Removes keys for exactly the `calls` from the read set.
-    fn remove_view_calls(&mut self, calls: &HashSet<ViewCallInfo>) {
-        self.table_scans.retain(|candidate| !calls.contains(candidate));
+    /// Removes keys for exactly `call` from the read set.
+    fn remove_view_call(&mut self, call: &ViewCallInfo) {
+        self.table_scans.retain(|candidate| candidate != call);
 
         self.index_reads.retain(|_cols, key_map| {
             key_map.retain(|_key, views| {
-                views.retain(|candidate| !calls.contains(candidate));
+                views.retain(|candidate| candidate != call);
                 !views.is_empty()
             });
             !key_map.is_empty()
