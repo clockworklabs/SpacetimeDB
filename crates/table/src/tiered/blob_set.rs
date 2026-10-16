@@ -175,39 +175,53 @@ impl BlobSet {
 
     fn insert_with_uses(&self, uses: NonZeroUsize, bytes: &[u8]) -> Result<BlobHandle, BlobError> {
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        let blob_or_reservation = {
+        {
             let mut entries = self.entries.write();
-            match entries
-                .entry(hash.into())
-                .and_modify(|entry| entry.mod_uses(|u| *u += uses.get()))
+            if let Some(BlobEntry::Resident {
+                uses: current_uses,
+                blob,
+            }) = entries.get_mut(&hash)
             {
-                hash_map::Entry::Vacant(_) => {
-                    drop(entries);
-                    Err(self.reserve(bytes)?)
-                }
-                hash_map::Entry::Occupied(entry) => match entry.get() {
-                    BlobEntry::Resident { blob, .. } => Ok(blob.clone()),
-                    BlobEntry::NonResident { .. } => {
-                        drop(entries);
-                        Err(self.reserve(bytes)?)
-                    }
-                },
+                *current_uses += uses.get();
+                return Ok(blob.clone());
             }
-        };
-        match blob_or_reservation {
-            Ok(handle) => Ok(handle),
-            Err(reservation) => {
+        }
+        // Entry needs to be faulted or created. Reserve before modifying the
+        // catalog. Note that this may trigger eviction, so we must release the
+        // lock.
+        let reservation = self.reserve(bytes)?;
+        let mut entries = self.entries.write();
+        match entries.entry(hash) {
+            hash_map::Entry::Vacant(entry) => {
                 let frame = self.resident.redeem_blob(reservation);
                 let handle = BlobHandle { frame };
-                self.entries.write().insert(
-                    hash.into(),
-                    BlobEntry::Resident {
-                        uses: uses.get(),
-                        blob: handle.clone(),
-                    },
-                );
+                entry.insert(BlobEntry::Resident {
+                    uses: uses.get(),
+                    blob: handle.clone(),
+                });
                 Ok(handle)
             }
+            hash_map::Entry::Occupied(mut entry) => match entry.get_mut() {
+                // Entry became resident while we didn't hold the entries lock.
+                // Drop the reservation and update the entry's refcount.
+                BlobEntry::Resident {
+                    uses: current_uses,
+                    blob,
+                } => {
+                    *current_uses += uses.get();
+                    Ok(blob.clone())
+                }
+                BlobEntry::NonResident { uses: current_uses, .. } => {
+                    let new_uses = *current_uses + uses.get();
+                    let frame = self.resident.redeem_blob(reservation);
+                    let handle = BlobHandle { frame };
+                    entry.insert(BlobEntry::Resident {
+                        uses: new_uses,
+                        blob: handle.clone(),
+                    });
+                    Ok(handle)
+                }
+            },
         }
     }
 
@@ -238,8 +252,8 @@ impl BlobSet {
     /// On success returns the size in bytes of the blob.
     pub fn free_ref(&self, hash: BlobHashWrapper) -> Result<u64, BlobError> {
         let mut entries = self.entries.write();
-        match entries.entry(hash.into()) {
-            hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(hash.into())),
+        match entries.entry(hash) {
+            hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash.into()))),
             hash_map::Entry::Occupied(mut entry) => {
                 let size = entry.get().size();
                 entry.get_mut().dec_uses();
@@ -263,15 +277,33 @@ impl BlobSet {
             let entry = entries.get(&hash).ok_or_else(|| BlobError::MissingBlob(hash.into()))?;
             match entry {
                 BlobEntry::Resident { blob, .. } => Ok::<_, BlobError>(Ok(blob.clone())),
-                BlobEntry::NonResident { uses, .. } => {
+                BlobEntry::NonResident { .. } => {
                     let bytes = self.storage.read(hash.into())?;
-                    Ok(Err((*uses, bytes)))
+                    Ok(Err(bytes))
                 }
             }
         }?;
         let handle = match blob_or_bytes {
-            Ok(blob) => Ok(blob),
-            Err((uses, bytes)) => self.insert_with_uses(n_or_one(uses), &bytes),
+            Ok(blob) => Ok::<_, BlobError>(blob),
+            Err(bytes) => {
+                let reservation = self.reserve(&bytes)?;
+                let mut entries = self.entries.write();
+                let entry = entries
+                    .get_mut(&hash)
+                    .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
+                match entry {
+                    BlobEntry::Resident { blob, .. } => Ok(blob.clone()),
+                    BlobEntry::NonResident { uses, .. } => {
+                        let frame = self.resident.redeem_blob(reservation);
+                        let handle = BlobHandle { frame };
+                        *entry = BlobEntry::Resident {
+                            uses: *uses,
+                            blob: handle.clone(),
+                        };
+                        Ok(handle)
+                    }
+                }
+            }
         }?;
         assert_eq!(hash, handle.hash());
         self.resident.touch_blob(&handle.frame);

@@ -186,7 +186,15 @@ impl ResidentObjects {
     }
 
     pub(super) fn redeem_blob(&self, ReservedBlob { frame }: ReservedBlob) -> Arc<BlobFrame> {
-        let key = frame.hash.into();
+        let key = frame.hash;
+        let mut blobs = self.blobs.lock().unwrap();
+        // Transaction and committed blob sets share this registry. Reuse live
+        // frames and replace stale weak entries when a hash becomes resident again.
+        if let Some(existing) = blobs.get(&key).and_then(Weak::upgrade) {
+            assert_eq!(existing.hash(), frame.hash());
+            assert_eq!(&**existing, &*frame);
+            return existing;
+        }
         let frame = Arc::new(frame);
         assert!(self.blobs.lock().unwrap().insert(key, Arc::downgrade(&frame)).is_none());
         frame
