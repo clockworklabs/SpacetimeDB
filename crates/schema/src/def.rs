@@ -46,7 +46,7 @@ use spacetimedb_lib::db::raw_def::v9::{
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::environment::EnvironmentSchema;
-use spacetimedb_lib::{hash_bytes, ProductType, RawModuleDef};
+use spacetimedb_lib::{hash_bytes, Hash as SpacetimeHash, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
@@ -1406,7 +1406,7 @@ pub struct OutboxDef {
     /// Local reducer to invoke with the remote result before acknowledging this stream.
     pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: SpacetimeHash,
 }
 
 impl TableDef {

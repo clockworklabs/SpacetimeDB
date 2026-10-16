@@ -1433,6 +1433,7 @@ mod tests {
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::db::view::QUERY_VIEW_RETURN_TAG;
+    use spacetimedb_lib::hash_bytes;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
@@ -1753,13 +1754,14 @@ mod tests {
             .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
             .finish();
         builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        let signature_hash = hash_bytes(b"test-signature");
         builder.add_outbox(
             "outbound_pings",
             "receive_ping",
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            signature_hash,
         );
 
         let module: ModuleDef = builder.finish().try_into().expect("valid outbox module");
@@ -1768,7 +1770,7 @@ mod tests {
         assert_eq!(&outbox.remote_reducer[..], "receive_ping");
         assert_eq!(outbox.target_column, ColId(1));
         assert_eq!(outbox.arg_columns, vec![ColId(2)]);
-        assert_eq!(outbox.signature_hash, "test-signature");
+        assert_eq!(outbox.signature_hash, signature_hash);
 
         let schema = TableSchema::from_module_def(&module, table, (), TableId::SENTINEL);
         let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
@@ -1800,7 +1802,7 @@ mod tests {
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            spacetimedb_lib::hash_bytes(b"test-signature"),
         );
 
         let result: Result<ModuleDef> = builder.finish().try_into();
