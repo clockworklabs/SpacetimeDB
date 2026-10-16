@@ -62,3 +62,41 @@ fn main() {
         "wire_ping"
     );
 }
+
+// Outbox tables retain inserts and reads, including primary-key lookups.
+fn read_and_insert(ctx: &spacetimedb::ReducerContext, row: OutboundPing) {
+    use spacetimedb::Table;
+    let table = ctx.db.outbound_ping();
+    let row = table.insert(row);
+    let _ = table.id().find(row.id);
+    let _ = table.try_insert(row);
+    let _ = table.count();
+    let _ = table.iter();
+}
+
+#[spacetimedb::table(
+    accessor = ordinary,
+    index(accessor = by_value, btree(columns = [value])),
+    index(accessor = by_value_hash, hash(columns = [value])),
+)]
+pub struct Ordinary {
+    #[primary_key]
+    id: u64,
+    value: String,
+}
+
+// Ordinary tables retain all update and delete APIs.
+fn mutate_ordinary(ctx: &spacetimedb::ReducerContext, row: Ordinary) {
+    use spacetimedb::Table;
+    let table = ctx.db.ordinary();
+    let row = table.id().update(row);
+    #[cfg(feature = "unstable")]
+    let row = table.id().insert_or_update(row);
+    #[cfg(feature = "unstable")]
+    let row = table.id().try_insert_or_update(row).unwrap();
+    table.delete(row);
+    table.id().delete(1);
+    table.by_value().delete("value");
+    table.by_value_hash().delete("value");
+    table.clear();
+}
