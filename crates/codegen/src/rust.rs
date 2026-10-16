@@ -2,8 +2,9 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, CodegenVisibility,
+    is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
+    iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
+    CodegenVisibility,
 };
 use crate::CodegenOptions;
 use crate::OutputFile;
@@ -891,11 +892,6 @@ impl __sdk::__query_builder::HasIxCols for {struct_name} {{
     Ok(())
 }
 
-/// Is `name` a view that takes arguments?
-fn is_parameterized_view(module: &ModuleDef, name: &Identifier) -> bool {
-    module.view(name).is_some_and(|view| !view.params.elements.is_empty())
-}
-
 pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {
     // NEW: Generate query table accessor trait and implementation
     let accessor_method = table_method_name(&table.accessor_name);
@@ -1768,8 +1764,6 @@ type QueryBuilder = __sdk::QueryBuilder;
             out.delimited_block(
                 "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
                 |out| {
-                    // `subscribe_to_all_tables` subscribes to `SELECT * FROM {name}` for each of these,
-                    // which a parameterized view would reject for missing args.
                     for (name, _, _) in iter_table_names_and_types(module, visibility)
                         .filter(|(name, _, _)| !is_parameterized_view(module, name))
                     {
