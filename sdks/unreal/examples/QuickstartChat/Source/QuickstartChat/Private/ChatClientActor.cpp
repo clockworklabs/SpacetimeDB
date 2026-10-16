@@ -109,7 +109,7 @@ void AChatClientActor::OnConnected(UDbConnection* Connection, FSpacetimeDBIdenti
 	SubscribeToAll();
 }
 
-void AChatClientActor::OnDisconnected(UDbConnection* Connection, const FString& ErrorMessage)
+void AChatClientActor::OnDisconnected(UDbConnection* Connection, const FString& ErrorMessage, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
 	const FString Message = FString::Printf(
 		TEXT("OnDisconnected -> Error: %s"),
@@ -117,7 +117,7 @@ void AChatClientActor::OnDisconnected(UDbConnection* Connection, const FString& 
 	LogAndDisplayMessage(Message, FColor::Red);
 }
 
-void AChatClientActor::OnConnectError(const FString& ErrorMessage)
+void AChatClientActor::OnConnectError(const FString& ErrorMessage, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
 	const FString Message = FString::Printf(
 		TEXT("OnConnectError -> Error: %s "),

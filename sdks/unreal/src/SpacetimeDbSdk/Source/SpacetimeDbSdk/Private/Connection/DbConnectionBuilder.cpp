@@ -23,17 +23,16 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithUriBase(const FString& I
 	return this;
 }
 
-
 UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithDatabaseNameBase(const FString& InName)
 {
 	if (InName.IsEmpty())
 	{
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("WithDatabaseNameBase called with empty module name, not allowd"));
+		UE_LOG(LogSpacetimeDb_Connection, Warning,
+		       TEXT("WithDatabaseNameBase called with empty module name, not allowd"));
 	}
 	ModuleName = InName;
 	return this;
 }
-
 
 UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithTokenBase(const FString& InToken)
 {
@@ -45,7 +44,8 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithCompressionBase(const ES
 {
 	if (InCompression == ESpacetimeDBCompression::Brotli)
 	{
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Brotli compression is not available in this version of SDK. Defaulting to Gzip."));
+		UE_LOG(LogSpacetimeDb_Connection, Warning,
+		       TEXT("Brotli compression is not available in this version of SDK. Defaulting to Gzip."));
 		Compression = ESpacetimeDBCompression::Gzip;
 	}
 	else
@@ -102,7 +102,7 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 		WorkUri = TEXT("ws://") + WorkUri.Mid(7);
 	}
 	else if (!WorkUri.StartsWith(TEXT("ws://"), ESearchCase::IgnoreCase) &&
-			 !WorkUri.StartsWith(TEXT("wss://"), ESearchCase::IgnoreCase))
+	         !WorkUri.StartsWith(TEXT("wss://"), ESearchCase::IgnoreCase))
 	{
 		WorkUri = TEXT("ws://") + WorkUri;
 	}
@@ -119,30 +119,49 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 	Connection->OnConnectErrorDelegate = OnConnectErrorCallback;
 	Connection->OnDisconnectBaseDelegate = OnDisconnectCallback;
 
-	Connection->WebSocket = NewObject<UWebsocketManager>(Connection);
-
-	//Default to Gzip compression if not set
+	Connection->bAutomaticReconnect = bAutomaticReconnect;
+	Connection->ReconnectOptions = ReconnectOptions;
+	Connection->ReconnectOptions.Resolve();
+	Connection->TokenProvider = TokenProvider;
+	Connection->OnAutomaticReconnectBaseDelegate = OnAutomaticReconnectCallback;
 	if (!bCompressionSet)
 	{
 		Compression = ESpacetimeDBCompression::Gzip;
 	}
-
-	const UEnum* CompressionEnum = StaticEnum<ESpacetimeDBCompression>();
-	const FString CompressionName = CompressionEnum->GetNameStringByValue(static_cast<int64>(Compression));
-
-	// Construct the WebSocket URL using the provided URI, module name, and compression type
-	FString WebSocketUrl = FString::Printf(TEXT("%s/v1/database/%s/subscribe?compression=%s"),
-		*WorkUri,
-		*ModuleName,
-		*CompressionName);
-
-	Connection->WebSocket->OnConnectionError.AddDynamic(Connection, &UDbConnectionBase::HandleWSError);
-	Connection->WebSocket->OnClosed.AddDynamic(Connection, &UDbConnectionBase::HandleWSClosed);
-	Connection->WebSocket->OnBinaryMessageReceived.AddDynamic(Connection, &UDbConnectionBase::HandleWSBinaryMessage);
-	// Set the initialization token for the WebSocket connection
-	Connection->WebSocket->SetInitToken(Token);
-	// Connect the WebSocket to the constructed URL
-	Connection->WebSocket->Connect(WebSocketUrl);
-
+	const FString CompressionName =
+	    StaticEnum<ESpacetimeDBCompression>()->GetNameStringByValue(static_cast<int64>(Compression));
+	Connection->WebSocketUrl =
+	    FString::Printf(TEXT("%s/v1/database/%s/subscribe?compression=%s"), *WorkUri, *ModuleName, *CompressionName);
+	if (bAutomaticReconnect)
+	{
+		// One replacement session per logical connection, fresh server connection_id per socket.
+		Connection->WebSocketUrl += TEXT("&session_id=") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	}
+	Connection->StartSocket();
 	return Connection;
+}
+
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithAutomaticReconnectBase()
+{
+	bAutomaticReconnect = true;
+	return this;
+}
+
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithAutomaticReconnectOptionsBase(
+    const FAutomaticReconnectOptions& Options)
+{
+	ReconnectOptions = Options;
+	return WithAutomaticReconnectBase();
+}
+
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithTokenProviderBase(FTokenProviderDelegate Provider)
+{
+	TokenProvider = Provider;
+	return this;
+}
+
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::OnAutomaticReconnectBase(FOnConnectBaseDelegate Callback)
+{
+	OnAutomaticReconnectCallback = Callback;
+	return this;
 }

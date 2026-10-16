@@ -373,13 +373,13 @@ void OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const
 }
 
 UFUNCTION()
-void OnConnectError(const FString& Error)
+void OnConnectError(const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
     UE_LOG(LogTemp, Error, TEXT("Connection failed: %s"), *Error);
 }
 
 UFUNCTION()
-void OnDisconnected(UDbConnection* Connection, const FString& Error)
+void OnDisconnected(UDbConnection* Connection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
     UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB: %s"), *Error);
 }
@@ -455,7 +455,19 @@ Automatic reconnect support is coming soon. For now, implement reconnection in y
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
-Automatic reconnect support for the Unreal C++ SDK is coming soon. For now, implement reconnection in your application: create a new connection and restore subscriptions after a connection loss.
+Enable `->WithAutomaticReconnect()` to recover after an established connection drops. The connection, cached rows, subscription handles, and callbacks survive. While `IsReconnecting()` is true, reads return the last known rows. Keep automatic ticking enabled, or continue calling `FrameTick()` during outages even when `IsActive()` is false.
+
+`OnConnect` runs only for the initial connection. `OnAutomaticReconnect` takes the same delegate type and runs after recovery, before subscription replay. Register subscriptions and row callbacks once. Subscriptions replay in one atomic batch, and their `OnApplied` callbacks run again after reconciliation. Unchanged rows do not trigger row callbacks.
+
+`OnDisconnect` and `OnConnectError` receive `bWillReconnect`, `NextReconnectAttempt`, and `NextReconnectDelaySeconds` after their existing arguments. When no retry is scheduled, these are `false`, `0`, and `0`. Initial connection failures are not retried; `Disconnect()` cancels recovery.
+
+Use `->WithAutomaticReconnectOptions(Options)` with `FAutomaticReconnectOptions` to configure backoff. `MinDelaySeconds` defaults to 1 and `MaxDelaySeconds` to 30. Delays grow exponentially with 50% jitter, clamped to these bounds. The SDK raises the minimum to 0.5 seconds if needed, then raises the maximum to the greater of one second and the minimum.
+
+For expiring credentials, combine `->WithToken(InitialToken)` and `->WithTokenProvider(Provider)`. The `FTokenProviderDelegate` receives a `UReconnectTokenRequest*`; complete it with `Request->Complete(NewToken, FString())`, or pass an error as the second argument. The provider can finish asynchronously and must return a token for the original identity. Provider failures retry; rejection of a fresh token and identity changes are terminal.
+
+Function calls (i.e. reducers/procedures) made during recovery fail as disconnected. Interrupted calls may have executed: their callback events carry `CallError == ESpacetimeDBCallError::UnknownResult`. Calls are never replayed. New subscriptions queue during recovery; cancelling a subscription removes it from replay.
+
+Regenerate C++ bindings and update lifecycle callback signatures, including Blueprint bindings. Automatic reconnect requires a server supporting session replacement and batch subscriptions. See the [Unreal reference](./00800-unreal-reference.md#method-withautomaticreconnect) for the builder API.
 
 </TabItem>
 </Tabs>

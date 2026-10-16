@@ -118,12 +118,12 @@ void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Ide
 		->SubscribeToAllTables();
 }
 
-void AGameManager::HandleConnectError(const FString& Error)
+void AGameManager::HandleConnectError(const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
 	UE_LOG(LogTemp, Log, TEXT("Connection error %s"), *Error);
 }
 
-void AGameManager::HandleDisconnect(UDbConnection* InConn, const FString& Error)
+void AGameManager::HandleDisconnect(UDbConnection* InConn, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
 	UE_LOG(LogTemp, Log, TEXT("Disconnected."));
 	if (!Error.IsEmpty())

@@ -165,11 +165,11 @@ private:
 
     /** Called when the connection is closed */
     UFUNCTION()
-    void OnDisconnected(UDbConnection* Connection, const FString& ErrorMessage);
+    void OnDisconnected(UDbConnection* Connection, const FString& ErrorMessage, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 
     /** Called when the initial connection fails */
     UFUNCTION()
-    void OnConnectError(const FString& ErrorMessage);
+    void OnConnectError(const FString& ErrorMessage, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 
 
     // -------------------------------------------------------------------------
