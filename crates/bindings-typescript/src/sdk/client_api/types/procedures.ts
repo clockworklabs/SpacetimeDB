@@ -3,6 +3,6 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from '../../../lib/type_builders';
+import { type Infer as __Infer } from '../../../lib/type_builders.ts';
 
 // Import all procedure arg schemas

@@ -3,14 +3,14 @@ export {
   spacetimeDBQuery,
   type SpacetimeDBQueryOptions,
   type SpacetimeDBQueryOptionsSkipped,
-} from './SpacetimeDBQueryClient';
+} from './SpacetimeDBQueryClient.ts';
 export {
   useSpacetimeDBQuery,
   useSpacetimeDBSuspenseQuery,
   type UseSpacetimeDBQueryResult,
   type UseSpacetimeDBSuspenseQueryResult,
-} from './hooks';
-export * from '../react/SpacetimeDBProvider';
-export { useSpacetimeDB } from '../react/useSpacetimeDB';
-export { useReducer } from '../react/useReducer';
-export { useProcedure } from '../react/useProcedure';
+} from './hooks.ts';
+export * from '../react/SpacetimeDBProvider.ts';
+export { useSpacetimeDB } from '../react/useSpacetimeDB.ts';
+export { useReducer } from '../react/useReducer.ts';
+export { useProcedure } from '../react/useProcedure.ts';

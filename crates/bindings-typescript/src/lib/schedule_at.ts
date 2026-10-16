@@ -1,6 +1,9 @@
-import { AlgebraicType } from './algebraic_type';
-import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
-import { Timestamp, type TimestampAlgebraicType } from './timestamp';
+import { AlgebraicType } from './algebraic_type.ts';
+import {
+  TimeDuration,
+  type TimeDurationAlgebraicType,
+} from './time_duration.ts';
+import { Timestamp, type TimestampAlgebraicType } from './timestamp.ts';
 
 export type ScheduleAtAlgebraicType = {
   tag: 'Sum';

@@ -29,6 +29,7 @@
     "build": "pnpm -s build:js && pnpm -s build:types",
     "build:package": "pnpm -s build && pnpm -s prepare:test-utils-wasm:clean",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "fix:import-extensions": "node scripts/add-import-extensions.mjs src && prettier --write src --log-level warn --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
     "test:unit": "vitest run",

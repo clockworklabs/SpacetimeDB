@@ -1,8 +1,8 @@
 import type {
   DbConnectionBuilder,
   DbConnectionImpl,
-} from '../sdk/db_connection_impl';
-import type { ConnectionState as ManagerConnectionState } from '../sdk/connection_manager';
+} from '../sdk/db_connection_impl.ts';
+import type { ConnectionState as ManagerConnectionState } from '../sdk/connection_manager.ts';
 
 export const SPACETIMEDB_CONTEXT_KEY = Symbol('spacetimedb');
 

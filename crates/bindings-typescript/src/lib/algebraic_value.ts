@@ -1,4 +1,4 @@
-import BinaryReader from './binary_reader';
+import BinaryReader from './binary_reader.ts';
 
 export interface ParseableType<T> {
   deserialize: (reader: BinaryReader) => T;
