@@ -80,9 +80,6 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-#[cfg(target_os = "macos")]
-static_assert_size!(TxState, 152);
-#[cfg(not(target_os = "macos"))]
 static_assert_size!(TxState, 144);
 
 impl MemoryUsage for TxState {
