@@ -149,6 +149,25 @@ class UDbConnectionBuilder
 
 Chain a call to `.OnConnect(callback)` to your builder to register a callback to run when your new `UDbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `UDbConnection`, the `FSpacetimeDBIdentity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to `WithToken` to authenticate the same user in future connections.
 
+#### Method `WithAutomaticReconnect`
+
+```cpp
+UDbConnectionBuilder* WithAutomaticReconnect();
+UDbConnectionBuilder* WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options);
+UDbConnectionBuilder* WithTokenProvider(FTokenProviderDelegate Provider);
+UDbConnectionBuilder* OnAutomaticReconnect(FOnConnectDelegate Callback);
+```
+
+Automatic reconnect is opt-in. Both reconnect methods enable it; the options method also sets `MinDelaySeconds` (default 1) and `MaxDelaySeconds` (default 30). Retries use exponential backoff with 50% jitter, clamped to the bounds. The effective minimum is at least 0.5 seconds. The effective maximum is at least both one second and the effective minimum.
+
+`OnConnect` runs once. `OnAutomaticReconnect` receives the connection, identity, and token on each successful recovery, before subscriptions are restored. `Conn->IsReconnecting()` reports recovery in progress. Keep ticking the connection throughout recovery. Cached rows remain readable but may be stale until subscription `OnApplied` callbacks run again. Register row callbacks and subscriptions once; replay restores all live subscription sets atomically.
+
+`WithTokenProvider` supplies credentials when a retained token is near expiry, unreadable, or rejected. Bind a `UFUNCTION` taking `UReconnectTokenRequest*`. It may complete asynchronously by calling `Request->Complete(NewToken, FString())`; to report failure, supply an empty token and an error string. Completion after cancellation is ignored. Use `WithToken` for the initial token: the provider is only used during recovery. Refreshed tokens must have the original identity.
+
+Initial connection failures are terminal. `Disconnect()` cancels pending retries and credential requests. Calls are never replayed; interrupted reducer and procedure callbacks carry `CallError == ESpacetimeDBCallError::UnknownResult`. New subscriptions queue while reconnecting, and cancellation excludes a set from replay.
+
+Regenerate module bindings when upgrading to this API. The server must support session replacement and batch subscriptions.
+
 #### Callback `OnConnectError`
 
 ```cpp
@@ -159,7 +178,7 @@ class UDbConnectionBuilder
 };
 ```
 
-Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when your connection fails.
+Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when a connection attempt fails. Its parameters are `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. Initial failures are not retried.
 
 #### Callback `OnDisconnect`
 
@@ -171,7 +190,7 @@ class UDbConnectionBuilder
 };
 ```
 
-Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `UDbConnection` disconnects from the remote database, either as a result of a call to `Disconnect` or due to an error.
+Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `UDbConnection` disconnects from the remote database, either as a result of a call to `Disconnect` or due to an error. Its parameters are `UDbConnection* Connection`, `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. Retry attempts start at one; when no retry is scheduled, the last three arguments are `false`, `0`, and `0`.
 
 #### Method `Build`
 
@@ -196,7 +215,7 @@ void AGameManager::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    if (Conn && Conn->IsActive())
+    if (Conn) // Keep ticking during automatic recovery as well.
     {
         Conn->FrameTick();
     }
@@ -934,7 +953,7 @@ void AMyActor::SendMessage(const FString& Text)
     }
 }
 
-void AMyActor::OnDisconnected(UDbConnection* Connection, const FString& Error)
+void AMyActor::OnDisconnected(UDbConnection* Connection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
     UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB: %s"), *Error);
 }
