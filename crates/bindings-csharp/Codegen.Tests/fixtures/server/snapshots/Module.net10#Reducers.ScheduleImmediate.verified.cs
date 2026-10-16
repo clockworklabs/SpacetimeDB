@@ -4,18 +4,12 @@
 
 partial class Reducers
 {
-    private static class __ScheduleScheduleImmediateName
-    {
-        internal static readonly string Name =
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(ScheduleImmediate),
-                null
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static __ScheduleScheduleImmediateName() { }
-    }
+    private static string __ScheduleScheduleImmediateName =>
+        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(ScheduleImmediate),
+            null
+        );
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateScheduleImmediate(PublicTable data)
@@ -24,8 +18,44 @@ partial class Reducers
         using var writer = new BinaryWriter(stream);
         new PublicTable.BSATN().Write(writer, data);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleScheduleImmediateName.Name,
+            __ScheduleScheduleImmediateName,
             stream
         );
+    }
+
+    private static string?[] __ScheduleScheduleImmediateNames =>
+        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
+
+    private static string __ResolveScheduleScheduleImmediateName(int contextInstance)
+    {
+        var names = __ScheduleScheduleImmediateNames;
+        if (names[contextInstance] is { } name)
+        {
+            return name;
+        }
+        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
+            contextInstance,
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        );
+        return names[contextInstance] = names[instance] ??=
+            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                instance,
+                nameof(ScheduleImmediate),
+                null
+            );
+    }
+
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+    public static void VolatileNonatomicScheduleImmediateScheduleImmediate<__Context>(
+        __Context __context,
+        PublicTable data
+    )
+        where __Context : global::SpacetimeDB.Internal.IModuleContext
+    {
+        var __name = __ResolveScheduleScheduleImmediateName(__context.InstanceId);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        new PublicTable.BSATN().Write(writer, data);
+        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
     }
 } // Reducers

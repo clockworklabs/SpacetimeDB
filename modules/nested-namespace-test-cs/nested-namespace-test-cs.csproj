@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="libraries/**/*.cs" />
+    <ProjectReference Include="libraries/Branch/Branch.csproj" />
+    <ProjectReference Include="libraries/Leaf/Leaf.csproj" />
+    <ProjectReference Include="libraries/Public/Public.csproj" />
+    <ProjectReference Include="libraries/Outer/Outer.csproj" />
+  </ItemGroup>
+</Project>

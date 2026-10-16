@@ -387,14 +387,8 @@ internal static class ErrorDescriptor
             _ => Location.None
         );
 
-    public static readonly ErrorDescriptor<string> DependencyNamespaceMounts =
-        new(
-            group,
-            "Dependency declares namespace mounts",
-            identity =>
-                $"Dependency '{identity}' declares namespace mounts. Only the consuming root may choose dependency placement; move those declarations to the root.",
-            _ => Location.None
-        );
+    public static readonly ErrorDescriptor<string> InvalidNamespaceComposition =
+        new(group, "Invalid namespace composition", message => $"{message}", _ => Location.None);
 
     public static readonly ErrorDescriptor<(
         string assembly,
@@ -405,7 +399,7 @@ internal static class ErrorDescriptor
             group,
             "Root-only declarations in mounted dependency",
             ctx =>
-                $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares {ctx.declarations}. These declarations are only supported in the root scope. Move them to the root, or omit the namespace declaration so the dependency registers automatically in public. Root-defined RLS may target namespace-qualified tables.",
+                $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares {ctx.declarations}. These declarations are only supported in the root scope. Move them to the root or register the dependency in the root's public scope. A public contribution inside a named submodule remains in that submodule's scope. Root-defined RLS may target namespace-qualified tables.",
             _ => Location.None
         );
 
@@ -425,8 +419,9 @@ internal static class ErrorDescriptor
         );
 
     public static readonly ErrorDescriptor<(
-        string root,
-        string rootPolicy,
+        string scope,
+        string owner,
+        string policy,
         string dependency,
         string dependencyPolicy
     )> ConflictingCaseConversionPolicies =
@@ -434,7 +429,7 @@ internal static class ErrorDescriptor
             group,
             "Conflicting case conversion policies",
             ctx =>
-                $"Root assembly '{ctx.root}' uses case conversion policy '{ctx.rootPolicy}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the shared public scope. Use the same policy, remove the dependency's setting to inherit the root policy, or mount the dependency in a distinct namespace.",
+                $"Assembly '{ctx.owner}' uses case conversion policy '{ctx.policy}' in scope '{ctx.scope}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the same scope. Use the same policy, remove the dependency's setting to inherit the containing scope's policy, or mount the dependency in a distinct namespace.",
             _ => Location.None
         );
 }

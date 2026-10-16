@@ -4,6 +4,11 @@
 
 partial struct PublicTable : System.IEquatable<PublicTable>, SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Id = BSATN.IdRW.Read(reader);
