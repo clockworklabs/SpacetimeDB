@@ -263,14 +263,7 @@ unsafe impl ReadColumn for AlgebraicValue {
             // 2. As a result of the above, all `VarLenRef`s in the column are valid.
             // 3. Our requirements on `offset_in_bytes` mean that our `curr_offset` is valid.
             let res = unsafe {
-                bflatn_from::serialize_value(
-                    ValueSerializer,
-                    fixed_bytes,
-                    page,
-                    blob_store,
-                    &curr_offset,
-                    &layout.ty,
-                )
+                bflatn_from::serialize_value(ValueSerializer, fixed_bytes, page, blob_store, &curr_offset, &layout.ty)
             };
 
             debug_assert!(res.is_ok());
