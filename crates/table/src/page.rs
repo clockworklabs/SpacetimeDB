@@ -1522,6 +1522,9 @@ impl Page {
 
     /// Free a row whose layout contains no variable-length members.
     ///
+    /// Skip the general deletion visitor and blob cleanup, which this layout never needs.
+    /// The fixed-slot bookkeeping and snapshot hash invalidation still apply.
+    ///
     /// # Safety
     /// `fixed_row` must identify a live row of `fixed_row_size` bytes, and that
     /// layout must contain no variable-length members or external blob references.
