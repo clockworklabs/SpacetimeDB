@@ -1420,7 +1420,6 @@ record ViewDeclaration
         var hasContextParam = method.Parameters.Length > 0;
         var firstParamType = hasContextParam ? method.Parameters[0].Type : null;
         var isAnonymousContext = firstParamType?.Name == "AnonymousViewContext";
-        var hasArguments = method.Parameters.Length > 1;
 
         if (string.IsNullOrEmpty(attr.Accessor))
         {
@@ -1430,10 +1429,6 @@ record ViewDeclaration
         if (!attr.Public)
         {
             diag.Report(ErrorDescriptor.ViewMustBePublic, methodSyntax);
-        }
-        if (hasArguments)
-        {
-            diag.Report(ErrorDescriptor.ViewArgsUnsupported, methodSyntax);
         }
 
         Name = attr.Accessor ?? method.Name;
