@@ -209,16 +209,7 @@ partial struct TestDefaultFieldValues
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestDefaultFieldValues?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestDefaultFieldValues t && Equals(t);
     }
 
     public static bool operator ==(TestDefaultFieldValues this_, TestDefaultFieldValues that)
