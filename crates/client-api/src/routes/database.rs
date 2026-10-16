@@ -352,46 +352,56 @@ pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
             caller_identity, owner_identity, query.stream_id, query.seq, query.ack_prefix, query.signature_hash,
         );
 
-        let (tx_offset, response) = match result {
-            IdcReducerCallOutcome::Recorded(result) => {
-                let tx_offset = if durable_offset.is_some() {
-                    Some(result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?)
-                } else {
-                    None
-                };
-                let (status, body) =
-                    idc_reducer_outcome_response(&owner_identity, &reducer, result.result.outcome).into_http_parts();
-                let response = (
-                    status,
-                    TypedHeader(SpacetimeEnergyUsed(result.result.execution_budget_used)),
-                    TypedHeader(SpacetimeExecutionDurationMicros(result.result.execution_duration)),
-                    body,
-                )
-                    .into_response();
-                (tx_offset, response)
-            }
-            IdcReducerCallOutcome::Replayed(outcome) => {
-                let (status, body) =
-                    idc_stored_outcome_response(outcome.result_status, outcome.result_payload).into_http_parts();
-                (Some(outcome.tx_offset), (status, body).into_response())
-            }
-            IdcReducerCallOutcome::AlreadyAcked => {
-                // A delayed delivery or retry can arrive after the sender has acknowledged
-                // the outcome and we have removed it. The sender must ignore this response,
-                // not treat it as a new reducer result or invoke on_result again.
-                (None, IdcResponse::AlreadyAcked.into_http_parts().into_response())
-            }
-        };
-
-        // A retry can observe a committed outcome before the original request's
-        // durability wait finishes. New and replayed outcomes need the same barrier.
-        if let (Some(mut durable_offset), Some(tx_offset)) = (durable_offset, tx_offset) {
-            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
-        }
-        Ok(response)
+        idc_call_response(&owner_identity, &reducer, result, durable_offset).await
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
+}
+
+// Return new and replayed results only after their transactions are durable.
+async fn idc_call_response(
+    owner_identity: &Identity,
+    reducer: &str,
+    result: IdcReducerCallOutcome,
+    durable_offset: Option<DurableOffset>,
+) -> axum::response::Result<axum::response::Response> {
+    let (tx_offset, response) = match result {
+        IdcReducerCallOutcome::Recorded(result) => {
+            let tx_offset = if durable_offset.is_some() {
+                Some(result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?)
+            } else {
+                None
+            };
+            let (status, body) =
+                idc_reducer_outcome_response(owner_identity, reducer, result.result.outcome).into_http_parts();
+            let response = (
+                status,
+                TypedHeader(SpacetimeEnergyUsed(result.result.execution_budget_used)),
+                TypedHeader(SpacetimeExecutionDurationMicros(result.result.execution_duration)),
+                body,
+            )
+                .into_response();
+            (tx_offset, response)
+        }
+        IdcReducerCallOutcome::Replayed(outcome) => {
+            let (status, body) =
+                idc_stored_outcome_response(outcome.result_status, outcome.result_payload).into_http_parts();
+            (Some(outcome.tx_offset), (status, body).into_response())
+        }
+        IdcReducerCallOutcome::AlreadyAcked => {
+            // A delayed delivery or retry can arrive after the sender has acknowledged
+            // the outcome and we have removed it. The sender must ignore this response,
+            // not treat it as a new reducer result or invoke on_result again.
+            (None, IdcResponse::AlreadyAcked.into_http_parts().into_response())
+        }
+    };
+
+    // A retry can observe a committed outcome before the original request's
+    // durability wait finishes. New and replayed outcomes need the same barrier.
+    if let (Some(mut durable_offset), Some(tx_offset)) = (durable_offset, tx_offset) {
+        durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+    }
+    Ok(response)
 }
 
 #[derive(Deserialize)]
@@ -2217,6 +2227,81 @@ mod tests {
                 IdcResponse::from_http_parts(status, body),
                 IdcResponse::DeliveryError(response)
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn idc_responses_wait_until_the_result_is_durable() {
+        use spacetimedb::energy::FunctionBudget;
+        use spacetimedb::host::module_host::IdcStoredReducerOutcome;
+        use std::pin::pin;
+        use std::task::Poll;
+        use tokio::sync::watch;
+
+        for (outcome, stored_status, expected) in [
+            (
+                ReducerOutcome::Committed,
+                StInboundMsgResultStatus::Ok,
+                IdcResponse::Success(Bytes::new()),
+            ),
+            (
+                ReducerOutcome::Failed(Box::new("rejected".into())),
+                StInboundMsgResultStatus::Err,
+                IdcResponse::TerminalError(Bytes::from_static(b"rejected")),
+            ),
+            (
+                ReducerOutcome::BudgetExceeded,
+                StInboundMsgResultStatus::BudgetExceeded,
+                IdcResponse::BudgetExceeded(Bytes::from_static(b"Module energy budget exhausted.")),
+            ),
+        ] {
+            let (durable, rx) = watch::channel(None);
+            let (committed, tx_offset) = oneshot::channel();
+            let receiver = Identity::ZERO;
+            let mut recorded = pin!(idc_call_response(
+                &receiver,
+                "receive",
+                IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+                    result: ReducerCallResult {
+                        outcome,
+                        execution_budget_used: FunctionBudget::ZERO,
+                        execution_duration: Duration::ZERO,
+                    },
+                    tx_offset,
+                }),
+                Some(rx.clone().into()),
+            ));
+            assert!(futures::poll!(&mut recorded).is_pending());
+
+            // Commit makes the result readable by a retry, but neither request may reply yet.
+            committed.send(7).unwrap();
+            let (_, payload) = expected.clone().into_http_parts();
+            let mut replayed = pin!(idc_call_response(
+                &receiver,
+                "receive",
+                IdcReducerCallOutcome::Replayed(IdcStoredReducerOutcome {
+                    result_status: stored_status,
+                    result_payload: payload,
+                    tx_offset: 7,
+                }),
+                Some(rx.into()),
+            ));
+            assert!(futures::poll!(&mut recorded).is_pending());
+            assert!(futures::poll!(&mut replayed).is_pending());
+
+            durable.send_replace(Some(6));
+            assert!(futures::poll!(&mut recorded).is_pending());
+            assert!(futures::poll!(&mut replayed).is_pending());
+
+            durable.send_replace(Some(7));
+            for response in [futures::poll!(recorded), futures::poll!(replayed)] {
+                let Poll::Ready(Ok(response)) = response else {
+                    panic!("IDC response must be ready once its transaction is durable");
+                };
+                let status = response.status();
+                let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+                assert_eq!(IdcResponse::from_http_parts(status, body), expected);
+            }
         }
     }
 
