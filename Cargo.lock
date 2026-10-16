@@ -2106,6 +2106,7 @@ dependencies = [
  "fuzzy-matcher",
  "shell-words",
  "thiserror 1.0.69",
+ "zeroize",
 ]
 
 [[package]]
@@ -8155,6 +8156,7 @@ dependencies = [
  "tokio-tungstenite 0.27.0",
  "toml 0.8.23",
  "toml_edit 0.22.27",
+ "url",
  "walkdir",
  "wasmbin",
  "webbrowser",
@@ -8747,8 +8749,10 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "duct",
+ "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "toml 0.8.23",
 ]
 
