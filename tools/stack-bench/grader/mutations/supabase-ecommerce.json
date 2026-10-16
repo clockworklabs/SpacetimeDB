@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "e48af6d57b62c4aa1eec175ecc20fb2954feabd6d6a77ae05c65e5209a3bfb76",
+  "fixtureSha256": "0f6a67cbb1922d02cee1750b2b802431fc6cc05e055748dd6885e9545c12eeef",
   "backend": "supabase",
   "track": "ecommerce",
   "note": "Native Supabase selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Restart and crash-recovery controls act through the start-up seed path that every application start runs; reconnect controls act on the real Realtime channel.",
@@ -2368,6 +2368,21 @@
         {
           "find": "  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;",
           "replace": "  raise exception 'Cancellation refused';\n  if target.status <> 'pending' then raise exception 'Only pending orders can be cancelled'; end if;"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-misses-direct-stock-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock-alert.631d"
+      ],
+      "desc": "Stock alerts are delivered only by the restock functions, so stock written directly to the database never delivers its alert.",
+      "file": "supabase/migrations/20260925000100_shop.sql",
+      "edits": [
+        {
+          "find": "create trigger stock_increase_alerts after update of quantity on public.stock\n  for each row when (new.quantity > old.quantity) execute function private.notify_stock_increase();\n",
+          "replace": ""
         }
       ]
     }

@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "8ebb20c89130c50c782a51f846249949b2a8fa288e2f805e5546321810ab1251",
-    "executionSha256": "51c564a742a9f100224a15b909e65856e6f8d09ad050b7535f7db75bb1a21cde",
-    "contentSha256": "963153623bc3f0d22a9b08ca40553321b6fe6778a8a056a9dbc95eb2c54ffae9"
+    "meaningSha256": "29358d0a2b592a80ec8bdb69960e1e6586f75342220cd89befe7d634ef0acd53",
+    "executionSha256": "96f8bdbd09075aa5f5a30593d4ac51a7dd8dccb56b2fefd064bf8afbfd89ddef",
+    "contentSha256": "38259c0d70ca84bc10843ab2cc3d77bcc072d9004f830c6fa22770e008b09829"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -26,12 +26,12 @@
       {
         "backend": "postgres",
         "id": "ecommerce-reference-postgres",
-        "sourceSha256": "49228b28eb8296ed954a2b0e327f20655b148a5441efbf03a6f618373791d907"
+        "sourceSha256": "1b25efb4a35e7d9f7986e8e6873d6dbb40e6143fa47cdf63e4d3bc75d684516a"
       },
       {
         "backend": "spacetime",
         "id": "ecommerce-reference-spacetime",
-        "sourceSha256": "7f4e32fc92fc816833ada35b0e625722bf72a6f22fbf5825b444e2233fe2b27e"
+        "sourceSha256": "218a8e6298b8becef513b68d4b9a5068b84bde9c14789e0ae45ebc0d6ce703aa"
       }
     ]
   },
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "619286f14d96b525b79c8900ad56bd5f9b587c7ce63041a054521a10419c8b31",
+      "sha256": "c3702c52edcf1ff904dbb5e6f93441d3ba036c2c408a067d0a284cf8e811e9cf",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "e93bd86472626257668138ce9c09fbff68562e1e1641be6eff8ea80b085cec76",
+      "sha256": "9d3eabfecc8089417a02d08d4fe5a84e486b48ba5f312ad195e820d2b2c30274",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "f3b74c133e58f550a159a996dfc016abba42e6248ad43b67dd59206aac77b360",
+      "sha256": "df2b4546e8969e399af7aa94a16280ea582862d605b3d3964db1df9f6a5a1f8c",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -210,6 +210,7 @@
       "ecommerce.spec.concurrency-safety.last-unit.201c",
       "ecommerce.spec.concurrency-safety.restock-race.202a",
       "ecommerce.spec.concurrency-safety.stock-limit.3d",
+      "ecommerce.spec.external-data-sync.external-stock-alert.631d",
       "ecommerce.spec.external-data-sync.external-stock.901a",
       "ecommerce.spec.external-data-sync.external-stock.901d",
       "ecommerce.spec.live-state.fulfilment-queue.1a",
@@ -267,7 +268,7 @@
     "evidence": [],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
-      "contentSha256": "b803170de3764e4389591599e6532263cff39803f3524e46df5e1f2a21d8db17",
+      "contentSha256": "61620196cde2a4c03e8a65f57d8a6a578e18f9cb23b13e24b20b77e753505d94",
       "id": "ecommerce.questlines"
     }
   },

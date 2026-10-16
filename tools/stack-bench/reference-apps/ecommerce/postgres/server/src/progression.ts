@@ -783,6 +783,13 @@ export async function processProgressionTimers() {
         [rule.item_id, warehouse.rows[0].id, rule.quantity, rule.created_by]);
     }
 
+    // Stock written directly to the database bypasses the server, so alerts also follow the stock rows.
+    const restocked = await client.query(
+      `SELECT DISTINCT r.item_id FROM stock_alert_request r
+       WHERE r.fulfilled = false AND (SELECT COALESCE(SUM(s.quantity), 0) FROM stock s WHERE s.item_id = r.item_id) > 0`,
+    );
+    for (const row of restocked.rows) await processStockAlerts(client, row.item_id);
+
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 

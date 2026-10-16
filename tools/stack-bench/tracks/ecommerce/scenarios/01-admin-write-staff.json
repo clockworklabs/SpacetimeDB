@@ -38,7 +38,7 @@
           "category": "production",
           "desc": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
           "points": 2,
-          "statedBy": "Only administrators can change warehouse stock.",
+          "statedBy": "Staff and signup claims cannot gain administrator restock authority.",
           "note": "The ordinary signup can establish a session automatically or through a separate sign-in. The next assertion requires the created account. A patched signup refusal must not be followed by a sign-in.",
           "steps": [
             { "do": "callAction", "actor": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },

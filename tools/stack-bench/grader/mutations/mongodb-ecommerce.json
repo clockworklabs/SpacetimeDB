@@ -3778,6 +3778,35 @@
           "replace": "  const firstOrder = await Order.findOne({ userId, status: { $ne: \"cancelled\" } }).sort({ createdAt: 1 });\n  const firstOrderItemIds = (firstOrder?.items || []).map((line) => line.itemId.toString());\n  return itemsLive.filter((it) => categories.has(it.category) && !firstOrderItemIds.includes(it.id)"
         }
       ]
+    },
+    {
+      "id": "stock-alert-misses-direct-stock-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock-alert.631d"
+      ],
+      "desc": "The alert timer checks only items the admin restock route has just raised, so stock written directly to the database never delivers its alert.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "export function installProgressionRoutes(app: express.Express, io: SocketIOServer,",
+          "replace": "export const appRestockedItems = new Set<string>();\n\nexport function installProgressionRoutes(app: express.Express, io: SocketIOServer,"
+        },
+        {
+          "find": "    const alerts = await StockAlert.find({ sent: false });",
+          "replace": "    const restockedNow = [...appRestockedItems];\n    appRestockedItems.clear();\n    const alerts = await StockAlert.find({ sent: false, itemId: { $in: restockedNow } });"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "import { installProgressionRoutes } from \"./progression.js\";",
+          "replace": "import { appRestockedItems, installProgressionRoutes } from \"./progression.js\";"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "    { $inc: { quantity: qty } },\n    { upsert: true }\n  );\n\n  await Promise.all([broadcastItems(), broadcastAdmin()]);",
+          "replace": "    { $inc: { quantity: qty } },\n    { upsert: true }\n  );\n  appRestockedItems.add(String(item._id));\n\n  await Promise.all([broadcastItems(), broadcastAdmin()]);"
+        }
+      ]
     }
   ]
 }

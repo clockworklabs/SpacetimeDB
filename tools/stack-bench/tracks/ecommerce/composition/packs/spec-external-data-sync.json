@@ -89,6 +89,23 @@
       "requiresFeatures": [
         "ecommerce.feature.warehouse-admin"
       ]
+    },
+    {
+      "id": "external-stock-alert",
+      "source": "scenarios/progression-stock-alert-direct-restore.json",
+      "feature": 631,
+      "criteria": [
+        "631d"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.stock-alerts",
+        "ecommerce.feature.warehouse-admin"
+      ]
     }
   ]
 }

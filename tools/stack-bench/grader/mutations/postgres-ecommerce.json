@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "49228b28eb8296ed954a2b0e327f20655b148a5441efbf03a6f618373791d907",
+  "fixtureSha256": "1b25efb4a35e7d9f7986e8e6873d6dbb40e6143fa47cdf63e4d3bc75d684516a",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -3930,6 +3930,21 @@
         {
           "find": "<p data-role=\"cart-restore-warning\">Could not restore: {unrestored.join(\", \")}</p>",
           "replace": "<p data-role=\"cart-restore-warning\">Could not restore {unrestored.length} item(s)</p>"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-misses-direct-stock-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock-alert.631d"
+      ],
+      "desc": "Stock alerts are delivered only by the server's restock paths, so stock written directly to the database never delivers its alert.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    // Stock written directly to the database bypasses the server, so alerts also follow the stock rows.\n    const restocked = await client.query(\n      `SELECT DISTINCT r.item_id FROM stock_alert_request r\n       WHERE r.fulfilled = false AND (SELECT COALESCE(SUM(s.quantity), 0) FROM stock s WHERE s.item_id = r.item_id) > 0`,\n    );\n    for (const row of restocked.rows) await processStockAlerts(client, row.item_id);\n\n",
+          "replace": ""
         }
       ]
     }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "7f4e32fc92fc816833ada35b0e625722bf72a6f22fbf5825b444e2233fe2b27e",
+  "fixtureSha256": "218a8e6298b8becef513b68d4b9a5068b84bde9c14789e0ae45ebc0d6ce703aa",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
@@ -3802,6 +3802,21 @@
         {
           "find": "onClick={() => conn?.reducers.dismissRecommendation({ itemId: r.itemId })}",
           "replace": "onClick={() => { setSentDismissalRows(recommendedRows); conn?.reducers.dismissRecommendation({ itemId: r.itemId }); }}"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-misses-direct-stock-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock-alert.631d"
+      ],
+      "desc": "Stock alerts are delivered only by the restock reducers, so stock written directly to the database never delivers its alert.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  // Stock written directly to the database runs no reducer, so alerts also follow the stock rows.\n  for (const alert of [...ctx.db.stockAlert.iter()]) {\n    if (alert.fulfilled || totalStock(ctx, alert.itemId) <= 0) continue;\n    const name = ctx.db.item.id.find(alert.itemId)?.name ?? 'Item';\n    notify(ctx, alert.accountId, 'stock', `${name} is available again.`);\n    ctx.db.stockAlert.id.update({ ...alert, fulfilled: true });\n  }\n",
+          "replace": ""
         }
       ]
     }

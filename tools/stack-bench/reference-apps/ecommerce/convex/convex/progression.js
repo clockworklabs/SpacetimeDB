@@ -90,6 +90,14 @@ export const completeRestock = internalMutationGeneric({ args: { restockId: v.id
   await ctx.db.insert('stock_ledger', { itemId: restock.itemId, quantity: restock.quantity });
   await notifyRestock(ctx, restock.itemId);
 }});
+// Stock written directly to the database runs no mutation, so a cron also delivers alerts from the stock rows.
+export const deliverRestoredAlerts = internalMutationGeneric({ args: {}, handler: async ctx => {
+  const pending = (await ctx.db.query('stock_alert').collect()).filter(alert => !alert.delivered);
+  for (const itemId of new Set(pending.map(alert => alert.itemId))) {
+    const stocks = await ctx.db.query('stock').withIndex('item', q => q.eq('item_id', itemId)).collect();
+    if (stocks.some(row => row.quantity > 0)) await notifyRestock(ctx, itemId);
+  }
+}});
 export const cancelScheduledRestock = mutationGeneric({ args: { restockId: v.id('scheduled_restock') }, handler: async (ctx, { restockId }) => {
   await operator(ctx, true);
   const restock = await ctx.db.get(restockId);

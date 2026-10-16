@@ -51,6 +51,18 @@ language sql security definer set search_path = public as $$
   from delivered join item on item.id = delivered.item_id;
 $$;
 
+-- Stock written directly to the database bypasses the API, so alerts also follow the stock rows.
+create function private.notify_stock_increase() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform private.notify_restock(new.item_id);
+  return null;
+end;
+$$;
+
+create trigger stock_increase_alerts after update of quantity on public.stock
+  for each row when (new.quantity > old.quantity) execute function private.notify_stock_increase();
+
 -- Takes stock from warehouses in a fixed order and records where each unit came from.
 create function private.allocate(product bigint, wanted integer, line bigint) returns void
 language plpgsql security definer set search_path = public as $$

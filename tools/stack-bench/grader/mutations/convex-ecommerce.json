@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+  "fixtureSha256": "8c647a96fbab91b8f51c1d7b6831f926a99d8e681b145b66add7ae52ce24e6c6",
   "backend": "convex",
   "track": "ecommerce",
   "note": "Native Convex selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Recovery controls use real native reconnect callbacks and writes.",
@@ -2344,6 +2344,21 @@
           "file": "convex/auth.js",
           "find": "if (params.flow === 'signUp') {",
           "replace": "if (params.flow === 'signUp') {\n        if (!['admin', 'staff', 'staff2', 'customer'].includes(params.username)) throw new ConvexError('Registration disabled');"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-misses-direct-stock-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock-alert.631d"
+      ],
+      "desc": "Stock alerts are delivered only by the restock mutations, so stock written directly to the database never delivers its alert.",
+      "file": "convex/crons.js",
+      "edits": [
+        {
+          "find": "crons.interval('deliver restored stock alerts', { seconds: 2 }, makeFunctionReference('progression:deliverRestoredAlerts'));\n",
+          "replace": ""
         }
       ]
     }

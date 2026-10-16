@@ -714,7 +714,8 @@
       "gradingGroups": [
         "ecommerce.progression.stock-alerts#delivery",
         "ecommerce.spec.access-control#stock-alert-privacy",
-        "ecommerce.spec.transactional-integrity#stock-alert-deduplication"
+        "ecommerce.spec.transactional-integrity#stock-alert-deduplication",
+        "ecommerce.spec.external-data-sync#external-stock-alert"
       ],
       "dependencies": [
         {

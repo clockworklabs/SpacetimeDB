@@ -326,6 +326,13 @@ function processMaintenance(ctx: Ctx) {
     }
     ctx.db.deliverySchedule.orderId.update({ ...schedule, completed: true });
   }
+  // Stock written directly to the database runs no reducer, so alerts also follow the stock rows.
+  for (const alert of [...ctx.db.stockAlert.iter()]) {
+    if (alert.fulfilled || totalStock(ctx, alert.itemId) <= 0) continue;
+    const name = ctx.db.item.id.find(alert.itemId)?.name ?? 'Item';
+    notify(ctx, alert.accountId, 'stock', `${name} is available again.`);
+    ctx.db.stockAlert.id.update({ ...alert, fulfilled: true });
+  }
 }
 
 // --- lifecycle ---
