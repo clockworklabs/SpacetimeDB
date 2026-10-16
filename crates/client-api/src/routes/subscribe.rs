@@ -17,7 +17,8 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use crossbeam_queue::ArrayQueue;
 use derive_more::From;
-use futures::{pin_mut, Sink, SinkExt, Stream, StreamExt};
+use futures::future::BoxFuture;
+use futures::{pin_mut, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
 use prometheus::{Histogram, IntGauge};
 use scopeguard::defer;
@@ -162,7 +163,7 @@ pub async fn handle_websocket<S>(
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     if connection_id.is_some() {
         // TODO: Bump this up to `log::warn!` after removing the client SDKs' uses of that parameter.
@@ -270,6 +271,15 @@ where
         .max_frame_size(None)
         .accept_unmasked_frames(false);
     let ws_opts = ctx.websocket_options();
+    // A container's connection ends once its generation is superseded.
+    let revoked = auth.claims.container.map(|claim| {
+        let ctx = ctx.clone();
+        revoked_after(CONTAINER_CREDENTIAL_CHECK_INTERVAL, move || {
+            let ctx = ctx.clone();
+            async move { ctx.is_current_container(&claim).await }
+        })
+        .boxed()
+    });
 
     tokio::spawn(async move {
         let mut ws = match ws_upgrade.upgrade(ws_config).await {
@@ -357,7 +367,7 @@ where
             if let Some(session) = &session {
                 session.establish(&client.sender());
             }
-            ws_client_actor(ws_opts, client, ws, receiver, session)
+            ws_client_actor(ws_opts, client, ws, receiver, session, revoked)
         };
         let client = ClientConnection::spawn(
             client_id,
@@ -576,13 +586,14 @@ async fn ws_client_actor(
     ws: WebSocketStream,
     sendrx: ClientConnectionReceiver,
     session: Option<SessionReservation>,
+    revoked: Option<BoxFuture<'static, ()>>,
 ) {
     // Runs the module-side disconnect even if this task gets cancelled.
     let mut client = async_cleanup_guard((client, session), |(client, session)| {
         ws_client_teardown(client, session)
     });
 
-    ws_client_actor_inner(&mut client.0, options, ws, sendrx).await;
+    ws_client_actor_inner(&mut client.0, options, ws, sendrx, revoked).await;
 
     if let Err(e) = client.cleanup().await {
         log::error!("websocket client teardown task failed: {e}");
@@ -603,6 +614,7 @@ async fn ws_client_actor_inner(
     config: WebSocketOptions,
     ws: WebSocketStream,
     sendrx: ClientConnectionReceiver,
+    revoked: Option<BoxFuture<'static, ()>>,
 ) {
     let database = client.module().info().database_identity;
     let client_id = client.id;
@@ -655,11 +667,51 @@ async fn ws_client_actor_inner(
         }
     };
 
+    // Close the connection when its credential is revoked. Once the close frame is sent,
+    // the receive loop discards anything else the client sends.
+    let revoke_task = revoked.map(|revoked| {
+        let state = state.clone();
+        let unordered_tx = unordered_tx.clone();
+        tokio::spawn(async move {
+            revoked.await;
+            log::info!(
+                "Closing client {} whose container credential was superseded",
+                state.client_id
+            );
+            state.record_disconnect(ClientDisconnectCause::ContainerCredentialRevoked);
+            let close = CloseFrame {
+                code: CloseCode::Policy,
+                reason: "container credential superseded".into(),
+            };
+            let _ = unordered_tx.send(close.into());
+        })
+    });
     ws_main_loop(state, hotswap, send_task, recv_task, move |msg| {
         let _ = unordered_tx.send(msg);
     })
     .await;
+    if let Some(task) = revoke_task {
+        task.abort();
+    }
     log::trace!("Client connection ended: {client_id}");
+}
+
+/// How often a connection authenticated with a container credential checks that the credential's
+/// generation is still current.
+const CONTAINER_CREDENTIAL_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Resolve once `is_current` returns false, checking every `interval`.
+async fn revoked_after<F, Fut>(interval: Duration, mut is_current: F)
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = bool>,
+{
+    loop {
+        tokio::time::sleep(interval).await;
+        if !is_current().await {
+            return;
+        }
+    }
 }
 
 /// How long to wait for the close handshake to complete after the server
@@ -2997,5 +3049,28 @@ mod tests {
         };
 
         assert_eq!(expected, toml::from_str(toml).unwrap());
+    }
+
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
+    async fn revoked_after_resolves_only_once_no_longer_current() {
+        let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let revoked = revoked_after(Duration::from_secs(1), {
+            let checks = checks.clone();
+            move || {
+                let n = checks.fetch_add(1, Ordering::SeqCst);
+                async move { n < 2 }
+            }
+        });
+        pin_mut!(revoked);
+        // Current for the first two checks.
+        assert!(tokio::time::timeout(Duration::from_millis(2500), &mut revoked)
+            .await
+            .is_err());
+        assert_eq!(checks.load(Ordering::SeqCst), 2);
+        // Revoked at the third.
+        tokio::time::timeout(Duration::from_secs(1), revoked)
+            .await
+            .expect("revocation not observed");
+        assert_eq!(checks.load(Ordering::SeqCst), 3);
     }
 }
