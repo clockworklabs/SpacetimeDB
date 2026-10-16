@@ -27,11 +27,17 @@ directives = [
 # Maximum number of WASM procedure instances per database. Omit to use the
 # number of cores reported by the OS.
 # procedure-instance-pool-size = 8
+# How long a call may wait for a free procedure instance before it fails with
+# an error. Accepts a duration string or a number of seconds. Set to 0 to wait
+# forever. Omit to use 30 seconds.
+# procedure-queue-timeout = "30s"
 
 [v8]
 # Maximum number of JS procedure isolates per database. Omit to use the number
 # of cores reported by the OS.
 # procedure-instance-pool-size = 8
+# Same as `wasm.procedure-queue-timeout`, for JS procedure isolates.
+# procedure-queue-timeout = "30s"
 
 [v8-heap-policy]
 # Check the V8 heap after this many requests. Set to 0 to disable.
