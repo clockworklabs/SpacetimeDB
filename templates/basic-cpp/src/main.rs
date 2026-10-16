@@ -18,7 +18,7 @@ fn main() {
         .on_connect(|_, _, _| {
             println!("Connected to SpacetimeDB");
         })
-        .on_connect_error(|_ctx, e| {
+        .on_connect_error(|_ctx, e, _next| {
             eprintln!("Connection error: {:?}", e);
             std::process::exit(1);
         })

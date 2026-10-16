@@ -15,6 +15,7 @@ mod client_cache;
 mod compression;
 mod db_connection;
 mod metrics;
+mod reconnect;
 mod spacetime_module;
 mod subscription;
 mod websocket;
@@ -29,6 +30,7 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
+pub use reconnect::{AutomaticReconnectOptions, NextReconnect, TokenFuture, TokenProvider};
 pub use table::{EventTable, Table, TableAccessor, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
