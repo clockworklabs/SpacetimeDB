@@ -170,6 +170,9 @@ pub trait FnInfo: ExplicitNames {
     /// Currently only views use this metadata.
     const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[];
 
+    /// The source name of the outbox table whose results this reducer handles.
+    const ON_RESULT_OUTBOX: Option<&'static str> = None;
+
     /// The function to invoke.
     const INVOKE: Self::Invoke;
 
@@ -515,6 +518,20 @@ where
     core::mem::forget(_x);
 }
 
+/// Resolve an outbox accessor to its registered table source name.
+pub const fn on_result_outbox<T: crate::Table>(_table: fn(&crate::Local) -> T) -> &'static str {
+    T::TABLE_NAME
+}
+
+/// Assert that an `on_result` reducer accepts the outbox row and delivery result.
+pub fn on_result_typecheck<T, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
+where
+    T: crate::Table,
+    F: Fn(&ReducerContext, T::Row, Result<(), String>) -> Ret,
+    Ret: IntoReducerResult,
+{
+}
+
 /// Tacit marker argument to [`ExportFunctionForScheduledTable`] for reducers.
 pub struct FnKindReducer {
     _never: Infallible,
@@ -593,6 +610,9 @@ impl<T: SpacetimeType> TableColumn for T {}
 /// Assert that the primary_key column of a scheduled table is a u64.
 pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
 
+/// Assert that the primary_key column of an outbox table is a u64.
+pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
+
 mod sealed {
     pub trait Sealed {}
 }
@@ -603,6 +623,13 @@ mod sealed {
 pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
 impl sealed::Sealed for u64 {}
 impl ScheduledTablePrimaryKey for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait OutboxTablePrimaryKey: sealed::Sealed {}
+impl OutboxTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -822,6 +849,18 @@ pub fn register_table<T: Table>() {
 
         table.finish();
 
+        if let Some(outbox) = T::OUTBOX {
+            module.inner.add_outbox(
+                T::TABLE_NAME,
+                outbox.remote_reducer_name,
+                outbox.target_column,
+                outbox.arg_columns.iter().copied().map(Into::into),
+                None::<&str>,
+                spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
+                    .expect("generated outbox signature hash must be valid hex"),
+            );
+        }
+
         module.inner.add_explicit_names(T::explicit_names());
     })
 }
@@ -848,6 +887,9 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
             module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
         } else {
             module.inner.add_reducer(I::NAME, params);
+        }
+        if let Some(outbox_table) = I::ON_RESULT_OUTBOX {
+            module.on_result_reducers.push((outbox_table, I::NAME));
         }
         module.reducers.push(I::INVOKE);
 
@@ -1130,6 +1172,7 @@ pub struct ModuleBuilder {
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
+    on_result_reducers: Vec<(&'static str, &'static str)>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1187,6 +1230,10 @@ extern "C" fn __describe_module__(description: BytesSink) {
     let mut module = ModuleBuilder::default();
     for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
+    }
+
+    for (outbox_table, reducer) in module.on_result_reducers {
+        module.inner.set_outbox_on_result(outbox_table, reducer);
     }
 
     // Serialize the module to bsatn.
