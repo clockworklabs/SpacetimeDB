@@ -2377,6 +2377,8 @@ impl AuthCtx {
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn jwt(&self) -> Option<&JwtClaims> {
+        // Internal invocations have no JWT, even when they arrive over a connection that has one.
+        // A container connected as its database has a token, but its claims describe the container, not the database.
         if self.is_internal() {
             return None;
         }

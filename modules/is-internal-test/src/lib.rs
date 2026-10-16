@@ -1,4 +1,4 @@
-//! Checks that `is_internal()` is true exactly when the sender is this database.
+//! Checks that `is_internal()` is true iff the sender is this database.
 use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 use spacetimedb::{Identity, ProcedureContext, ReducerContext, Table};
 

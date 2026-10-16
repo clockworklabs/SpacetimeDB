@@ -1,5 +1,5 @@
 //! Check `is_internal()` in a real Rust Wasm module:
-//! it is true exactly when the sender is the database.
+//! it is true iff the sender is the database.
 use serial_test::serial;
 use spacetimedb::host::FunctionArgs;
 use spacetimedb_lib::{AlgebraicValue, Identity};

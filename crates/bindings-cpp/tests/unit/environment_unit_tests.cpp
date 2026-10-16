@@ -77,7 +77,7 @@ TEST_CASE(jwt_source_keeps_final_bytes_from_a_single_read) {
     ASSERT_EQ(payload.size(), payload_offset);
 }
 
-TEST_CASE(auth_ctx_is_internal_exactly_when_sender_is_the_database) {
+TEST_CASE(auth_ctx_is_internal_iff_sender_is_the_database) {
     payload = R"({"sub":"connection"})";
     const Identity database(database_bytes);
     auto internal = AuthCtx::from_connection_id(ConnectionId(5), database);
