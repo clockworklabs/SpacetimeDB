@@ -8,7 +8,7 @@ void UTestHelperDelegates::HandleConnect(UDbConnection* Conn, FSpacetimeDBIdenti
 	}
 }
 
-void UTestHelperDelegates::HandleConnectError(const FString& Error)
+void UTestHelperDelegates::HandleConnectError(const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
 	if (OnConnectError)
 	{
@@ -16,7 +16,7 @@ void UTestHelperDelegates::HandleConnectError(const FString& Error)
 	}
 }
 
-void UTestHelperDelegates::HandleDisconnect(UDbConnection* Conn, const FString& Error)
+void UTestHelperDelegates::HandleDisconnect(UDbConnection* Conn, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
 	if (OnDisconnect)
 	{

@@ -40,11 +40,11 @@ public:
 
 	TFunction<void(const FString&)> OnConnectError;
 	UFUNCTION()
-	void HandleConnectError(const FString& Error);
+	void HandleConnectError(const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 
 	TFunction<void(UDbConnection*, const FString&)> OnDisconnect;
 	UFUNCTION()
-	void HandleDisconnect(UDbConnection* Conn, const FString& Error);
+	void HandleDisconnect(UDbConnection* Conn, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 
 	TFunction<void(FSubscriptionEventContext)> OnSubscriptionApplied;
 	UFUNCTION()
