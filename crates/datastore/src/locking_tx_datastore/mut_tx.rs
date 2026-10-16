@@ -76,6 +76,7 @@ use spacetimedb_table::{
     table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
 };
 use std::{
+    fmt,
     marker::PhantomData,
     sync::Arc,
     time::{Duration, Instant},
@@ -452,6 +453,12 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
     // Marks `MutTxId` as `!Send` by embedding a non-`Send` type.
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
+}
+
+impl fmt::Debug for MutTxId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MutTxId").finish_non_exhaustive()
+    }
 }
 
 // Grew by one word when `ReducerName` became fully qualified: it now holds a

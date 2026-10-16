@@ -2,11 +2,11 @@
 
 use std::io;
 
-use super::AutoMigratePlan;
+use super::MigratePlan;
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{
-        ConstraintData, ConstraintDef, FunctionKind, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef, SequenceDef,
+        ConstraintData, ConstraintDef, FunctionKind, IndexDef, ModuleDef, ModuleItemKey, ScheduleDef, SequenceDef,
         TableDef, ViewDef,
     },
     identifier::{Identifier, NamespacePath, NamespacedIdentifier},
@@ -18,7 +18,7 @@ use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
 
-pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
+pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &MigratePlan) -> Result<(), FormattingErrors> {
     f.format_header()?;
 
     for step in &plan.steps {
@@ -38,7 +38,7 @@ fn joined<N: Clone + Into<Identifier>>((namespace, name): (&NamespacePath, &N)) 
 fn format_step<F: MigrationFormatter>(
     f: &mut F,
     step: &AutoMigrateStep,
-    plan: &super::AutoMigratePlan,
+    plan: &super::MigratePlan,
 ) -> Result<(), FormattingErrors> {
     match step {
         AutoMigrateStep::AddView(view) => {
@@ -319,8 +319,8 @@ pub struct NewColumns {
 }
 
 fn extract_table_info(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<TableInfo, FormattingErrors> {
     let (owning_def, table_def) = plan
         .new
@@ -422,10 +422,7 @@ fn extract_table_info(
     })
 }
 
-fn extract_view_info(
-    key: <ViewDef as ModuleDefLookup>::Key<'_>,
-    module_def: &ModuleDef,
-) -> Result<ViewInfo, FormattingErrors> {
+fn extract_view_info(key: ModuleItemKey<'_, ViewDef>, module_def: &ModuleDef) -> Result<ViewInfo, FormattingErrors> {
     let (owning_def, view_def) = module_def
         .find_view(key)
         .ok_or_else(|| FormattingErrors::ViewNotFound {
@@ -471,10 +468,7 @@ fn extract_view_info(
     })
 }
 
-fn extract_index_info(
-    key: <IndexDef as ModuleDefLookup>::Key<'_>,
-    module_def: &ModuleDef,
-) -> Result<IndexInfo, FormattingErrors> {
+fn extract_index_info(key: ModuleItemKey<'_, IndexDef>, module_def: &ModuleDef) -> Result<IndexInfo, FormattingErrors> {
     let (namespace, name) = key;
     let (_, table_def) = module_def
         .find_storing_table(namespace, name)
@@ -499,7 +493,7 @@ fn extract_index_info(
 }
 
 fn extract_constraint_info(
-    key: <ConstraintDef as ModuleDefLookup>::Key<'_>,
+    key: ModuleItemKey<'_, ConstraintDef>,
     module_def: &ModuleDef,
 ) -> Result<ConstraintInfo, FormattingErrors> {
     let (namespace, name) = key;
@@ -526,7 +520,7 @@ fn extract_constraint_info(
 }
 
 fn extract_sequence_info(
-    key: <SequenceDef as ModuleDefLookup>::Key<'_>,
+    key: ModuleItemKey<'_, SequenceDef>,
     module_def: &ModuleDef,
 ) -> Result<SequenceInfo, FormattingErrors> {
     let (namespace, name) = key;
@@ -547,8 +541,8 @@ fn extract_sequence_info(
 }
 
 fn extract_access_change_info(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<AccessChangeInfo, FormattingErrors> {
     let (_, table_def) = plan
         .new
@@ -564,7 +558,7 @@ fn extract_access_change_info(
 }
 
 fn extract_schedule_info(
-    schedule_name: <ScheduleDef as ModuleDefLookup>::Key<'_>,
+    schedule_name: ModuleItemKey<'_, ScheduleDef>,
     module_def: &ModuleDef,
 ) -> Result<ScheduleInfo, FormattingErrors> {
     // Schedules are keyed by their own name; the table they annotate is the one that stores them.
@@ -584,8 +578,8 @@ fn extract_schedule_info(
 }
 
 fn extract_rls_info(
-    rls: <RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    rls: ModuleItemKey<'_, RawRowLevelSecurityDefV9>,
+    plan: &super::MigratePlan,
 ) -> Result<Option<RlsInfo>, FormattingErrors> {
     let in_old = plan.old.row_level_security().any(|r| r.sql == *rls);
     let in_new = plan.new.row_level_security().any(|r| r.sql == *rls);
@@ -600,8 +594,8 @@ fn extract_rls_info(
 }
 
 fn extract_column_changes(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<ColumnChanges, FormattingErrors> {
     let (old_owning, old_table) = plan
         .old
@@ -650,8 +644,8 @@ fn extract_column_changes(
 }
 
 fn extract_new_columns(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<NewColumns, FormattingErrors> {
     let (new_owning, table_def) = plan
         .new

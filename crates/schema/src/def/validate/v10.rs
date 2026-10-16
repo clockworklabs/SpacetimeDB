@@ -320,7 +320,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let migrations = migrations
         .into_iter()
         .flatten()
-        .map(|RawMigrationDefV10 { schema_hash, dropped }| {
+        .map(|migration| {
+            let RawMigrationDefV10 {
+                schema_hash,
+                name,
+                dropped,
+            } = migration;
             let submodule_validation = dropped
                 .sections
                 .iter()
@@ -334,8 +339,14 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 })
                 .then_some(())
                 .ok_or_else(|| ValidationError::InvalidMigrationSubmodule { schema_hash }.into());
-            let ((), submodule) = (submodule_validation, validate(dropped)).combine_errors()?;
-            Ok((schema_hash, submodule))
+            let name = identifier(name);
+            let (name, (), dropped) = (name, submodule_validation, validate(dropped)).combine_errors()?;
+            let migration_def = MigrationDef {
+                name,
+                namespace: NamespacePath::root(),
+                dropped,
+            };
+            Ok((schema_hash, migration_def))
         })
         .collect_all_errors()?;
 

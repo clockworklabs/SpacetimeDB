@@ -18,6 +18,10 @@ impl RawIdentifier {
         Self(name.into())
     }
 
+    pub const fn from_static_str(name: &'static str) -> Self {
+        Self(LeanString::from_static_str(name))
+    }
+
     pub fn into_inner(self) -> LeanString {
         self.0
     }

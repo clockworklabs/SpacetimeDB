@@ -12,8 +12,8 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
     CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
-    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult,
-    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    MigrationExecutionError, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult,
+    UpdateEnvironmentResult, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -40,6 +40,7 @@ use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
+use spacetimedb_engine::update;
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
@@ -48,7 +49,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_metrics::utils::{HistogramExt, TimerGuard};
-use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_primitives::{HttpHandlerId, MigrationId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
@@ -107,6 +108,8 @@ pub trait WasmInstance {
         op: HttpHandlerOp,
         budget: FunctionBudget,
     ) -> impl Future<Output = (HttpHandlerExecuteResult, Option<TransactionOffset>)>;
+
+    fn call_migration(&mut self, op: MigrationOp, budget: FunctionBudget) -> MigrationExecuteResult;
 }
 
 pub struct EnergyStats {
@@ -345,6 +348,8 @@ pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
 pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
 
 pub type HttpHandlerExecuteResult = ExecutionResult<(Bytes, Bytes), anyhow::Error>;
+
+pub type MigrationExecuteResult = ExecutionResult<(), ExecutionError>;
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
@@ -717,6 +722,8 @@ impl InstanceCommon {
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
 
+        let timestamp = Timestamp::now();
+
         let plan: MigratePlan = match policy.try_migrate(
             self.info.database_identity,
             old_module_info.module_hash,
@@ -728,7 +735,9 @@ impl InstanceCommon {
             Err(e) => {
                 return match e {
                     MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
-                    _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
+                    _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(
+                        anyhow::Error::from(e).into(),
+                    )),
                 }
             }
         };
@@ -756,12 +765,38 @@ impl InstanceCommon {
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
         let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
+        let res = match res {
+            Ok(update::UpdateStep::Done(res)) => Ok(res),
+            Err(e) => Err(e.into()),
+            Ok(update::UpdateStep::RunManual(inflight)) => {
+                let mut tx_slot = inst.tx_slot();
+                let op = MigrationOp {
+                    name: inflight.migration_name(),
+                    id: inflight.migration_id(),
+                    hash: inflight.migration_hash(),
+                    timestamp,
+                };
+                let res;
+                (tx, res) = tx_slot.set(tx, || inst.call_migration(op, FunctionBudget::DEFAULT_BUDGET));
+                match res.call_result {
+                    Ok(()) => inflight
+                        .finish(stdb, &mut tx, system_logger)
+                        .map_err(MigrationExecutionError::Other),
+                    Err(e) => Err(match e {
+                        ExecutionError::User(user) => MigrationExecutionError::User(user),
+                        ExecutionError::Recoverable(error) | ExecutionError::Trap(error) => error.into(),
+                    }),
+                }
+            }
+        };
 
         match res {
             Err(e) => {
                 // TODO: Review log level after migration/user errors can be distinguished from internal database failures.
-                log::warn!("Database update failed: {:#} @ {}", e, stdb.database_identity());
-                system_logger.warn(&format!("Database update failed: {e:#}"));
+                if let MigrationExecutionError::Other(e) = &e {
+                    log::warn!("Database update failed: {:#} @ {}", e, stdb.database_identity());
+                    system_logger.warn(&format!("Database update failed: {e:#}"));
+                }
                 let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
@@ -776,7 +811,7 @@ impl InstanceCommon {
                                tx: MutTxId|
                  -> TransactionOffset {
                     let event = ModuleEvent {
-                        timestamp: Timestamp::now(),
+                        timestamp,
                         caller_identity: info.owner_identity,
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall::update(),
@@ -811,7 +846,7 @@ impl InstanceCommon {
 
                         let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                         stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
-                        UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
+                        UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg).into())
                     } else {
                         let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
                         effects.committed(tx_offset, durable_offset)
@@ -1968,6 +2003,7 @@ fn lifecyle_modifications_to_tx(
 pub trait InstanceOp {
     /// The full namespaced name of the function being called.
     fn name(&self) -> &NamespacedIdentifier;
+    fn args(&self) -> bytes::Bytes;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1987,6 +2023,10 @@ pub struct ViewOp<'a> {
 impl InstanceOp for ViewOp<'_> {
     fn name(&self) -> &NamespacedIdentifier {
         self.name
+    }
+
+    fn args(&self) -> bytes::Bytes {
+        self.args.get_bsatn().clone()
     }
 
     fn timestamp(&self) -> Timestamp {
@@ -2014,6 +2054,10 @@ impl InstanceOp for AnonymousViewOp<'_> {
         self.name
     }
 
+    fn args(&self) -> bytes::Bytes {
+        self.args.get_bsatn().clone()
+    }
+
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
@@ -2038,6 +2082,9 @@ pub struct ReducerOp<'a> {
 impl InstanceOp for ReducerOp<'_> {
     fn name(&self) -> &NamespacedIdentifier {
         self.name.as_namespaced()
+    }
+    fn args(&self) -> bytes::Bytes {
+        self.args.get_bsatn().clone()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -2104,6 +2151,9 @@ impl InstanceOp for ProcedureOp {
     fn name(&self) -> &NamespacedIdentifier {
         &self.name
     }
+    fn args(&self) -> bytes::Bytes {
+        self.arg_bytes.clone()
+    }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
@@ -2126,6 +2176,9 @@ impl InstanceOp for HttpHandlerOp {
     fn name(&self) -> &NamespacedIdentifier {
         &self.name
     }
+    fn args(&self) -> bytes::Bytes {
+        self.request_bytes.clone()
+    }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
@@ -2134,8 +2187,37 @@ impl InstanceOp for HttpHandlerOp {
     }
 }
 
+/// Describes a migration call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct MigrationOp<'a> {
+    pub id: MigrationId,
+    pub hash: Hash,
+    pub timestamp: Timestamp,
+    pub name: &'a NamespacedIdentifier,
+}
+
+impl InstanceOp for MigrationOp<'_> {
+    fn name(&self) -> &NamespacedIdentifier {
+        self.name
+    }
+
+    fn args(&self) -> bytes::Bytes {
+        bytes::Bytes::new()
+    }
+
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::Reducer
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
     use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
@@ -2230,8 +2312,12 @@ mod tests {
             plan.breaks_client(),
             "removing the unrelated table must require disconnection"
         );
-        let result = update::update_database(&db, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?;
-        assert!(matches!(result, update::UpdateResult::RequiresClientDisconnect));
+        let update::UpdateStep::Done(result) =
+            update::update_database(&db, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?
+        else {
+            panic!("expected UpdateStep::Done")
+        };
+        assert_matches!(result, update::UpdateResult::RequiresClientDisconnect);
         assert!(tx.views_for_refresh().any(|dirty| *dirty == call));
         let effects = UpdateEffects::after_migration(result, &tx);
         assert!(effects.refresh_views);

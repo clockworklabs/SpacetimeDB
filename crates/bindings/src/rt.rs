@@ -8,8 +8,8 @@ use crate::{
 };
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
-    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10, RawMigrationDefV10,
-    RawModuleDefV10Builder,
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
+    RawMigrationDefV10, RawModuleDefV10Builder,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -928,6 +928,7 @@ pub fn register_migration<T: MigrationModule>() {
         T::describe_tables(&mut migration);
         module.inner.add_migration(RawMigrationDefV10 {
             schema_hash: T::HASH,
+            name: ["migration_", &T::HASH.to_hex()].concat().into(),
             dropped: migration.inner.finish(),
         });
         module.functions.migrations.push(T::invoke);

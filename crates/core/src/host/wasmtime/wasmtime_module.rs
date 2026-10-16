@@ -8,7 +8,7 @@ use crate::energy::FunctionBudget;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, InitializationError, InstanceOp, ViewOp,
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, InitializationError, MigrationOp, ViewOp,
     ViewReturnData,
 };
 use crate::host::wasm_common::*;
@@ -16,7 +16,6 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_schema::def::ModuleDef;
@@ -417,6 +416,7 @@ fn instantiate_wasmtime_instance(
         .data_mut()
         .set_call_view_exports(call_view.clone(), call_view_anon.clone());
     let call_http_handler = get_call_http_handler(&mut store, &instance);
+    let call_migration = get_call_migration(&mut store, &instance);
 
     Ok(WasmtimeInstance {
         store,
@@ -426,6 +426,7 @@ fn instantiate_wasmtime_instance(
         call_view,
         call_view_anon,
         call_http_handler,
+        call_migration,
         supports_async,
     })
 }
@@ -497,6 +498,20 @@ fn get_call_http_handler(store: &mut Store<WasmInstanceEnv>, instance: &Instance
             .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"))
             .typed(store)
             .unwrap_or_else(|err| panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+/// Look up the `instance`'s export named by [`CALL_MIGRATION_DUNDER`].
+///
+/// Similar to [`get_call_migration`], but for HTTP handlers.
+fn get_call_migration(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallMigrationType> {
+    let export = instance.get_export(store.as_context_mut(), CALL_MIGRATION_DUNDER)?;
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_MIGRATION_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_MIGRATION_DUNDER} export is a function with incorrect type: {err}")),
     )
 }
 
@@ -583,6 +598,19 @@ pub(super) type CallHttpHandlerType = TypedFunc<
     i32,
 >;
 
+/// The function signature of `__call_migration__`
+pub(super) type CallMigrationType = TypedFunc<
+    (
+        // MigrationId
+        u32,
+        // byte source id for args
+        u32,
+        // byte sink id for return
+        u32,
+    ),
+    i32,
+>;
+
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
@@ -591,6 +619,7 @@ pub struct WasmtimeInstance {
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
     call_http_handler: Option<CallHttpHandlerType>,
+    call_migration: Option<CallMigrationType>,
     supports_async: bool,
 }
 
@@ -640,13 +669,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(*op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let args_bytes = op.args.get_bsatn().clone();
-
-        let reducer_name: NamespacedIdentifier = op.name().clone();
-        let (args_source, errors_sink) =
-            store
-                .data_mut()
-                .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type());
+        let (args_source, errors_sink) = store.data_mut().start_funcall(&op);
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -681,12 +704,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         prepare_store_for_call(store, budget);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let args_bytes = op.args.get_bsatn().clone();
-
-        let (args_source, errors_sink) =
-            store
-                .data_mut()
-                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
+        let (args_source, errors_sink) = store.data_mut().start_funcall(&op);
 
         let call_result = call_view_export(
             &mut *store,
@@ -718,12 +736,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         prepare_store_for_call(store, budget);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let args_bytes = op.args.get_bsatn().clone();
-
-        let (args_source, errors_sink) =
-            store
-                .data_mut()
-                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
+        let (args_source, errors_sink) = store.data_mut().start_funcall(&op);
 
         let call_result = call_view_export(
             &mut *store,
@@ -766,10 +779,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, result_sink) =
-            store
-                .data_mut()
-                .start_funcall(op.name().clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+        let (args_source, result_sink) = store.data_mut().start_funcall(&op);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
@@ -833,11 +843,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        let call_type = op.call_type();
-        let (request_source, response_sink) =
-            store
-                .data_mut()
-                .start_funcall(op.name().clone(), op.request_bytes, op.timestamp, call_type);
+        let (request_source, response_sink) = store.data_mut().start_funcall(&op);
         let request_body_source = store
             .data_mut()
             .create_extra_bytes_source(op.request_body_bytes)
@@ -890,6 +896,30 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let tx_offset = store.data_mut().take_procedure_tx_offset();
 
         (res, tx_offset)
+    }
+
+    fn call_migration(&mut self, op: MigrationOp, budget: FunctionBudget) -> module_host_actor::MigrationExecuteResult {
+        let Some(call_migration) = &self.call_migration else {
+            return module_host_actor::ExecutionResult {
+                stats: ExecutionStats::default(),
+                call_result: Err(ExecutionError::Trap(anyhow::anyhow!("no migration handler"))),
+            };
+        };
+
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        let (request_source, result_sink) = store.data_mut().start_funcall(&op);
+
+        let call_result = call_migration.call(&mut *store, (op.id.0, request_source.0, result_sink));
+
+        let (stats, result_bytes) = finish_opcall(store, budget, result_sink);
+
+        let call_result = call_result
+            .map_err(ExecutionError::Trap)
+            .and_then(|code| handle_error_sink_code(code, result_bytes));
+
+        module_host_actor::ExecutionResult { stats, call_result }
     }
 }
 

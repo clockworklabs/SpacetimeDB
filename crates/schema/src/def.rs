@@ -55,6 +55,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespac
 
 pub mod deserialize;
 pub mod error;
+mod hash;
 pub mod validate;
 
 /// A map from `Identifier`s to values of type `T`.
@@ -189,7 +190,7 @@ pub struct ModuleDef {
     environment: Option<EnvironmentSchema>,
 
     /// Migrations, keyed by the schema hash of the old module.
-    migrations: IndexMap<spacetimedb_lib::Hash, ModuleDef>,
+    migrations: IndexMap<spacetimedb_lib::Hash, MigrationDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -334,6 +335,9 @@ impl ModuleDef {
         for reducer in self.reducers.values_mut() {
             reducer.name = ReducerName::new(path.join(reducer.name.local().clone()));
         }
+        for migration in self.migrations.values_mut() {
+            migration.namespace = path.clone();
+        }
         for (namespace, submodule) in &mut self.submodules {
             let accessor = submodule
                 .mount_accessor_name()
@@ -377,17 +381,17 @@ impl ModuleDef {
         Some(owning)
     }
 
-    /// Look up a table by its [`ModuleDefLookup`] key, also returning the module that owns it.
+    /// Look up a table by its [`ModuleItemKey`], also returning the module that owns it.
     ///
     /// The owning module is needed to resolve the table's type refs, which point into that
     /// module's typespace rather than the root's.
-    pub fn find_table(&self, key: <TableDef as ModuleDefLookup>::Key<'_>) -> Option<(&ModuleDef, &TableDef)> {
+    pub fn find_table(&self, key: ModuleItemKey<'_, TableDef>) -> Option<(&ModuleDef, &TableDef)> {
         let owning = self.resolve_path(key.0)?;
         Some((owning, owning.tables.get(key.1)?))
     }
 
-    /// Look up a view by its [`ModuleDefLookup`] key, also returning the module that owns it.
-    pub fn find_view(&self, key: <ViewDef as ModuleDefLookup>::Key<'_>) -> Option<(&ModuleDef, &ViewDef)> {
+    /// Look up a view by its [`ModuleItemKey`], also returning the module that owns it.
+    pub fn find_view(&self, key: ModuleItemKey<'_, ViewDef>) -> Option<(&ModuleDef, &ViewDef)> {
         let owning = self.resolve_path(key.0)?;
         Some((owning, owning.views.get(key.1)?))
     }
@@ -945,6 +949,10 @@ impl ModuleDef {
         &self.lifecycle_reducers
     }
 
+    pub fn migrations_map(&self) -> &IndexMap<spacetimedb_lib::Hash, MigrationDef> {
+        &self.migrations
+    }
+
     /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
     pub fn arg_seed_for<'a, T>(&'a self, def: &'a T) -> ArgsSeed<'a, T> {
         ArgsSeed(self.typespace.with_type(def))
@@ -1244,8 +1252,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         let migrations: Vec<RawMigrationDefV10> = migrations
             .into_iter()
-            .map(|(schema_hash, dropped)| RawMigrationDefV10 {
+            .map(|(schema_hash, MigrationDef { name, dropped, .. })| RawMigrationDefV10 {
                 schema_hash,
+                name: name.into(),
                 dropped: dropped.into(),
             })
             .collect();
@@ -1287,6 +1296,9 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
     /// Look up this entity in the module def.
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self>;
 }
+
+pub type ModuleItemKey<'def, T> = <T as ModuleDefLookup>::Key<'def>;
+
 /// A data structure representing the validated definition of a database table.
 ///
 /// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
@@ -2509,6 +2521,13 @@ impl From<ProcedureDef> for RawMiscModuleExportV9 {
     fn from(def: ProcedureDef) -> Self {
         Self::Procedure(def.into())
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct MigrationDef {
+    pub name: Identifier,
+    pub namespace: NamespacePath,
+    pub dropped: ModuleDef,
 }
 
 impl ModuleDefLookup for TableDef {

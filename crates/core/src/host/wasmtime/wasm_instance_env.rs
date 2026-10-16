@@ -9,7 +9,7 @@ use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::{
-    deserialize_view_rows, run_query_for_view, ExecutionTimings, ViewResult, ViewReturnData,
+    deserialize_view_rows, run_query_for_view, ExecutionTimings, InstanceOp, ViewResult, ViewReturnData,
 };
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
@@ -344,21 +344,16 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers and procedures to read from `args`
     /// as well as the handle used to write the reducer error message or procedure return value.
-    pub fn start_funcall(
-        &mut self,
-        name: NamespacedIdentifier,
-        args: bytes::Bytes,
-        ts: Timestamp,
-        func_type: FuncCallType,
-    ) -> (BytesSourceId, u32) {
+    pub fn start_funcall<O: InstanceOp>(&mut self, op: &O) -> (BytesSourceId, u32) {
         // Create the output sink.
         // Reducers which fail will write their error message here.
         // Procedures will write their result here.
         let result_sink = self.create_bytes_sink();
 
-        let args = self.create_bytes_source(args).unwrap();
+        let args = self.create_bytes_source(op.args()).unwrap();
 
-        self.instance_env.start_funcall(name, ts, func_type);
+        self.instance_env
+            .start_funcall(op.name().clone(), op.timestamp(), op.call_type());
 
         (args, result_sink)
     }

@@ -8,9 +8,10 @@ use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
-use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
+use spacetimedb_lib::{AlgebraicValue, Hash};
+use spacetimedb_primitives::{ColSet, ConstraintId, MigrationId, TableId};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_schema::auto_migrate::{AutoMigrateStep, ManualMigrateData, MigratePlan};
 use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
 use spacetimedb_schema::schema::{
@@ -33,6 +34,7 @@ pub trait UpdateLogger {
 
 /// The result of a database update.
 /// Indicates whether clients should be disconnected when the update is complete.
+#[derive(Debug)]
 #[must_use]
 pub enum UpdateResult {
     Success,
@@ -51,12 +53,13 @@ pub fn stale_view_backing_table_recreate_plan<'def>(
         return Ok(None);
     }
 
-    Ok(Some(MigratePlan::Auto(AutoMigratePlan {
+    Ok(Some(MigratePlan {
         old: module_def,
         new: module_def,
         prechecks: Vec::new(),
         steps,
-    })))
+        manual: None,
+    }))
 }
 
 fn stale_view_backing_table_recreate_steps<'def>(
@@ -140,13 +143,13 @@ fn ensure_disconnect_all_users(steps: &mut Vec<AutoMigrateStep<'_>>) {
 // and the auto plan guarantees that the migration can't fail.
 // But when implementing manual migrations, we need to make sure that
 // drop_* become transactional.
-pub fn update_database(
+pub fn update_database<'def>(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
-    plan: MigratePlan,
+    plan: MigratePlan<'def>,
     logger: &dyn UpdateLogger,
-) -> anyhow::Result<UpdateResult> {
+) -> anyhow::Result<UpdateStep<'def>> {
     let existing_tables = stdb.get_all_tables_mut(tx)?;
 
     // TODO: consider using `ErrorStream` here.
@@ -175,20 +178,13 @@ pub fn update_database(
         table.check_compatible(owning_def, old_def)?;
     }
 
-    match plan {
-        MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, logger),
-        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, logger),
-    }
+    auto_migrate_database(stdb, tx, auth_ctx, plan, logger)
 }
 
-/// Manually migrate a database.
-fn manual_migrate_database(
-    _stdb: &RelationalDB,
-    _tx: &mut MutTxId,
-    _plan: ManualMigratePlan,
-    _logger: &dyn UpdateLogger,
-) -> anyhow::Result<UpdateResult> {
-    unimplemented!("Manual database migrations are not yet implemented")
+#[derive(Debug)]
+pub enum UpdateStep<'def> {
+    Done(UpdateResult),
+    RunManual(InflightMigration<'def>),
 }
 
 /// Logs with `info` level to `$logger` as well as via the `log` crate.
@@ -199,14 +195,17 @@ macro_rules! log {
     };
 }
 
+const DROPPED: Identifier = Identifier::new_unsafe_assume_valid(RawIdentifier::from_static_str("dropped"));
+
 /// Automatically migrate a database.
-fn auto_migrate_database(
+fn auto_migrate_database<'def>(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
     auth_ctx: AuthCtx,
-    plan: AutoMigratePlan,
+    plan: MigratePlan<'def>,
     logger: &dyn UpdateLogger,
-) -> anyhow::Result<UpdateResult> {
+) -> anyhow::Result<UpdateStep<'def>> {
+    let is_manual = plan.is_manual();
     log::info!("Running database update prechecks: {}", stdb.database_identity());
     // We used to memoize all table schemas upfront, which cause issue #3441.
     // Schema should be queries only when needed to ensure that any schema changes made during earlier migration steps are visible
@@ -261,20 +260,24 @@ fn auto_migrate_database(
 
     for step in plan.steps {
         match step {
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name_key) => {
-                let (namespace, local) = table_name_key;
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable((namespace, local)) => {
                 let table_name = joined(namespace, local);
                 let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
 
-                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
-                    anyhow::bail!(
-                        "Cannot remove table `{table_name}`: table contains data. \
+                if is_manual {
+                    let dropped_name = namespace.child(DROPPED).join(local.clone());
+                    stdb.rename_table(tx, table_id, dropped_name.into())?;
+                } else {
+                    if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
+                        anyhow::bail!(
+                            "Cannot remove table `{table_name}`: table contains data. \
                          Clear the table's rows (e.g. via a reducer) before removing it from your schema."
-                    );
-                }
+                        );
+                    }
 
-                log!(logger, "Dropping table `{table_name}`");
-                stdb.drop_table(tx, table_id)?;
+                    log!(logger, "Dropping table `{table_name}`");
+                    stdb.drop_table(tx, table_id)?;
+                }
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name_key) => {
                 let (namespace, local) = table_name_key;
@@ -638,8 +641,65 @@ fn auto_migrate_database(
         }
     }
 
+    if let Some(manual) = &plan.manual {
+        for &(namespace, local) in &manual.changed_tables {
+            let table_name = joined(namespace, local);
+            let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+
+            let new_name = namespace.child(DROPPED).join(local.clone());
+            stdb.rename_table(tx, table_id, new_name.into())?;
+
+            let (owning_def, table_def) = plan
+                .new
+                .find_table((namespace, local))
+                .ok_or_else(|| anyhow::anyhow!("AddTable: table `{table_name}` not found in new module def"))?;
+            log!(logger, "Creating table `{table_name}`");
+            create_table_from_def_with_prefix(stdb, tx, owning_def, table_def, namespace)?;
+        }
+    }
+
     log::info!("Database update complete");
-    Ok(res)
+
+    Ok(match plan.manual {
+        // continued in `InflightMigration::finish`
+        Some(manual_data) => UpdateStep::RunManual(InflightMigration {
+            manual_data,
+            result: res,
+        }),
+        None => UpdateStep::Done(res),
+    })
+}
+
+#[derive(Debug)]
+pub struct InflightMigration<'def> {
+    manual_data: ManualMigrateData<'def>,
+    result: UpdateResult,
+}
+
+impl InflightMigration<'_> {
+    pub fn migration_hash(&self) -> Hash {
+        self.manual_data.hash
+    }
+    pub fn migration_id(&self) -> MigrationId {
+        self.manual_data.id
+    }
+    pub fn migration_name(&self) -> &NamespacedIdentifier {
+        &self.manual_data.name
+    }
+
+    pub fn finish(
+        self,
+        stdb: &RelationalDB,
+        tx: &mut MutTxId,
+        _logger: &dyn UpdateLogger,
+    ) -> anyhow::Result<UpdateResult> {
+        for (namespace, local) in std::iter::chain(self.manual_data.changed_tables, self.manual_data.removed_tables) {
+            let table_name = namespace.child(DROPPED).join(local.clone());
+            let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+            stdb.drop_table(tx, table_id)?;
+        }
+        Ok(self.result)
+    }
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -731,6 +791,8 @@ pub fn create_table_from_view_def_with_prefix(
 
 #[cfg(test)]
 mod test {
+    use std::assert_matches;
+
     use super::*;
     use crate::relational_db::{
         open_snapshot_repo,
@@ -814,7 +876,7 @@ mod test {
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
         let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
-        matches!(res, UpdateResult::Success);
+        assert_matches!(res, UpdateStep::Done(UpdateResult::Success));
 
         // Expect the schema change.
         let idx_b_id = stdb
@@ -885,9 +947,7 @@ mod test {
         assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
         drop(tx);
 
-        let MigratePlan::Auto(plan) = ponder_migrate(&old, &new)? else {
-            panic!("expected automatic migration");
-        };
+        let plan = ponder_migrate(&old, &new)?;
         let root = NamespacePath::root();
         let index_name = RawIdentifier::new(canonical_index_name.as_str());
         assert!(
@@ -907,8 +967,8 @@ mod test {
             plan.steps
         );
         let mut tx = begin_mut_tx(&stdb);
-        let res = update_database(&stdb, &mut tx, auth_ctx, MigratePlan::Auto(plan), &TestLogger)?;
-        assert!(matches!(res, UpdateResult::Success));
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert_matches!(res, UpdateStep::Done(UpdateResult::Success));
 
         assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, None);
         assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, Some(index_id));
@@ -988,15 +1048,16 @@ mod test {
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&module_v1, &module_v2)?;
         let res = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
-        assert!(matches!(res, UpdateResult::Success), "v1 → v2 migration failed");
+        assert_matches!(res, UpdateStep::Done(UpdateResult::Success), "v1 → v2 migration failed");
         stdb.commit_tx(tx)?;
 
         // Migrate v2 → v3 (trivial change). This is where #3934 crashes.
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&module_v2, &module_v3)?;
         let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
-        assert!(
-            matches!(res, UpdateResult::Success),
+        assert_matches!(
+            res,
+            UpdateStep::Done(UpdateResult::Success),
             "v2 → v3 migration failed (issue #3934)"
         );
         stdb.commit_tx(tx)?;
@@ -1285,9 +1346,6 @@ mod test {
 
         let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?.expect("expected repair plan");
 
-        let MigratePlan::Auto(plan) = &plan else {
-            panic!("expected auto migration");
-        };
         let my_view = module_def.view("my_view").expect("view should exist").key();
         assert!(plan.steps.contains(&AutoMigrateStep::RemoveView(my_view)));
         assert!(plan.steps.contains(&AutoMigrateStep::AddView(my_view)));
@@ -1359,7 +1417,7 @@ mod test {
             let mut tx = begin_mut_tx(&stdb);
             let plan = ponder_migrate(&module_v1, &module_v2)?;
             let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
-            assert!(matches!(res, UpdateResult::RequiresClientDisconnect));
+            assert_matches!(res, UpdateStep::Done(UpdateResult::RequiresClientDisconnect));
             stdb.commit_tx(tx)?;
         }
 
@@ -1445,7 +1503,7 @@ mod test {
             let plan = ponder_migrate(&module_v1, &module_v2)?;
             let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
             assert!(
-                matches!(res, UpdateResult::RequiresClientDisconnect),
+                matches!(res, UpdateStep::Done(UpdateResult::RequiresClientDisconnect)),
                 "removing a table should disconnect clients"
             );
             stdb.commit_tx(tx)?;
@@ -1509,7 +1567,7 @@ mod test {
         let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
 
         assert!(
-            matches!(res, UpdateResult::RequiresClientDisconnect),
+            matches!(res, UpdateStep::Done(UpdateResult::RequiresClientDisconnect)),
             "removing a table should disconnect clients"
         );
         assert!(stdb.table_id_from_name_mut(&tx, "droppable")?.is_none());
@@ -1683,10 +1741,10 @@ mod test {
             let plan = ponder_migrate(&module_v1, &module_v2)?;
             let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
 
-            assert!(matches!(
+            assert_matches!(
                 res,
-                UpdateResult::Success | UpdateResult::RequiresClientDisconnect
-            ));
+                UpdateStep::Done(UpdateResult::Success | UpdateResult::RequiresClientDisconnect)
+            );
 
             stdb.commit_tx(tx)?;
         }

@@ -3,8 +3,9 @@ use core::{cmp::Ordering, ops::BitOr};
 use crate::{
     def::*,
     error::PrettyAlgebraicType,
-    identifier::{Identifier, NamespacePath},
+    identifier::{Identifier, NamespacePath, NamespacedIdentifier},
 };
+use anyhow::Context;
 use formatter::format_plan;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_data_structures::{
@@ -13,8 +14,9 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
-    hash_bytes, Identity,
+    hash_bytes, hash_value, Hash, Identity,
 };
+use spacetimedb_primitives::MigrationId;
 use spacetimedb_sats::{
     layout::{HasLayout, SumTypeLayout},
     raw_identifier::RawIdentifier,
@@ -27,13 +29,6 @@ mod termcolor_formatter;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
-/// A plan for a migration.
-#[derive(Debug)]
-pub enum MigratePlan<'def> {
-    Manual(ManualMigratePlan<'def>),
-    Auto(AutoMigratePlan<'def>),
-}
-
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum PrettyPrintStyle {
     AnsiColor,
@@ -43,44 +38,28 @@ pub enum PrettyPrintStyle {
 impl<'def> MigratePlan<'def> {
     /// Get the old `ModuleDef` for this migration plan.
     pub fn old_def(&self) -> &'def ModuleDef {
-        match self {
-            MigratePlan::Manual(plan) => plan.old,
-            MigratePlan::Auto(plan) => plan.old,
-        }
+        self.old
     }
 
     /// Get the new `ModuleDef` for this migration plan.
     pub fn new_def(&self) -> &'def ModuleDef {
-        match self {
-            MigratePlan::Manual(plan) => plan.new,
-            MigratePlan::Auto(plan) => plan.new,
-        }
+        self.new
     }
 
     pub fn breaks_client(&self) -> bool {
-        match self {
-            //TODO: fix it when support for manual migration plans is added.
-            MigratePlan::Manual(_) => true,
-            MigratePlan::Auto(plan) => plan
-                .steps
-                .iter()
-                .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers)),
-        }
+        self.steps
+            .iter()
+            .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
     }
 
     pub fn pretty_print(&self, style: PrettyPrintStyle) -> anyhow::Result<String> {
-        match self {
-            MigratePlan::Manual(_) => {
-                anyhow::bail!("Manual migration plans are not yet supported for pretty printing.")
-            }
+        let mut fmt = TermColorFormatter::new(style);
+        format_plan(&mut fmt, self).context("Failed to format migration plan")?;
+        Ok(fmt.into_string())
+    }
 
-            MigratePlan::Auto(plan) => {
-                let mut fmt = TermColorFormatter::new(style);
-                format_plan(&mut fmt, plan)
-                    .map(|_| fmt.into_string())
-                    .map_err(|e| anyhow::anyhow!("Failed to format migration plan: {e}"))
-            }
-        }
+    pub fn is_manual(&self) -> bool {
+        self.manual.is_some()
     }
 }
 
@@ -189,18 +168,9 @@ impl MigrationToken {
         )
     }
 }
-
-/// A plan for a manual migration.
-/// `new` must have a reducer marked with `Lifecycle::Update`.
+/// A plan for a migration.
 #[derive(Debug)]
-pub struct ManualMigratePlan<'def> {
-    pub old: &'def ModuleDef,
-    pub new: &'def ModuleDef,
-}
-
-/// A plan for an automatic migration.
-#[derive(Debug)]
-pub struct AutoMigratePlan<'def> {
+pub struct MigratePlan<'def> {
     /// The old database definition.
     pub old: &'def ModuleDef,
     /// The new database definition.
@@ -211,9 +181,20 @@ pub struct AutoMigratePlan<'def> {
     /// The migration steps to perform.
     /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
+
+    pub manual: Option<ManualMigrateData<'def>>,
 }
 
-impl AutoMigratePlan<'_> {
+#[derive(Debug)]
+pub struct ManualMigrateData<'def> {
+    pub hash: Hash,
+    pub id: MigrationId,
+    pub name: NamespacedIdentifier,
+    pub removed_tables: Vec<ModuleItemKey<'def, TableDef>>,
+    pub changed_tables: Vec<ModuleItemKey<'def, TableDef>>,
+}
+
+impl MigratePlan<'_> {
     fn any_step(&self, f: impl Fn(&AutoMigrateStep<'_>) -> bool) -> bool {
         self.steps.iter().any(f)
     }
@@ -237,7 +218,7 @@ impl AutoMigratePlan<'_> {
 pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
-    CheckAddSequenceRangeValid(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    CheckAddSequenceRangeValid(ModuleItemKey<'def, SequenceDef>),
 }
 
 /// A step in an automatic migration.
@@ -266,27 +247,26 @@ pub enum AutoMigrateStep<'def> {
     // Probably we will want to have separate arrays of add and remove steps.
     //
     /// Remove an index.
-    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    RemoveIndex(ModuleItemKey<'def, IndexDef>),
     /// Remove a constraint.
-    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
+    RemoveConstraint(ModuleItemKey<'def, ConstraintDef>),
     /// Remove a sequence.
-    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    RemoveSequence(ModuleItemKey<'def, SequenceDef>),
     /// Remove a schedule annotation from a table.
-    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    RemoveSchedule(ModuleItemKey<'def, ScheduleDef>),
     /// Remove a view and corresponding view table.
-    RemoveView(<ViewDef as ModuleDefLookup>::Key<'def>),
+    RemoveView(ModuleItemKey<'def, ViewDef>),
     /// Remove a row-level security query. Payload is the SQL text.
-    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+    RemoveRowLevelSecurity(ModuleItemKey<'def, RawRowLevelSecurityDefV9>),
 
     /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
     /// Validated at execution time: fails if the table contains data.
-    RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
-
+    RemoveTable(ModuleItemKey<'def, TableDef>),
     /// Change the column types of a table, in a layout compatible way.
-    ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+    ChangeColumns(ModuleItemKey<'def, TableDef>),
 
     /// Change the column types of an event table, in a way that may not be layout-compatible.
-    ReschemaEventTable(<TableDef as ModuleDefLookup>::Key<'def>),
+    ReschemaEventTable(ModuleItemKey<'def, TableDef>),
 
     /// Add columns to a table, in a layout-INCOMPATIBLE way.
     ///
@@ -294,44 +274,44 @@ pub enum AutoMigrateStep<'def> {
     /// The added columns are guaranteed to be contiguous and at the end of the table.
     /// They are also guaranteed to have default values set.
     /// When this step is present, no `ChangeColumns` steps will be, for the same table.
-    AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+    AddColumns(ModuleItemKey<'def, TableDef>),
 
     /// Change the source-name alias of an existing index.
-    ChangeIndexSourceName(<IndexDef as ModuleDefLookup>::Key<'def>),
+    ChangeIndexSourceName(ModuleItemKey<'def, IndexDef>),
 
     /// Change the accessor name alias of an existing table.
-    ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
+    ChangeTableAccessorName(ModuleItemKey<'def, TableDef>),
     /// Change the accessor name alias of an existing column.
-    ChangeColumnAccessorName(<TableDef as ModuleDefLookup>::Key<'def>, &'def Identifier),
+    ChangeColumnAccessorName(ModuleItemKey<'def, TableDef>, &'def Identifier),
 
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
-    AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
+    AddTable(ModuleItemKey<'def, TableDef>),
     /// Add an index.
-    AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    AddIndex(ModuleItemKey<'def, IndexDef>),
     /// Add a constraint to an existing table (with data validation precheck).
-    AddConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
+    AddConstraint(ModuleItemKey<'def, ConstraintDef>),
     /// Add a sequence.
-    AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    AddSequence(ModuleItemKey<'def, SequenceDef>),
     /// Add a schedule annotation to a table.
-    AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    AddSchedule(ModuleItemKey<'def, ScheduleDef>),
     /// Add a view and corresponding view table.
-    AddView(<ViewDef as ModuleDefLookup>::Key<'def>),
+    AddView(ModuleItemKey<'def, ViewDef>),
     /// Add a row-level security query. Payload is the SQL text.
-    AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+    AddRowLevelSecurity(ModuleItemKey<'def, RawRowLevelSecurityDefV9>),
 
     /// Change the access of a table or view.
-    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
+    ChangeAccess(ModuleItemKey<'def, TableDef>),
 
     /// Change the primary key of a table.
     ///
     /// This updates the `table_primary_key` field in `st_table` to match the new module definition.
     /// Without this step, a stale primary key in the stored schema causes `check_compatible` to
     /// fail on the next publish. See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
-    ChangePrimaryKey(<TableDef as ModuleDefLookup>::Key<'def>),
+    ChangePrimaryKey(ModuleItemKey<'def, TableDef>),
 
     /// Recompute a view, update its backing table, and push updates to clients.
-    UpdateView(<ViewDef as ModuleDefLookup>::Key<'def>),
+    UpdateView(ModuleItemKey<'def, ViewDef>),
 
     /// Disconnect all users connected to the module.
     DisconnectAllUsers,
@@ -471,23 +451,34 @@ pub enum AutoMigrateError {
 /// If `new` has an `__update__` reducer, return a manual migration plan.
 /// Otherwise, try to plan an automatic migration. This may fail.
 pub fn ponder_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<MigratePlan<'def>> {
-    // TODO(1.0): Implement this function.
-    // Currently we only can do automatic migrations.
-    ponder_auto_migrate(old, new).map(MigratePlan::Auto)
+    let manual_migration = (!new.migrations_map().is_empty())
+        .then(|| hash_value(old))
+        .and_then(|hash| new.migrations_map().get_full(&hash));
+    _ponder_migrate(old, new, manual_migration)
 }
 
-/// Construct an automatic migration plan, or reject with reasons why automatic migration can't be performed.
-pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<AutoMigratePlan<'def>> {
+fn _ponder_migrate<'def>(
+    old: &'def ModuleDef,
+    new: &'def ModuleDef,
+    manual_migration: Option<(usize, &Hash, &MigrationDef)>,
+) -> Result<MigratePlan<'def>> {
     // Both the old and new database definitions have already been validated (this is enforced by the types).
     // All we have to do is walk through and compare them.
-    let mut plan = AutoMigratePlan {
+    let mut plan = MigratePlan {
         old,
         new,
         steps: Vec::new(),
         prechecks: Vec::new(),
+        manual: manual_migration.map(|(id, hash, migration)| ManualMigrateData {
+            hash: *hash,
+            id: MigrationId(id as u32),
+            name: migration.namespace.join(migration.name.clone()),
+            removed_tables: Vec::new(),
+            changed_tables: Vec::new(),
+        }),
     };
 
-    let views_ok = auto_migrate_views(&mut plan);
+    auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);
 
     // Sub-objects of added/removed tables are handled by AddTable/RemoveTable, not individually.
@@ -501,20 +492,24 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let removed_tables: HashSet<TableKey<'def>> = old_table_names.difference(&new_table_names).copied().collect();
 
     let indexes_ok = auto_migrate_indexes(&mut plan, &added_tables, &removed_tables);
-    let sequences_ok = auto_migrate_sequences(&mut plan, &added_tables, &removed_tables);
+    auto_migrate_sequences(&mut plan, &added_tables, &removed_tables);
     let constraints_ok = auto_migrate_constraints(&mut plan, &added_tables, &removed_tables);
     // IMPORTANT: RLS auto-migrate steps must come last,
     // since they assume that any schema changes, like adding or dropping tables,
     // have already been reflected in the database state.
-    let rls_ok = auto_migrate_row_level_security(&mut plan);
+    auto_migrate_row_level_security(&mut plan);
 
-    let ((), (), (), (), (), ()) =
-        (views_ok, tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
+    let ((), (), ()) = (tables_ok, indexes_ok, constraints_ok).combine_errors()?;
 
     plan.steps.sort();
     plan.prechecks.sort();
 
     Ok(plan)
+}
+
+/// Construct an automatic migration plan, or reject with reasons why automatic migration can't be performed.
+pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<MigratePlan<'def>> {
+    _ponder_migrate(old, new, None)
 }
 
 /// Shorthands for the namespace-qualified [`ModuleDefLookup`] keys used throughout planning.
@@ -528,7 +523,7 @@ fn key_of<'def>((_, _, table): (NamespacePath, &'def ModuleDef, &'def TableDef))
     table.key()
 }
 
-fn auto_migrate_views<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
+fn auto_migrate_views<'def>(plan: &mut MigratePlan<'def>) {
     let old_module = plan.old;
     let new_module = plan.new;
 
@@ -563,23 +558,19 @@ fn auto_migrate_views<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
         }
     }
 
-    let results: Vec<Result<()>> = maybe_change
-        .into_iter()
-        .map(|(key, (old_owning, old_view), (new_owning, new_view))| {
-            auto_migrate_view(plan, key, old_owning, old_view, new_owning, new_view)
-        })
-        .collect();
-    results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
+    for (key, (old_owning, old_view), (new_owning, new_view)) in maybe_change {
+        auto_migrate_view(plan, key, old_owning, old_view, new_owning, new_view)
+    }
 }
 
 fn auto_migrate_view<'def>(
-    plan: &mut AutoMigratePlan<'def>,
+    plan: &mut MigratePlan<'def>,
     key: ViewKey<'def>,
     old_owning: &ModuleDef,
     old: &ViewDef,
     new_owning: &ModuleDef,
     new: &ViewDef,
-) -> Result<()> {
+) {
     // We can always auto-migrate a view because we can always re-compute it.
     // However certain things require us to disconnect clients:
     // 1. If we add or remove a column or parameter
@@ -667,17 +658,15 @@ fn auto_migrate_view<'def>(
         || incompatible_return_type
         || incompatible_param_types
     {
-        plan.steps.push(AutoMigrateStep::AddView(key));
         plan.steps.push(AutoMigrateStep::RemoveView(key));
+        plan.steps.push(AutoMigrateStep::AddView(key));
         plan.ensure_disconnect_all_users();
     } else {
         plan.steps.push(AutoMigrateStep::UpdateView(key));
     }
-
-    Ok(())
 }
 
-fn auto_migrate_tables<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
+fn auto_migrate_tables<'def>(plan: &mut MigratePlan<'def>) -> Result<()> {
     let old_module = plan.old;
     let new_module = plan.new;
 
@@ -698,6 +687,9 @@ fn auto_migrate_tables<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
 
     for key in old_tables.keys() {
         if !new_tables.contains_key(key) {
+            if let Some(manual) = &mut plan.manual {
+                manual.removed_tables.push(*key);
+            }
             plan.steps.push(AutoMigrateStep::RemoveTable(*key));
             plan.ensure_disconnect_all_users();
         }
@@ -722,17 +714,16 @@ fn auto_migrate_tables<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
         })
         .collect();
 
-    let results: Vec<Result<()>> = maybe_change
+    maybe_change
         .into_iter()
         .map(|(key, (old_owning, old_table), (new_owning, new_table))| {
             auto_migrate_table(plan, key, old_owning, old_table, new_owning, new_table)
         })
-        .collect();
-    results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
+        .collect_all_errors()
 }
 
 fn auto_migrate_table<'def>(
-    plan: &mut AutoMigratePlan<'def>,
+    plan: &mut MigratePlan<'def>,
     key: TableKey<'def>,
     old_owning: &ModuleDef,
     old: &'def TableDef,
@@ -875,7 +866,15 @@ fn auto_migrate_table<'def>(
         .collect_all_errors::<ArrayMonoid<Any, 3>>();
 
     let ((), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
-        (type_ok, event_ok, columns_ok).combine_errors()?;
+        match (type_ok, event_ok, columns_ok).combine_errors() {
+            Ok(x) => x,
+            Err(_) if let Some(manual) = &mut plan.manual => {
+                manual.changed_tables.push(key);
+                plan.ensure_disconnect_all_users();
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        };
 
     if event_schema_changed {
         // If we're rewriting an event table, there's no data migration to do.
@@ -1082,7 +1081,7 @@ fn ensure_old_ty_upgradable_to_new(
 }
 
 fn auto_migrate_indexes<'def>(
-    plan: &mut AutoMigratePlan<'def>,
+    plan: &mut MigratePlan<'def>,
     new_tables: &HashSet<TableKey<'def>>,
     removed_tables: &HashSet<TableKey<'def>>,
 ) -> Result<()> {
@@ -1118,7 +1117,7 @@ fn auto_migrate_indexes<'def>(
     }
 
     // Changed indexes: same name in both.
-    let change_results: Vec<Result<()>> = old_indexes
+    old_indexes
         .iter()
         .filter_map(|(index_key, (_, old_owning, old_idx))| {
             new_indexes
@@ -1147,15 +1146,14 @@ fn auto_migrate_indexes<'def>(
                 Ok(())
             }
         })
-        .collect();
-    change_results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
+        .collect_all_errors()
 }
 
 fn auto_migrate_sequences<'def>(
-    plan: &mut AutoMigratePlan<'def>,
+    plan: &mut MigratePlan<'def>,
     new_tables: &HashSet<TableKey<'def>>,
     removed_tables: &HashSet<TableKey<'def>>,
-) -> Result<()> {
+) {
     let old_module = plan.old;
     let new_module = plan.new;
 
@@ -1196,12 +1194,10 @@ fn auto_migrate_sequences<'def>(
             plan.steps.push(AutoMigrateStep::AddSequence(*sequence_key));
         }
     }
-
-    Ok(())
 }
 
 fn auto_migrate_constraints<'def>(
-    plan: &mut AutoMigratePlan<'def>,
+    plan: &mut MigratePlan<'def>,
     new_tables: &HashSet<TableKey<'def>>,
     removed_tables: &HashSet<TableKey<'def>>,
 ) -> Result<()> {
@@ -1222,7 +1218,7 @@ fn auto_migrate_constraints<'def>(
     let old_constraints = constraint_map(old_module);
     let new_constraints = constraint_map(new_module);
 
-    let mut results: Vec<Result<()>> = vec![];
+    let mut errors: Vec<AutoMigrateError> = vec![];
 
     // Added constraints.
     for (constraint_key, (table_key, _new_constraint)) in &new_constraints {
@@ -1242,22 +1238,26 @@ fn auto_migrate_constraints<'def>(
 
     // Changed constraints.
     for (constraint_key, (_, new_constraint)) in &new_constraints {
-        if let Some((_, old_constraint)) = old_constraints.get(constraint_key)
+        if let Some((table_key, old_constraint)) = old_constraints.get(constraint_key)
             && *old_constraint != *new_constraint
         {
-            results.push(Err(AutoMigrateError::ChangeUniqueConstraint {
-                constraint: old_constraint.name.clone(),
+            if let Some(manual) = &mut plan.manual {
+                manual.changed_tables.push(*table_key);
+                plan.ensure_disconnect_all_users();
+            } else {
+                errors.push(AutoMigrateError::ChangeUniqueConstraint {
+                    constraint: old_constraint.name.clone(),
+                });
             }
-            .into()));
         }
     }
 
-    results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
+    ErrorStream::add_extra_errors(Ok(()), errors)
 }
 
 // Because we can refer to many tables and fields on the row level-security query, we need to remove all of them,
 // then add the new ones, instead of trying to track the graph of dependencies.
-fn auto_migrate_row_level_security<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
+fn auto_migrate_row_level_security<'def>(plan: &mut MigratePlan<'def>) {
     let old_sqls: Vec<&'def Box<str>> = plan.old.row_level_security().map(|rls| &rls.sql).collect();
     let new_sqls: Vec<&'def Box<str>> = plan.new.row_level_security().map(|rls| &rls.sql).collect();
 
@@ -1278,8 +1278,6 @@ fn auto_migrate_row_level_security<'def>(plan: &mut AutoMigratePlan<'def>) -> Re
     if changed {
         plan.ensure_disconnect_all_users();
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

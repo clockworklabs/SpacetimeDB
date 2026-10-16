@@ -1151,7 +1151,12 @@ fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyh
 
     let auth_ctx = AuthCtx::for_current(info.owner_identity);
     stdb.with_auto_commit(Workload::Internal, |tx| -> anyhow::Result<()> {
-        match db::update::update_database(stdb.as_ref(), tx, auth_ctx, plan, system_logger)? {
+        let db::update::UpdateStep::Done(result) =
+            db::update::update_database(stdb.as_ref(), tx, auth_ctx, plan, system_logger)?
+        else {
+            unreachable!("this plan never has a manual component")
+        };
+        match result {
             db::update::UpdateResult::Success | db::update::UpdateResult::RequiresClientDisconnect => Ok(()),
             db::update::UpdateResult::EvaluateSubscribedViews => {
                 bail!("startup view backing table repair unexpectedly requested view evaluation")
