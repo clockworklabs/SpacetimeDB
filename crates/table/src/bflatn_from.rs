@@ -396,7 +396,7 @@ pub(crate) unsafe fn vlr_blob_bytes(page: &Page, blobs: &BlobReadSet, vlr: VarLe
     let hash = granule.blob_hash();
 
     // Find the blob.
-    blobs.get(&hash).unwrap().clone()
+    blobs.get(&hash.into()).unwrap().clone()
 }
 
 /// Read a `T` from `bytes` at the `curr_offset` and advance by `size` bytes.
