@@ -47,6 +47,8 @@ impl<'a> PageBorrow<'a> {
         }
     }
 
+    /// Resident column reads use the borrowed page without locking or building a read guard.
+    /// The table borrow protects resident pages; tiered pages still acquire their read lock.
     #[inline(always)]
     pub fn with_page<T>(self, f: impl FnOnce(&Page) -> T) -> T {
         match self {

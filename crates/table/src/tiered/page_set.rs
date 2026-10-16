@@ -41,7 +41,7 @@ pub struct PageSet {
 }
 
 /// The original directly owned page representation, with allocation accounting.
-/// A table borrow protects page access; no per-page ownership or locks are needed.
+/// A table borrow protects page access; no per-page shared ownership or locks are needed.
 #[derive(Debug)]
 struct ResidentPages {
     pages: Pages,
@@ -54,6 +54,7 @@ enum PageStorage {
     Tiered(TieredPages),
 }
 
+/// Evictable pages retain shared slots and frames so readers can pin their contents.
 #[derive(Debug, Default)]
 struct TieredPages {
     slots: Vec<PageSlotHandle>,
@@ -221,6 +222,7 @@ impl PageSet {
         matches!(self.storage, PageStorage::Resident(_))
     }
 
+    /// Bypass general page access when only a resident row's presence bit is needed.
     #[inline]
     pub(crate) fn resident_row_present(&self, pointer: RowPointer, fixed_row_size: Size) -> Option<bool> {
         self.storage.resident().map(|resident| {
@@ -676,6 +678,9 @@ impl PageSet {
         self.storage.tiered().slots.len()
     }
 
+    // Resident pages cannot fault, and an unlimited memory budget cannot reject a page.
+    // For fixed-layout callers, one new page per insert bounds the worst case so
+    // page-index exhaustion cannot interrupt a commit after mutations have started.
     pub(crate) fn can_commit_resident(&self, insert_count: u64) -> bool {
         self.storage.resident().is_some()
             && self.manager.has_unlimited_budget()

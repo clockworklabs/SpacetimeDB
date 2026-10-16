@@ -506,6 +506,8 @@ impl Deref for BlobHandle {
 /// be fallible due to faults.
 #[derive(Clone, Default)]
 pub struct BlobReadSet {
+    // Rows without external blobs need no Arc allocation or reference counting.
+    // Non-empty sets share their pins when a RowRef is cloned.
     inner: Option<Arc<SmallHashMap<BlobHash, BlobHandle, 4, 16>>>,
 }
 
