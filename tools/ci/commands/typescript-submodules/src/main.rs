@@ -12,11 +12,11 @@ fn main() -> Result<()> {
 
     pnpm(["--dir", "crates/bindings-typescript", "run", "build"]).run()?;
     for script in ["lint", "typecheck", "test"] {
-        pnpm(["-r", "-F", "./spacetime-*-ts/**", "run", script]).run()?;
+        pnpm(["-r", "-F", "./modules/spacetime-*-ts/**", "run", script]).run()?;
     }
 
     // The recovery test starts and stops its own server on a free local port.
-    pnpm(["--dir", "spacetime-cron-ts", "run", "test:recovery"]).run()?;
-    pnpm(["-r", "-F", "./spacetime-*-ts/**", "run", "build"]).run()?;
+    pnpm(["--dir", "modules/spacetime-cron-ts", "run", "test:recovery"]).run()?;
+    pnpm(["-r", "-F", "./modules/spacetime-*-ts/**", "run", "build"]).run()?;
     Ok(())
 }

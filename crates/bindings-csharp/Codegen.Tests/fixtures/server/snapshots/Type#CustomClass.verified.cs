@@ -62,7 +62,7 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
                     new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                     new("NullableIntField", NullableIntFieldRW.GetAlgebraicType(registrar)),
-                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar))
+                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -113,16 +113,7 @@ partial class CustomClass : System.IEquatable<CustomClass>, SpacetimeDB.BSATN.IS
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as CustomClass;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is CustomClass t && Equals(t);
     }
 
     public static bool operator ==(CustomClass? this_, CustomClass? that)

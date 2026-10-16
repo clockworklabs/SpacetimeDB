@@ -56,7 +56,7 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
                     new("Id", IdRW.GetAlgebraicType(registrar)),
                     new("X", XRW.GetAlgebraicType(registrar)),
                     new("Y", YRW.GetAlgebraicType(registrar)),
-                    new("Faction", FactionRW.GetAlgebraicType(registrar))
+                    new("Faction", FactionRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -87,16 +87,7 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as BTreeViews?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is BTreeViews t && Equals(t);
     }
 
     public static bool operator ==(BTreeViews this_, BTreeViews that)

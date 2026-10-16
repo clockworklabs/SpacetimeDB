@@ -59,16 +59,7 @@ partial class PrivateTable : System.IEquatable<PrivateTable>, SpacetimeDB.BSATN.
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as PrivateTable;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is PrivateTable t && Equals(t);
     }
 
     public static bool operator ==(PrivateTable? this_, PrivateTable? that)

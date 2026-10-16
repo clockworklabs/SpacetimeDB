@@ -1132,9 +1132,28 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         }
     }
 
-    if let Some(deps_item) = doc.get_mut("dependencies")
-        && let Some(deps_table) = deps_item.as_table_mut()
-    {
+    update_cargo_dependency_tables(doc.as_table_mut(), &patch_wildcard);
+    if let Some(targets) = doc.get_mut("target").and_then(Item::as_table_mut) {
+        for (_, target) in targets.iter_mut() {
+            if let Some(table) = target.as_table_mut() {
+                update_cargo_dependency_tables(table, &patch_wildcard);
+            }
+        }
+    }
+
+    let updated = doc.to_string();
+    if updated != original {
+        fs::write(cargo_path, updated)?;
+    }
+    Ok(())
+}
+
+/// Resolve repository dependencies in each Cargo dependency kind.
+fn update_cargo_dependency_tables(table: &mut toml_edit::Table, patch_wildcard: &str) {
+    for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        let Some(deps_table) = table.get_mut(kind).and_then(Item::as_table_mut) else {
+            continue;
+        };
         let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
         for key in keys {
             if let Some(dep_item) = deps_table.get_mut(&key)
@@ -1147,7 +1166,7 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                             set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                         }
                     } else if key == "spacetimedb-sdk" {
-                        set_dependency_version(dep_item, patch_wildcard.as_str(), true);
+                        set_dependency_version(dep_item, patch_wildcard, true);
                     }
                     continue;
                 }
@@ -1165,12 +1184,6 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
             }
         }
     }
-
-    let updated = doc.to_string();
-    if updated != original {
-        fs::write(cargo_path, updated)?;
-    }
-    Ok(())
 }
 
 pub fn update_csproj_server_to_nuget(dir: &Path) -> anyhow::Result<()> {

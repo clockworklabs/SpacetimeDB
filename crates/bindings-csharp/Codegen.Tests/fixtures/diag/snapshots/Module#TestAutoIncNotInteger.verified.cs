@@ -51,7 +51,7 @@ partial struct TestAutoIncNotInteger
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new("AutoIncField", AutoIncFieldRW.GetAlgebraicType(registrar)),
-                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar))
+                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -81,16 +81,7 @@ partial struct TestAutoIncNotInteger
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestAutoIncNotInteger?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestAutoIncNotInteger t && Equals(t);
     }
 
     public static bool operator ==(TestAutoIncNotInteger this_, TestAutoIncNotInteger that)

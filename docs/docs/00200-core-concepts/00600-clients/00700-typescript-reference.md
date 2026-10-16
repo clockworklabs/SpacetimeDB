@@ -166,6 +166,8 @@ Configure the connection to request confirmed reads.
 
 When enabled, the server will send query results only after they are confirmed to be durable, i.e. persisted to disk on one or more replicas depending on the replication settings of the database. When set to `false`, the server will send results as soon as transactions are committed in memory.
 
+Procedures called over this connection inherit the same setting. With confirmed reads enabled, each successful transaction block waits for durability before procedure code continues.
+
 If this method is not called, the server chooses the default.
 
 #### Callback `onConnect`
@@ -1148,7 +1150,7 @@ All [`DbContext`](#interface-dbcontext) implementors, including [`DbConnection`]
 Each reducer defined by the module has three methods on the `.reducers`:
 
 - An invoke method, whose name is the reducer's name converted to camel case, like `setName`. This requests that the module run the reducer. It returns a `Promise<void>` which rejects with `SenderError` if the reducer fails, so `await` it in a `try`/`catch` to handle errors.
-- A callback registation method, whose name is prefixed with `on`, like `onSetName`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
+- A callback registration method, whose name is prefixed with `on`, like `onSetName`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
 - A callback remove method, whose name is prefixed with `removeOn`, like `removeOnSetName`. This cancels a callback previously registered via the callback registration method.
 
 For example:

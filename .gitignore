@@ -206,12 +206,12 @@ __pycache__/
 .idea/
 
 # TypeScript submodule development outputs
-spacetime-*-ts/example/.stdb-server-token
-spacetime-*-ts/example/public/app.js
-spacetime-*-ts/example/public/app.js.map
-spacetime-*-ts/example/public/app.css
-spacetime-*-ts/example/public/app.css.map
-spacetime-*-ts/ts-codegen/
+modules/spacetime-*-ts/example/.stdb-server-token
+modules/spacetime-*-ts/example/public/app.js
+modules/spacetime-*-ts/example/public/app.js.map
+modules/spacetime-*-ts/example/public/app.css
+modules/spacetime-*-ts/example/public/app.css.map
+modules/spacetime-*-ts/ts-codegen/
 
 /protobuf
 cs-src/

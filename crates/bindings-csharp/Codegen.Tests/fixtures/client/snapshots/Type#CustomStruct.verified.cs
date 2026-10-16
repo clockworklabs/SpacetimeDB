@@ -50,7 +50,7 @@ partial struct CustomStruct
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
-                    new("StringField", StringFieldRW.GetAlgebraicType(registrar))
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -79,16 +79,7 @@ partial struct CustomStruct
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as CustomStruct?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is CustomStruct t && Equals(t);
     }
 
     public static bool operator ==(CustomStruct this_, CustomStruct that)
