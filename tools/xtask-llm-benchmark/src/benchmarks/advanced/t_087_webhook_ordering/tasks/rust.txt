@@ -1,0 +1,10 @@
+Implement this SpacetimeDB module in rust. Return only the module source.
+
+Implement POST /webhook with plain-text body account|event_id|sequence|value (exactly four fields). Account, event_id and value must be nonempty. Sequence must contain only ASCII decimal digits, fit u64, and be positive. Malformed input returns HTTP 400 body 'invalid' without any writes. Valid input returns HTTP 200. In one transaction, check the event ID globally: exact replay returns 'duplicate'; reuse with a different account, sequence or value returns 'conflict', without changes. For a new event, insert a receipt even if its sequence is stale. If sequence is greater than that account's last sequence, update state and return 'applied'; otherwise return 'stale'. Accounts advance independently. Response bodies must contain exactly those words.
+
+Tables (the first field is the primary key):
+- public webhook_receipt: event_id: String, account: String, sequence: u64, value: String
+- public webhook_account: account: String, sequence: u64, value: String
+
+Export only the HTTP handler and router; no reducers are required.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.
