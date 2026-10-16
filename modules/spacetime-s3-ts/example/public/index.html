@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Private file uploads to Amazon S3 with metadata in SpacetimeDB, powered by @spacetimedb/s3."
+    />
+    <title>SpacetimeDB S3</title>
+    <link rel="icon" href="/assets/logo.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a
+          class="brand"
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="SpacetimeDB home"
+        >
+          <img src="/assets/logo.svg" alt="" />
+          <span class="brand-name">SpacetimeDB</span>
+          <span class="brand-product">S3</span>
+        </a>
+        <div class="topbar-actions">
+          <span class="connection" id="connection" data-state="connecting">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="conn">Connecting</span>
+          </span>
+          <button
+            class="button button-primary"
+            id="upload"
+            type="button"
+            disabled
+          >
+            <span aria-hidden="true">+</span>
+            Upload file
+          </button>
+          <input id="file-input" type="file" hidden />
+        </div>
+      </header>
+
+      <article class="panel">
+        <header class="panel-header">
+          <h2>
+            Your files
+            <span class="count" id="file-count">0</span>
+          </h2>
+          <p class="status" id="status" role="status"></p>
+        </header>
+        <div class="panel-body">
+          <div class="empty-state" id="files-empty">
+            <span class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"
+                ></path>
+                <path d="M14 3v5h5"></path>
+              </svg>
+            </span>
+            <h3>No files</h3>
+          </div>
+          <ul class="file-list" id="files" hidden></ul>
+        </div>
+      </article>
+
+      <footer class="footer">
+        <span>Built on</span>
+        <img src="/assets/logo.svg" alt="" />
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          >SpacetimeDB</a
+        >
+        <span class="footer-divider" aria-hidden="true"></span>
+        <a
+          href="https://github.com/clockworklabs/SpacetimeDB"
+          target="_blank"
+          rel="noopener noreferrer"
+          >View source</a
+        >
+      </footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
