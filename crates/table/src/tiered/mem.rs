@@ -209,13 +209,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn redeem_blob(&self, ReservedBlob { frame }: ReservedBlob) -> Arc<BlobFrame> {
-<<<<<<< HEAD
         let key = frame.hash;
-||||||| parent of 9993057831 (Restore direct page storage for resident tables)
-        let key = frame.hash.into();
-=======
-        let key = frame.hash.into();
->>>>>>> 9993057831 (Restore direct page storage for resident tables)
         let mut blobs = self.blobs.lock().unwrap();
         // Transaction and committed blob sets share this registry. Reuse live
         // frames and replace stale weak entries when a hash becomes resident again.
