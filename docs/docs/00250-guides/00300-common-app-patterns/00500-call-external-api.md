@@ -1,0 +1,76 @@
+---
+title: Call an external API from your module
+slug: /guides/app-patterns/call-external-api
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
+
+:::note Prerequisites
+{/* TODO: What the reader needs first, with a link to the quickstart. */}
+:::
+
+{/* TODO: Scope (what this guide teaches) and goal (what you build). */}
+
+## Define the tables
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+{/* TODO */}
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+{/* TODO */}
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+{/* TODO */}
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+{/* TODO */}
+
+</TabItem>
+</Tabs>
+
+## Write the reducers
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+{/* TODO */}
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+{/* TODO */}
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+{/* TODO */}
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+{/* TODO */}
+
+</TabItem>
+</Tabs>
+
+## Subscribe from the client
+
+{/* TODO */}
+
+## What's next?
+
+{/* TODO: Recap, then link to the reference pages for the features used here. */}
