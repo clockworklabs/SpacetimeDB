@@ -411,7 +411,7 @@ fn load_pending_message(
         target_identity: stream.target_identity.0,
         ack_prefix: stream.ack_prefix,
         target_reducer: outbox.remote_reducer.clone(),
-        signature_hash: Hash::from_hex(&outbox.signature_hash)?,
+        signature_hash: outbox.signature_hash,
         reducer_args,
         outbox_row,
         on_result_reducer: outbox.on_result_reducer.clone(),
@@ -812,9 +812,7 @@ mod tests {
                     &AlgebraicType::unit(),
                     &AlgebraicType::String,
                     &spacetimedb_sats::Typespace::default(),
-                )
-                .to_hex()
-                .to_string(),
+                ),
             }),
         )
     }
@@ -1050,7 +1048,10 @@ mod tests {
                         );
                         assert_eq!(query["seq"], "1");
                         assert_eq!(query["ack_prefix"], "0");
-                        assert_eq!(query["signature_hash"], outbox_schema().outbox.unwrap().signature_hash);
+                        assert_eq!(
+                            query["signature_hash"],
+                            outbox_schema().outbox.unwrap().signature_hash.to_hex().as_str()
+                        );
                         assert_eq!(body.as_ref(), to_vec(&42u32).unwrap());
                         (StatusCode::from_u16(status).unwrap(), "receiver detail")
                     }

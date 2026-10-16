@@ -107,9 +107,7 @@ fn outbox_schema() -> TableSchema {
                 &AlgebraicType::unit(),
                 &AlgebraicType::String,
                 &spacetimedb_sats::Typespace::default(),
-            )
-            .to_hex()
-            .to_string(),
+            ),
         }),
     )
 }
