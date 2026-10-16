@@ -54,10 +54,13 @@ The `generate` key is an array of objects. Each object configures bindings gener
 |-------|------|-------------|
 | `language` | string | Target language: `typescript`, `csharp`, `rust`, `unrealcpp` (required) |
 | `out-dir` | string | Output directory for generated files |
+| `bindings` | string | `client` (default) or `module` (Rust receiver bindings; generation is not implemented yet) |
 | `namespace` | string | C# namespace (`csharp` only) |
 | `unreal-module-name` | string | Unreal module name (`unrealcpp` only) |
 | `uproject-dir` | string | Unreal project directory (`unrealcpp` only) |
 | `include-private` | boolean | Include private tables in generated code |
+
+The CLI equivalent is `spacetime generate --lang rust --bindings module --module-path ./game_world --out-dir ./remote_bindings`. The default `--bindings client` continues to generate client SDK bindings.
 
 Generate entries use the `module-path` (or `bin-path`/`js-path`) from their parent entity to determine which module to build and generate from.
 

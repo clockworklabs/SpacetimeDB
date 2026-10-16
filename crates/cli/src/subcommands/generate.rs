@@ -52,6 +52,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("build_options").module_specific())
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
+        .key(Key::new("bindings").generate_entry_specific())
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
@@ -249,6 +250,13 @@ pub fn cli() -> clap::Command {
                 .help("The language to generate"),
         )
         .arg(
+            Arg::new("bindings")
+                .long("bindings")
+                .value_parser(clap::value_parser!(BindingKind))
+                .default_value("client")
+                .help("The kind of Rust bindings to generate"),
+        )
+        .arg(
             Arg::new("build_options")
                 .long("build-options")
                 .alias("build-opts")
@@ -302,6 +310,7 @@ pub struct GenerateRunConfig {
     pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
+    pub bindings: BindingKind,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -384,6 +393,11 @@ fn prepare_generate_run_configs<'a>(
             .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
+        let bindings = command_config.get_one::<BindingKind>("bindings")?.unwrap_or_default();
+
+        if bindings == BindingKind::Module && lang != Language::Rust {
+            anyhow::bail!("--bindings module is only supported with --lang rust");
+        }
 
         runs.push(GenerateRunConfig {
             project_path,
@@ -397,6 +411,7 @@ fn prepare_generate_run_configs<'a>(
             dotnet_version,
             out_dir,
             include_private,
+            bindings,
         });
     }
 
@@ -474,10 +489,16 @@ pub async fn run_prepared_generate_configs(
     force: bool,
     namespace_from_cli: bool,
 ) -> anyhow::Result<()> {
+    if run_configs.iter().any(|run| run.bindings == BindingKind::Module) {
+        // TODO(idc): Wire receiver binding generation when Rust outbox macro support lands.
+        anyhow::bail!("Rust receiver binding generation is not implemented yet");
+    }
+
     for run in run_configs {
         println!(
-            "Generating {} module bindings for module {}",
+            "Generating {} {} bindings for module {}",
             run.lang.display_name(),
+            run.bindings.display_name(),
             run.project_path.display()
         );
 
@@ -544,7 +565,8 @@ pub async fn run_prepared_generate_configs(
             Language::TypeScript => &TypeScript,
         };
 
-        for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
+        let generated_files = generate(&module, gen_lang, &options);
+        for OutputFile { filename, code } in generated_files {
             let fname = Path::new(&filename);
             if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
                 println!("Creating directory {}", run.out_dir.join(parent).display());
@@ -694,6 +716,41 @@ pub async fn exec_from_entries(
 
     let run_configs = prepare_generate_run_configs(generate_configs, true, config_dir)?;
     run_prepared_generate_configs(run_configs, extract_descriptions, None, force, false).await
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BindingKind {
+    Client,
+    Module,
+}
+
+impl Default for BindingKind {
+    fn default() -> Self {
+        Self::Client
+    }
+}
+
+impl clap::ValueEnum for BindingKind {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Client, Self::Module]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::Client => PossibleValue::new("client"),
+            Self::Module => PossibleValue::new("module"),
+        })
+    }
+}
+
+impl BindingKind {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            BindingKind::Client => "client",
+            BindingKind::Module => "module",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
@@ -999,6 +1056,55 @@ mod tests {
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
         let runs = prepare_generate_run_configs(vec![command_config], false, None).unwrap();
         assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
+    }
+
+    #[tokio::test]
+    async fn test_rust_module_bindings_mode_is_carried_to_run_config() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "--lang",
+            "rust",
+            "--bin-path",
+            "dummy.wasm",
+            "--bindings",
+            "module",
+        ]);
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+        let runs = prepare_generate_run_configs(vec![command_config], false, None).unwrap();
+        assert_eq!(runs[0].bindings, BindingKind::Module);
+        let err = run_prepared_generate_configs(
+            runs,
+            |_| panic!("unsupported generation must stop before schema extraction"),
+            None,
+            false,
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Rust receiver binding generation is not implemented yet"
+        );
+    }
+
+    #[test]
+    fn test_module_bindings_mode_requires_rust() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "--lang",
+            "typescript",
+            "--bin-path",
+            "dummy.wasm",
+            "--bindings",
+            "module",
+        ]);
+        let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
+        let err = prepare_generate_run_configs(vec![command_config], false, None).unwrap_err();
+        assert_eq!(err.to_string(), "--bindings module is only supported with --lang rust");
     }
 
     #[test]
