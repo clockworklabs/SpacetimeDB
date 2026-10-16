@@ -1,5 +1,6 @@
 export * from './SpacetimeDBProvider.ts';
 export { useSpacetimeDB } from './useSpacetimeDB.ts';
 export { useTable } from './useTable.ts';
+export { useRow } from './useRow.ts';
 export { useReducer } from './useReducer.ts';
 export { useProcedure } from './useProcedure.ts';
