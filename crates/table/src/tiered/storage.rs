@@ -1,13 +1,33 @@
 use std::fmt;
 
+use derive_more::From;
 use parking_lot::RwLock;
 
-use crate::tiered::{
-    error::ObjectStoreError,
-    map::{ObjectKey, ObjectMap},
+use crate::{
+    blob_store::BlobHash,
+    tiered::{
+        error::ObjectStoreError,
+        map::{ObjectKey, ObjectMap},
+        BlobHandle, PageHandle,
+    },
 };
 
 pub type ObjectBytes = Box<[u8]>;
+
+#[derive(From)]
+pub enum Object<'a> {
+    Page(&'a PageHandle),
+    Blob(&'a BlobHandle),
+}
+
+impl<'a> Object<'a> {
+    pub fn size(&self) -> u64 {
+        match self {
+            Self::Page(handle) => handle.size(),
+            Self::Blob(handle) => handle.size(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ObjectMetadata {
@@ -30,9 +50,9 @@ pub trait ObjectStore: fmt::Debug + Send + Sync + 'static {
     /// The implementation must verify that the object hashes to `key`, and
     /// return [ObjectStoreError::HashMismatch] if it doesn't.
     fn read(&self, key: ObjectKey) -> Result<Option<ObjectBytes>, ObjectStoreError>;
-    /// Store `bytes` and return an [ObjectKey] by which the object can be
+    /// Store `object` and return an [ObjectKey] by which the object can be
     /// retrieved later.
-    fn write(&self, bytes: &[u8]) -> Result<ObjectKey, ObjectStoreError>;
+    fn write(&self, object: Object<'_>) -> Result<ObjectKey, ObjectStoreError>;
 }
 
 impl ObjectStore for () {
@@ -44,7 +64,7 @@ impl ObjectStore for () {
         unimplemented!("null object store does not support `read`")
     }
 
-    fn write(&self, _: &[u8]) -> Result<ObjectKey, ObjectStoreError> {
+    fn write(&self, _: Object<'_>) -> Result<ObjectKey, ObjectStoreError> {
         unimplemented!("null object store does not support `store`")
     }
 }
@@ -65,9 +85,19 @@ impl ObjectStore for MemoryObjectStore {
         Ok(self.objects.read().get(&key).cloned())
     }
 
-    fn write(&self, bytes: &[u8]) -> Result<ObjectKey, ObjectStoreError> {
-        let key = blake3::hash(bytes).into();
-        self.objects.write().insert(key, bytes.into());
+    fn write(&self, object: Object<'_>) -> Result<ObjectKey, ObjectStoreError> {
+        let (key, bytes) = match object {
+            Object::Page(handle) => {
+                let (hash, bytes) = handle.serialize_for_storage();
+                (ObjectKey::from(hash), bytes.into())
+            }
+            Object::Blob(handle) => {
+                let hash = BlobHash::hash_from_bytes(handle);
+                let bytes = (&**handle).into();
+                (ObjectKey::from(hash), bytes)
+            }
+        };
+        self.objects.write().insert(key, bytes);
         Ok(key)
     }
 }
@@ -108,9 +138,9 @@ impl TieredStorage {
         self.catalog.read().contains_key(&key)
     }
 
-    pub fn write(&self, bytes: &[u8]) -> Result<ObjectKey, ObjectStoreError> {
-        let size = bytes.len() as u64;
-        let key = self.local.write(bytes)?;
+    pub fn write(&self, object: Object<'_>) -> Result<ObjectKey, ObjectStoreError> {
+        let size = object.size();
+        let key = self.local.write(object)?;
         self.catalog.write().insert(key, ObjectCatalogEntry { size });
         Ok(key)
     }
