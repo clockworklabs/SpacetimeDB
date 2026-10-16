@@ -162,6 +162,15 @@ impl ResidentPages {
             self.permits[index.idx()] = Some(permit);
         }
     }
+
+    #[inline]
+    fn recycle_empty_page(&mut self, manager: &PageManager, index: PageIndex) {
+        let page = self.pages.free_empty_page(index);
+        let permit = self.permits[index.idx()]
+            .take()
+            .expect("present page has a permit");
+        manager.recycle_resident(page, permit);
+    }
 }
 
 pub enum PageInfo<'a> {
@@ -259,11 +268,7 @@ impl PageSet {
             page.num_rows() == 0
         });
         if empty {
-            let page = resident.pages.free_empty_page(index);
-            let permit = resident.permits[index.idx()]
-                .take()
-                .expect("present page has a permit");
-            self.manager.recycle_resident(page, permit);
+            resident.recycle_empty_page(&self.manager, index);
         }
         true
     }
@@ -534,11 +539,7 @@ impl PageSet {
 
         if is_empty {
             if let Some(resident) = self.storage.resident_mut() {
-                let page = resident.pages.free_empty_page(page_index);
-                let permit = resident.permits[page_index.idx()]
-                    .take()
-                    .expect("present page has a permit");
-                self.manager.recycle_resident(page, permit);
+                resident.recycle_empty_page(&self.manager, page_index);
             } else {
                 self.storage.tiered().slots[page_index.idx()].free();
                 self.storage.tiered_mut().free_page_slots.insert(page_index);
