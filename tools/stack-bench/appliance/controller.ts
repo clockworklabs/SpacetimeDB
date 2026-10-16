@@ -180,7 +180,7 @@ function help(): void {
     + '  campaign inspect <dir>           every attempt, level, and check with its evidence\n'
     + '  campaign report <dir>            write the JSON and HTML report\n'
     + '  campaign export <dir> --out <new-dir>  write a partial copy with the report, CSV tables, and public artifacts\n'
-    + '  campaign publish <dir> --suite <slug> --to <site>  upload a finished dependency campaign\n'
+    + '  campaign publish <dir> --suite <slug> --to <site> [--exclude <attempt>=<reason>]  upload a finished dependency campaign\n'
     + '    use --out <new-file> instead of --to to export the upload JSON\n'
     + '  campaign audit <dir>             check a finished reference campaign against its promises\n'
     + '  campaign grant-repairs <dir> --attempt <id> --grant-id <id> --level <n> --feature <id> [--feature <id> ...] --repairs <n>  add repair budget\n'

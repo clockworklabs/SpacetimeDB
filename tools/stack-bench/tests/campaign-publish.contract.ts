@@ -288,6 +288,17 @@ test('retained dependency evidence exports through the CLI and sends only valida
   assert.equal(payload.attempts[1]!.featuresPassed, null);
   assert.equal(payload.attempts[1]!.excluded, true);
   assert.ok(payload.attempts[1]!.excludedReason);
+  // An operator exclusion keeps the attempt in the upload, marked with its reason.
+  const replaced = payload.attempts[0]!.attemptId;
+  const withExclusion = createCampaignUpload(campaign, 'fixture-suite',
+    new Map([[replaced, 'replaced by a later run']]));
+  assert.equal(withExclusion.attempts.length, 2);
+  assert.equal(withExclusion.attempts[0]!.excluded, true);
+  assert.equal(withExclusion.attempts[0]!.excludedReason, 'excluded by operator: replaced by a later run');
+  assert.equal(withExclusion.attempts[0]!.featuresPassed, payload.attempts[0]!.featuresPassed);
+  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite', new Map([['no-such-attempt', 'x']])),
+    /unknown attempt/);
+  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite', new Map([[replaced, ' ']])), /reason/);
   assert.deepEqual(readFileSync(join(campaign, 'report/report.json')), before);
   const exported = join(root, 'upload.json');
   const cli = join(dirname(fileURLToPath(import.meta.url)), '../commands/campaign-cli.js');

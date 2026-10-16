@@ -492,6 +492,10 @@ campaign publish campaigns/campaign-001 --suite ecommerce-1 --to https://stackbe
 ```
 
 `--out` writes a new upload file and refuses to replace an existing file.
+`--exclude <attempt-id>=<reason>`, repeatable, marks a completed attempt excluded,
+for example one replaced by a later run; it is still uploaded with its reason.
+A campaign that stopped for attention may hold attempts that never started; they
+have no evidence and are left out of the upload.
 `--to` needs `STACKBENCH_UPLOAD_KEY` in the publishing process. For the appliance,
 pass it only to that invocation with `docker compose run --rm -e STACKBENCH_UPLOAD_KEY
 controller campaign publish ...`, using the normal Compose file and setup environment.

@@ -84,7 +84,8 @@ export type CampaignArgs =
   | { command: 'inspect'; directory: string }
   | { command: 'report'; directory: string }
   | { command: 'export'; directory: string; output: string }
-  | { command: 'publish'; directory: string; suite: string; output?: string; to?: string }
+  | { command: 'publish'; directory: string; suite: string; output?: string; to?: string;
+      exclusions: ReadonlyMap<string, string> }
   | { command: 'stop'; directory: string }
   | { command: 'audit'; directory: string }
   | { command: 'grant-repairs'; directory: string; attemptId: string; grantId: string;
@@ -203,8 +204,16 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
   }
   if (command === 'publish') {
     const options = new Map<string, string>();
+    const exclusions = new Map<string, string>();
     for (let i = 0; i < rest.length; i += 2) {
       const flag = rest[i]; const value = rest[i + 1];
+      if (flag === '--exclude' && value && !value.startsWith('--')) {
+        // --exclude <attempt-id>=<reason>
+        const at = value.indexOf('=');
+        if (at < 1 || exclusions.has(value.slice(0, at))) throw new Error('invalid publish options');
+        exclusions.set(value.slice(0, at), value.slice(at + 1));
+        continue;
+      }
       if (!flag || !['--suite', '--out', '--to'].includes(flag) || !value
         || value.startsWith('--') || options.has(flag)) throw new Error('invalid publish options');
       options.set(flag, value);
@@ -213,7 +222,7 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
     if (!path || !suite || options.has('--out') === options.has('--to')) {
       throw new Error('publish requires <directory> --suite <slug> and exactly one of --out or --to');
     }
-    return { command, directory: resolve(path), suite,
+    return { command, directory: resolve(path), suite, exclusions,
       ...(options.has('--out') ? { output: resolve(options.get('--out')!) } : { to: options.get('--to')! }) };
   }
   if (command === 'grant-time' && path) {

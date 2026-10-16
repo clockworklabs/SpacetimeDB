@@ -19,7 +19,9 @@ import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 const UPLOAD_VERSION = 1;
 const MAX_BYTES = 10 * 1024 * 1024;
 
-export function createCampaignUpload(directory: string, suite: string) {
+// An excluded attempt is still uploaded, with its reason, so the site can show what was left out.
+export function createCampaignUpload(directory: string, suite: string,
+  exclusions: ReadonlyMap<string, string> = new Map()) {
   if (!/^[a-z0-9][a-z0-9.-]{0,99}$/.test(suite))
     throw new Error('publish requires a valid suite slug');
   if (readCampaignLock(directory))
@@ -34,13 +36,17 @@ export function createCampaignUpload(directory: string, suite: string) {
   ) {
     throw new Error('publish requires a frozen dependency campaign');
   }
+  // A campaign that stopped for attention may hold attempts that never started; they have no
+  // evidence to upload. Every attempt that started must have finished.
+  const neverStarted = (attempt: { status: string; executions: readonly unknown[] }) =>
+    state.status === 'attention-required' && attempt.status === 'pending' && !attempt.executions.length;
   if (
     !['completed', 'attention-required'].includes(state.status) ||
     state.attempts.some(
-      attempt =>
+      attempt => !neverStarted(attempt) && (
         !['completed', 'invalid'].includes(attempt.status) ||
         !attempt.executions.length ||
-        attempt.executions.some(execution => execution.status === 'running')
+        attempt.executions.some(execution => execution.status === 'running'))
     )
   ) {
     throw new Error(
@@ -63,7 +69,12 @@ export function createCampaignUpload(directory: string, suite: string) {
   const progression = compileProgressionInput(
     dependencyRuntimeDefinition(plan.featureCatalog, plan.dependencyPolicy)
   );
-  const attempts = report.attempts.map(attempt => {
+  for (const [id, reason] of exclusions) {
+    if (!report.attempts.some(attempt => attempt.id === id)) throw new Error(`cannot exclude unknown attempt ${id}`);
+    if (!reason.trim()) throw new Error(`exclusion of ${id} needs a reason`);
+  }
+  const started = new Set(state.attempts.filter(attempt => !neverStarted(attempt)).map(attempt => attempt.plan.id));
+  const attempts = report.attempts.filter(attempt => started.has(attempt.id)).map(attempt => {
     const execution = attempt.executions.at(-1)!;
     if (
       !['completed', 'invalid'].includes(attempt.status) ||
@@ -94,8 +105,9 @@ export function createCampaignUpload(directory: string, suite: string) {
         throw new Error(`attempt ${attempt.id} has no final feature measurement`);
       featuresPassed = dependencyCompletionBreakdown(stored.state).featureCompletion.passed;
     }
-    const excluded =
-      invalid || plan.definition.attemptPolicy.excludeFromAnalysis.includes(execution.outcome);
+    const byPolicy = invalid || plan.definition.attemptPolicy.excludeFromAnalysis.includes(execution.outcome);
+    const operatorReason = exclusions.get(attempt.id);
+    const excluded = byPolicy || operatorReason !== undefined;
     const cost = invalid
       ? attempt.spend
       : {
@@ -124,8 +136,9 @@ export function createCampaignUpload(directory: string, suite: string) {
       completedAt: execution.completedAt,
       excluded,
       excludedReason: excluded
-        ? redactCredentials(
-            `${execution.outcome}: ${typeof execution.reason === 'string' ? execution.reason : 'excluded by campaign policy'}`
+        ? redactCredentials(byPolicy
+            ? `${execution.outcome}: ${typeof execution.reason === 'string' ? execution.reason : 'excluded by campaign policy'}`
+            : `excluded by operator: ${operatorReason}`
           ).slice(0, 1000)
         : null,
     };
@@ -160,11 +173,11 @@ export function createCampaignUpload(directory: string, suite: string) {
 
 export async function publishCampaign(
   directory: string,
-  options: { suite: string; output?: string; to?: string }
+  options: { suite: string; output?: string; to?: string; exclusions?: ReadonlyMap<string, string> }
 ) {
   if (!!options.output === !!options.to)
     throw new Error('publish requires exactly one of --out or --to');
-  const payload = createCampaignUpload(directory, options.suite);
+  const payload = createCampaignUpload(directory, options.suite, options.exclusions);
   if (options.output) {
     const content = `${JSON.stringify(payload, null, 2)}\n`;
     if (Buffer.byteLength(content) > MAX_BYTES) throw new Error('upload file exceeds 10 MiB');
