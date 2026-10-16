@@ -287,9 +287,6 @@ impl TableInner {
     }
 }
 
-#[cfg(target_os = "macos")]
-static_assert_size!(Table, 336);
-#[cfg(not(target_os = "macos"))]
 static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
