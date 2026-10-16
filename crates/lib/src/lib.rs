@@ -41,7 +41,7 @@ pub use filterable_value::{FilterableValue, IndexScanRangeBoundsTerminator, Term
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::__make_register_reftype;
-pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
+pub use spacetimedb_sats::hash::{self, hash_bytes, hash_value, Hash};
 pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;
 pub use spacetimedb_sats::uuid::Uuid;

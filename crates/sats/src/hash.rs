@@ -54,6 +54,22 @@ pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
     Hash::from_byte_array(Keccak256::digest(bytes).into())
 }
 
+pub fn hash_value(value: impl std::hash::Hash) -> Hash {
+    struct Wrapper(Keccak256);
+    impl std::hash::Hasher for Wrapper {
+        fn finish(&self) -> u64 {
+            let hash: [u8; HASH_SIZE] = self.0.clone().finalize().into();
+            u64::from_le_bytes(*hash.first_chunk().unwrap())
+        }
+        fn write(&mut self, bytes: &[u8]) {
+            self.0.update(bytes);
+        }
+    }
+    let mut hasher = Wrapper(Keccak256::default());
+    value.hash(&mut hasher);
+    Hash::from_byte_array(hasher.0.finalize().into())
+}
+
 impl fmt::Display for Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(&self.to_hex())
