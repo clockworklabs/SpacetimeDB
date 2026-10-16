@@ -3703,6 +3703,107 @@
           "replace": "refundedTotal: order.total, status: order.status });"
         }
       ]
+    },
+    {
+      "id": "delivery-due-time-kept-in-memory",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.315a"
+      ],
+      "desc": "The delivery job reads each due time from a module-level map filled when the order ships, so a restart forgets pending deliveries and a shipped order stays shipped.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const SECOND = 1_000_000n;",
+          "replace": "const SECOND = 1_000_000n;\nconst deliveryDueMicros = new Map<bigint, bigint>();"
+        },
+        {
+          "find": "  else ctx.db.deliverySchedule.insert(schedule);",
+          "replace": "  else ctx.db.deliverySchedule.insert(schedule);\n  deliveryDueMicros.set(orderId, schedule.dueMicros);"
+        },
+        {
+          "find": "if (schedule.completed || schedule.dueMicros > now) continue;",
+          "replace": "const dueMicros = deliveryDueMicros.get(schedule.orderId);\n    if (schedule.completed || dueMicros === undefined || dueMicros > now) continue;"
+        }
+      ]
+    },
+    {
+      "id": "cart-deadlines-rearmed-at-startup",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.316a"
+      ],
+      "desc": "The first maintenance run after the module loads restarts every open cart deadline with a full five minutes, so a cart expires five minutes after the restart instead of near its original deadline.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const SECOND = 1_000_000n;",
+          "replace": "const SECOND = 1_000_000n;\nlet cartTimersRestored = false;"
+        },
+        {
+          "find": "  for (const expiry of [...ctx.db.cartExpiry.iter()]) {",
+          "replace": "  if (!cartTimersRestored) {\n    cartTimersRestored = true;\n    for (const expiry of [...ctx.db.cartExpiry.iter()]) {\n      if (!expiry.expired) ctx.db.cartExpiry.accountId.update({ ...expiry, expiresMicros: now + 300n * SECOND });\n    }\n  }\n  for (const expiry of [...ctx.db.cartExpiry.iter()]) {"
+        }
+      ]
+    },
+    {
+      "id": "startup-replays-completed-shipments",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.exactly-once.312a"
+      ],
+      "desc": "The first maintenance run after the module loads replays shipment for every delivery schedule, including completed ones, so a delivered order is set back to shipped after a restart.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const SECOND = 1_000_000n;",
+          "replace": "const SECOND = 1_000_000n;\nlet deliveriesRestored = false;"
+        },
+        {
+          "find": "  for (const schedule of [...ctx.db.deliverySchedule.iter()]) {",
+          "replace": "  if (!deliveriesRestored) {\n    deliveriesRestored = true;\n    for (const schedule of [...ctx.db.deliverySchedule.iter()]) {\n      const order = ctx.db.customerOrder.id.find(schedule.orderId);\n      if (!order) continue;\n      ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });\n      ctx.db.deliverySchedule.orderId.update({ ...schedule, dueMicros: now + 60n * SECOND, completed: false });\n    }\n  }\n  for (const schedule of [...ctx.db.deliverySchedule.iter()]) {"
+        }
+      ]
+    },
+    {
+      "id": "delivery-notification-preference-inverted",
+      "scenario": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "targets": [
+        "ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a",
+        "ecommerce.spec.access-control.delivery-notification-privacy.501b"
+      ],
+      "desc": "The order-notification preference check is inverted, so a customer who turned order notifications on never receives a delivery notification.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (kind === 'delivery' && preference && !preference.orderEnabled) return;",
+          "replace": "if (kind === 'delivery' && preference && preference.orderEnabled) return;"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-held-after-dismissal",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.progression.recommendation-feedback.recommendation-feedback.504a",
+        "ecommerce.spec.access-control.recommendation-feedback-privacy.504b"
+      ],
+      "desc": "Dismissing a recommendation holds the list as it was when the dismissal was sent, so the dismissed item stays on screen until the page reloads.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const [searchPage, setSearchPage] = useState(0);",
+          "replace": "  const [searchPage, setSearchPage] = useState(0);\n  const [sentDismissalRows, setSentDismissalRows] = useState<typeof recommendedRows | null>(null);"
+        },
+        {
+          "find": "{[...recommendedRows].sort((a, b) => a.rank - b.rank).map((r) => (",
+          "replace": "{[...(sentDismissalRows ?? recommendedRows)].sort((a, b) => a.rank - b.rank).map((r) => ("
+        },
+        {
+          "find": "onClick={() => conn?.reducers.dismissRecommendation({ itemId: r.itemId })}",
+          "replace": "onClick={() => { setSentDismissalRows(recommendedRows); conn?.reducers.dismissRecommendation({ itemId: r.itemId }); }}"
+        }
+      ]
     }
   ]
 }

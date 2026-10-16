@@ -3730,6 +3730,208 @@
           "replace": "      await client.query(`UPDATE support_case SET refund_total = $1, updated_at = now() WHERE id = $2`, [amount, caseId]);"
         }
       ]
+    },
+    {
+      "id": "delivery-due-time-kept-in-memory",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.315a"
+      ],
+      "desc": "Shipping records the order's delivery due time only in a server-memory map that the timer reads, so an order shipped before a restart stays shipped forever.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "let io: SocketIOServer | null = null;",
+          "replace": "let io: SocketIOServer | null = null;\nexport const deliveryDueAt = new Map<number, number>();"
+        },
+        {
+          "find": "    const delivered = await client.query(\n      `UPDATE orders SET status = 'delivered', delivered_at = now()\n       WHERE status = 'shipped' AND shipped_at <= now() - interval '60 seconds'\n       RETURNING id, account_id`,\n    );",
+          "replace": "    const dueDeliveries = [...deliveryDueAt].filter(([, dueAt]) => dueAt <= Date.now()).map(([orderId]) => orderId);\n    const delivered = await client.query(\n      `UPDATE orders SET status = 'delivered', delivered_at = now()\n       WHERE status = 'shipped' AND id = ANY($1::int[])\n       RETURNING id, account_id`,\n      [dueDeliveries],\n    );\n    for (const orderId of dueDeliveries) deliveryDueAt.delete(orderId);"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "  processProgressionTimers,",
+          "replace": "  deliveryDueAt,\n  processProgressionTimers,"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "    const accountId = result.rows[0].account_id;",
+          "replace": "    const accountId = result.rows[0].account_id;\n    deliveryDueAt.set(orderId, Date.now() + 60_000);"
+        }
+      ]
+    },
+    {
+      "id": "cart-expiry-restarts-at-startup",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.316a"
+      ],
+      "desc": "Startup re-arms every open cart's five-minute expiry from the restart time instead of the cart's last activity, so a cart that was waiting before a restart expires minutes late.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await seed();",
+          "replace": "  await seed();\n  await pool.query(`UPDATE cart SET last_activity = now() WHERE expired_at IS NULL`);"
+        }
+      ]
+    },
+    {
+      "id": "delivery-record-backfill-repeats-on-startup",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.exactly-once.312a"
+      ],
+      "desc": "Each delivery writes a delivery record that the staff completed-orders list shows, and startup backfills a record for every delivered order without checking for an existing one, so a restart lists a delivered order twice.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    CREATE TABLE IF NOT EXISTS refund_entry (",
+          "replace": "    CREATE TABLE IF NOT EXISTS delivery_record (\n      id serial PRIMARY KEY,\n      order_id integer NOT NULL REFERENCES orders(id),\n      delivered_at timestamptz\n    );\n    INSERT INTO delivery_record (order_id, delivered_at)\n      SELECT id, delivered_at FROM orders WHERE status = 'delivered';\n    CREATE TABLE IF NOT EXISTS refund_entry ("
+        },
+        {
+          "find": "      changedAccounts.add(order.account_id);\n      const preference",
+          "replace": "      changedAccounts.add(order.account_id);\n      await client.query(`INSERT INTO delivery_record (order_id, delivered_at) VALUES ($1, now())`, [order.id]);\n      const preference"
+        },
+        {
+          "find": "      `SELECT o.id, o.status, o.delivered_at, string_agg(oi.item_name, ', ' ORDER BY oi.id) AS items\n       FROM orders o JOIN order_item oi ON oi.order_id = o.id\n       WHERE o.status IN ('shipped', 'delivered') GROUP BY o.id ORDER BY o.id DESC`,",
+          "replace": "      `SELECT COALESCE(dr.id, -o.id) AS id, o.status, o.delivered_at,\n         (SELECT string_agg(oi.item_name, ', ' ORDER BY oi.id) FROM order_item oi WHERE oi.order_id = o.id) AS items\n       FROM orders o LEFT JOIN delivery_record dr ON dr.order_id = o.id\n       WHERE o.status IN ('shipped', 'delivered') ORDER BY o.id DESC, dr.id`,"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-limited-to-purchase-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-personalized-recommendations.json",
+      "targets": [
+        "ecommerce.progression.personalized-recommendations.personalized-recommendations.403a"
+      ],
+      "desc": "Recommendations leave out items priced above the customer's most expensive purchase, so an Audio buyer of the cheaper speaker is never offered Headphones.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  return catalog.filter((i) => categories.has(i.category) && !purchased.has(i.id)\n    && !inCart.has(i.id) && !dismissed.has(i.id)).slice(0, 10);",
+          "replace": "  const maxPaid = Math.max(...catalog.filter((i) => purchased.has(i.id)).map((i) => i.price));\n  return catalog.filter((i) => categories.has(i.category) && !purchased.has(i.id) && i.price <= maxPaid\n    && !inCart.has(i.id) && !dismissed.has(i.id)).slice(0, 10);"
+        }
+      ]
+    },
+    {
+      "id": "repeat-purchase-overwrites-every-recommendation-profile",
+      "scenario": "tracks/ecommerce/scenarios/progression-personalized-recommendations.json",
+      "targets": [
+        "ecommerce.spec.access-control.recommendation-profile-isolation.403b"
+      ],
+      "desc": "Recommendations read a stored profile category per customer; a first purchase inserts the buyer's row, but a later purchase updates the category without an account filter, so one customer's repeat purchase replaces every customer's recommendations.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "file": "server/src/progression.ts",
+          "find": "    CREATE TABLE IF NOT EXISTS recommendation_dismissal (",
+          "replace": "    CREATE TABLE IF NOT EXISTS recommendation_profile (\n      account_id integer PRIMARY KEY REFERENCES account(id) ON DELETE CASCADE,\n      category text NOT NULL\n    );\n    CREATE TABLE IF NOT EXISTS recommendation_dismissal ("
+        },
+        {
+          "find": "        [orderId, itemId, name, price, warehouseId]\n      );\n      await client.query(\"COMMIT\");",
+          "replace": "        [orderId, itemId, name, price, warehouseId]\n      );\n      const profile = await client.query(`SELECT 1 FROM recommendation_profile WHERE account_id = $1`, [accountId]);\n      if (profile.rowCount) {\n        await client.query(`UPDATE recommendation_profile SET category = (SELECT category FROM item WHERE id = $1)`, [itemId]);\n      } else {\n        await client.query(`INSERT INTO recommendation_profile (account_id, category) SELECT $1, category FROM item WHERE id = $2`, [accountId, itemId]);\n      }\n      await client.query(\"COMMIT\");"
+        },
+        {
+          "find": "  const categories = new Set(categoriesResult.rows.map((r) => r.category));",
+          "replace": "  const profileResult = await pool.query(`SELECT category FROM recommendation_profile WHERE account_id = $1`, [accountId]);\n  const categories = new Set(profileResult.rows.map((r) => r.category));"
+        }
+      ]
+    },
+    {
+      "id": "support-order-link-requires-staff",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-support-owned.json",
+      "targets": [
+        "ecommerce.progression.order-support.order-support-owned.614a"
+      ],
+      "desc": "Only staff may attach an order to a support case, so a customer's link request for their own order is refused and staff never see the order on the case.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/support/cases/:id/order\", dependencies.requireAuth,",
+          "replace": "app.post(\"/api/support/cases/:id/order\", dependencies.requireStaff,"
+        }
+      ]
+    },
+    {
+      "id": "support-order-link-checks-only-case-owner",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-support-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-support-ownership.614b"
+      ],
+      "desc": "Linking an order checks only that the caller owns the support case, not that the order belongs to the case's customer, so another customer can attach and then read the owner's order on their own case.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    if (!support || !order || support.account_id !== order.account_id\n      || (!req.account!.isAdmin && !req.account!.isStaff && order.account_id !== req.account!.id)) {",
+          "replace": "    if (!support || !order\n      || (!req.account!.isAdmin && !req.account!.isStaff && support.account_id !== req.account!.id)) {"
+        }
+      ]
+    },
+    {
+      "id": "delivery-notification-checks-stock-preference",
+      "scenario": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "targets": [
+        "ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a",
+        "ecommerce.spec.access-control.delivery-notification-privacy.501b"
+      ],
+      "desc": "The delivery job checks the stock-alert preference instead of the order-update preference, so an owner who turned on order updates gets no delivery notification.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      if (preference.rows[0]?.notify_order) {",
+          "replace": "      if (preference.rows[0]?.notify_stock) {"
+        }
+      ]
+    },
+    {
+      "id": "recommendation-panel-keeps-first-list",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.progression.recommendation-feedback.recommendation-feedback.504a",
+        "ecommerce.spec.access-control.recommendation-feedback-privacy.504b"
+      ],
+      "desc": "The recommendations panel keeps the first non-empty list it receives and ignores later updates, so a dismissed item stays on screen until the page is reloaded.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "  const [preferences, setPreferences] = useState({ order: false, stock: false });",
+          "replace": "  const [preferences, setPreferences] = useState({ order: false, stock: false });\n  const [shownRecommendations, setShownRecommendations] = useState<any[]>([]);\n  useEffect(() => {\n    if (shownRecommendations.length === 0 && state?.recommendations?.length) setShownRecommendations(state.recommendations);\n  }, [state?.recommendations]);"
+        },
+        {
+          "find": "        {(state?.recommendations ?? []).map((item: any) => <div data-role=\"recommended-item\" key={item.id}>",
+          "replace": "        {shownRecommendations.map((item: any) => <div data-role=\"recommended-item\" key={item.id}>"
+        }
+      ]
+    },
+    {
+      "id": "recommendation-dismissals-shared-across-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.spec.access-control.recommendation-feedback-privacy.504b"
+      ],
+      "desc": "Recommendations hide every item any customer has dismissed, so one customer's dismissal removes the item from other customers' lists.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const dismissedResult = await pool.query(\n    `SELECT item_id FROM recommendation_dismissal WHERE account_id = $1`,\n    [accountId]\n  );",
+          "replace": "  const dismissedResult = await pool.query(\n    `SELECT item_id FROM recommendation_dismissal`\n  );"
+        }
+      ]
+    },
+    {
+      "id": "cart-restore-warning-omits-item-names",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-recovery.json",
+      "targets": [
+        "ecommerce.progression.cart-recovery.cart-recovery.503b"
+      ],
+      "desc": "A partial cart restore keeps the available items but its warning only counts the unavailable items without naming them.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "<p data-role=\"cart-restore-warning\">Could not restore: {unrestored.join(\", \")}</p>",
+          "replace": "<p data-role=\"cart-restore-warning\">Could not restore {unrestored.length} item(s)</p>"
+        }
+      ]
     }
   ]
 }

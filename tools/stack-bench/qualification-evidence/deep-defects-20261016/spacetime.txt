@@ -24,3 +24,11 @@ CAUGHT               activity-history-open-to-customers — expected ecommerce.s
 CAUGHT               support-refund-repeats-full-payout — expected ecommerce.spec.transactional-integrity.support-refund-accounting.615b
 == spacetime level 3 reference
   TOTAL 176/176  $0  0 repair(s)  3114s
+
+== spacetime round 2: reference on the affected deep scenarios
+  TOTAL 20/20  $0  0 repair(s)  765s
+CAUGHT               startup-replays-completed-shipments — expected ecommerce.l3.deferred-integrity.exactly-once.312a
+CAUGHT               delivery-notification-preference-inverted — expected ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a, ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               cart-deadlines-rearmed-at-startup — expected ecommerce.l3.deferred-durability.restart-survival.316a
+CAUGHT               delivery-due-time-kept-in-memory — expected ecommerce.l3.deferred-durability.restart-survival.315a
+CAUGHT               recommendations-held-after-dismissal — expected ecommerce.progression.recommendation-feedback.recommendation-feedback.504a, ecommerce.spec.access-control.recommendation-feedback-privacy.504b

@@ -3644,6 +3644,140 @@
           "replace": "        ticket.refundTotal = amount;"
         }
       ]
+    },
+    {
+      "id": "delivery-due-time-kept-only-in-memory",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.315a"
+      ],
+      "desc": "Shipping records the delivery due time only in server memory, so an order shipped before a restart stays shipped forever.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "export function installProgressionRoutes(app: express.Express, io: SocketIOServer,",
+          "replace": "export const deliveryDueAt = new Map<string, number>();\n\nexport function installProgressionRoutes(app: express.Express, io: SocketIOServer,"
+        },
+        {
+          "find": "const shipped = await Order.find({ status: \"shipped\", updatedAt: { $lte: new Date(Date.now() - 60_000) } });",
+          "replace": "const shipped = await Order.find({ status: \"shipped\", _id: { $in: [...deliveryDueAt]\n      .filter(([, dueAt]) => dueAt <= Date.now()).map(([id]) => new Types.ObjectId(id)) } });"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "import { installProgressionRoutes } from \"./progression.js\";",
+          "replace": "import { deliveryDueAt, installProgressionRoutes } from \"./progression.js\";"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "  if (!shipped) return res.status(400).json({ error: \"Order is not waiting to be shipped\" });",
+          "replace": "  if (!shipped) return res.status(400).json({ error: \"Order is not waiting to be shipped\" });\n  deliveryDueAt.set(String(shipped._id), Date.now() + 60_000);"
+        }
+      ]
+    },
+    {
+      "id": "startup-delivery-catch-up-duplicates-delivered-orders",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.exactly-once.312a"
+      ],
+      "desc": "A startup delivery catch-up writes a new delivered order record for every order already delivered, so each restart duplicates them.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeOrderData(mongoose.connection);",
+          "replace": "  await initializeOrderData(mongoose.connection);\n  for (const { _id, ...order } of await Order.collection.find({ status: \"delivered\" }).toArray()) {\n    await Order.collection.insertOne({ ...order, status: \"delivered\" });\n  }"
+        }
+      ]
+    },
+    {
+      "id": "startup-restarts-cart-inactivity-deadlines",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.316a"
+      ],
+      "desc": "Startup gives every open cart a fresh five-minute inactivity deadline, so a cart left idle before a restart expires minutes late.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await seed();",
+          "replace": "  await seed();\n  await Cart.updateMany({ items: { $ne: [] } }, { $set: { inactiveExpiresAt: new Date(Date.now() + 300_000) } });"
+        }
+      ]
+    },
+    {
+      "id": "delivery-notification-addressed-to-order-id",
+      "scenario": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "targets": [
+        "ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a",
+        "ecommerce.spec.access-control.delivery-notification-privacy.501b"
+      ],
+      "desc": "Delivery notifications are stored under the order's id instead of the owner's account, so the owner never receives one.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "await Notification.updateOne({ userId: order.userId, key: `delivery:${order._id}` },\n          { $setOnInsert: { userId: order.userId, key: `delivery:${order._id}`,",
+          "replace": "await Notification.updateOne({ userId: order._id, key: `delivery:${order._id}` },\n          { $setOnInsert: { userId: order._id, key: `delivery:${order._id}`,"
+        }
+      ]
+    },
+    {
+      "id": "dismissal-does-not-refresh-open-recommendations",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.progression.recommendation-feedback.recommendation-feedback.504a",
+        "ecommerce.spec.access-control.recommendation-feedback-privacy.504b"
+      ],
+      "desc": "A dismissal is saved, but nothing refreshes the open recommendation list, so the item stays on screen until the page reloads.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{ method: \"POST\" }); setRecommended(value => value.filter(entry => entry.id !== item.id)); }}>",
+          "replace": "{ method: \"POST\" }); }}>"
+        },
+        {
+          "find": "    socket.on(\"progression:update\", () => {\n      refreshItems().catch((err) => console.error(err));\n      refreshRecommended(token).catch((err) => console.error(err));\n",
+          "replace": "    socket.on(\"progression:update\", () => {\n      refreshItems().catch((err) => console.error(err));\n"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "  broadcastFulfilment().catch((err) => console.error(\"broadcastFulfilment poll failed\", err));\n  broadcastRecommendedForAll().catch((err) => console.error(\"broadcastRecommended poll failed\", err));\n",
+          "replace": "  broadcastFulfilment().catch((err) => console.error(\"broadcastFulfilment poll failed\", err));\n"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-capped-at-highest-purchase-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-personalized-recommendations.json",
+      "targets": [
+        "ecommerce.progression.personalized-recommendations.personalized-recommendations.403a"
+      ],
+      "desc": "Recommendations leave out items priced above the most expensive item the customer has bought.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const categories = new Set(purchasedItems.map((i) => i.category));",
+          "replace": "  const categories = new Set(purchasedItems.map((i) => i.category));\n  const priceCeiling = Math.max(...purchasedItems.map((i) => i.price));"
+        },
+        {
+          "find": "  return itemsLive.filter((it) => categories.has(it.category) && !purchasedItemIds.includes(it.id)",
+          "replace": "  return itemsLive.filter((it) => categories.has(it.category) && it.price <= priceCeiling && !purchasedItemIds.includes(it.id)"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-exclude-only-first-order-items",
+      "scenario": "tracks/ecommerce/scenarios/progression-personalized-recommendations.json",
+      "targets": [
+        "ecommerce.spec.access-control.recommendation-profile-isolation.403b"
+      ],
+      "desc": "Recommendations exclude only items from the customer's first order, so an item bought later stays recommended.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  return itemsLive.filter((it) => categories.has(it.category) && !purchasedItemIds.includes(it.id)",
+          "replace": "  const firstOrder = await Order.findOne({ userId, status: { $ne: \"cancelled\" } }).sort({ createdAt: 1 });\n  const firstOrderItemIds = (firstOrder?.items || []).map((line) => line.itemId.toString());\n  return itemsLive.filter((it) => categories.has(it.category) && !firstOrderItemIds.includes(it.id)"
+        }
+      ]
     }
   ]
 }

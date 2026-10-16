@@ -22,3 +22,13 @@ CAUGHT               recommendation-dismissals-are-not-owner-scoped — expected
 CAUGHT               support-refund-replay-overwrites-case-total — expected ecommerce.spec.transactional-integrity.support-refund-accounting.615b
 == mongodb level 3 reference
   TOTAL 176/176  $0  0 repair(s)  2415s
+
+== mongodb round 2: reference on the affected deep scenarios
+  TOTAL 26/26  $0  0 repair(s)  705s
+CAUGHT               startup-delivery-catch-up-duplicates-delivered-orders — expected ecommerce.l3.deferred-integrity.exactly-once.312a
+CAUGHT               delivery-notification-addressed-to-order-id — expected ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a, ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               recommendations-capped-at-highest-purchase-price — expected ecommerce.progression.personalized-recommendations.personalized-recommendations.403a
+CAUGHT               startup-restarts-cart-inactivity-deadlines — expected ecommerce.l3.deferred-durability.restart-survival.316a
+CAUGHT               delivery-due-time-kept-only-in-memory — expected ecommerce.l3.deferred-durability.restart-survival.315a
+CAUGHT               dismissal-does-not-refresh-open-recommendations — expected ecommerce.progression.recommendation-feedback.recommendation-feedback.504a, ecommerce.spec.access-control.recommendation-feedback-privacy.504b
+CAUGHT               recommendations-exclude-only-first-order-items — expected ecommerce.spec.access-control.recommendation-profile-isolation.403b

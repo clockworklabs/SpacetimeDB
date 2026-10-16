@@ -8,9 +8,8 @@ they failed those checks, and fixes scenarios that no correct app could pass.
 This is diagnostic evidence, not formal qualification. Runs used per-stack
 overlay images of `stack-bench-controller:604a507690` with the working tree on
 top, and a per-stack copy of the L6 calibration whose checks were widened to the
-new targets. The committed L6 calibration still covers only its return and
-refund checks: a full L6 calibration needs a defect for every deep check on
-every stack, which is not yet the case. No model calls were made.
+new targets, until the second round below made the full calibration possible.
+No model calls were made.
 
 ## Results
 
@@ -22,10 +21,17 @@ every new defect's outcome, and a reference-only level 3 grade.
 - PostgreSQL: reference 34/34; 16 of 16 caught; level 3 176/176.
 - MongoDB: reference 44/44; 20 of 20 caught; level 3 176/176.
 
-Checks without a defect on a stack: 501a and 504a everywhere (the next check
-in the same scenario repeats every observation they make, so no defect can fail
-them alone), and on PostgreSQL 403a, 403b, 504b, 503b, 614a and 614b, written
-before the reference fixes; they are candidates for the next pass.
+A second round (appended to each `<stack>.txt`) added 23 defects so that every
+one of the 74 scored checks at depths 4 to 6 has a defect on all three stacks:
+the restart checks 312a, 315a and 316a everywhere, the PostgreSQL checks left
+from the first round, and MongoDB 403a and 403b. All 23 were caught, and each
+reference passed its affected scenarios (SpacetimeDB 20/20, PostgreSQL 34/34,
+MongoDB 26/26). 501a and 504a repeat observations that 501b and 504b make, so
+their defects target both checks of the pair and count only when both fail.
+
+With that coverage the L6 calibration now selects the full dependency L6
+catalog (186 checks) and is named `ecommerce.dependency-l6-calibration`. It has
+not been qualified.
 
 ## Reference fixes
 

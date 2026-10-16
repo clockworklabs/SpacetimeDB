@@ -74,11 +74,11 @@ cart expiration and recovery, and notifications. It also includes:
 | Bundle returns | 6 | Bundle checkout, returns |
 | Split-tender refunds | 6 | Store credit, support refunds |
 
-These six features have reference implementations and a declared defect target
-for every check on SpacetimeDB, PostgreSQL, and MongoDB. Other L4–L6 checks still
-lack some defect controls, and many declared controls have not been executed;
-treat later-depth results as provisional. Convex covers L1–L3 only. Equal node
-counts do not imply equal difficulty or cost.
+SpacetimeDB, PostgreSQL, and MongoDB have reference implementations through L6
+and a declared defect for every scored check, which the L6 calibration requires.
+The L6 calibration has not been qualified; treat later-depth results as
+provisional. Convex and Supabase cover L1–L3 only. Equal node counts do not imply
+equal difficulty or cost.
 
 Known limits:
 

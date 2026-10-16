@@ -25,7 +25,7 @@ const EXPECTED_CALIBRATIONS: Record<string, { id: string; recipe: string; stacks
   controls: string[][] }> = {
   'dependency-l3.json': { id: 'ecommerce.dependency-l3-calibration', recipe: 'progression-catalog',
     stacks: ['convex', ...BACKENDS, 'supabase'], controls: [] },
-  'dependency-l6.json': { id: 'ecommerce.l6-return-refund-calibration', recipe: 'progression-catalog',
+  'dependency-l6.json': { id: 'ecommerce.dependency-l6-calibration', recipe: 'progression-catalog',
     stacks: BACKENDS, controls: [] },
   'sequential-l1.json': { id: 'ecommerce.sequential-l1-calibration', recipe: 'sequential-l1',
     stacks: BACKENDS, controls: PRECONDITION_CONTROLS },

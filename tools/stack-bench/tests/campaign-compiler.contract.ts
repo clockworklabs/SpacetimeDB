@@ -74,7 +74,7 @@ test('dependency campaigns bind a graph and feature catalog by stable ID and con
   assert.deepEqual(plan.bindings.map(binding => binding.level), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(plan.bindings.map(binding => binding.calibration?.id ?? null),
     ['ecommerce.dependency-l3-calibration', 'ecommerce.dependency-l3-calibration',
-      'ecommerce.dependency-l3-calibration', null, null, 'ecommerce.l6-return-refund-calibration'],
+      'ecommerce.dependency-l3-calibration', null, null, 'ecommerce.dependency-l6-calibration'],
     'the L3 calibration covers its lower levels, and L6 has its own');
   assert(plan.attempts.every(attempt => attempt.featureCatalog?.contentSha256
     === plan.featureCatalog?.identity.contentSha256));
