@@ -2382,7 +2382,7 @@
       "edits": [
         {
           "find": "create trigger stock_increase_alerts after update of quantity on public.stock\n  for each row when (new.quantity > old.quantity) execute function private.notify_stock_increase();\n",
-          "replace": ""
+          "replace": "-- Stock alerts are delivered by the restock functions.\n"
         }
       ]
     }

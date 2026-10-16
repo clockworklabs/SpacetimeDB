@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "1b25efb4a35e7d9f7986e8e6873d6dbb40e6143fa47cdf63e4d3bc75d684516a",
+  "fixtureSha256": "b54d02f7b19b4f2e59349c776780fbec6560575a998f2c8592cf4cda6d24acac",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -3944,7 +3944,7 @@
       "edits": [
         {
           "find": "    // Stock written directly to the database bypasses the server, so alerts also follow the stock rows.\n    const restocked = await client.query(\n      `SELECT DISTINCT r.item_id FROM stock_alert_request r\n       WHERE r.fulfilled = false AND (SELECT COALESCE(SUM(s.quantity), 0) FROM stock s WHERE s.item_id = r.item_id) > 0`,\n    );\n    for (const row of restocked.rows) await processStockAlerts(client, row.item_id);\n\n",
-          "replace": ""
+          "replace": "    // Stock alerts are delivered by the restock paths.\n\n"
         }
       ]
     }

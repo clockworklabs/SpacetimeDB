@@ -2358,7 +2358,7 @@
       "edits": [
         {
           "find": "crons.interval('deliver restored stock alerts', { seconds: 2 }, makeFunctionReference('progression:deliverRestoredAlerts'));\n",
-          "replace": ""
+          "replace": "// Stock alerts are delivered by the restock mutations.\n"
         }
       ]
     }

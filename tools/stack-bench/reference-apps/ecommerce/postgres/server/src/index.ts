@@ -1046,13 +1046,6 @@ io.on("connection", async (socket) => {
 });
 
 const POLL_INTERVAL_MS = 2000;
-setInterval(() => {
-  broadcastCatalog().catch((err) => console.error("poll broadcast failed", err));
-  processProgressionTimers().catch((err) => console.error("progression timer failed", err));
-  processSubscriptions(pool, async accountId => {
-    await Promise.all([broadcastOrders(accountId), broadcastCatalog(), broadcastFulfilment()]);
-  }).catch(err => console.error("subscription timer failed", err));
-}, POLL_INTERVAL_MS);
 
 async function main() {
   await initializeCoreSchema();
@@ -1065,6 +1058,14 @@ async function main() {
   httpServer.listen(PORT, () => {
     console.log(`PostgreSQL Shop server listening on port ${PORT}`);
   });
+  // Timers start after the schema exists, so their queries never race its DDL.
+  setInterval(() => {
+    broadcastCatalog().catch((err) => console.error("poll broadcast failed", err));
+    processProgressionTimers().catch((err) => console.error("progression timer failed", err));
+    processSubscriptions(pool, async accountId => {
+      await Promise.all([broadcastOrders(accountId), broadcastCatalog(), broadcastFulfilment()]);
+    }).catch(err => console.error("subscription timer failed", err));
+  }, POLL_INTERVAL_MS);
 }
 
 main().catch((err) => {

@@ -26,7 +26,7 @@
       {
         "backend": "postgres",
         "id": "ecommerce-reference-postgres",
-        "sourceSha256": "1b25efb4a35e7d9f7986e8e6873d6dbb40e6143fa47cdf63e4d3bc75d684516a"
+        "sourceSha256": "b54d02f7b19b4f2e59349c776780fbec6560575a998f2c8592cf4cda6d24acac"
       },
       {
         "backend": "spacetime",
@@ -55,25 +55,25 @@
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "9d3eabfecc8089417a02d08d4fe5a84e486b48ba5f312ad195e820d2b2c30274",
+      "sha256": "a15d56e6cc9c08630a27eadb3a297df182e5a925235a802628eb5b0efdf9da85",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "df2b4546e8969e399af7aa94a16280ea582862d605b3d3964db1df9f6a5a1f8c",
+      "sha256": "9df40afd886890d7ab1d763940b5dbbdb5e20265194922fa0c7b05fa35bde4c3",
       "referenceId": "ecommerce-reference-spacetime"
     },
     {
       "backend": "convex",
       "path": "grader/mutations/convex-ecommerce.json",
-      "sha256": "4e4dba07b47fa400bc1d08faba2db4303516ddd2874913a83f6cc76da707c5a2",
+      "sha256": "4a2db5b58dd9b00e322cf565f19fb58b66283838fcdaeec74c6ab2a5b8c68232",
       "referenceId": "ecommerce-reference-convex"
     },
     {
       "backend": "supabase",
       "path": "grader/mutations/supabase-ecommerce.json",
-      "sha256": "9c6f8bd1e1dc7e421285d4865530e5ad3c331aa6b477f4a3b117d8d5c5ec6b66",
+      "sha256": "8419868903cb7daaaf9a854e75af4ba6bbf05a8ee402e257a1f918122090b3f9",
       "referenceId": "ecommerce-reference-supabase"
     }
   ],

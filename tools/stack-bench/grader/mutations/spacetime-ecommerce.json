@@ -3816,7 +3816,7 @@
       "edits": [
         {
           "find": "  // Stock written directly to the database runs no reducer, so alerts also follow the stock rows.\n  for (const alert of [...ctx.db.stockAlert.iter()]) {\n    if (alert.fulfilled || totalStock(ctx, alert.itemId) <= 0) continue;\n    const name = ctx.db.item.id.find(alert.itemId)?.name ?? 'Item';\n    notify(ctx, alert.accountId, 'stock', `${name} is available again.`);\n    ctx.db.stockAlert.id.update({ ...alert, fulfilled: true });\n  }\n",
-          "replace": ""
+          "replace": "  // Stock alerts are delivered by the restock reducers.\n"
         }
       ]
     }
