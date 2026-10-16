@@ -1,5 +1,10 @@
 import { decompress } from './decompress';
-import { openWebSocket, type WebSocketAdapter, type WebSocketArgs } from './ws';
+import {
+  openWebSocket,
+  type WebSocketAdapter,
+  type WebSocketArgs,
+  type WebSocketMessage,
+} from './ws';
 
 export class WebsocketDecompressAdapter implements WebSocketAdapter {
   get protocol(): string {
@@ -14,9 +19,12 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
   set onopen(handler: () => void) {
     this.#ws.onopen = handler;
   }
-  set onmessage(handler: (msg: { data: Uint8Array }) => void) {
+  set onmessage(handler: (msg: WebSocketMessage) => void) {
     let tail: Promise<void> = Promise.resolve();
     this.#ws.onmessage = async (msg: MessageEvent<ArrayBuffer>) => {
+      // Capture arrival before anything can delay us, so network stats measure
+      // the network rather than decompression or earlier frames.
+      const receivedAt = performance.now();
       const pending = this.#decompress(new Uint8Array(msg.data));
       // Mark the rejection handled now: the chain may not reach this frame for
       // several ticks, and without this an inflate failure surfaces as an
@@ -51,7 +59,7 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
           this.#ws.close();
           return;
         }
-        handler({ data });
+        handler({ data, receivedAt });
       } finally {
         // Handler exceptions must not prevent delivery of subsequent frames.
         release();

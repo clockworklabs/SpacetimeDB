@@ -1439,6 +1439,9 @@ async fn parse_loop<M: SpacetimeModule>(
             ws::v2::ServerMessage::OneOffQueryResult(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
+            ws::v2::ServerMessage::Pong(_) => {
+                unreachable!("The Rust SDK does not send pings")
+            }
             ws::v2::ServerMessage::SubscribeApplied(subscribe_applied) => {
                 let db_update = subscribe_applied.rows;
                 let query_set_id = subscribe_applied.query_set_id;
