@@ -3096,7 +3096,7 @@ pub(crate) mod tests {
             target_column: ColId(1),
             arg_columns: vec![ColId(2)],
             on_result_reducer: None,
-            signature_hash: "test-signature".into(),
+            signature_hash: spacetimedb_lib::Hash::ZERO,
         });
 
         let datastore = get_datastore()?;
@@ -3359,7 +3359,7 @@ pub(crate) mod tests {
             target_column: ColId(1),
             arg_columns: vec![],
             on_result_reducer: None,
-            signature_hash: "test-signature".into(),
+            signature_hash: spacetimedb_lib::Hash::ZERO,
         };
         let row = to_vec(&product![1u64, IdentityViaU256(Identity::ONE)]).unwrap();
 

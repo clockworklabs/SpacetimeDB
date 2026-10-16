@@ -189,6 +189,17 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Copies a Rust module fixture's manifest and source into a temporary project.
+pub fn copy_module_fixture(name: &str, dest: &Path) -> Result<()> {
+    let source = workspace_root().join("crates/smoketests/modules").join(name);
+    fs::create_dir_all(dest.join("src"))?;
+    for file in ["Cargo.toml", "src/lib.rs"] {
+        fs::copy(source.join(file), dest.join(file))
+            .with_context(|| format!("Failed to copy {file} from fixture {name}"))?;
+    }
+    Ok(())
+}
+
 /// Rewrites `spacetimedb` dependency in `<module_dir>/Cargo.toml` to use local workspace bindings.
 pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
     let cargo_toml_path = module_dir.join("Cargo.toml");
@@ -202,7 +213,9 @@ pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
     let patched = cargo_toml
         .lines()
         .map(|line| {
-            if line.trim_start().starts_with("spacetimedb = ") {
+            if line.trim_start().starts_with("spacetimedb = ")
+                || line.trim_start().starts_with("spacetimedb.workspace = ")
+            {
                 replacement.as_str()
             } else {
                 line
@@ -453,7 +466,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 "#;
 
-fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
+/// Extracts the database identity from a single database publication.
+pub fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
     let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
     re.captures(publish_output)
         .and_then(|caps| caps.get(1))
@@ -1539,7 +1553,15 @@ log = "0.4"
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
-        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
+        let mut cmd_args = vec![
+            "call",
+            "--no-config",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
         cmd_args.extend(args);
 
         self.spacetime(&cmd_args)
@@ -1549,7 +1571,15 @@ log = "0.4"
     pub fn call_output(&self, name: &str, args: &[&str]) -> Output {
         let identity = self.database_identity.as_ref().expect("No database published");
 
-        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
+        let mut cmd_args = vec![
+            "call",
+            "--no-config",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
         cmd_args.extend(args);
 
         self.spacetime_cmd(&cmd_args)
@@ -1561,6 +1591,7 @@ log = "0.4"
 
         let mut cmd_args = vec![
             "call",
+            "--no-config",
             "--anonymous",
             "--server",
             &self.server_url,

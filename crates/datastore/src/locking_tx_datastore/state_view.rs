@@ -17,7 +17,7 @@ use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{col_list, ColList, TableId};
 use spacetimedb_sats::{product, AlgebraicValue};
-use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema, ViewDefInfo};
+use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, OutboxSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
@@ -294,7 +294,12 @@ pub trait StateView {
         // `st_outbox` is missing until `migrate_system_tables` runs.
         // Treat that as "no outbox metadata" while reconstructing raw schemas.
         let outbox = match self.iter_by_col_eq(ST_OUTBOX_ID, StOutboxFields::TableId, value_eq) {
-            Ok(mut iter) => iter.next().map(StOutboxRow::try_from).transpose()?.map(Into::into),
+            Ok(mut iter) => iter
+                .next()
+                .map(StOutboxRow::try_from)
+                .transpose()?
+                .map(OutboxSchema::try_from)
+                .transpose()?,
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => None,
             Err(e) => return Err(e),
         };
