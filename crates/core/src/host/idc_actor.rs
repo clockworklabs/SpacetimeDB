@@ -1013,7 +1013,7 @@ mod tests {
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.st_outbound_stream_by_id(&tx, stream_id.0)?.unwrap().ack_prefix, 0);
             assert!(db.outbound_msg_by_stream_seq(&tx, stream_id.0, 2)?.is_some());
-            db.release_tx(tx);
+            let _ = db.release_tx(tx);
         }
         Ok(())
     }
