@@ -78,6 +78,8 @@ impl MemoryUsage for BlobNumBytes {}
 pub type SeqIdList = SmallVec<[SequenceId; 4]>;
 static_assert_size!(SeqIdList, 24);
 
+/// Box uncommon page and blob errors to keep `Result` values small on successful calls.
+/// The extra allocation happens only when constructing an error.
 #[derive(Debug, Error)]
 pub enum TableError {
     #[error(transparent)]
@@ -1327,6 +1329,7 @@ impl Table {
         needle_ptr: RowPointer,
     ) -> Result<bool, PageError> {
         if target_table.inner.pages.is_resident() && needle_table.inner.pages.is_resident() {
+            // Bypass the general fallible page-access path for two resident rows.
             let target = target_table.inner.pages.resident_page(target_ptr.page_index());
             let needle = needle_table.inner.pages.resident_page(needle_ptr.page_index());
             // SAFETY: Both tables are borrowed and cannot evict these pages. The
@@ -2063,7 +2066,10 @@ impl Table {
         self.indexes.values().map(|idx| idx.num_key_bytes()).sum()
     }
 
-    /// Whether commit can stream directly from resident transaction tables.
+    /// Whether changes can be applied directly without constructing a commit plan.
+    /// Fixed layouts have no external blobs that could fault or need allocation.
+    /// Page storage also checks residency, the memory limit, and page-index capacity.
+    /// Variable layouts retain preparation so blob failures occur before row mutations.
     pub fn can_commit_resident(&self, insert_count: u64) -> bool {
         self.inner.row_layout.layout().fixed && self.inner.pages.can_commit_resident(insert_count)
     }
@@ -2524,10 +2530,14 @@ pub struct TableScanIter<'table> {
 }
 
 enum CurrentPage<'a> {
+    // A table borrow keeps resident pages stable, so iterate their row bitmap directly
+    // instead of collecting offsets and cloning a page handle for every row.
     Resident {
         page: &'a Page,
         rows: crate::page::FixedLenRowsIter<'a>,
     },
+    // Own the offsets so the read guard can be released between rows; the handle
+    // still pins the page against eviction.
     Tiered {
         handle: PageHandle,
         rows: std::vec::IntoIter<PageOffset>,

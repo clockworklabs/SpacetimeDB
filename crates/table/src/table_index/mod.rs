@@ -73,6 +73,8 @@ mod unique_hash_index;
 pub use self::index::{Index, IndexCannotSeekRange, IndexSeekRangeResult, RangedIndex};
 pub use self::key_size::KeySize;
 
+// These dispatch and forwarding wrappers run for every indexed row. Inline their
+// next methods so callers can optimize through both wrapper layers.
 macro_rules! table_iter {
     ($(#[$wattr:meta])* pub struct $wrapper:ident =>
      $(#[$battr:meta])* enum $base:ident {
