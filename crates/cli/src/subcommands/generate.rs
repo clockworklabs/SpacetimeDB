@@ -21,7 +21,7 @@ use crate::spacetime_config::{
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::y_or_n;
+use crate::util::{detect_module_language, y_or_n, ModuleLanguage};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -52,6 +52,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("build_options").module_specific())
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
+        .key(Key::new("bindings").generate_entry_specific())
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
@@ -249,6 +250,13 @@ pub fn cli() -> clap::Command {
                 .help("The language to generate"),
         )
         .arg(
+            Arg::new("bindings")
+                .long("bindings")
+                .value_parser(clap::value_parser!(BindingKind))
+                .default_value("client")
+                .help("The kind of bindings to generate (module bindings are not implemented yet)"),
+        )
+        .arg(
             Arg::new("build_options")
                 .long("build-options")
                 .alias("build-opts")
@@ -302,6 +310,7 @@ pub struct GenerateRunConfig {
     pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
+    pub bindings: BindingKind,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -312,6 +321,7 @@ fn prepare_generate_run_configs<'a>(
     let mut runs = Vec::with_capacity(generate_configs.len());
 
     for command_config in generate_configs {
+        let bindings = command_config.get_one::<BindingKind>("bindings")?.unwrap_or_default();
         let project_path = command_config
             .get_resolved_path("module_path", config_dir)?
             .unwrap_or_else(|| {
@@ -320,8 +330,8 @@ fn prepare_generate_run_configs<'a>(
                     .unwrap_or_else(|| PathBuf::from("spacetimedb"))
             });
 
-        let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
-        let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let wasm_file = command_config.get_resolved_path("wasm_file", config_dir)?;
+        let js_file = command_config.get_resolved_path("js_file", config_dir)?;
         let requested_lang = command_config.get_one::<Language>("language")?;
         let namespace = command_config
             .get_one::<String>("namespace")?
@@ -337,6 +347,13 @@ fn prepare_generate_run_configs<'a>(
             let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
             parse_optional_dotnet_version(dotnet_version.as_deref())?
         };
+
+        if bindings == BindingKind::Module && requested_lang == Some(Language::UnrealCpp) {
+            anyhow::bail!("Unreal C++ is a client binding target; use --lang cpp for module bindings");
+        }
+        if bindings == BindingKind::Client && requested_lang == Some(Language::Cpp) {
+            anyhow::bail!("--lang cpp requires --bindings module; use --lang unrealcpp for Unreal client bindings");
+        }
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -360,6 +377,15 @@ fn prepare_generate_run_configs<'a>(
 
         let lang = match requested_lang {
             Some(lang) => lang,
+            None if bindings == BindingKind::Module => {
+                let sender_dir = config_dir.unwrap_or_else(|| Path::new("."));
+                match detect_module_language(sender_dir)? {
+                    ModuleLanguage::Rust => Language::Rust,
+                    ModuleLanguage::Javascript => Language::TypeScript,
+                    ModuleLanguage::Csharp => Language::Csharp,
+                    ModuleLanguage::Cpp => Language::Cpp,
+                }
+            }
             None => {
                 let client_project_dir = config_dir.unwrap_or_else(|| Path::new("."));
                 let detected = detect_default_language(client_project_dir)?;
@@ -372,16 +398,27 @@ fn prepare_generate_run_configs<'a>(
             }
         };
 
-        let out_dir = command_config
-            .get_resolved_path("out_dir", config_dir)?
-            .or_else(|| {
-                command_config
-                    .get_resolved_path("uproject_dir", config_dir)
-                    .ok()
-                    .flatten()
-            })
-            .or_else(|| default_out_dir_for_language(lang).map(|p| config_dir.map(|d| d.join(&p)).unwrap_or(p)))
-            .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
+        let out_dir = if bindings == BindingKind::Module {
+            let default_dir = match lang {
+                Language::Rust | Language::TypeScript => "src/remote_bindings",
+                Language::Csharp | Language::Cpp => "remote_bindings",
+                Language::UnrealCpp => unreachable!("Unreal module bindings rejected above"),
+            };
+            command_config
+                .get_resolved_path("out_dir", config_dir)?
+                .unwrap_or_else(|| config_dir.unwrap_or_else(|| Path::new(".")).join(default_dir))
+        } else {
+            command_config
+                .get_resolved_path("out_dir", config_dir)?
+                .or_else(|| {
+                    command_config
+                        .get_resolved_path("uproject_dir", config_dir)
+                        .ok()
+                        .flatten()
+                })
+                .or_else(|| default_out_dir_for_language(lang).map(|p| config_dir.map(|d| d.join(&p)).unwrap_or(p)))
+                .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?
+        };
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
 
@@ -397,6 +434,7 @@ fn prepare_generate_run_configs<'a>(
             dotnet_version,
             out_dir,
             include_private,
+            bindings,
         });
     }
 
@@ -431,6 +469,7 @@ fn language_cli_name(lang: Language) -> &'static str {
         Language::Csharp => "csharp",
         Language::TypeScript => "typescript",
         Language::UnrealCpp => "unrealcpp",
+        Language::Cpp => "cpp",
     }
 }
 
@@ -438,7 +477,7 @@ pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
     match lang {
         Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
         Language::Csharp => Some(PathBuf::from("module_bindings")),
-        Language::UnrealCpp => None,
+        Language::UnrealCpp | Language::Cpp => None,
     }
 }
 
@@ -467,6 +506,29 @@ pub fn build_generate_entry(
     entry
 }
 
+fn generate_receiver_bindings(_module: &ModuleDef, run: &GenerateRunConfig) -> anyhow::Result<Vec<OutputFile>> {
+    // Each implementation receives the receiver schema and resolved output options.
+    match run.lang {
+        Language::Rust => {
+            // TODO(idc-rust): Generate Rust receiver types and reducer handles, including dependency modules.
+            anyhow::bail!("Rust receiver binding generation is not implemented yet")
+        }
+        Language::TypeScript => {
+            // TODO(idc-typescript): Generate TypeScript receiver types, reducer handles, and dependency exports.
+            anyhow::bail!("TypeScript receiver binding generation is not implemented yet")
+        }
+        Language::Csharp => {
+            // TODO(idc-csharp): Generate C# receiver types and reducer handles in the configured namespace.
+            anyhow::bail!("C# receiver binding generation is not implemented yet")
+        }
+        Language::Cpp => {
+            // TODO(idc-cpp): Generate C++ receiver types and reducer handles with the required headers.
+            anyhow::bail!("C++ receiver binding generation is not implemented yet")
+        }
+        Language::UnrealCpp => anyhow::bail!("Unreal C++ is a client binding target"),
+    }
+}
+
 pub async fn run_prepared_generate_configs(
     run_configs: Vec<GenerateRunConfig>,
     extract_descriptions: ExtractDescriptions,
@@ -476,8 +538,9 @@ pub async fn run_prepared_generate_configs(
 ) -> anyhow::Result<()> {
     for run in run_configs {
         println!(
-            "Generating {} module bindings for module {}",
+            "Generating {} {} bindings for module {}",
             run.lang.display_name(),
+            run.bindings.display_name(),
             run.project_path.display()
         );
 
@@ -511,8 +574,6 @@ pub async fn run_prepared_generate_configs(
             extract_descriptions(&path).context("could not extract schema")?
         };
 
-        fs::create_dir_all(&run.out_dir)?;
-
         let mut paths = BTreeSet::new();
         let private_tables = private_table_names(&module);
         if !private_tables.is_empty() && !run.include_private {
@@ -523,28 +584,37 @@ pub async fn run_prepared_generate_configs(
             options.visibility = CodegenVisibility::IncludePrivate;
         }
 
-        let csharp_lang;
-        let unreal_cpp_lang;
-        let gen_lang = match run.lang {
-            Language::Csharp => {
-                csharp_lang = Csharp {
-                    namespace: &run.namespace,
-                };
-                &csharp_lang as &dyn Lang
-            }
-            Language::UnrealCpp => {
-                unreal_cpp_lang = UnrealCpp {
-                    module_name: run.module_name.as_ref().unwrap(),
-                    uproject_dir: &run.out_dir,
-                    module_prefix: run.module_prefix.as_deref().unwrap_or(""),
-                };
-                &unreal_cpp_lang as &dyn Lang
-            }
-            Language::Rust => &Rust,
-            Language::TypeScript => &TypeScript,
+        let generated_files = if run.bindings == BindingKind::Module {
+            generate_receiver_bindings(&module, &run)?
+        } else {
+            let csharp_lang;
+            let unreal_cpp_lang;
+            let gen_lang = match run.lang {
+                Language::Csharp => {
+                    csharp_lang = Csharp {
+                        namespace: &run.namespace,
+                    };
+                    &csharp_lang as &dyn Lang
+                }
+                Language::UnrealCpp => {
+                    unreal_cpp_lang = UnrealCpp {
+                        module_name: run.module_name.as_ref().unwrap(),
+                        uproject_dir: &run.out_dir,
+                        module_prefix: run.module_prefix.as_deref().unwrap_or(""),
+                    };
+                    &unreal_cpp_lang as &dyn Lang
+                }
+                Language::Rust => &Rust,
+                Language::TypeScript => &TypeScript,
+                Language::Cpp => {
+                    anyhow::bail!("C++ client bindings are not supported; use --lang unrealcpp for Unreal")
+                }
+            };
+            generate(&module, gen_lang, &options)
         };
 
-        for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
+        fs::create_dir_all(&run.out_dir)?;
+        for OutputFile { filename, code } in generated_files {
             let fname = Path::new(&filename);
             if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
                 println!("Creating directory {}", run.out_dir.join(parent).display());
@@ -687,7 +757,10 @@ pub async fn exec_from_entries(
         .into_iter()
         .map(|entry| {
             let command_config = CommandConfig::new(&schema, entry, &empty_matches)?;
-            command_config.validate()?;
+            // Receiver language and output defaults will be resolved from the sender.
+            if command_config.get_one::<BindingKind>("bindings")? != Some(BindingKind::Module) {
+                command_config.validate()?;
+            }
             Ok(command_config)
         })
         .collect::<Result<Vec<_>, anyhow::Error>>()?;
@@ -696,25 +769,58 @@ pub async fn exec_from_entries(
     run_prepared_generate_configs(run_configs, extract_descriptions, None, force, false).await
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BindingKind {
+    #[default]
+    Client,
+    Module,
+}
+
+impl clap::ValueEnum for BindingKind {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Client, Self::Module]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::Client => PossibleValue::new("client"),
+            Self::Module => PossibleValue::new("module"),
+        })
+    }
+}
+
+impl BindingKind {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            BindingKind::Client => "client",
+            BindingKind::Module => "module",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Csharp,
     TypeScript,
     Rust,
+    #[serde(alias = "c++", alias = "cxx")]
+    Cpp,
     #[serde(alias = "uecpp", alias = "ue5cpp", alias = "unreal")]
     UnrealCpp,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
+        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::Cpp, Self::UnrealCpp]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
+            Self::Cpp => PossibleValue::new("cpp").aliases(["c++", "cxx"]),
             Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
         })
     }
@@ -728,6 +834,7 @@ impl Language {
             Language::Csharp => "C#",
             Language::TypeScript => "TypeScript",
             Language::UnrealCpp => "Unreal C++",
+            Language::Cpp => "C++",
         }
     }
 
@@ -738,7 +845,7 @@ impl Language {
             Language::TypeScript => {
                 // TODO: implement formatting.
             }
-            Language::UnrealCpp => {
+            Language::UnrealCpp | Language::Cpp => {
                 // TODO: implement formatting.
             }
         }
@@ -999,6 +1106,30 @@ mod tests {
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
         let runs = prepare_generate_run_configs(vec![command_config], false, None).unwrap();
         assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
+    }
+
+    #[test]
+    fn test_direct_module_generation_preserves_explicit_options() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        for language in ["rust", "typescript", "csharp", "cpp"] {
+            let args = cmd.clone().get_matches_from([
+                "generate",
+                "--bindings",
+                "module",
+                "--lang",
+                language,
+                "--bin-path",
+                "receiver.wasm",
+                "--out-dir",
+                "bindings",
+            ]);
+            let config = CommandConfig::new(&schema, HashMap::new(), &args).unwrap();
+            let runs = prepare_generate_run_configs(vec![config], false, None).unwrap();
+            assert_eq!(language_cli_name(runs[0].lang), language);
+            assert_eq!(runs[0].wasm_file, Some(PathBuf::from("receiver.wasm")));
+            assert_eq!(runs[0].out_dir, PathBuf::from("bindings"));
+        }
     }
 
     #[test]
