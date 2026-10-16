@@ -64,7 +64,7 @@ partial struct CustomStruct
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
                     new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                     new("NullableIntField", NullableIntFieldRW.GetAlgebraicType(registrar)),
-                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar))
+                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 

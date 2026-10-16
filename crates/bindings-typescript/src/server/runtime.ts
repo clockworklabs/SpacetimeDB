@@ -38,7 +38,7 @@ import {
   SyncResponse,
   makeRequest,
 } from './http_handlers';
-import { httpClient } from './http_internal';
+import { httpClient, type HttpClient } from './http_internal';
 import {
   deserializeHeaders,
   deserializeMethod,
@@ -76,11 +76,21 @@ import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
 import type { SubmoduleDispatchInfo, SchemaInner } from './schema';
+import { hostBackend, type DatastoreBackend } from './backend';
 import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
 
 export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
+
+function isDatastoreBackend(value: unknown): value is DatastoreBackend {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'tableIdFromName' in value &&
+    'procedureStartMutTx' in value
+  );
+}
 
 function requestFromWire(request: HttpRequest, body: Uint8Array): Request {
   return Request[makeRequest](body, {
@@ -221,9 +231,10 @@ class AuthCtxImpl implements AuthCtx {
    * If there is a connection id, look up the JWT payload from the system tables.
    * A call without one was spawned by the database, such as `init` or a scheduled function.
    */
-  static fromSystemTables(
+  static fromBackend(
     connectionId: ConnectionId | null,
-    sender: Identity
+    sender: Identity,
+    backend: DatastoreBackend
   ): AuthCtx {
     if (connectionId === null) {
       return new AuthCtxImpl({
@@ -235,13 +246,23 @@ class AuthCtxImpl implements AuthCtx {
     return new AuthCtxImpl({
       isInternal: false,
       jwtSource: () => {
-        const payloadBuf = sys.get_jwt_payload(connectionId.__connection_id__);
+        const payloadBuf = backend.getJwtPayload(
+          connectionId.__connection_id__
+        );
         if (payloadBuf.length === 0) return null;
         const payloadStr = new TextDecoder().decode(payloadBuf);
         return payloadStr;
       },
       senderIdentity: sender,
     });
+  }
+
+  /** If there is a connection id, look up the JWT payload from the host system tables. */
+  static fromSystemTables(
+    connectionId: ConnectionId | null,
+    sender: Identity
+  ): AuthCtx {
+    return AuthCtxImpl.fromBackend(connectionId, sender, hostBackend);
   }
 }
 
@@ -255,6 +276,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
+  #backend: DatastoreBackend;
   sender: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
@@ -267,6 +289,9 @@ export const ReducerCtxImpl = class ReducerCtx<
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
     dbView: DbView<any>,
+    backendOrAsViews: DatastoreBackend | object = hostBackend,
+    senderAuth?: AuthCtx,
+    random?: Random,
     asViews: object = {}
   ) {
     Object.seal(this);
@@ -274,11 +299,19 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.timestamp = timestamp;
     this.connectionId = connectionId;
     this.db = dbView as unknown as DbView<SchemaDef>;
+    if (isDatastoreBackend(backendOrAsViews)) {
+      this.#backend = backendOrAsViews;
+      this.#senderAuth = senderAuth;
+      this.#random = random;
+    } else {
+      this.#backend = hostBackend;
+      asViews = backendOrAsViews;
+    }
     this.as = asViews as AliasViews<SchemaDef>;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
-  static reset(
+  static resetHost(
     me: InstanceType<typeof this>,
     sender: Identity,
     timestamp: Timestamp,
@@ -289,8 +322,45 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.sender = sender;
     me.timestamp = timestamp;
     me.connectionId = connectionId;
-    me.#uuidCounter = undefined;
+    me.#backend = hostBackend;
     me.#senderAuth = undefined;
+    me.#random = undefined;
+    me.#uuidCounter = undefined;
+    if (dbView !== undefined) {
+      me.db = dbView;
+    }
+    if (asViews !== undefined) {
+      me.as = asViews as AliasViews<any>;
+    }
+  }
+
+  /** Reset the `ReducerCtx` to be used with an injectable backend. */
+  static reset(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null,
+    backendOrDbView: DatastoreBackend | DbView<any> = hostBackend,
+    senderAuth?: AuthCtx | object,
+    random?: Random,
+    dbView?: DbView<any>,
+    asViews?: object
+  ) {
+    me.sender = sender;
+    me.timestamp = timestamp;
+    me.connectionId = connectionId;
+    if (isDatastoreBackend(backendOrDbView)) {
+      me.#backend = backendOrDbView;
+      me.#senderAuth = senderAuth as AuthCtx | undefined;
+      me.#random = random;
+    } else {
+      me.#backend = hostBackend;
+      me.#senderAuth = undefined;
+      me.#random = undefined;
+      dbView = backendOrDbView;
+      asViews = senderAuth as object | undefined;
+    }
+    me.#uuidCounter = undefined;
     if (dbView !== undefined) {
       me.db = dbView;
     }
@@ -307,7 +377,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   get databaseIdentity() {
-    return (this.#identity ??= new Identity(sys.identity()));
+    return (this.#identity ??= new Identity(this.#backend.identity()));
   }
 
   get identity() {
@@ -315,9 +385,10 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   get senderAuth() {
-    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+    return (this.#senderAuth ??= AuthCtxImpl.fromBackend(
       this.connectionId,
-      this.sender
+      this.sender,
+      this.#backend
     ));
   }
 
@@ -359,22 +430,23 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
 
 export function runWithTx<T, Ctx>(
   makeCtx: (timestamp: Timestamp) => Ctx,
-  body: (ctx: Ctx) => T
+  body: (ctx: Ctx) => T,
+  backend: DatastoreBackend = hostBackend
 ): T {
   const run = () => {
-    const timestamp = sys.procedure_start_mut_tx();
+    const timestamp = backend.procedureStartMutTx();
 
     try {
       return body(makeCtx(new Timestamp(timestamp)));
     } catch (e) {
-      sys.procedure_abort_mut_tx();
+      backend.procedureAbortMutTx();
       throw e;
     }
   };
 
   let res = run();
   try {
-    sys.procedure_commit_mut_tx();
+    backend.procedureCommitMutTx();
     return res;
   } catch {
     // ignore the commit error
@@ -382,7 +454,7 @@ export function runWithTx<T, Ctx>(
   console.warn('committing anonymous transaction failed');
   res = run();
   try {
-    sys.procedure_commit_mut_tx();
+    backend.procedureCommitMutTx();
     return res;
   } catch (e) {
     throw new Error('transaction retry failed again', { cause: e });
@@ -600,7 +672,7 @@ class ModuleHooksImpl implements ModuleHooks {
     }
 
     const ctx = this.#reducerCtx;
-    ReducerCtxImpl.reset(
+    ReducerCtxImpl.resetHost(
       ctx,
       senderIdentity,
       new Timestamp(timestamp),
@@ -994,8 +1066,9 @@ type ProcCtxRef = {
   timestamp: Timestamp;
   get databaseIdentity(): Identity;
   get identity(): Identity;
-  get http(): typeof httpClient;
+  get http(): HttpClient;
   get random(): Random;
+  sleep(duration: { __time_duration_micros__: bigint }): void;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
 };
@@ -1034,6 +1107,9 @@ function buildProcedureAliasCtx(
     },
     get random() {
       return parent.random;
+    },
+    sleep(duration: { __time_duration_micros__: bigint }) {
+      return parent.sleep(duration);
     },
     as: subAs,
     withTx(body: any) {
@@ -1090,9 +1166,16 @@ export function assignTxAliasViews(
 export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,
+  backendOrNamePrefix: DatastoreBackend | string = hostBackend,
   namePrefix = ''
 ): Table<any> {
-  const table_id = sys.table_id_from_name(namePrefix + table.sourceName);
+  const backend = isDatastoreBackend(backendOrNamePrefix)
+    ? backendOrNamePrefix
+    : hostBackend;
+  if (typeof backendOrNamePrefix === 'string') {
+    namePrefix = backendOrNamePrefix;
+  }
+  const table_id = backend.tableIdFromName(namePrefix + table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
     throw 'impossible';
@@ -1139,7 +1222,11 @@ export function makeTableView(
   const hasAutoIncrement = sequences.length > 0;
 
   const iter = () =>
-    tableIterator(sys.datastore_table_scan_bsatn(table_id), deserializeRow);
+    tableIterator(
+      backend.datastoreTableScanBsatn(table_id),
+      deserializeRow,
+      backend
+    );
 
   const integrateGeneratedColumns = hasAutoIncrement
     ? (row: RowType<any>, ret_buf: DataView) => {
@@ -1152,17 +1239,36 @@ export function makeTableView(
       }
     : null;
 
+  const generatedColumnsView = (
+    generated: Uint8Array | number | void,
+    fallback: DataView
+  ) =>
+    generated instanceof Uint8Array
+      ? new DataView(
+          generated.buffer,
+          generated.byteOffset,
+          generated.byteLength
+        )
+      : fallback;
+
   const tableMethods: TableMethods<any> = {
-    count: () => sys.datastore_table_row_count(table_id),
+    count: () => BigInt(backend.datastoreTableRowCount(table_id)),
     iter,
     [Symbol.iterator]: () => iter(),
     insert: row => {
       const buf = LEAF_BUF;
       BINARY_WRITER.reset(buf);
       serializeRow(BINARY_WRITER, row);
-      sys.datastore_insert_bsatn(table_id, buf.buffer, BINARY_WRITER.offset);
+      const generated = backend.datastoreInsertBsatn(
+        table_id,
+        buf.buffer,
+        BINARY_WRITER.offset
+      );
       const ret = { ...row };
-      integrateGeneratedColumns?.(ret, buf.view);
+      integrateGeneratedColumns?.(
+        ret,
+        generatedColumnsView(generated, buf.view)
+      );
 
       return ret;
     },
@@ -1171,14 +1277,18 @@ export function makeTableView(
       BINARY_WRITER.reset(buf);
       BINARY_WRITER.writeU32(1);
       serializeRow(BINARY_WRITER, row);
-      const count = sys.datastore_delete_all_by_eq_bsatn(
+      const count = backend.datastoreDeleteAllByEqBsatn(
         table_id,
         buf.buffer,
         BINARY_WRITER.offset
       );
       return count > 0;
     },
-    clear: () => sys.datastore_clear(table_id),
+    clear: () => {
+      const count = BigInt(backend.datastoreTableRowCount(table_id));
+      backend.datastoreClear(table_id);
+      return count;
+    },
   };
 
   const tableView = Object.assign(
@@ -1188,7 +1298,7 @@ export function makeTableView(
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
-    const index_id = sys.index_id_from_name(namePrefix + indexDef.sourceName!);
+    const index_id = backend.indexIdFromName(namePrefix + indexDef.sourceName!);
 
     let column_ids: number[];
     let isHashIndex = false;
@@ -1209,7 +1319,10 @@ export function makeTableView(
     const columnSet = new Set(column_ids);
     const isUnique = table.constraints
       .filter(x => x.data.tag === 'Unique')
-      .some(x => columnSet.isSubsetOf(new Set(x.data.value.columns)));
+      .some(x => {
+        const constraintColumns = new Set(x.data.value.columns);
+        return [...columnSet].every(column => constraintColumns.has(column));
+      });
 
     const isPrimaryKey =
       isUnique &&
@@ -1256,17 +1369,17 @@ export function makeTableView(
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           const buf = LEAF_BUF;
           const point_len = serializeSinglePoint(buf, colVal);
-          const iter_id = sys.datastore_index_scan_point_bsatn(
+          const iter_id = backend.datastoreIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
           );
-          return tableIterateOne(iter_id, deserializeRow);
+          return tableIterateOne(iter_id, deserializeRow, backend);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           const buf = LEAF_BUF;
           const point_len = serializeSinglePoint(buf, colVal);
-          const num = sys.datastore_delete_by_index_scan_point_bsatn(
+          const num = backend.datastoreDeleteByIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
@@ -1279,13 +1392,16 @@ export function makeTableView(
           const buf = LEAF_BUF;
           BINARY_WRITER.reset(buf);
           serializeRow(BINARY_WRITER, row);
-          sys.datastore_update_bsatn(
+          const generated = backend.datastoreUpdateBsatn(
             table_id,
             index_id,
             buf.buffer,
             BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, buf.view);
+          integrateGeneratedColumns?.(
+            row,
+            generatedColumnsView(generated, buf.view)
+          );
           return row;
         };
       }
@@ -1299,12 +1415,12 @@ export function makeTableView(
           }
           const buf = LEAF_BUF;
           const point_len = serializePoint(buf, colVal);
-          const iter_id = sys.datastore_index_scan_point_bsatn(
+          const iter_id = backend.datastoreIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
           );
-          return tableIterateOne(iter_id, deserializeRow);
+          return tableIterateOne(iter_id, deserializeRow, backend);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           if (colVal.length !== numColumns)
@@ -1312,7 +1428,7 @@ export function makeTableView(
 
           const buf = LEAF_BUF;
           const point_len = serializePoint(buf, colVal);
-          const num = sys.datastore_delete_by_index_scan_point_bsatn(
+          const num = backend.datastoreDeleteByIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
@@ -1325,13 +1441,16 @@ export function makeTableView(
           const buf = LEAF_BUF;
           BINARY_WRITER.reset(buf);
           serializeRow(BINARY_WRITER, row);
-          sys.datastore_update_bsatn(
+          const generated = backend.datastoreUpdateBsatn(
             table_id,
             index_id,
             buf.buffer,
             BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, buf.view);
+          integrateGeneratedColumns?.(
+            row,
+            generatedColumnsView(generated, buf.view)
+          );
           return row;
         };
       }
@@ -1362,33 +1481,33 @@ export function makeTableView(
           const buf = LEAF_BUF;
           if (serializeSingleRange && range instanceof Range) {
             const args = serializeSingleRange(buf, range);
-            const iter_id = sys.datastore_index_scan_range_bsatn(
+            const iter_id = backend.datastoreIndexScanRangeBsatn(
               index_id,
               buf.buffer,
               ...args
             );
-            return tableIterator(iter_id, deserializeRow);
+            return tableIterator(iter_id, deserializeRow, backend);
           }
           const point_len = serializeSinglePoint(buf, range);
-          const iter_id = sys.datastore_index_scan_point_bsatn(
+          const iter_id = backend.datastoreIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
           );
-          return tableIterator(iter_id, deserializeRow);
+          return tableIterator(iter_id, deserializeRow, backend);
         },
         delete: (range: any): u32 => {
           const buf = LEAF_BUF;
           if (serializeSingleRange && range instanceof Range) {
             const args = serializeSingleRange(buf, range);
-            return sys.datastore_delete_by_index_scan_range_bsatn(
+            return backend.datastoreDeleteByIndexScanRangeBsatn(
               index_id,
               buf.buffer,
               ...args
             );
           }
           const point_len = serializeSinglePoint(buf, range);
-          return sys.datastore_delete_by_index_scan_point_bsatn(
+          return backend.datastoreDeleteByIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
@@ -1406,17 +1525,17 @@ export function makeTableView(
         filter: (range: any[]): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
           const point_len = serializePoint(buf, range);
-          const iter_id = sys.datastore_index_scan_point_bsatn(
+          const iter_id = backend.datastoreIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
           );
-          return tableIterator(iter_id, deserializeRow);
+          return tableIterator(iter_id, deserializeRow, backend);
         },
         delete: (range: any[]): u32 => {
           const buf = LEAF_BUF;
           const point_len = serializePoint(buf, range);
-          return sys.datastore_delete_by_index_scan_point_bsatn(
+          return backend.datastoreDeleteByIndexScanPointBsatn(
             index_id,
             buf.buffer,
             point_len
@@ -1478,21 +1597,21 @@ export function makeTableView(
           if (isCompleteScalarKey(range)) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);
-            const iter_id = sys.datastore_index_scan_point_bsatn(
+            const iter_id = backend.datastoreIndexScanPointBsatn(
               index_id,
               buf.buffer,
               point_len
             );
-            return tableIterator(iter_id, deserializeRow);
+            return tableIterator(iter_id, deserializeRow, backend);
           } else {
             const buf = LEAF_BUF;
             const args = serializeRange(buf, range);
-            const iter_id = sys.datastore_index_scan_range_bsatn(
+            const iter_id = backend.datastoreIndexScanRangeBsatn(
               index_id,
               buf.buffer,
               ...args
             );
-            return tableIterator(iter_id, deserializeRow);
+            return tableIterator(iter_id, deserializeRow, backend);
           }
         },
         delete: (range: any[]): u32 => {
@@ -1500,7 +1619,7 @@ export function makeTableView(
           if (isCompleteScalarKey(range)) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);
-            return sys.datastore_delete_by_index_scan_point_bsatn(
+            return backend.datastoreDeleteByIndexScanPointBsatn(
               index_id,
               buf.buffer,
               point_len
@@ -1508,7 +1627,7 @@ export function makeTableView(
           } else {
             const buf = LEAF_BUF;
             const args = serializeRange(buf, range);
-            return sys.datastore_delete_by_index_scan_range_bsatn(
+            return backend.datastoreDeleteByIndexScanRangeBsatn(
               index_id,
               buf.buffer,
               ...args
@@ -1533,9 +1652,10 @@ export function makeTableView(
 
 function* tableIterator<T>(
   id: u32,
-  deserialize: Deserializer<T>
+  deserialize: Deserializer<T>,
+  backend: DatastoreBackend = hostBackend
 ): Generator<T, undefined> {
-  using iter = new IteratorHandle(id);
+  const iter = new IteratorHandle(id, backend);
 
   const iterBuf = takeBuf();
   try {
@@ -1547,15 +1667,20 @@ function* tableIterator<T>(
       }
     }
   } finally {
+    iter[Symbol.dispose]();
     returnBuf(iterBuf);
   }
 }
 
-function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
+function tableIterateOne<T>(
+  id: u32,
+  deserialize: Deserializer<T>,
+  backend: DatastoreBackend = hostBackend
+): T | null {
   const buf = LEAF_BUF;
   // we only need to check for the `<= 0` case, since this function is only used
   // with iterators that should only have zero or one element.
-  const ret = advanceIterRaw(id, buf);
+  const ret = advanceIterRaw(id, buf, backend);
   if (ret !== 0) {
     BINARY_READER.reset(buf.view);
     return deserialize(BINARY_READER);
@@ -1568,10 +1693,14 @@ function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
  * `ret === 0` means the iterator was empty and has been destroyed.
  * `ret > 0` means the iterator yielded elements and has more to give.
  */
-function advanceIterRaw(id: u32, buf: ResizableBuffer): number {
+function advanceIterRaw(
+  id: u32,
+  buf: ResizableBuffer,
+  backend: DatastoreBackend = hostBackend
+): number {
   while (true) {
     try {
-      return 0 | sys.row_iter_bsatn_advance(id, buf.buffer);
+      return 0 | backend.rowIterBsatnAdvance(id, buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
         buf.grow(e.__buffer_too_small__ as number);
@@ -1611,14 +1740,17 @@ const LEAF_BUF = new ResizableBuffer(DEFAULT_BUFFER_CAPACITY);
 /** A class to manage the lifecycle of an iterator handle. */
 class IteratorHandle implements Disposable {
   #id: u32 | -1;
+  #backend: DatastoreBackend;
 
-  static #finalizationRegistry = new FinalizationRegistry<u32>(
-    sys.row_iter_bsatn_close
-  );
+  static #finalizationRegistry = new FinalizationRegistry<{
+    id: u32;
+    backend: DatastoreBackend;
+  }>(({ id, backend }) => backend.rowIterBsatnClose(id));
 
-  constructor(id: u32) {
+  constructor(id: u32, backend: DatastoreBackend = hostBackend) {
     this.#id = id;
-    IteratorHandle.#finalizationRegistry.register(this, id, this);
+    this.#backend = backend;
+    IteratorHandle.#finalizationRegistry.register(this, { id, backend }, this);
   }
 
   /** Unregister this object with the finalization registry and return the id */
@@ -1632,7 +1764,7 @@ class IteratorHandle implements Disposable {
   /** Call `row_iter_bsatn_advance`, returning 0 if this iterator has been exhausted. */
   advance(buf: ResizableBuffer): number {
     if (this.#id === -1) return 0;
-    const ret = advanceIterRaw(this.#id, buf);
+    const ret = advanceIterRaw(this.#id, buf, this.#backend);
     if (ret <= 0) this.#detach();
     return ret < 0 ? -ret : ret;
   }
@@ -1640,7 +1772,7 @@ class IteratorHandle implements Disposable {
   [Symbol.dispose]() {
     if (this.#id >= 0) {
       const id = this.#detach();
-      sys.row_iter_bsatn_close(id);
+      this.#backend.rowIterBsatnClose(id);
     }
   }
 }

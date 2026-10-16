@@ -437,7 +437,6 @@ macro_rules! abi_funcs {
             // The procedure must not be suspended while holding the transaction lock,
             // as this can result in a deadlock; therefore, these ABIs are synchronous.
             "spacetime_10.3"::procedure_start_mut_tx,
-            "spacetime_10.3"::procedure_commit_mut_tx,
             "spacetime_10.3"::procedure_abort_mut_tx,
 
             "spacetime_10.4"::datastore_index_scan_point_bsatn,
@@ -448,6 +447,9 @@ macro_rules! abi_funcs {
         }
 
         $link_async! {
+            // This import is async because it needs to wait for the transaction to be made durable.
+            // However, there's no risk of deadlock as the transaction lock is released beforehand.
+            "spacetime_10.3"::procedure_commit_mut_tx,
             "spacetime_10.3"::procedure_sleep_until,
             "spacetime_10.3"::procedure_http_request,
         }

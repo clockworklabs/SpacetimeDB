@@ -25,8 +25,16 @@ const COMMANDS: &[Command] = &[
         package: "ci-module-latest-deps",
     },
     Command {
+        path: &["portable-datastore"],
+        package: "ci-portable-datastore",
+    },
+    Command {
         path: &["smoketests"],
         package: "ci-smoketests",
+    },
+    Command {
+        path: &["sdk-tests"],
+        package: "ci-sdk-tests",
     },
     Command {
         path: &["smoketests", "check-mod-list"],
@@ -49,12 +57,20 @@ const COMMANDS: &[Command] = &[
         package: "ci-global-json-policy",
     },
     Command {
+        path: &["check-style"],
+        package: "ci-check-style",
+    },
+    Command {
         path: &["publish-checks"],
         package: "ci-publish-checks",
     },
     Command {
         path: &["typescript-test"],
         package: "ci-typescript-test",
+    },
+    Command {
+        path: &["typescript-submodules"],
+        package: "ci-typescript-submodules",
     },
     Command {
         path: &["version-upgrade-check"],
@@ -71,6 +87,10 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "codeowners-check"],
         package: "ci-codeowners-check",
+    },
+    Command {
+        path: &["other-workflows", "new-script-check"],
+        package: "ci-new-script-check",
     },
     Command {
         path: &["other-workflows", "cla-assistant"],

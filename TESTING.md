@@ -97,6 +97,34 @@ of either the module libraries or client SDKs:
 5. Repeat steps 2 through 4 for any other client projects which ought to cover the same behavior.
 6. Run the new test with the relevant `cargo test` command for that SDK.
 
+## C# namespace coverage
+
+The namespace tests are integration tests, plus focused generator diagnostics:
+
+- `dotnet test crates/bindings-csharp/Codegen.Tests -f net8.0` and
+  `-f net10.0`: existing Verify fixtures on both targets; .NET 10 additionally
+  checks mount restrictions, generated-name diagnostics, and dependency discovery.
+- `cargo test -p spacetimedb-testing --test standalone_integration_test namespace_csharp`:
+  independent dependency publication, root export selection, and cross-namespace
+  helper/HTTP calls, and runtime name conversion compared with host validation.
+- `cargo test -p spacetimedb-testing --test environment namespace_csharp_environment_security`:
+  root/public environment access, denial of namespaced host calls, and default
+  namespace case conversion when `Name` is omitted.
+- `cargo test -p spacetimedb-codegen --test codegen`: codegen snapshots and a
+  generated C# client for a TypeScript submodule, including distinct accessor
+  and canonical names.
+- The [namespace client regression](sdks/csharp/examples~/regression-tests/namespaces/README.md)
+  runs against the real .NET 10 module and covers tables, queries, subscriptions,
+  callbacks, scheduling, transactions, and root-defined RLS with
+  `Accessor = "MyAuth", Name = "auth_data"`. The existing
+  `sdks/csharp/tools~/run-regression-tests.sh 8 10` harness includes it in the
+  .NET 10 module pass while retaining .NET 8 regressions.
+
+Use the local package setup in [DEVELOP.md](sdks/csharp/DEVELOP.md), not stale
+published NuGet packages, when exercising changed query/runtime code.
+Library-defined RLS inside named namespaces and cross-language module composition
+are unsupported, not integration cases awaiting a passing assertion.
+
 ## Schema parity tests
 
 `crates/schema/tests/ensure_same_schema.rs` is a separate but important companion to the SDK tests.

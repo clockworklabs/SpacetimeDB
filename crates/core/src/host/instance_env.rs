@@ -2,11 +2,14 @@ use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError,
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, TRANSACTION_CONFIRMATION_TIMEOUT,
+};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
+use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -57,6 +60,8 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    /// Whether this invocation must confirm transactions before returning to module code.
+    pub procedure_confirmed_reads: bool,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -243,6 +248,7 @@ impl InstanceEnv {
             environment_call_active: false,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            procedure_confirmed_reads: true,
         }
     }
 
@@ -253,6 +259,7 @@ impl InstanceEnv {
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
     pub fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
+        self.procedure_confirmed_reads = true;
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
@@ -472,8 +479,13 @@ impl InstanceEnv {
                 },
             )?;
 
-        if insert_flags.is_scheduler_table {
-            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        if insert_flags.has_post_write_work() {
+            if insert_flags.is_scheduler_table {
+                self.schedule_row(stdb, tx, table_id, row_ptr)?;
+            }
+            if insert_flags.is_outbox_table {
+                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+            }
         }
 
         // Note, we update the metric for bytes written after the insert.
@@ -554,8 +566,13 @@ impl InstanceEnv {
                 },
             )?;
 
-        if update_flags.is_scheduler_table {
-            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        if update_flags.has_post_write_work() {
+            if update_flags.is_scheduler_table {
+                self.schedule_row(stdb, tx, table_id, row_ptr)?;
+            }
+            if update_flags.is_outbox_table {
+                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+            }
         }
         tx.metrics.bytes_written += buffer.len();
         tx.metrics.rows_updated += 1;
@@ -946,6 +963,41 @@ impl InstanceEnv {
     /// After a procedure has finished, take its known last tx offset, if any.
     pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
         self.procedure_last_tx_offset.take()
+    }
+
+    /// Owns no transaction locks or reference to the environment. Keep the offset
+    /// available for the eventual response, even after this wait completes.
+    pub(super) fn procedure_confirmation(&mut self) -> impl Future<Output = anyhow::Result<()>> + use<> {
+        let confirmation: anyhow::Result<_> = (|| {
+            if !self.procedure_confirmed_reads {
+                return Ok(None);
+            }
+            let Some(durable) = self.relational_db().durable_tx_offset() else {
+                return Ok(None); // In-memory database.
+            };
+            let mut tx_offset = self
+                .procedure_last_tx_offset
+                .take()
+                .context("missing committed transaction offset")?;
+            // The commit resolves this receiver when its read guard is released,
+            // before returning. Never suspend while that guard is held.
+            let offset = tx_offset
+                .try_recv()
+                .context("committed transaction offset was not resolved")?;
+            self.procedure_last_tx_offset = Some(from_tx_offset(offset));
+            Ok(Some((offset, durable)))
+        })();
+        async move {
+            if let Some((offset, mut durable)) = confirmation? {
+                tokio::time::timeout(TRANSACTION_CONFIRMATION_TIMEOUT, durable.wait_for(offset))
+                    .await
+                    .context("durability confirmation timed out; outcome unknown, do not retry without deduplication")?
+                    .context(
+                        "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+                    )?;
+            }
+            Ok(())
+        }
     }
 
     /// Perform an HTTP request.
@@ -1507,6 +1559,80 @@ mod test {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
         Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+    }
+
+    struct PendingDurability(tokio::sync::watch::Receiver<Option<u64>>);
+
+    impl spacetimedb_durability::Durability for PendingDurability {
+        type TxData = crate::db::relational_db::Txdata;
+
+        fn append_tx(&self, _: spacetimedb_durability::PreparedTx<Self::TxData>) {}
+
+        fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
+            self.0.clone().into()
+        }
+
+        fn close(&self) -> spacetimedb_durability::Close {
+            Box::pin(std::future::ready(*self.0.borrow()))
+        }
+    }
+
+    #[test]
+    fn procedure_confirmation_waits_without_blocking_transactions() -> Result<()> {
+        use crate::db::relational_db::Persistence;
+        use std::pin::pin;
+
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let (durable, rx) = tokio::sync::watch::channel(None);
+        let persistence = Persistence::new(
+            PendingDurability(rx),
+            || Ok(Default::default()),
+            None,
+            spacetimedb_runtime::Handle::tokio(runtime.handle().clone()),
+        );
+        let db = Arc::new(TestDB::open_db(
+            spacetimedb_durability::EmptyHistory::new(),
+            Some(persistence),
+            None,
+            0,
+        )?);
+        let (table, _) = create_table_with_index(&db)?;
+        let (mut env, _subscription_runtime) = instance_env(db.clone())?;
+        env.start_mutable_tx()?;
+        env.insert(table, &mut bsatn_row(6)?)?;
+        env.commit_mutable_tx()?;
+        let confirmation = env.procedure_confirmation();
+        let offset = env.take_procedure_tx_offset().unwrap().try_recv()?;
+        durable.send_replace(Some(offset - 1));
+
+        runtime.block_on(async {
+            tokio::time::pause();
+            let mut confirmation = pin!(confirmation);
+            assert!(futures::poll!(&mut confirmation).is_pending());
+
+            // A second transaction can commit while confirmation is pending.
+            let mut tx = db
+                .try_begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure)
+                .expect("confirmation must release transaction locks");
+            db.insert(&mut tx, table, &bsatn_row(7)?)?;
+            db.commit_tx(tx)?;
+            assert!(futures::poll!(&mut confirmation).is_pending());
+
+            durable.send_replace(Some(offset));
+            confirmation.await?;
+
+            // This read observes the second transaction, which is still unconfirmed.
+            env.start_mutable_tx()?;
+            env.commit_mutable_tx()?;
+            let mut confirmation = pin!(env.procedure_confirmation());
+            assert!(futures::poll!(&mut confirmation).is_pending());
+            tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT + Duration::from_millis(1)).await;
+            let std::task::Poll::Ready(Err(error)) = futures::poll!(confirmation) else {
+                panic!("confirmation must time out even while the durability sender is alive");
+            };
+            assert!(error.to_string().contains("outcome unknown"));
+            Ok(())
+        })
     }
 
     #[test]
@@ -2772,6 +2898,100 @@ mod test {
             String::from_utf8_lossy(&body),
             plaintext,
             "body should be decompressed even though the caller set `Accept-Encoding`"
+        );
+
+        Ok(())
+    }
+
+    /// Accept one TLS connection on loopback, read the client's ClientHello,
+    /// and return the protocols it offers via ALPN (empty if it offers none).
+    ///
+    /// The server never answers, so the client's handshake fails. That is enough:
+    /// an HTTP/2-only server such as APNs can only select `h2` if the client offers it.
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn spawn_client_hello_server() -> (u16, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::Read;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind test server");
+        let port = listener
+            .local_addr()
+            .expect("failed to read test server address")
+            .port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test server failed to accept");
+
+            // TLS record header: content type, legacy version, length (RFC 8446 §5.1).
+            let mut header = [0u8; 5];
+            stream
+                .read_exact(&mut header)
+                .expect("test server failed to read record");
+            assert_eq!(header[0], 22, "client should open with a handshake record");
+            let mut record = vec![0u8; u16::from_be_bytes([header[3], header[4]]) as usize];
+            stream
+                .read_exact(&mut record)
+                .expect("test server failed to read record");
+            assert_eq!(record[0], 1, "first handshake message should be a ClientHello");
+
+            // ClientHello (RFC 8446 §4.1.2), after the 4-byte handshake header:
+            // legacy_version(2), random(32), then variable-length fields.
+            let u16_at = |i: usize| u16::from_be_bytes([record[i], record[i + 1]]) as usize;
+            let mut i = 4 + 2 + 32;
+            i += 1 + record[i] as usize; // legacy_session_id
+            i += 2 + u16_at(i); // cipher_suites
+            i += 1 + record[i] as usize; // legacy_compression_methods
+            let extensions_end = i + 2 + u16_at(i);
+            i += 2;
+            while i < extensions_end {
+                let (ty, len) = (u16_at(i), u16_at(i + 2));
+                i += 4;
+                // application_layer_protocol_negotiation (RFC 7301 §3.1).
+                if ty == 16 {
+                    let (mut j, end) = (i + 2, i + 2 + u16_at(i));
+                    let mut protocols = Vec::new();
+                    while j < end {
+                        let len = record[j] as usize;
+                        protocols.push(String::from_utf8_lossy(&record[j + 1..j + 1 + len]).into_owned());
+                        j += 1 + len;
+                    }
+                    return protocols;
+                }
+                i += len;
+            }
+            Vec::new()
+        });
+        (port, handle)
+    }
+
+    /// A procedure's HTTPS request offers HTTP/2, so HTTP/2-only APIs such as APNs are reachable.
+    ///
+    /// Only the ClientHello is checked, because the client trusts the OS root store
+    /// and a loopback server cannot present a certificate it accepts.
+    #[test]
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn http_request_offers_h2_over_tls() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, runtime) = instance_env(db)?;
+
+        let (port, server) = spawn_client_hello_server();
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: Vec::<(Option<Box<str>>, Box<[u8]>)>::new().into_iter().collect(),
+            timeout: None,
+            uri: format!("https://127.0.0.1:{port}/"),
+            version: st_http::Version::Http11,
+        };
+        let result = runtime.block_on(async {
+            env.http_request(request, bytes::Bytes::new())
+                .expect("failed to start HTTP request")
+                .await
+        });
+        assert!(result.is_err(), "the test server never completes the handshake");
+        let offered = server.join().expect("test server thread panicked");
+
+        assert!(
+            offered.iter().any(|protocol| protocol == "h2"),
+            "procedure HTTPS requests should offer `h2` via ALPN; offered {offered:?}"
         );
 
         Ok(())
