@@ -171,7 +171,7 @@ fn get_filtered_generate_configs<'a>(
     Ok(generate_configs)
 }
 
-fn dependency_generate_entries(
+pub(super) fn dependency_generate_entries(
     target: &crate::spacetime_config::FlatTarget,
     all_targets: &[crate::spacetime_config::FlatTarget],
 ) -> anyhow::Result<Vec<HashMap<String, serde_json::Value>>> {
@@ -194,7 +194,7 @@ fn dependency_generate_entries(
 }
 
 fn has_module_source(fields: &HashMap<String, serde_json::Value>) -> bool {
-    ["module-path", "bin-path", "js-path"]
+    ["module-path", "bin-path", "js-path", "wasm-file", "js-file"]
         .iter()
         .any(|key| fields.contains_key(*key))
 }
@@ -250,6 +250,12 @@ fn dependency_generate_entry(
                 .into_owned()
         });
 
+    // Generate's config keys differ from the publish target's source keys.
+    let source_key = match source_key {
+        "bin-path" => "wasm-file",
+        "js-path" => "js-file",
+        key => key,
+    };
     Ok(HashMap::from([
         ("language".to_string(), serde_json::json!("rust")),
         ("bindings".to_string(), serde_json::json!("module")),

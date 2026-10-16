@@ -486,7 +486,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let spacetime_config = loaded_config.as_ref().map(|lc| &lc.config);
-    let using_spacetime_config = spacetime_config.is_some();
     let generate_configs_from_file: Vec<HashMap<String, serde_json::Value>> = {
         let mut entries = spacetime_config.and_then(|c| c.generate.clone()).unwrap_or_default();
         // Inherit top-level `module-path` into generate entries that don't specify their own.
@@ -769,7 +768,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         clear_database,
         &publish_configs,
         &generate_configs_from_file,
-        using_spacetime_config,
+        spacetime_config,
         server_from_cli,
         force,
         dotnet_version.as_deref(),
@@ -885,7 +884,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     clear_database,
                     &publish_configs,
                     &generate_configs_from_file,
-                    using_spacetime_config,
+                    spacetime_config,
                     server_from_cli,
                     force,
                     dotnet_version.as_deref(),
@@ -1033,7 +1032,7 @@ async fn generate_build_and_publish(
     clear_database: ClearMode,
     publish_configs: &[CommandConfig<'_>],
     generate_configs: &[HashMap<String, serde_json::Value>],
-    using_spacetime_config: bool,
+    spacetime_config: Option<&SpacetimeConfig>,
     server: Option<&str>,
     yes: bool,
     dotnet_version: Option<&str>,
@@ -1041,6 +1040,18 @@ async fn generate_build_and_publish(
     skip_publish: bool,
     skip_generate: bool,
 ) -> Result<(), anyhow::Error> {
+    // Receiver bindings must exist before compiling the sender, including on rebuilds.
+    if !skip_generate && let Some(spacetime_config) = spacetime_config {
+        let targets = spacetime_config.collect_all_targets_with_inheritance();
+        // Only generate the root's dependencies; children are available for database lookups.
+        let entries = generate::dependency_generate_entries(&targets[0], &targets)?;
+        if !entries.is_empty() {
+            println!("{}", "Generating receiver bindings from spacetime.json...".cyan());
+            let entries = with_dotnet_version_for_dev(entries, dotnet_version, publish_configs);
+            generate::exec_from_entries(entries, crate::generate::extract_descriptions, yes, config_dir).await?;
+        }
+    }
+
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) = tasks::build(
         spacetimedb_dir,
@@ -1078,7 +1089,7 @@ async fn generate_build_and_publish(
 
     if skip_generate {
         println!("{}", "Skipping generate step (--skip-generate).".dimmed());
-    } else if using_spacetime_config {
+    } else if spacetime_config.is_some() {
         if generate_configs.is_empty() {
             println!(
                 "{}",
@@ -1809,8 +1820,59 @@ fn start_client_process(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_paths::FromPathUnchecked;
     use std::fs;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_root_dependencies_run_before_build_unless_skipped() {
+        let temp = TempDir::new().unwrap();
+        let config = Config::new_with_localhost(spacetimedb_paths::cli::CliTomlPath::from_path_unchecked(
+            temp.path().join("cli.toml"),
+        ));
+        let mut spacetime_config: SpacetimeConfig = serde_json::from_value(json!({
+            "module-path": "sender",
+            "dependencies": [{ "name": "receiver", "database": "receiver-db" }],
+            "children": [{
+                "database": "receiver-db",
+                "bin-path": "receiver.wasm",
+                "dependencies": [{ "name": "child_only", "database": "unknown-db" }]
+            }]
+        }))
+        .unwrap();
+
+        // A missing sender makes reaching its build observable without running a compiler.
+        for (has_root_dependencies, skip_generate, expected_error) in [
+            (true, false, "Rust receiver binding generation is not implemented yet"),
+            (true, true, "Failed to build project"),
+            (false, false, "Failed to build project"),
+        ] {
+            if !has_root_dependencies {
+                spacetime_config.additional_fields.remove("dependencies");
+            }
+            let error = generate_build_and_publish(
+                &config,
+                temp.path(),
+                Some(temp.path()),
+                &temp.path().join("sender"),
+                &temp.path().join("client_bindings"),
+                None,
+                ClearMode::OnConflict,
+                &[],
+                &[],
+                Some(&spacetime_config),
+                None,
+                true,
+                None,
+                false,
+                true,
+                skip_generate,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.to_string(), expected_error);
+        }
+    }
 
     #[test]
     fn test_detect_and_save_preserves_existing_config() {
