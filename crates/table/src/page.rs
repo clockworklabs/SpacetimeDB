@@ -909,7 +909,7 @@ impl<'page> VarView<'page> {
         // we know `offset` refers to a valid `VarLenGranule`.
         let granule = unsafe { self.get_granule_ref(offset) };
 
-        blobs.free_ref(granule.blob_hash()).map(BlobNumBytes::from)
+        blobs.free_ref(granule.blob_hash().into()).map(BlobNumBytes::from)
     }
 
     /// Frees an entire var-len linked-list object.
