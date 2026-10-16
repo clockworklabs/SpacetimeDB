@@ -28,7 +28,8 @@ void UWebsocketManager::Connect(const FString& ServerUrl)
 {
 	if (IsConnected())
 	{
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("UWebsocketManager::Connect: Already connected. Disconnect first."));
+		UE_LOG(LogSpacetimeDb_Connection, Warning,
+		       TEXT("UWebsocketManager::Connect: Already connected. Disconnect first."));
 		return;
 	}
 
@@ -43,8 +44,7 @@ void UWebsocketManager::Connect(const FString& ServerUrl)
 	TMap<FString, FString> UpgradeHeaders;
 	if (!InitToken.IsEmpty())
 	{
-		FString HeaderToken = FString::Printf(TEXT("Bearer %s"),
-			*InitToken);
+		FString HeaderToken = FString::Printf(TEXT("Bearer %s"), *InitToken);
 		UpgradeHeaders.Add("Authorization", HeaderToken);
 	}
 
@@ -56,7 +56,8 @@ void UWebsocketManager::Connect(const FString& ServerUrl)
 
 	if (!WebSocket.IsValid())
 	{
-		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("UWebsocketManager::Connect: Failed to create WebSocket connection to %s."), *ServerUrl);
+		UE_LOG(LogSpacetimeDb_Connection, Error,
+		       TEXT("UWebsocketManager::Connect: Failed to create WebSocket connection to %s."), *ServerUrl);
 		OnConnectionError.Broadcast(TEXT("Failed to create WebSocket."));
 		return;
 	}
@@ -80,14 +81,15 @@ void UWebsocketManager::Disconnect()
 		return;
 	}
 
-	if (IsConnected())
-	{
-		UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("UWebsocketManager::Disconnect: Closing WebSocket connection."));
-		WebSocket->Close();
-	}
-
-	// Reset the WebSocket to allow for reconnection attempts
-	WebSocket.Reset();
+	auto Socket = MoveTemp(WebSocket);
+	Socket->OnConnected().RemoveAll(this);
+	Socket->OnConnectionError().RemoveAll(this);
+	Socket->OnMessage().RemoveAll(this);
+	Socket->OnBinaryMessage().RemoveAll(this);
+	Socket->OnClosed().RemoveAll(this);
+	IncompleteMessage.Reset();
+	bAwaitingBinaryFragments = false;
+	Socket->Close();
 }
 
 bool UWebsocketManager::SendMessage(const FString& Message)
@@ -147,9 +149,8 @@ void UWebsocketManager::HandleConnected()
 void UWebsocketManager::HandleConnectionError(const FString& Error)
 {
 	UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("UWebsocketManager: WebSocket Connection Error: %s"), *Error);
+	Disconnect();
 	OnConnectionError.Broadcast(Error);
-	// Reset on error to allow reconnection attempts
-	WebSocket.Reset(); 
 }
 
 void UWebsocketManager::HandleMessageReceived(const FString& Message)
@@ -190,10 +191,9 @@ void UWebsocketManager::HandleBinaryMessageReceived(const void* Data, SIZE_T Siz
 
 void UWebsocketManager::HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean)
 {
-	UE_LOG(LogSpacetimeDb_Connection, Log, TEXT("UWebsocketManager: WebSocket Closed. Status: %d, Reason: %s, Clean: %s"),
-		StatusCode, *Reason, bWasClean ? TEXT("true") : TEXT("false"));
-	// Notify listeners about the closure
+	UE_LOG(LogSpacetimeDb_Connection, Log,
+	       TEXT("UWebsocketManager: WebSocket Closed. Status: %d, Reason: %s, Clean: %s"), StatusCode, *Reason,
+	       bWasClean ? TEXT("true") : TEXT("false"));
+	Disconnect();
 	OnClosed.Broadcast(StatusCode, Reason, bWasClean);
-	// Reset on close to allow reconnection attempts
-	WebSocket.Reset(); 
 }

@@ -398,6 +398,10 @@ impl Lang for UnrealCpp<'_> {
         writeln!(output, "private:");
         writeln!(output, "    const FString TableName = TEXT(\"{table_name}\");");
         writeln!(output);
+        writeln!(
+            output,
+            "    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter."
+        );
         writeln!(output, "    TSharedPtr<UClientCache<{row_struct}>> Data;");
 
         writeln!(output, "}};"); // end UCLASS
@@ -1410,10 +1414,14 @@ fn generate_delegates(output: &mut UnrealCppAutogen, module_prefix: &str) {
     writeln!(output, "\tFSpacetimeDBIdentity, Identity,");
     writeln!(output, "\tconst FString&, Token);");
     writeln!(output);
-    writeln!(output, "DECLARE_DYNAMIC_DELEGATE_TwoParams(");
+    writeln!(output, "DECLARE_DYNAMIC_DELEGATE_FiveParams(");
     writeln!(output, "\tF{module_prefix}OnDisconnectDelegate,");
     writeln!(output, "\tU{module_prefix}DbConnection*, Connection,");
-    writeln!(output, "\tconst FString&, Error);");
+    writeln!(output, "\tconst FString&, Error,");
+    writeln!(
+        output,
+        "\tbool, bWillReconnect, int32, NextReconnectAttempt, float, NextReconnectDelaySeconds);"
+    );
     writeln!(output);
     writeln!(output);
 }
@@ -1452,6 +1460,7 @@ fn generate_context_structs(
     writeln!(output, "\tU{module_prefix}RemoteProcedures* Procedures;");
     writeln!(output);
     writeln!(output, "\tbool IsActive() const;");
+    writeln!(output, "\tbool IsReconnecting() const;");
     writeln!(output, "\tvoid Disconnect();");
     writeln!(
         output,
@@ -1499,6 +1508,11 @@ fn generate_context_structs(
     writeln!(
         output,
         "\tstatic bool IsActive(const F{module_prefix}ContextBase& Ctx) {{ return Ctx.IsActive(); }}"
+    );
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic bool IsReconnecting(const F{module_prefix}ContextBase& Ctx)\n\t{{\n\t\treturn Ctx.IsReconnecting();\n\t}}"
     );
 
     writeln!(output, "}};");
@@ -2363,6 +2377,11 @@ fn generate_reducer_bindings(
     writeln!(output, "struct {api_macro} F{module_name}ReducerEvent");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tESpacetimeDBCallError CallError = ESpacetimeDBCallError::None;"
+    );
     writeln!(output);
 
     writeln!(output, "\t/** Timestamp for when the reducer executed */");
@@ -2418,7 +2437,7 @@ fn generate_reducer_bindings(
         "\tFORCEINLINE bool operator==(const F{module_name}ReducerEvent& Other) const"
     );
     writeln!(output, "\t{{");
-    writeln!(output, "\t\treturn Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&");
+    writeln!(output, "\t\treturn CallError == Other.CallError && Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&");
     writeln!(
         output,
         "\t\t\tCallerConnectionId == Other.CallerConnectionId && EnergyConsumed == Other.EnergyConsumed &&"
@@ -2637,6 +2656,11 @@ fn generate_procedure_bindings(
     writeln!(output, "struct {api_macro} F{module_name}ProcedureEvent");
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tESpacetimeDBCallError CallError = ESpacetimeDBCallError::None;"
+    );
     writeln!(output);
 
     writeln!(output, "\t/** Timestamp for when the procedure executed */");
@@ -2666,6 +2690,7 @@ fn generate_procedure_bindings(
     writeln!(output, "\tF{module_name}ProcedureEvent() {{");
     writeln!(output, "\t}}");
     writeln!(output, "\tF{module_name}ProcedureEvent(FProcedureEvent Event) {{");
+    writeln!(output, "\t\tCallError = Event.CallError;");
     writeln!(output, "\t\tTimestamp = Event.Timestamp;");
     writeln!(
         output,
@@ -2684,7 +2709,7 @@ fn generate_procedure_bindings(
     writeln!(output, "\t{{");
     writeln!(
         output,
-        "\t\treturn Status == Other.Status && Timestamp == Other.Timestamp &&"
+        "\t\treturn CallError == Other.CallError && Status == Other.Status && Timestamp == Other.Timestamp &&"
     );
     writeln!(
         output,
@@ -4021,6 +4046,23 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
     );
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(output, "    U{module_prefix}DbConnection* Build();");
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(
+        output,
+        "    U{module_prefix}DbConnectionBuilder* WithAutomaticReconnect();"
+    );
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(output, "    U{module_prefix}DbConnectionBuilder* WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options);");
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(
+        output,
+        "    U{module_prefix}DbConnectionBuilder* WithTokenProvider(FTokenProviderDelegate Provider);"
+    );
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(
+        output,
+        "    U{module_prefix}DbConnectionBuilder* OnAutomaticReconnect(F{module_prefix}OnConnectDelegate Callback);"
+    );
     writeln!(output);
     writeln!(output, "private:");
     writeln!(output);
@@ -4030,11 +4072,15 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
     );
     writeln!(
         output,
-        "    F{module_prefix}OnConnectDelegate OnConnectDelegateInternal;"
+        "    UPROPERTY() F{module_prefix}OnConnectDelegate OnConnectDelegateInternal;"
     );
     writeln!(
         output,
-        "    F{module_prefix}OnDisconnectDelegate OnDisconnectDelegateInternal;"
+        "    UPROPERTY() F{module_prefix}OnConnectDelegate OnAutomaticReconnectDelegateInternal;"
+    );
+    writeln!(
+        output,
+        "    UPROPERTY() F{module_prefix}OnDisconnectDelegate OnDisconnectDelegateInternal;"
     );
     writeln!(output, "}};");
     writeln!(output);
@@ -4076,8 +4122,18 @@ fn generate_db_connection_class(
         output,
         "    // Delegates that allow users to bind with the concrete connection type."
     );
-    writeln!(output, "    F{module_prefix}OnConnectDelegate OnConnectDelegate;");
-    writeln!(output, "    F{module_prefix}OnDisconnectDelegate OnDisconnectDelegate;");
+    writeln!(
+        output,
+        "    UPROPERTY() F{module_prefix}OnConnectDelegate OnConnectDelegate;"
+    );
+    writeln!(
+        output,
+        "    UPROPERTY() F{module_prefix}OnConnectDelegate OnAutomaticReconnectDelegate;"
+    );
+    writeln!(
+        output,
+        "    UPROPERTY() F{module_prefix}OnDisconnectDelegate OnDisconnectDelegate;"
+    );
     writeln!(output);
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")");
     writeln!(
@@ -4117,9 +4173,11 @@ fn generate_db_connection_class(
     writeln!(output, "    UFUNCTION()");
     writeln!(output, "    void ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken);");
     writeln!(output, "    UFUNCTION()");
+    writeln!(output, "    void ForwardOnAutomaticReconnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken);");
+    writeln!(output, "    UFUNCTION()");
     writeln!(
         output,
-        "    void ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error);"
+        "    void ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);"
     );
     writeln!(output);
     writeln!(output, "    UFUNCTION()");
@@ -4254,6 +4312,10 @@ fn generate_client_implementation(
     writeln!(output, "}}");
 
     // F{module_prefix}ContextBase methods
+    writeln!(output, "bool F{module_prefix}ContextBase::IsReconnecting() const");
+    writeln!(output, "{{");
+    writeln!(output, "\treturn Conn && Conn->IsReconnecting();");
+    writeln!(output, "}}");
     writeln!(output, "bool F{module_prefix}ContextBase::IsActive() const");
     writeln!(output, "{{");
     writeln!(output, "\treturn Conn->IsActive();");
@@ -4444,6 +4506,7 @@ fn generate_client_implementation(
     );
     writeln!(output, "    ReducerEvent.CallerIdentity     = Event.CallerIdentity;");
     writeln!(output, "    ReducerEvent.EnergyConsumed     = Event.EnergyConsumed;");
+    writeln!(output, "    ReducerEvent.CallError          = Event.CallError;");
     writeln!(output, "    ReducerEvent.Status             = Event.Status;");
     writeln!(output, "    ReducerEvent.Timestamp          = Event.Timestamp;");
     writeln!(output, "    ReducerEvent.Reducer            = DecodedReducer;");
@@ -4506,6 +4569,7 @@ fn generate_client_implementation(
     );
     writeln!(output, "    ReducerEvent.CallerIdentity     = Event.CallerIdentity;");
     writeln!(output, "    ReducerEvent.EnergyConsumed     = Event.EnergyConsumed;");
+    writeln!(output, "    ReducerEvent.CallError          = Event.CallError;");
     writeln!(output, "    ReducerEvent.Status             = Event.Status;");
     writeln!(output, "    ReducerEvent.Timestamp          = Event.Timestamp;");
     writeln!(output);
@@ -4540,6 +4604,7 @@ fn generate_client_implementation(
         output,
         "    ProcedureEvent.Status             = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);"
     );
+    writeln!(output, "    ProcedureEvent.CallError          = Event.CallError;");
     writeln!(output, "    ProcedureEvent.Timestamp          = Event.Timestamp;");
     writeln!(output);
 
@@ -4794,6 +4859,16 @@ fn generate_client_implementation(
     writeln!(output, "\tConnection->OnConnectDelegate = OnConnectDelegateInternal;");
     writeln!(
         output,
+        "\tConnection->OnAutomaticReconnectDelegate = OnAutomaticReconnectDelegateInternal;"
+    );
+    writeln!(output, "\tFOnConnectBaseDelegate BaseReconnect;");
+    writeln!(
+        output,
+        "\tBaseReconnect.BindUFunction(Connection, TEXT(\"ForwardOnAutomaticReconnect\"));"
+    );
+    writeln!(output, "\tOnAutomaticReconnectBase(BaseReconnect);");
+    writeln!(
+        output,
         "\tConnection->OnDisconnectDelegate = OnDisconnectDelegateInternal;"
     );
     writeln!(output);
@@ -4819,6 +4894,36 @@ fn generate_client_implementation(
         "\treturn Cast<U{module_prefix}DbConnection>(BuildConnection(Connection));"
     );
     writeln!(output, "}}");
+    writeln!(output, "void U{module_prefix}DbConnection::ForwardOnAutomaticReconnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken)");
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "\tOnAutomaticReconnectDelegate.ExecuteIfBound(this, InIdentity, InToken);"
+    );
+    writeln!(output, "}}");
+    writeln!(
+        output,
+        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::WithAutomaticReconnect()"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tWithAutomaticReconnectBase();");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(output, "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options)");
+    writeln!(output, "{{");
+    writeln!(output, "\tWithAutomaticReconnectOptionsBase(Options);");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(output, "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::WithTokenProvider(FTokenProviderDelegate Provider)");
+    writeln!(output, "{{");
+    writeln!(output, "\tWithTokenProviderBase(Provider);");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(output, "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnAutomaticReconnect(F{module_prefix}OnConnectDelegate Callback)");
+    writeln!(output, "{{");
+    writeln!(output, "\tOnAutomaticReconnectDelegateInternal = Callback;");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
     writeln!(output, "void U{module_prefix}DbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken)");
     writeln!(output, "{{");
     writeln!(output, "\tif (OnConnectDelegate.IsBound())");
@@ -4828,13 +4933,16 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "void U{module_prefix}DbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)"
+        "void U{module_prefix}DbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)"
     );
     writeln!(output, "{{");
-    writeln!(output, "\tPendingTypedReducers.Empty();");
+    writeln!(output, "\tif (!bAutomaticReconnect)");
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\tPendingTypedReducers.Empty();");
+    writeln!(output, "\t}}");
     writeln!(output, "\tif (OnDisconnectDelegate.IsBound())");
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tOnDisconnectDelegate.Execute(this, Error);");
+    writeln!(output, "\t\tOnDisconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);");
     writeln!(output, "\t}}");
     writeln!(output, "}}");
     writeln!(output);
