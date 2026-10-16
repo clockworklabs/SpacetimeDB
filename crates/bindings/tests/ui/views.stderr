@@ -36,6 +36,12 @@ error: The first parameter of a view must be a context parameter: `&ViewContext`
 108 | fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
     |                                      ^^^^^^^^^^^
 
+error: The context must be the first parameter of a view: `&ViewContext` or `&AnonymousViewContext`
+   --> tests/ui/views.rs:114:48
+    |
+114 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
+    |                                                ^^^^^^^^^^^^
+
 error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
    --> tests/ui/views.rs:120:1
     |
@@ -63,30 +69,6 @@ error[E0276]: impl has stricter requirements than trait
     |
 101 | #[view(accessor = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `spacetimedb::rt::ViewKind<ReducerContext>: spacetimedb::rt::ViewKindTrait`
-    |
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `spacetimedb::rt::ViewKind<u32>: spacetimedb::rt::ViewKindTrait` is not satisfied
-   --> tests/ui/views.rs:113:1
-    |
-113 | #[view(accessor = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `spacetimedb::rt::ViewKindTrait` is not implemented for `spacetimedb::rt::ViewKind<u32>`
-    |
-help: the following other types implement trait `spacetimedb::rt::ViewKindTrait`
-   --> src/rt.rs
-    |
-    | impl ViewKindTrait for ViewKind<ViewContext> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `spacetimedb::rt::ViewKind<ViewContext>`
-...
-    | impl ViewKindTrait for ViewKind<AnonymousViewContext> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `spacetimedb::rt::ViewKind<AnonymousViewContext>`
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0276]: impl has stricter requirements than trait
-   --> tests/ui/views.rs:113:1
-    |
-113 | #[view(accessor = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `spacetimedb::rt::ViewKind<u32>: spacetimedb::rt::ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -200,62 +182,6 @@ error[E0599]: no associated function or constant named `invoke` found for struct
     |
 101 | #[view(accessor = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `spacetimedb::rt::ViewDispatcher<ReducerContext>`
-    |
-    = note: the associated function or constant was found for
-            - `spacetimedb::rt::ViewDispatcher<AnonymousViewContext>`
-            - `spacetimedb::rt::ViewDispatcher<ViewContext>`
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0599]: no associated function or constant named `register` found for struct `spacetimedb::rt::ViewRegistrar<u32>` in the current scope
-   --> tests/ui/views.rs:113:1
-    |
-113 | #[view(accessor = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `spacetimedb::rt::ViewRegistrar<u32>`
-    |
-    = note: the associated function or constant was found for
-            - `spacetimedb::rt::ViewRegistrar<AnonymousViewContext>`
-            - `spacetimedb::rt::ViewRegistrar<ViewContext>`
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:114:40
-    |
-114 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
-    |                                        ^^^ the trait `spacetimedb::rt::ViewContextArg` is not implemented for `u32`
-    |
-help: the following other types implement trait `spacetimedb::rt::ViewContextArg`
-   --> src/rt.rs
-    |
-    | impl ViewContextArg for ViewContext {}
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ViewContext`
-    | impl ViewContextArg for AnonymousViewContext {}
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AnonymousViewContext`
-
-error[E0277]: the view argument `&ViewContext` does not implement `SpacetimeType`
-   --> tests/ui/views.rs:114:48
-    |
-114 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
-    |                                                ^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `ViewContext`
-    |
-    = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
-    = help: the following other types implement trait `SpacetimeType`:
-              &T
-              ()
-              AlgebraicType
-              AlgebraicTypeRef
-              Arc<T>
-              ArrayType
-              Box<T>
-              ColumnAttribute
-            and $N others
-    = note: required for `&ViewContext` to implement `SpacetimeType`
-    = note: required for `&ViewContext` to implement `spacetimedb::rt::ViewArg`
-
-error[E0599]: no associated function or constant named `invoke` found for struct `spacetimedb::rt::ViewDispatcher<u32>` in the current scope
-   --> tests/ui/views.rs:113:1
-    |
-113 | #[view(accessor = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `spacetimedb::rt::ViewDispatcher<u32>`
     |
     = note: the associated function or constant was found for
             - `spacetimedb::rt::ViewDispatcher<AnonymousViewContext>`
