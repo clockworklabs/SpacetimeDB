@@ -211,7 +211,7 @@ async fn run_idc_loop(
                 });
             }
 
-            let next_retry = streams.next_retry();
+            let next_retry = streams.next_retry_delay();
             if !notifications_open && in_flight.is_empty() && next_retry.is_none() {
                 log::debug!(
                     "idc_actor: sender_identity={}: stopping; notification channel closed and no deliveries or retries remain",
@@ -230,7 +230,7 @@ async fn run_idc_loop(
                             streams.finish(stream_id, seq);
                         }
                         Err(error) => {
-                            let delay = streams.retry(stream_id, seq);
+                            let delay = streams.fail(stream_id, seq);
                             log::warn!(
                                 "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {delay:?}: {error:#}",
                                 database_identity.to_hex(),
@@ -248,7 +248,7 @@ async fn run_idc_loop(
                     }
                     Some(stream_id)
                 }, if next_retry.is_some() => {
-                    streams.push(stream_id);
+                    streams.wake(stream_id);
                 },
 
                 // New inserts wake ready streams, but do not clear backoff.
@@ -259,7 +259,7 @@ async fn run_idc_loop(
                     // Zero means the channel is closed and drained.
                     notifications_open = count != 0;
                     for msg in notifications.drain(..) {
-                        streams.push(StreamId(msg.stream_id));
+                        streams.wake(StreamId(msg.stream_id));
                     }
                 },
             };
@@ -330,7 +330,7 @@ fn take_ready_message(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyho
 /// Restore pending streams at startup without loading message bodies.
 fn restore_pending_streams(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<()> {
     for stream_id in read_pending_streams(db)? {
-        streams.push(stream_id);
+        streams.wake(stream_id);
     }
     Ok(())
 }
@@ -1007,9 +1007,9 @@ mod tests {
             }
             db.commit_tx(tx)?;
             let mut streams = DeliveryStreams::default();
-            streams.push(stream_id);
+            streams.wake(stream_id);
             assert!(take_ready_message(&db, &mut streams).is_err());
-            assert_eq!(streams.next_retry(), None);
+            assert_eq!(streams.next_retry_delay(), None);
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.st_outbound_stream_by_id(&tx, stream_id.0)?.unwrap().ack_prefix, 0);
             assert!(db.outbound_msg_by_stream_seq(&tx, stream_id.0, 2)?.is_some());
