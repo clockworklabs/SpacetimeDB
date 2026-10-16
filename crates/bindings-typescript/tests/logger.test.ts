@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConnectionId, Identity } from '../src';
 import {
+  consoleLogger,
+  getGlobalLogger,
   getGlobalLogLevel,
+  setGlobalLogger,
   setGlobalLogLevel,
   stringify,
   stdbLogger,
@@ -10,6 +13,7 @@ import {
 describe('logger', () => {
   beforeEach(() => {
     setGlobalLogLevel('debug');
+    setGlobalLogger(consoleLogger);
     vi.restoreAllMocks();
   });
 
@@ -52,6 +56,49 @@ describe('logger', () => {
   test('getGlobalLogLevel returns the current level', () => {
     setGlobalLogLevel('info');
     expect(getGlobalLogLevel()).toBe('info');
+  });
+
+  test('setGlobalLogger receives resolved logs instead of the console', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logger = vi.fn();
+
+    setGlobalLogger(logger);
+    stdbLogger(
+      'warn',
+      () => 'lazy message',
+      () => 'lazy arg',
+      42
+    );
+
+    expect(logger).toHaveBeenCalledWith('warn', 'lazy message', 'lazy arg', 42);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('setGlobalLogger still respects the global log level', () => {
+    const logger = vi.fn();
+    const lazyMessage = vi.fn(() => 'computed');
+
+    setGlobalLogger(logger);
+    setGlobalLogLevel('error');
+    stdbLogger('info', lazyMessage);
+
+    expect(logger).not.toHaveBeenCalled();
+    expect(lazyMessage).not.toHaveBeenCalled();
+  });
+
+  test('consoleLogger restores the default output', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    setGlobalLogger(vi.fn());
+    setGlobalLogger(consoleLogger);
+    stdbLogger('error', 'error message');
+
+    expect(getGlobalLogger()).toBe(consoleLogger);
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('ERROR%c error message'),
+      expect.any(String),
+      expect.any(String)
+    );
   });
 
   test('stringify renders short Uint8Array as full hex', () => {

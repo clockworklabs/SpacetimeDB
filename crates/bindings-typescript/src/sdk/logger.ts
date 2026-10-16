@@ -115,6 +115,39 @@ export const stringify = (value: unknown): string | undefined =>
     return current;
   });
 
+/**
+ * Receives the SDK's log output once it has passed the global log level.
+ * Lazy messages and arguments are already resolved.
+ */
+export type Logger = (
+  level: LogLevel,
+  message: unknown,
+  ...args: unknown[]
+) => void;
+
+/** The default {@link Logger}: styled output through `console.log`. */
+export const consoleLogger: Logger = (level, message, ...args) => {
+  console.log(
+    `%c${LogLevelIdentifierIcon[level]} ${level.toUpperCase()}%c ${message}`,
+    LogStyle[level],
+    LogTextStyle[level],
+    ...args
+  );
+};
+
+let globalLogger: Logger = consoleLogger;
+
+/**
+ * Replaces where the SDK's log output goes, e.g. to forward it to an app's
+ * own logger, or to environments where `%c` styling isn't supported (such as
+ * React Native). Pass {@link consoleLogger} to restore the default.
+ */
+export const setGlobalLogger = (logger: Logger): void => {
+  globalLogger = logger;
+};
+
+export const getGlobalLogger = (): Logger => globalLogger;
+
 export const stdbLogger = (
   level: LogLevel,
   message: Lazy<any>,
@@ -123,12 +156,5 @@ export const stdbLogger = (
   if (!shouldLog(level)) {
     return;
   }
-  const resolvedMessage = resolveLazy(message);
-  const resolvedArgs = args.map(resolveLazy);
-  console.log(
-    `%c${LogLevelIdentifierIcon[level]} ${level.toUpperCase()}%c ${resolvedMessage}`,
-    LogStyle[level],
-    LogTextStyle[level],
-    ...resolvedArgs
-  );
+  globalLogger(level, resolveLazy(message), ...args.map(resolveLazy));
 };
