@@ -1,4 +1,4 @@
-use super::idc_actor::{IdcActor, IdcActorStarter, IdcConfig};
+use super::idc_actor::{self, IdcActor, IdcActorStarter, IdcConfig};
 use super::module_host::{
     DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule, UpdateEnvironmentResult,
 };
@@ -581,9 +581,10 @@ impl HostController {
             .init_database_with_environment(program, environment)
             .await;
         let info = launched.module_host.info.clone();
-        // Validation never starts scheduled work. Release its receiver before
-        // waiting for scheduler closure, including when initialization failed.
+        // Validation never starts background work. Release its receivers before
+        // waiting for closure, including when initialization failed.
         drop(launched.scheduler_starter);
+        drop(launched.idc_starter);
         launched.module_host.exit().await;
         let InitDatabaseResult { reducer, .. } = result?;
         if let Some(call_result) = reducer {
@@ -1125,7 +1126,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         .await
         .map(Arc::new)?;
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
-        let (idc_starter, idc_sender) = IdcActor::open();
+        let (idc_starter, idc_sender) = idc_actor::channel();
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
@@ -1231,8 +1232,11 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
+    /// Transport settings reused when starting a replacement IDC actor after a module update.
     idc_config: IdcConfig,
-    _idc_actor: IdcActor,
+    /// IDC actor for the current module. [`ModuleHost::exit`] drains it;
+    /// dropping this handle aborts the task if shutdown cannot finish.
+    idc_actor: IdcActor,
 }
 
 impl Host {
@@ -1513,7 +1517,7 @@ impl Host {
                 tx_metrics_recorder_task,
                 view_cleanup_task,
                 idc_config,
-                _idc_actor: idc_actor,
+                idc_actor,
             },
             bootstrap_completion,
         })
@@ -1591,8 +1595,7 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
-        let (idc_starter, idc_sender) = IdcActor::open();
-        let mut idc_starter = Some(idc_starter);
+        let (idc_starter, idc_sender) = idc_actor::channel();
 
         let (program, module) = make_module_host(
             runtimes.clone(),
@@ -1625,18 +1628,14 @@ impl Host {
             UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
-                self._idc_actor = idc_starter
-                    .take()
-                    .expect("IDC actor should start once per module update")
-                    .start(
-                        replica_ctx.relational_db().clone(),
-                        replica_ctx.database_identity,
-                        self.idc_config.clone(),
-                        module.downgrade(),
-                    )?;
-                // e
-                let old_module = self.module.send_replace(module);
+                let old_module = self.module.send_replace(module.clone());
                 old_module.exit().await;
+                self.idc_actor = idc_starter.start(
+                    replica_ctx.relational_db().clone(),
+                    replica_ctx.database_identity,
+                    self.idc_config.clone(),
+                    module.downgrade(),
+                )?;
             }
 
             // In this case, we need to disconnect all clients connected to the old module
@@ -1659,19 +1658,16 @@ impl Host {
 
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
-                self._idc_actor = idc_starter
-                    .take()
-                    .expect("IDC actor should start once per module update")
-                    .start(
-                        replica_ctx.relational_db().clone(),
-                        replica_ctx.database_identity,
-                        self.idc_config.clone(),
-                        module.downgrade(),
-                    )?;
-                // exit the old module, drop the `old_watcher` afterwards,
-                // which will signal websocket clients that the module is gone.
+                // Drain the old module and actor before starting replacement deliveries.
+                // Dropping old_watcher afterwards disconnects its remaining watchers.
                 let old_module = old_watcher.borrow().clone();
                 old_module.exit().await;
+                self.idc_actor = idc_starter.start(
+                    replica_ctx.relational_db().clone(),
+                    replica_ctx.database_identity,
+                    self.idc_config.clone(),
+                    module.downgrade(),
+                )?;
             }
             _ => {}
         }

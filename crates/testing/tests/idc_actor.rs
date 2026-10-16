@@ -7,7 +7,7 @@ use axum::routing::post;
 use axum::Router;
 use serde::Deserialize;
 use spacetimedb::db::relational_db::RelationalDB;
-use spacetimedb::host::idc_actor::{IdcActor, IdcConfig};
+use spacetimedb::host::idc_actor::{self, IdcConfig};
 use spacetimedb::host::ModuleHost;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::{StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_STREAM_ID};
@@ -215,7 +215,7 @@ async fn run_actor_test(host: ModuleHost) -> anyhow::Result<()> {
     let slow_second = insert_outbox_row(&db, table_id, SLOW_TARGET)?;
     assert_eq!(slow_first.seq, 1);
     assert_eq!(slow_second.seq, slow_first.seq + 1);
-    let (starter, notify_tx) = IdcActor::open();
+    let (starter, notify_tx) = idc_actor::channel();
     let config = IdcConfig {
         http_port,
         token_signer: Arc::new(keys.private),
@@ -356,5 +356,121 @@ async fn run_actor_test(host: ModuleHost) -> anyhow::Result<()> {
     drop(actor);
     drop(server_abort);
     assert!(server.await.unwrap_err().is_cancelled());
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn idc_actor_shutdown_drains_attempts_without_dispatching_more() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |module| async move {
+            run_shutdown_test(module.client.module()).await.unwrap();
+        },
+    );
+}
+
+async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
+    let (requests_tx, mut requests_rx) = mpsc::unbounded_channel();
+    let app = Router::new().route(
+        "/v1/database/:target_db/call-from-database/:reducer",
+        post(move |Query(query): Query<DeliveryQuery>| {
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<StatusCode>();
+            requests_tx.send((query.seq, reply_tx)).unwrap();
+            async move { reply_rx.await.unwrap() }
+        }),
+    );
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+    let config = IdcConfig {
+        http_port: listener.local_addr()?.port(),
+        token_signer: Arc::new(spacetimedb::auth::JwtKeys::generate()?.private),
+    };
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let _server_abort = scopeguard::guard(server.abort_handle(), |handle| handle.abort());
+    let db = host.relational_db().clone();
+    let table_id = create_outbox(&db)?;
+    let first = insert_outbox_row(&db, table_id, SLOW_TARGET)?;
+    let second = insert_outbox_row(&db, table_id, SLOW_TARGET)?;
+
+    // A shutdown already requested at startup must not dispatch recovered messages.
+    {
+        let (starter, notify_tx) = idc_actor::channel();
+        notify_tx.close();
+        let _actor = starter.start(
+            db.clone(),
+            host.info.database_identity,
+            config.clone(),
+            host.downgrade(),
+        )?;
+        tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
+        assert!(requests_rx.try_recv().is_err());
+    }
+
+    // A failed attempt remains pending. Restart retries it; a successful attempt
+    // finishes local cleanup before shutdown returns, leaving the next row pending.
+    for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::OK] {
+        let (starter, notify_tx) = idc_actor::channel();
+        let _actor = starter.start(
+            db.clone(),
+            host.info.database_identity,
+            config.clone(),
+            host.downgrade(),
+        )?;
+        let (seq, reply) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+        assert_eq!(seq, first.seq);
+        {
+            // ModuleHost::exit signals closure through its sender and waits for
+            // completion. Multiple waiters must all observe the completed drain.
+            notify_tx.close();
+            let mut shutdown = Box::pin(async {
+                tokio::join!(notify_tx.closed(), notify_tx.closed());
+            });
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), shutdown.as_mut())
+                    .await
+                    .is_err(),
+                "shutdown returned before the active HTTP request completed"
+            );
+            reply.send(status).unwrap();
+            tokio::time::timeout(TEST_TIMEOUT, shutdown).await?;
+        }
+        // Repeated shutdown is harmless.
+        notify_tx.close();
+        tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
+        assert!(
+            requests_rx.try_recv().is_err(),
+            "shutdown must not dispatch another attempt"
+        );
+        let tx = db.begin_tx(Workload::Internal);
+        let stream = db.st_outbound_stream_by_id(&tx, first.stream_id)?.unwrap();
+        if status == StatusCode::OK {
+            assert_eq!(stream.ack_prefix, first.seq);
+            assert!(db
+                .outbound_msg_by_stream_seq(&tx, first.stream_id, first.seq)?
+                .is_none());
+        } else {
+            assert_eq!(stream.ack_prefix, 0);
+            let row = db.outbound_msg_by_stream_seq(&tx, first.stream_id, first.seq)?.unwrap();
+            let row = StOutboundMsgRow::try_from(row)?;
+            assert_eq!(row.retry_count, 1);
+            assert!(row.result_status.is_none());
+        }
+        assert!(db
+            .outbound_msg_by_stream_seq(&tx, second.stream_id, second.seq)?
+            .is_some());
+        let _ = db.release_tx(tx);
+    }
+
+    // Startup discovers the untouched second message without a notification.
+    let (starter, notify_tx) = idc_actor::channel();
+    let _actor = starter.start(db.clone(), host.info.database_identity, config, host.downgrade())?;
+    let (seq, reply) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+    assert_eq!(seq, second.seq);
+    reply.send(StatusCode::OK).unwrap();
+    wait_for_ack(&db, SLOW_TARGET, second.seq).await?;
+    notify_tx.close();
+    tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
+    tokio::time::timeout(TEST_TIMEOUT, host.exit()).await?;
+    tokio::time::timeout(TEST_TIMEOUT, host.exited()).await?;
     Ok(())
 }
