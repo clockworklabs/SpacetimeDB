@@ -12,11 +12,12 @@ use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
+    indexes::PAGE_SIZE,
     page::{Page, PageMetadata},
     page_pool::PagePool,
     tiered::{
         error::PageError,
-        map::ObjectKey,
+        map::PageHash,
         mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
         storage::TieredStorage,
         BudgetExceeded, ByteBudget, ObjectStoreError, ResidentObjects,
@@ -210,12 +211,12 @@ pub enum PageSlot {
         handle: PageHandle,
         metadata: PageMetadata,
         // `Some` if the page is clean and present in backing storage.
-        backing: Option<blake3::Hash>,
+        backing: Option<PageHash>,
         eviction_policy: PageEvictionPolicy,
     },
     /// The page is not resident in memory.
     #[allow(unused)]
-    NonResident { hash: blake3::Hash, metadata: PageMetadata },
+    NonResident { hash: PageHash, metadata: PageMetadata },
 }
 
 impl PageSlot {
@@ -337,8 +338,17 @@ impl PageHandle {
         }
     }
 
-    pub fn save_or_get_content_hash(&self) -> blake3::Hash {
-        self.frame.write().save_or_get_content_hash()
+    pub const fn size(&self) -> u64 {
+        PAGE_SIZE as u64
+    }
+
+    pub(super) fn serialize_for_storage(&self) -> (PageHash, Vec<u8>) {
+        let mut guard = self.frame.write_ref();
+        let hash = PageHash::from(&mut **guard);
+        let guard = RwLockWriteGuard::downgrade(guard);
+        let bytes = bsatn::to_vec(&**guard).unwrap();
+
+        (hash, bytes)
     }
 
     fn write(
@@ -653,15 +663,9 @@ impl PageManager {
         self.resident.evict_page(victim);
     }
 
-    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<blake3::Hash, ObjectStoreError> {
-        let mut guard = page.frame.write_ref();
-        let hash = guard.save_or_get_content_hash();
-        let guard = RwLockWriteGuard::downgrade(guard);
-        let bytes = bsatn::to_vec(&**guard).unwrap();
-        drop(guard);
-        let key = self.storage.write(&bytes)?;
-        assert_eq!(ObjectKey::from(hash), key);
-
-        Ok(hash)
+    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<PageHash, ObjectStoreError> {
+        self.storage
+            .write(page.into())
+            .map(|key| key.as_page_hash().cloned().expect("object key to be a page hash"))
     }
 }

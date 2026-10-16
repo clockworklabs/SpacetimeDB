@@ -17,10 +17,7 @@ use crate::{
     indexes::PAGE_SIZE,
     page::Page,
     page_pool::PagePool,
-    tiered::{
-        map::{self, ObjectKey, ObjectMap},
-        BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage,
-    },
+    tiered::{map::BlobHashWrapper, BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +37,7 @@ pub struct ReservedBlob {
 
 #[derive(Debug)]
 pub struct BlobFrame {
-    hash: BlobHash,
+    hash: BlobHashWrapper,
     bytes: Box<[u8]>,
     access: Access,
     #[allow(unused)]
@@ -48,7 +45,7 @@ pub struct BlobFrame {
 }
 
 impl BlobFrame {
-    pub fn hash(&self) -> BlobHash {
+    pub fn hash(&self) -> BlobHashWrapper {
         self.hash
     }
 
@@ -166,7 +163,7 @@ pub struct ResidentObjects {
     access_epoch: AtomicU64,
     page_id: AtomicU64,
     pages: Mutex<IntMap<PageId, Weak<PageFrame>>>,
-    blobs: Mutex<ObjectMap<Weak<BlobFrame>>>,
+    blobs: Mutex<IntMap<BlobHashWrapper, Weak<BlobFrame>>>,
 }
 
 impl ResidentObjects {
@@ -200,7 +197,7 @@ impl ResidentObjects {
         let permit = self.budget.acquire(size)?;
         let bytes = alloc();
         assert_eq!(size, bytes.len() as u64);
-        let hash = BlobHash::hash_from_bytes(&bytes);
+        let hash = BlobHash::hash_from_bytes(&bytes).into();
         let frame = BlobFrame {
             hash,
             bytes,
@@ -249,7 +246,7 @@ impl ResidentObjects {
 
     pub(super) fn evict_blob(&self, victim: BlobEvictionCandidate) {
         let mut blobs = self.blobs.lock().unwrap();
-        if let map::Entry::Occupied(entry) = blobs.entry(victim.key)
+        if let hash_map::Entry::Occupied(entry) = blobs.entry(victim.key)
             && entry.get().strong_count() == 0
         {
             entry.remove();
@@ -339,7 +336,7 @@ impl ResidentObjects {
     }
 
     fn reserve_blob_with_permit(&self, permit: BudgetPermit, bytes: Box<[u8]>) -> ReservedBlob {
-        let hash = BlobHash::hash_from_bytes(&bytes);
+        let hash = BlobHashWrapper::hash_from_bytes(&bytes);
         let frame = BlobFrame {
             hash,
             bytes,
@@ -353,7 +350,7 @@ impl ResidentObjects {
 
 #[derive(Debug)]
 pub struct BlobEvictionCandidate {
-    pub key: ObjectKey,
+    pub key: BlobHashWrapper,
     access: AccessSnapshot,
 }
 

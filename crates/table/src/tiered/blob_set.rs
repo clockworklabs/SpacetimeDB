@@ -5,7 +5,10 @@ use std::{
 };
 
 use parking_lot::RwLock;
-use spacetimedb_data_structures::small_map::SmallHashMap;
+use spacetimedb_data_structures::{
+    map::{hash_map, IntMap},
+    small_map::SmallHashMap,
+};
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::RowTypeLayout;
 
@@ -16,9 +19,10 @@ use crate::{
     row_type_visitor::VarLenVisitorProgram,
     tiered::{
         error::{BlobError, ObjectStoreError},
-        map::{self, ObjectKey, ObjectMap},
+        map::{BlobHashWrapper, ObjectKey},
         mem::{self, BlobEvictionCandidate, BlobFrame, ReservedBlob},
-        ByteBudget, ByteBudgetUsage, TieredStorage,
+        storage::Object,
+        ByteBudget, ByteBudgetUsage, ResidentObjects, TieredStorage,
     },
     var_len::VarLenMembers,
 };
@@ -32,9 +36,7 @@ use crate::{
 pub struct BlobSet {
     resident: Arc<mem::ResidentObjects>,
     storage: Arc<TieredStorage>,
-    // Only the enclosing BlobSet is shared, so this map needs no independent Arc.
-    // Keeping the lock inline avoids an allocation even for an empty transaction store.
-    entries: RwLock<ObjectMap<BlobEntry>>,
+    entries: RwLock<IntMap<BlobHashWrapper, BlobEntry>>,
     evictable: Mutex<Vec<BlobEvictionCandidate>>,
 }
 
@@ -53,13 +55,13 @@ impl BlobSet {
     ///
     /// The blobs in the catalog will be faulted in lazily as they are accessed.
     pub fn from_catalog(
-        resident: Arc<mem::ResidentObjects>,
+        resident: Arc<ResidentObjects>,
         storage: Arc<TieredStorage>,
         catalog: impl IntoIterator<Item = CatalogEntry>,
     ) -> Self {
         let entries = catalog
             .into_iter()
-            .map(|CatalogEntry { hash, uses, size }| (ObjectKey::from(hash), BlobEntry::NonResident { uses, size }))
+            .map(|CatalogEntry { hash, uses, size }| (hash, BlobEntry::NonResident { uses, size }))
             .collect();
 
         Self {
@@ -76,7 +78,7 @@ impl BlobSet {
     ///
     /// All blobs in the map will initially be resident, bypassing the memory budget.
     pub fn from_blob_map(resident: Arc<mem::ResidentObjects>, storage: Arc<TieredStorage>, map: BlobMap) -> Self {
-        let mut entries = ObjectMap::default();
+        let mut entries = IntMap::default();
         for (key, BlobMapEntry { uses, blob }) in map.inner {
             let frame = resident.register_blob_unchecked(blob);
             entries.insert(
@@ -117,15 +119,37 @@ impl BlobSet {
             });
 
             if let Some(blob) = maybe_resident {
-                self.storage.write(&blob)?;
+                let key = self.storage.write(Object::from(&blob))?;
+                assert_eq!(
+                    key.as_blob_hash().expect("storage key to be a blob hash"),
+                    &candidate.key
+                );
+
                 let mut entries = self.entries.write();
-                if let Some(entry) = entries.get_mut(&candidate.key) {
-                    let uses = entry.uses();
-                    let size = entry.size();
-                    *entry = BlobEntry::NonResident { uses, size };
-                }
-                drop(entries);
+                let Some(entry) = entries.get_mut(&candidate.key) else {
+                    continue;
+                };
+                let BlobEntry::Resident { uses, blob: current } = entry else {
+                    continue;
+                };
+                // Eviction may proceed concurrent to blob set access, in
+                // particular we're not holding an entries lock while writing to
+                // the tiered storage. Therefore, ensure that the entry is still
+                // the same allocation.
+                //
+                // An evictable frame must have exactly two references: one in
+                // `entries` + the clone of `blob` that was done above.
+                if !Arc::ptr_eq(&blob.frame, &current.frame) || Arc::strong_count(&blob.frame) != 2 {
+                    continue;
+                };
+
+                *entry = BlobEntry::NonResident {
+                    uses: *uses,
+                    size: blob.size(),
+                };
+                drop(blob);
                 self.resident.evict_blob(candidate);
+                drop(entries);
             }
         }
 
@@ -150,18 +174,18 @@ impl BlobSet {
     }
 
     fn insert_with_uses(&self, uses: NonZeroUsize, bytes: &[u8]) -> Result<BlobHandle, BlobError> {
-        let hash = BlobHash::hash_from_bytes(bytes);
+        let hash = BlobHashWrapper::hash_from_bytes(bytes);
         let blob_or_reservation = {
             let mut entries = self.entries.write();
             match entries
                 .entry(hash.into())
                 .and_modify(|entry| entry.mod_uses(|u| *u += uses.get()))
             {
-                map::Entry::Vacant(_) => {
+                hash_map::Entry::Vacant(_) => {
                     drop(entries);
                     Err(self.reserve(bytes)?)
                 }
-                map::Entry::Occupied(entry) => match entry.get() {
+                hash_map::Entry::Occupied(entry) => match entry.get() {
                     BlobEntry::Resident { blob, .. } => Ok(blob.clone()),
                     BlobEntry::NonResident { .. } => {
                         drop(entries);
@@ -193,13 +217,14 @@ impl BlobSet {
     ///
     /// Returns [BlobError::MissingBlob] if no such blob is in this blob set's
     /// entry catalog.
-    pub fn clone_ref(&mut self, hash: BlobHash) -> Result<(), BlobError> {
-        self.entries
-            .write()
-            .entry(hash.into())
-            .and_modify(BlobEntry::inc_uses)
-            .or_error(|| BlobError::MissingBlob(Box::new(hash)))
-            .map(drop)
+    pub fn clone_ref(&mut self, hash: BlobHashWrapper) -> Result<(), BlobError> {
+        match self.entries.write().entry(hash) {
+            hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().inc_uses();
+                Ok(())
+            }
+            hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash.into()))),
+        }
     }
 
     /// Decrement the reference count of the blob with content address `hash`.
@@ -211,11 +236,11 @@ impl BlobSet {
     /// entry catalog.
     ///
     /// On success returns the size in bytes of the blob.
-    pub fn free_ref(&self, hash: BlobHash) -> Result<u64, BlobError> {
+    pub fn free_ref(&self, hash: BlobHashWrapper) -> Result<u64, BlobError> {
         let mut entries = self.entries.write();
         match entries.entry(hash.into()) {
-            map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash))),
-            map::Entry::Occupied(mut entry) => {
+            hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash.into()))),
+            hash_map::Entry::Occupied(mut entry) => {
                 let size = entry.get().size();
                 entry.get_mut().dec_uses();
                 if entry.get().uses() == 0 {
@@ -232,12 +257,13 @@ impl BlobSet {
     ///
     /// Subject to the memory budget. Note that the blob will remain resident as
     /// long as the returned [BlobHandle] is live.
-    pub fn get(&self, hash: BlobHash) -> Result<BlobHandle, BlobError> {
+    pub fn get(&self, hash: BlobHashWrapper) -> Result<BlobHandle, BlobError> {
         let blob_or_bytes = {
             let entries = self.entries.read();
             let entry = entries
-                .get(&hash.into())
-                .ok_or_else(|| BlobError::MissingBlob(Box::new(hash)))?;
+                .get(&hash)
+                .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
+
             match entry {
                 BlobEntry::Resident { blob, .. } => Ok::<_, BlobError>(Ok(blob.clone())),
                 BlobEntry::NonResident { uses, .. } => {
@@ -266,17 +292,17 @@ impl BlobSet {
     pub fn extend_from(&self, other: &Self) -> Result<Box<[BlobHandle]>, BlobError> {
         let mut handles = Vec::new();
         let entries = other.entries.read();
-        for (&key, entry) in entries.iter() {
+        for (&hash, entry) in entries.iter() {
             match entry {
                 BlobEntry::Resident { uses, blob, .. } => {
                     let handle = self.insert_with_uses(n_or_one(*uses), blob)?;
-                    assert_eq!(BlobHash::from(key), handle.hash());
+                    assert_eq!(hash.as_bytes(), &handle.hash().data);
                     handles.push(handle);
                 }
                 BlobEntry::NonResident { uses, .. } => {
-                    let bytes = other.storage.read(key)?;
+                    let bytes = other.storage.read(hash.into())?;
                     let handle = self.insert_with_uses(n_or_one(*uses), &bytes)?;
-                    assert_eq!(BlobHash::from(key), handle.hash());
+                    assert_eq!(hash.as_bytes(), &handle.hash().data);
                     handles.push(handle);
                 }
             }
@@ -296,17 +322,17 @@ impl BlobSet {
     // hardlinking.
     pub fn try_for_each<E: From<ObjectStoreError>>(
         &self,
-        mut f: impl FnMut(BlobHash, NonZeroUsize, &[u8]) -> Result<(), E>,
+        mut f: impl FnMut(BlobHashWrapper, NonZeroUsize, &[u8]) -> Result<(), E>,
     ) -> Result<(), E> {
         let entries = self.entries.read();
-        for (&key, entry) in entries.iter().filter(|(_, entry)| entry.uses() > 0) {
+        for (&hash, entry) in entries.iter().filter(|(_, entry)| entry.uses() > 0) {
             match entry {
                 BlobEntry::Resident { uses, blob, .. } => {
-                    f(key.into(), NonZeroUsize::new(*uses).unwrap(), blob)?;
+                    f(hash.into(), NonZeroUsize::new(*uses).unwrap(), blob)?;
                 }
                 BlobEntry::NonResident { uses, .. } => {
-                    let bytes = self.storage.read(key)?;
-                    f(key.into(), NonZeroUsize::new(*uses).unwrap(), &bytes)?;
+                    let bytes = self.storage.read(hash.into())?;
+                    f(hash.into(), NonZeroUsize::new(*uses).unwrap(), &bytes)?;
                 }
             }
         }
@@ -340,15 +366,15 @@ impl BlobSet {
 
 #[cfg(test)]
 impl BlobSet {
-    pub fn usage_counter(&self) -> spacetimedb_data_structures::map::HashMap<BlobHash, usize> {
+    pub fn usage_counter(&self) -> spacetimedb_data_structures::map::HashMap<BlobHashWrapper, usize> {
         self.entries
             .read()
             .iter()
-            .map(|(hash, entry)| (BlobHash::from(*hash), entry.uses()))
+            .map(|(hash, entry)| (*hash, entry.uses()))
             .collect()
     }
 
-    pub(crate) fn keys(&self) -> Vec<ObjectKey> {
+    pub(crate) fn keys(&self) -> Vec<BlobHashWrapper> {
         self.entries.read().keys().copied().collect()
     }
 }
@@ -369,7 +395,7 @@ impl MemoryUsage for BlobSet {
 /// Can be used to instantiate a [BlobSet] without any resident blobs (see:
 /// [BlobSet::from_catalog]).
 pub struct CatalogEntry {
-    pub hash: BlobHash,
+    pub hash: BlobHashWrapper,
     pub uses: usize,
     pub size: u64,
 }
@@ -426,7 +452,7 @@ pub struct BlobHandle {
 }
 
 impl BlobHandle {
-    pub fn hash(&self) -> BlobHash {
+    pub fn hash(&self) -> BlobHashWrapper {
         self.frame.hash()
     }
 
@@ -450,9 +476,7 @@ impl Deref for BlobHandle {
 /// be fallible due to faults.
 #[derive(Clone, Default)]
 pub struct BlobReadSet {
-    // Rows without external blobs need no Arc allocation or reference counting.
-    // Non-empty sets share their pins when a RowRef is cloned.
-    inner: Option<Arc<SmallHashMap<BlobHash, BlobHandle, 4, 16>>>,
+    inner: Option<Arc<SmallHashMap<BlobHashWrapper, BlobHandle, 4, 16>>>,
 }
 
 impl BlobReadSet {
@@ -468,7 +492,7 @@ impl BlobReadSet {
         let mut inner = SmallHashMap::default();
         for vlr in unsafe { visitor.visit_var_len(row_data) }.filter(|vlr| vlr.is_large_blob()) {
             let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }.next().unwrap();
-            let blob_hash = granule.blob_hash();
+            let blob_hash = granule.blob_hash().into();
             let blob = blobs.get(blob_hash)?;
             inner.insert(blob_hash, blob);
         }
@@ -485,12 +509,12 @@ impl BlobReadSet {
 
     /// Get the blob with content address `hash`, or `None` if it is not in the
     /// read set.
-    pub fn get(&self, hash: &BlobHash) -> Option<&BlobHandle> {
+    pub fn get(&self, hash: &BlobHashWrapper) -> Option<&BlobHandle> {
         self.inner.as_ref()?.get(hash)
     }
 
     /// Iterator over all entries in the read set.
-    pub fn iter(&self) -> impl Iterator<Item = (&BlobHash, &BlobHandle)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&BlobHashWrapper, &BlobHandle)> {
         self.inner.iter().flat_map(|inner| inner.iter())
     }
 }
@@ -500,7 +524,7 @@ impl BlobReadSet {
 /// Used when restoring from a snapshot (see: [BlobSet::from_blob_map]).
 #[derive(Default)]
 pub struct BlobMap {
-    inner: ObjectMap<BlobMapEntry>,
+    inner: IntMap<BlobHashWrapper, BlobMapEntry>,
 }
 
 impl BlobMap {
@@ -508,7 +532,7 @@ impl BlobMap {
     /// equal to `BlobHash::hash_from_bytes(blob)`.
     pub fn insert_with_uses(&mut self, hash: &BlobHash, uses: NonZeroUsize, blob: Box<[u8]>) {
         debug_assert_eq!(hash, &BlobHash::hash_from_bytes(&blob));
-        self.inner.insert(ObjectKey::from(*hash), BlobMapEntry { uses, blob });
+        self.inner.insert((*hash).into(), BlobMapEntry { uses, blob });
     }
 }
 
@@ -519,4 +543,124 @@ struct BlobMapEntry {
 
 fn n_or_one(x: usize) -> NonZeroUsize {
     NonZeroUsize::new(x).unwrap_or(NonZeroUsize::MIN)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use proptest::{collection::vec, prelude::*};
+
+    use crate::{
+        blob_store::BlobHash,
+        tiered::{
+            map::BlobHashWrapper, BlobError, BlobSet, ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage,
+        },
+    };
+
+    proptest! {
+        #[test]
+        fn insertion_deduplicates_content_and_tracks_reference_counts(
+            blobs in vec(vec(any::<u8>(), 0..1024), 0..100),
+        ) {
+            let set = BlobSet::new_for_test();
+            let mut model = HashMap::<BlobHash, (Vec<u8>, usize)>::new();
+
+            for bytes in &blobs {
+                let handle = set.insert(bytes).unwrap();
+                let hash = BlobHash::hash_from_bytes(bytes);
+                prop_assert_eq!(handle.hash(), hash.into());
+                prop_assert_eq!(&*handle, bytes.as_slice());
+                let entry = model.entry(hash).or_insert_with(|| (bytes.clone(), 0));
+                entry.1 += 1;
+            }
+
+            prop_assert_eq!(set.num_blobs(), model.len());
+            prop_assert_eq!(
+                set.bytes_used_by_blobs(),
+                model.values().map(|(bytes, uses)| bytes.len() as u64 * *uses as u64).sum::<u64>(),
+            );
+            prop_assert_eq!(
+                set.physical_bytes_used_by_blobs(),
+                model.values().map(|(bytes, _)| (bytes.len() + BlobHash::SIZE) as u64).sum::<u64>(),
+            );
+            let usage_counter = set.usage_counter();
+            for (hash, (bytes, uses)) in &model {
+                let hash = BlobHashWrapper::from(*hash);
+                prop_assert_eq!(usage_counter.get(&hash), Some(uses));
+                prop_assert_eq!(&*set.get(hash).unwrap(), bytes.as_slice());
+            }
+
+            for bytes in blobs {
+                let hash = BlobHash::hash_from_bytes(&bytes);
+                prop_assert_eq!(set.free_ref(hash.into()).unwrap(), bytes.len() as u64);
+            }
+            prop_assert_eq!(set.num_blobs(), 0);
+            prop_assert_eq!(set.bytes_used_by_blobs(), 0);
+            prop_assert_eq!(set.physical_bytes_used_by_blobs(), 0);
+        }
+
+        #[test]
+        fn eviction_preserves_catalog_and_faults_bytes_back_in(
+            first in vec(any::<u8>(), 1..1024),
+            second in vec(any::<u8>(), 1..1024),
+        ) {
+            let first_hash = BlobHashWrapper::from(BlobHash::hash_from_bytes(&first));
+            let second_hash = BlobHashWrapper::from(BlobHash::hash_from_bytes(&second));
+            prop_assume!(first_hash != second_hash);
+
+            // Make the hardlimit fit only one blob.
+            let hard_limit_bytes = first.len().max(second.len()) as u64;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: 0,
+                soft_limit_bytes: hard_limit_bytes,
+                hard_limit_bytes,
+            }).unwrap();
+            let resident = Arc::new(ResidentObjects::new(budget));
+            let storage = Arc::new(TieredStorage::new_for_test());
+            let set = BlobSet::new(resident.clone(), storage);
+
+            set.insert(&first).map(drop).unwrap();
+            // This should evict `first`, as there is no external handle.
+            set.insert(&second).map(drop).unwrap();
+
+            prop_assert_eq!(set.num_blobs(), 2);
+            // The catalog knows both entries, but only the second is resident
+            // and therefore consumes budget bytes.
+            prop_assert_eq!(resident.usage().accounted_bytes(), second.len() as u64);
+            // Fault the first entry back in.
+            prop_assert_eq!(&*set.get(first_hash).unwrap(), first.as_slice());
+            prop_assert_eq!(resident.usage().accounted_bytes(), first.len() as u64);
+
+            // The refcounts should be preserved irrespective of residency.
+            let usage_counter = set.usage_counter();
+            prop_assert_eq!(usage_counter.get(&first_hash), Some(&1));
+            prop_assert_eq!(usage_counter.get(&second_hash), Some(&1));
+        }
+
+        #[test]
+        fn blob_handle_prevents_eviction(
+            first in vec(any::<u8>(), 1..1024),
+            second in vec(any::<u8>(), 1..1024),
+        ) {
+            let first_hash = BlobHash::hash_from_bytes(&first);
+            let second_hash = BlobHash::hash_from_bytes(&second);
+            prop_assume!(first_hash != second_hash);
+
+            // Make the hardlimit fit only one blob.
+            let hard_limit_bytes = first.len().max(second.len()) as u64;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: 0,
+                soft_limit_bytes: hard_limit_bytes,
+                hard_limit_bytes,
+            }).unwrap();
+            let resident = Arc::new(ResidentObjects::new(budget));
+            let storage = Arc::new(TieredStorage::new_for_test());
+            let set = BlobSet::new(resident.clone(), storage);
+
+            let _first_handle = set.insert(&first).unwrap();
+            prop_assert!(matches!(set.insert(&second), Err(BlobError::MemoryLimitExceeded(_))));
+        }
+
+    }
 }
