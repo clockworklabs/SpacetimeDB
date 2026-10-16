@@ -7,6 +7,8 @@ export const validConnectors = [
   'sqlite_rpc',
   'supabase_rpc',
   'planetscale_pg_rpc',
+  'postgres_storedproc_rpc',
+  'postgres_direct',
 ] as const;
 
 export type ConnectorKey = (typeof validConnectors)[number];
