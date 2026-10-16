@@ -126,16 +126,10 @@ impl ResidentPages {
                 self.install(index, reservation);
                 index
             }
-            None => match self
-                .pages
-                .take_non_full_page(fixed_row_size, num_var_len_granules)
-            {
+            None => match self.pages.take_non_full_page(fixed_row_size, num_var_len_granules) {
                 Some(index) => index,
                 None => {
-                    let index = self
-                        .pages
-                        .next_page_index()
-                        .map_err(|_| PageError::TooManyPages)?;
+                    let index = self.pages.next_page_index().map_err(|_| PageError::TooManyPages)?;
                     let reservation = manager.reserve_resident(fixed_row_size)?;
                     let (page, permit) = reservation;
                     self.install_owned(index, page, permit);
@@ -166,9 +160,7 @@ impl ResidentPages {
     #[inline]
     fn recycle_empty_page(&mut self, manager: &PageManager, index: PageIndex) {
         let page = self.pages.free_empty_page(index);
-        let permit = self.permits[index.idx()]
-            .take()
-            .expect("present page has a permit");
+        let permit = self.permits[index.idx()].take().expect("present page has a permit");
         manager.recycle_resident(page, permit);
     }
 }
@@ -212,11 +204,7 @@ impl PageInfo<'_> {
         }
     }
     #[cfg(test)]
-    pub unsafe fn reconstruct_bytes_used_by_rows(
-        &self,
-        size: Size,
-        visitor: &impl VarLenMembers,
-    ) -> usize {
+    pub unsafe fn reconstruct_bytes_used_by_rows(&self, size: Size, visitor: &impl VarLenMembers) -> usize {
         unsafe {
             match self {
                 Self::Resident(p) => p.reconstruct_bytes_used_by_rows(size, visitor),
@@ -234,11 +222,7 @@ impl PageSet {
     }
 
     #[inline]
-    pub(crate) fn resident_row_present(
-        &self,
-        pointer: RowPointer,
-        fixed_row_size: Size,
-    ) -> Option<bool> {
+    pub(crate) fn resident_row_present(&self, pointer: RowPointer, fixed_row_size: Size) -> Option<bool> {
         self.storage.resident().map(|resident| {
             resident
                 .pages
@@ -253,11 +237,7 @@ impl PageSet {
     /// The pointer must identify a live row, and this table's layout must contain
     /// no variable-length members or external blob references.
     #[inline]
-    pub(crate) unsafe fn delete_fixed_resident_row(
-        &mut self,
-        pointer: RowPointer,
-        fixed_row_size: Size,
-    ) -> bool {
+    pub(crate) unsafe fn delete_fixed_resident_row(&mut self, pointer: RowPointer, fixed_row_size: Size) -> bool {
         let Some(resident) = self.storage.resident_mut() else {
             return false;
         };
@@ -380,29 +360,21 @@ impl PageSet {
         &mut self,
     ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageRef<'_>)>, PageError>> {
         match &mut self.storage {
-            PageStorage::Resident(resident) => {
-                itertools::Either::Left(resident.pages.iter_mut().map(|page| {
-                    Ok(page.as_deref_mut().map(|page| {
-                        let hash = page.save_or_get_content_hash();
-                        (hash, PageRef::Resident(page))
-                    }))
+            PageStorage::Resident(resident) => itertools::Either::Left(resident.pages.iter_mut().map(|page| {
+                Ok(page.as_deref_mut().map(|page| {
+                    let hash = page.save_or_get_content_hash();
+                    (hash, PageRef::Resident(page))
                 }))
-            }
-            PageStorage::Tiered(tiered) => {
-                itertools::Either::Right(tiered.slots.iter().map(|slot| {
-                    if slot.is_absent() {
-                        Ok(None)
-                    } else {
-                        let mut page = self.manager.get_mut(
-                            slot,
-                            self.eviction_policy,
-                            self.fixed_row_size,
-                        )?;
-                        let hash = page.save_or_get_content_hash();
-                        Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
-                    }
-                }))
-            }
+            })),
+            PageStorage::Tiered(tiered) => itertools::Either::Right(tiered.slots.iter().map(|slot| {
+                if slot.is_absent() {
+                    Ok(None)
+                } else {
+                    let mut page = self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
+                    let hash = page.save_or_get_content_hash();
+                    Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
+                }
+            })),
         }
     }
 
@@ -429,9 +401,7 @@ impl PageSet {
         let Some(slot) = self.storage.tiered().slots.get(index.idx()) else {
             return Err(PageError::MissingPage(index));
         };
-        let mut page = self
-            .manager
-            .get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
+        let mut page = self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
         self.storage
             .tiered_mut()
             .non_full_pages
@@ -652,8 +622,7 @@ impl PageSet {
     ///
     /// Yields borrowed page metadata without faulting in tiered pages.
     pub fn iter_present_pages(&self) -> impl Iterator<Item = PageInfo<'_>> {
-        self.iter_present_pages_with_page_index()
-            .map(|(_, page)| page)
+        self.iter_present_pages_with_page_index().map(|(_, page)| page)
     }
 
     /// Iterate over all pages that have not been freed, along with their
@@ -663,9 +632,7 @@ impl PageSet {
     /// gaps.
     ///
     /// Yields borrowed page metadata without faulting in tiered pages.
-    pub fn iter_present_pages_with_page_index(
-        &self,
-    ) -> impl Iterator<Item = (PageIndex, PageInfo<'_>)> {
+    pub fn iter_present_pages_with_page_index(&self) -> impl Iterator<Item = (PageIndex, PageInfo<'_>)> {
         if let Some(resident) = self.storage.resident() {
             return itertools::Either::Left(
                 resident
@@ -674,11 +641,14 @@ impl PageSet {
                     .map(|(index, page)| (index, PageInfo::Resident(page))),
             );
         }
-        itertools::Either::Right(self.storage.tiered().slots.iter().enumerate().filter_map(
-            |(idx, slot)| {
-                (!slot.is_absent()).then_some((PageIndex(idx as _), PageInfo::Tiered(slot)))
-            },
-        ))
+        itertools::Either::Right(
+            self.storage
+                .tiered()
+                .slots
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, slot)| (!slot.is_absent()).then_some((PageIndex(idx as _), PageInfo::Tiered(slot)))),
+        )
     }
 
     /// The number of present pages in `self`.
@@ -777,12 +747,9 @@ impl PageSet {
                     }
                     btree_map::Entry::Occupied(entry) => PageRead::Tiered(entry.get().read()),
                 };
-                let granules = unsafe {
-                    page.row_total_granules(row_ptr.page_offset(), fixed_row_size, visitor)
-                };
-                allocator.prepare_delete::<Infallible>(page_index, granules, |_| {
-                    Ok(page.metadata(fixed_row_size).into())
-                });
+                let granules = unsafe { page.row_total_granules(row_ptr.page_offset(), fixed_row_size, visitor) };
+                allocator
+                    .prepare_delete::<Infallible>(page_index, granules, |_| Ok(page.metadata(fixed_row_size).into()));
 
                 Ok(row_ptr)
             })
@@ -798,9 +765,7 @@ impl PageSet {
                             let page = self.get_page(page_index)?.expect("delete from absent page");
                             match page {
                                 PageRef::Resident(page) => Ok(page.metadata(fixed_row_size).into()),
-                                PageRef::Tiered(pin) => {
-                                    Ok(entry.insert(pin).read().metadata(fixed_row_size).into())
-                                }
+                                PageRef::Tiered(pin) => Ok(entry.insert(pin).read().metadata(fixed_row_size).into()),
                             }
                         }
                         btree_map::Entry::Occupied(entry) => Ok(entry.get().read().metadata(fixed_row_size).into()),
@@ -845,16 +810,10 @@ impl PageSet {
 
         // Only resident slots have a page id, so collect them now.
         slots.clear();
-        slots.extend(
-            tiered
-                .slots
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, slot_handle)| {
-                    let page_id = slot_handle.page_id()?;
-                    Some((page_id, PageIndex(idx as _)))
-                }),
-        );
+        slots.extend(tiered.slots.iter().enumerate().filter_map(|(idx, slot_handle)| {
+            let page_id = slot_handle.page_id()?;
+            Some((page_id, PageIndex(idx as _)))
+        }));
 
         for candidate in candidates.drain(..) {
             let Some(page_index) = slots.remove(&candidate.id) else {
@@ -929,22 +888,15 @@ impl MemoryUsage for PageSet {
                     }
             }
             PageStorage::Tiered(pages) => {
-                pages.slots.heap_usage()
-                    + pages.free_page_slots.heap_usage()
-                    + pages.non_full_pages.heap_usage()
+                pages.slots.heap_usage() + pages.free_page_slots.heap_usage() + pages.non_full_pages.heap_usage()
             }
         }
     }
 }
 
 #[inline]
-fn collect_arc_slice<T, U>(
-    len: u64,
-    iter: impl Iterator<Item = T>,
-    mut f: impl FnMut(T) -> U,
-) -> Arc<[U]> {
-    let mut output =
-        Arc::new_uninit_slice(usize::try_from(len).expect("row count fits the address space"));
+fn collect_arc_slice<T, U>(len: u64, iter: impl Iterator<Item = T>, mut f: impl FnMut(T) -> U) -> Arc<[U]> {
+    let mut output = Arc::new_uninit_slice(usize::try_from(len).expect("row count fits the address space"));
     let slots = Arc::get_mut(&mut output).unwrap();
     let mut written: u64 = 0;
     for item in iter {
@@ -999,19 +951,13 @@ impl PreparedCommit {
         };
         let is_event = table.get_schema().is_event;
         let inserts = match source_table {
-            Some(source) => {
-                collect_arc_slice(insert_count, source.scan_rows(source_blobs), |row| {
-                    let row = row
-                        .expect("resident page access cannot fail")
-                        .to_product_value();
-                    if !is_event {
-                        table
-                            .insert(blobs, &row)
-                            .expect("resident commit was preflighted");
-                    }
-                    row
-                })
-            }
+            Some(source) => collect_arc_slice(insert_count, source.scan_rows(source_blobs), |row| {
+                let row = row.expect("resident page access cannot fail").to_product_value();
+                if !is_event {
+                    table.insert(blobs, &row).expect("resident commit was preflighted");
+                }
+                row
+            }),
             None => Arc::from([]),
         };
         AppliedCommit { deletes, inserts }
@@ -1024,16 +970,12 @@ impl PreparedCommit {
     pub fn apply(mut self, table: &mut Table, blobs: &BlobSet) -> AppliedCommit {
         let mut pinned = self.pinned;
 
-        let deletes = collect_arc_slice(
-            self.deletes.len() as u64,
-            self.deletes.into_iter(),
-            |row_ptr| {
-                table
-                    .delete(blobs, row_ptr, |row| row.to_product_value())
-                    .expect("no page faults")
-                    .expect("`Table::delete` never returns `None`")
-            },
-        );
+        let deletes = collect_arc_slice(self.deletes.len() as u64, self.deletes.into_iter(), |row_ptr| {
+            table
+                .delete(blobs, row_ptr, |row| row.to_product_value())
+                .expect("no page faults")
+                .expect("`Table::delete` never returns `None`")
+        });
         let inserts = collect_arc_slice(
             self.inserts.len() as u64,
             self.inserts.into_iter(),
@@ -1043,10 +985,7 @@ impl PreparedCommit {
                 // row is collected regardless, as we include it in subscriptions
                 // and the commitlog.
                 if !schema.is_event {
-                    let reservation = self
-                        .reserved
-                        .remove(&page_index)
-                        .map(|page| (page_index, page));
+                    let reservation = self.reserved.remove(&page_index).map(|page| (page_index, page));
                     let row_ref = table
                         .insert_prepared(blobs, &row, reservation)
                         .map(|(_, row_ref)| row_ref)
@@ -1058,10 +997,7 @@ impl PreparedCommit {
                     {
                         entry.insert(pin);
                     }
-                    assert_eq!(
-                        inserted_index, page_index,
-                        "planned and actual placement differ"
-                    );
+                    assert_eq!(inserted_index, page_index, "planned and actual placement differ");
 
                     row.into_product_value(Some(&row_ref))
                 } else {
@@ -1207,12 +1143,7 @@ impl<'a> PageAllocator<'a> {
         match (planned, committed) {
             (Some(a), Some(b)) => {
                 let a_free = self.available_granules(a).unwrap();
-                let b_free = self
-                    .pages
-                    .page_info(b)
-                    .unwrap()
-                    .available_var_len_granules()
-                    .unwrap();
+                let b_free = self.pages.page_info(b).unwrap().available_var_len_granules().unwrap();
                 Some(if (a_free, a) <= (b_free, b) { a } else { b })
             }
             (a, b) => a.or(b),

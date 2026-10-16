@@ -2750,12 +2750,9 @@ impl MutTxId {
         before_release: impl FnOnce(&Arc<TxData>),
     ) -> Result<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)> {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self.committed_state_write_lock.merge(
-            self.tx_state,
-            self.read_sets,
-            self.view_instances,
-            &self.ctx,
-        )?;
+        let tx_data =
+            self.committed_state_write_lock
+                .merge(self.tx_state, self.read_sets, self.view_instances, &self.ctx)?;
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2819,12 +2816,9 @@ impl MutTxId {
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
     ) -> Result<(Arc<TxData>, TxMetrics, TxId, u64)> {
-        let tx_data = self.committed_state_write_lock.merge(
-            self.tx_state,
-            self.read_sets,
-            self.view_instances,
-            &self.ctx,
-        )?;
+        let tx_data =
+            self.committed_state_write_lock
+                .merge(self.tx_state, self.read_sets, self.view_instances, &self.ctx)?;
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
