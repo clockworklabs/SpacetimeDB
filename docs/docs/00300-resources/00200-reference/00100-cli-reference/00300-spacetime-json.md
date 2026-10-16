@@ -41,6 +41,7 @@ These fields can appear at any level (root or child):
 | `anonymous` | boolean | Yes | Use anonymous identity |
 | `organization` | string | Yes | Organization name or identity |
 | `generate` | array | No | Generate targets (see [Generate configuration](#generate-configuration)) |
+| `dependencies` | array | No | Receiver modules used to generate Rust IDC bindings (see [Module dependencies](#module-dependencies)) |
 | `children` | array | No | Child database entities (see [Children and inheritance](#children-and-inheritance)) |
 | `dev` | object | No | Dev server configuration, root-level only (see [`spacetime dev` configuration](#spacetime-dev-configuration)) |
 
@@ -83,6 +84,61 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 }
 ```
 
+## Module dependencies
+
+The CLI accepts dependency configuration, but receiver binding generation is not implemented yet. It currently returns an explicit error. The examples below describe the intended output once generation is available.
+
+Use `dependencies` to generate Rust bindings for modules your module calls through IDC. Specify a dependency's `module-path` to generate bindings from local source:
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [
+    {
+      "name": "game_world",
+      "module-path": "./game_world"
+    }
+  ]
+}
+```
+
+Running `spacetime generate lobby` generates receiver bindings under `./lobby/src/remote_bindings/game_world/` and adds `pub mod game_world;` to `remote_bindings/mod.rs`. The dependency's `name` is the local Rust module name, not a database name. Generation uses the local module source and does not require a published receiver database.
+
+Only `lobby` is a publish target in this example. Adding a dependency does not add a publish target or configure the runtime destination of IDC calls.
+
+| Dependency field | Description |
+|------------------|-------------|
+| `name` | Local Rust module name for the generated bindings (required) |
+| `module-path` | Path to the receiver module source, relative to `spacetime.json` |
+| `database` | Alternative to `module-path`: reuse the module source of an existing database target in this config |
+| `out-dir` | Override the bindings output root; defaults to the sender's `<module-path>/src/remote_bindings` |
+
+### Reusing an existing publish target
+
+When both databases are intended to be published, a dependency can reference the receiver's existing target using `database`:
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [
+    {
+      "name": "game_world",
+      "database": "game-world"
+    }
+  ],
+  "children": [
+    {
+      "database": "game-world",
+      "module-path": "./game_world"
+    }
+  ]
+}
+```
+
+Here, `database: "game-world"` looks up the target's module source in the config; it does not fetch a deployed database. An unfiltered `spacetime publish` publishes both `lobby` and `game-world` because both are database targets. Use the direct `module-path` form above when the receiver should only supply bindings for this project.
+
 ## Children and inheritance
 
 The `children` array defines additional database targets. Each child inherits most fields from the root by default.
@@ -94,6 +150,7 @@ All fields listed in the [Fields reference](#fields-reference) with "Yes" in the
 The following fields are never inherited:
 
 - `database`: each child must define its own.
+- `dependencies`: each module declares its own receiver dependencies.
 - `generate`: tied to a specific module and output location. Inheriting generate targets is redundant when the child shares the parent's module (deduplication already handles it) and dangerous when the child uses a different module (two modules would write bindings into the same output directory).
 - `children`: structural, not a database property.
 - `dev`: root-level only.

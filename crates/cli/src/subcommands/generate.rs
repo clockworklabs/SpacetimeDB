@@ -53,6 +53,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
         .key(Key::new("bindings").generate_entry_specific())
+        .key(Key::new("dependency_name").config_only().generate_entry_specific())
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
@@ -73,20 +74,20 @@ fn get_filtered_generate_configs<'a>(
     schema: &'a CommandSchema,
     args: &'a clap::ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
-    // Get all database targets from config with parent→child inheritance
+    // Get all database targets from config with parent→child inheritance.
     let all_targets = spacetime_config.collect_all_targets_with_inheritance();
 
     if all_targets.is_empty() {
         return Ok(vec![]);
     }
 
-    // Filter by database name pattern (glob) if provided via CLI
-    let filtered_targets = if let Some(cli_database) = args.get_one::<String>("database") {
+    // Filter by database name pattern (glob) if provided via CLI.
+    let filtered_targets: Vec<_> = if let Some(cli_database) = args.get_one::<String>("database") {
         let pattern =
             glob::Pattern::new(cli_database).with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
 
         let matched: Vec<_> = all_targets
-            .into_iter()
+            .iter()
             .filter(|target| {
                 target
                     .fields
@@ -100,8 +101,7 @@ fn get_filtered_generate_configs<'a>(
             anyhow::bail!(
                 "No database target matches '{}'. Available databases: {}",
                 cli_database,
-                spacetime_config
-                    .collect_all_targets_with_inheritance()
+                all_targets
                     .iter()
                     .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
                     .collect::<Vec<_>>()
@@ -111,35 +111,39 @@ fn get_filtered_generate_configs<'a>(
 
         matched
     } else {
-        all_targets
+        all_targets.iter().collect()
     };
 
-    // Collect generate entries from matched targets, inheriting entity fields
-    // Deduplicate by (module_path, serialized_generate_entry)
+    // Collect generate entries from matched targets, inheriting entity fields.
+    // Also synthesize Rust module-binding entries for receiver dependencies.
+    // Deduplicate by (module_path, serialized_generate_entry).
     let mut seen = std::collections::HashSet::new();
     let mut generate_configs = Vec::new();
 
     for target in &filtered_targets {
-        let generate_entries = match &target.generate {
-            Some(entries) if !entries.is_empty() => entries,
-            _ => continue,
-        };
-
-        // Get module_path from the target's entity fields for dedup
         let module_path = target.fields.get("module-path").and_then(|v| v.as_str()).unwrap_or("");
+        let entries = target
+            .generate
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .cloned()
+            .chain(dependency_generate_entries(target, &all_targets)?);
 
-        for entry in generate_entries {
-            // Deduplicate: same module path + same generate entry config = generate once
-            let dedup_key = format!("{}:{}", module_path, serde_json::to_string(entry).unwrap_or_default());
+        for entry in entries {
+            // Deduplicate: same module path + same generate entry config = generate once.
+            let dedup_key = format!("{}:{}", module_path, serde_json::to_string(&entry).unwrap_or_default());
             if !seen.insert(dedup_key) {
                 continue;
             }
 
-            // Merge entity-level fields (module-path, etc.) with the generate entry
-            let mut merged = entry.clone();
-            // Inherit module-path from the target entity if not set in the generate entry
-            if let Some(mp) = target.fields.get("module-path") {
-                merged.entry("module-path".to_string()).or_insert_with(|| mp.clone());
+            // Merge entity-level fields (module-path, etc.) with the generate entry.
+            let mut merged = entry;
+            // Inherit module-path from the target entity if the entry has no source of its own.
+            if !has_module_source(&merged)
+                && let Some(mp) = target.fields.get("module-path")
+            {
+                merged.insert("module-path".to_string(), mp.clone());
             }
 
             let command_config = CommandConfig::new(schema, merged, args)?;
@@ -165,6 +169,94 @@ fn get_filtered_generate_configs<'a>(
     )?;
 
     Ok(generate_configs)
+}
+
+fn dependency_generate_entries(
+    target: &crate::spacetime_config::FlatTarget,
+    all_targets: &[crate::spacetime_config::FlatTarget],
+) -> anyhow::Result<Vec<HashMap<String, serde_json::Value>>> {
+    let Some(dependencies) = target.fields.get("dependencies") else {
+        return Ok(vec![]);
+    };
+    let dependencies = dependencies
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("`dependencies` must be an array"))?;
+    let sender_module_path = target
+        .fields
+        .get("module-path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("database dependencies require the sender to define `module-path`"))?;
+
+    dependencies
+        .iter()
+        .map(|dependency| dependency_generate_entry(dependency, sender_module_path, all_targets))
+        .collect()
+}
+
+fn has_module_source(fields: &HashMap<String, serde_json::Value>) -> bool {
+    ["module-path", "bin-path", "js-path"]
+        .iter()
+        .any(|key| fields.contains_key(*key))
+}
+
+fn get_module_source(fields: &HashMap<String, serde_json::Value>) -> Option<(&str, serde_json::Value)> {
+    ["module-path", "bin-path", "js-path"]
+        .into_iter()
+        .find_map(|key| fields.get(key).cloned().map(|value| (key, value)))
+}
+
+fn dependency_generate_entry(
+    dependency: &serde_json::Value,
+    sender_module_path: &str,
+    all_targets: &[crate::spacetime_config::FlatTarget],
+) -> anyhow::Result<HashMap<String, serde_json::Value>> {
+    let dependency = dependency
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("dependency entries must be objects"))?;
+    let name = dependency
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("dependency entries require `name`"))?;
+
+    let (source_key, source_value) = if let Some(path) = dependency.get("module-path") {
+        ("module-path", path.clone())
+    } else if let Some(database) = dependency.get("database").and_then(|v| v.as_str()) {
+        let receiver = all_targets
+            .iter()
+            .find(|target| target.fields.get("database").and_then(|v| v.as_str()) == Some(database))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "dependency `{name}` refers to database `{database}`, which is not defined in this spacetime.json"
+                )
+            })?;
+        get_module_source(&receiver.fields).ok_or_else(|| {
+            anyhow::anyhow!(
+                "dependency `{name}` refers to database `{database}`, but that database has no module source"
+            )
+        })?
+    } else {
+        anyhow::bail!("dependency `{name}` requires `database` or `module-path`");
+    };
+
+    let out_dir = dependency
+        .get("out-dir")
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            PathBuf::from(sender_module_path)
+                .join("src")
+                .join("remote_bindings")
+                .to_string_lossy()
+                .into_owned()
+        });
+
+    Ok(HashMap::from([
+        ("language".to_string(), serde_json::json!("rust")),
+        ("bindings".to_string(), serde_json::json!("module")),
+        ("dependency-name".to_string(), serde_json::json!(name)),
+        (source_key.to_string(), source_value),
+        ("out-dir".to_string(), serde_json::json!(out_dir)),
+    ]))
 }
 
 pub fn cli() -> clap::Command {
@@ -311,6 +403,7 @@ pub struct GenerateRunConfig {
     pub out_dir: PathBuf,
     pub include_private: bool,
     pub bindings: BindingKind,
+    pub dependency_name: Option<String>,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -394,6 +487,7 @@ fn prepare_generate_run_configs<'a>(
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
         let bindings = command_config.get_one::<BindingKind>("bindings")?.unwrap_or_default();
+        let dependency_name = command_config.get_one::<String>("dependency_name")?;
 
         if bindings == BindingKind::Module && lang != Language::Rust {
             anyhow::bail!("--bindings module is only supported with --lang rust");
@@ -412,6 +506,7 @@ fn prepare_generate_run_configs<'a>(
             out_dir,
             include_private,
             bindings,
+            dependency_name,
         });
     }
 
@@ -480,6 +575,56 @@ pub fn build_generate_entry(
         entry.insert("out-dir".to_string(), serde_json::json!(path));
     }
     entry
+}
+
+fn generate_dependency_module_files(files: Vec<OutputFile>, dependency_name: &str) -> Vec<OutputFile> {
+    files
+        .into_iter()
+        .map(|OutputFile { filename, code }| {
+            let filename = if filename == "lib.rs" {
+                format!("{dependency_name}/mod.rs")
+            } else {
+                format!("{dependency_name}/{filename}")
+            };
+            OutputFile { filename, code }
+        })
+        .collect()
+}
+
+fn write_remote_bindings_mod(out_dir: &Path, dependency_name: &str) -> anyhow::Result<()> {
+    fs::create_dir_all(out_dir)?;
+    let path = out_dir.join("mod.rs");
+    let module_decl = format!("pub mod {dependency_name};");
+
+    let mut module_decls = if path.exists() {
+        fs::read_to_string(&path)?
+            .lines()
+            .filter(|line| line.starts_with("pub mod "))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if !module_decls.iter().any(|line| line == &module_decl) {
+        module_decls.push(module_decl);
+        module_decls.sort();
+    }
+
+    let mut lines = vec![
+        AUTO_GENERATED_PREFIX.to_string(),
+        "// WILL NOT BE SAVED. MODIFY DEPENDENCIES IN SPACETIME.JSON INSTEAD.".to_string(),
+        String::new(),
+        "#![allow(unused, clippy::all)]".to_string(),
+        String::new(),
+    ];
+    lines.extend(module_decls);
+
+    let code = format!("{}\n", lines.join("\n"));
+    if !path.exists() || fs::read_to_string(&path)? != code {
+        println!("Writing file {}", path.display());
+        fs::write(path, code)?;
+    }
+    Ok(())
 }
 
 pub async fn run_prepared_generate_configs(
@@ -566,6 +711,16 @@ pub async fn run_prepared_generate_configs(
         };
 
         let generated_files = generate(&module, gen_lang, &options);
+        let generated_files = if let Some(dependency_name) = &run.dependency_name {
+            generate_dependency_module_files(generated_files, dependency_name)
+        } else {
+            generated_files
+        };
+
+        if let Some(dependency_name) = &run.dependency_name {
+            write_remote_bindings_mod(&run.out_dir, dependency_name)?;
+        }
+
         for OutputFile { filename, code } in generated_files {
             let fname = Path::new(&filename);
             if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -580,9 +735,10 @@ pub async fn run_prepared_generate_configs(
             paths.insert(path);
         }
 
-        let cleanup_root = match run.lang {
-            Language::UnrealCpp => run.out_dir.join("Source").join(run.module_name.as_ref().unwrap()),
-            _ => run.out_dir.clone(),
+        let cleanup_root = match (&run.dependency_name, run.lang) {
+            (Some(dependency_name), _) => run.out_dir.join(dependency_name),
+            (None, Language::UnrealCpp) => run.out_dir.join("Source").join(run.module_name.as_ref().unwrap()),
+            (None, _) => run.out_dir.clone(),
         };
 
         let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
@@ -980,6 +1136,75 @@ mod tests {
             filtered.len(),
             1,
             "Expected deduplication: same module + same generate config = generate once"
+        );
+    }
+
+    #[test]
+    fn test_dependencies_generate_rust_module_bindings_entries() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let spacetime_config: SpacetimeConfig = json5::from_str(
+            r#"{
+                children: [
+                    {
+                        database: "game-world",
+                        "module-path": "./game_world",
+                    },
+                    {
+                        database: "lobby",
+                        "module-path": "./lobby",
+                        dependencies: [
+                            {
+                                name: "game_world",
+                                database: "game-world",
+                            },
+                            {
+                                name: "auth",
+                                "module-path": "./auth",
+                            },
+                        ],
+                    },
+                ],
+            }"#,
+        )
+        .unwrap();
+
+        let matches = cmd.clone().get_matches_from(vec!["generate", "lobby"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(
+            filtered[0].get_one::<Language>("language").unwrap(),
+            Some(Language::Rust)
+        );
+        assert_eq!(
+            filtered[0].get_one::<BindingKind>("bindings").unwrap(),
+            Some(BindingKind::Module)
+        );
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./game_world"))
+        );
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("out_dir").unwrap(),
+            Some(PathBuf::from("./lobby/src/remote_bindings"))
+        );
+        assert_eq!(
+            filtered[0].get_one::<String>("dependency_name").unwrap(),
+            Some("game_world".to_string())
+        );
+        assert_eq!(
+            filtered[1].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./auth"))
+        );
+        assert_eq!(
+            filtered[1].get_one::<PathBuf>("out_dir").unwrap(),
+            Some(PathBuf::from("./lobby/src/remote_bindings"))
+        );
+        assert_eq!(
+            filtered[1].get_one::<String>("dependency_name").unwrap(),
+            Some("auth".to_string())
         );
     }
 
