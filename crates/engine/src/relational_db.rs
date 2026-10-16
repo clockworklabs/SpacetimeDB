@@ -2926,7 +2926,7 @@ mod tests {
         let live_sender = Identity::ZERO;
 
         let mut tx = begin_mut_tx(&stdb);
-        let view_call = ViewCallInfo::anonymous(view_id, &ProductValue::default());
+        let view_call = ViewCallInfo::anonymous(view_id);
         tx.subscribe_view(
             view_call.clone(),
             ViewInstanceArgs::Anonymous {
@@ -2945,19 +2945,15 @@ mod tests {
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id, &ProductValue::default()), stale_sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), stale_sender)?;
         stdb.commit_tx(tx)?;
 
         // Make one row definitely expired without relying on wall-clock sleeps.
-        update_last_called(
-            &stdb,
-            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
-            Timestamp::UNIX_EPOCH,
-        )?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         let mut tx = begin_mut_tx(&stdb);
         tx.update_view_timestamp(
-            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
+            ViewCallInfo::anonymous(view_id),
             ViewInstanceArgs::Anonymous {
                 args: ProductValue::default(),
             },
@@ -2996,7 +2992,7 @@ mod tests {
         let sender = Identity::ONE;
 
         let mut tx = begin_mut_tx(&stdb);
-        let view_call = ViewCallInfo::anonymous(view_id, &ProductValue::default());
+        let view_call = ViewCallInfo::anonymous(view_id);
         tx.subscribe_view(
             view_call.clone(),
             ViewInstanceArgs::Anonymous {
@@ -3008,15 +3004,11 @@ mod tests {
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id, &ProductValue::default()), sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), sender)?;
         stdb.commit_tx(tx)?;
 
         // Mark the unsubscribed row as expired so cleanup can process it immediately.
-        update_last_called(
-            &stdb,
-            ViewCallInfo::anonymous(view_id, &ProductValue::default()),
-            Timestamp::UNIX_EPOCH,
-        )?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.

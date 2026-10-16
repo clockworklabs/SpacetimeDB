@@ -90,17 +90,19 @@ pub struct ViewCallInfo {
 }
 
 impl ViewCallInfo {
-    pub fn anonymous(view_id: ViewId, args: &ProductValue) -> Self {
+    /// A call with no args, to an anonymous view without params.
+    pub fn anonymous(view_id: ViewId) -> Self {
         Self {
             view_id,
-            arg_hash: view_instance_arg_hash_value(None, args),
+            arg_hash: MutTxId::anonymous_view_arg_hash(),
         }
     }
 
-    pub fn sender(view_id: ViewId, sender: Identity, args: &ProductValue) -> Self {
+    /// A call with no args, to a sender-scoped view without params.
+    pub fn sender(view_id: ViewId, sender: Identity) -> Self {
         Self {
             view_id,
-            arg_hash: view_instance_arg_hash_value(Some(sender), args),
+            arg_hash: MutTxId::view_arg_hash(sender),
         }
     }
 
@@ -4410,7 +4412,7 @@ mod tests {
 
     fn committed_subscribers(subscribers: &[(Identity, u64)]) -> ResultTest<(Locking, ViewCallInfo)> {
         let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
-        let call = ViewCallInfo::anonymous(ViewId::from(10_000u32), &ProductValue::default());
+        let call = ViewCallInfo::anonymous(ViewId::from(10_000u32));
         let mut tx = begin_mut_tx(&datastore);
         for &(identity, count) in subscribers {
             for _ in 0..count {
@@ -4521,7 +4523,7 @@ mod tests {
     fn test_view_unsubscribe_absent_is_noop() -> ResultTest<()> {
         let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
         let mut tx = begin_mut_tx(&datastore);
-        let absent = ViewCallInfo::anonymous(ViewId::from(10_001u32), &ProductValue::default());
+        let absent = ViewCallInfo::anonymous(ViewId::from(10_001u32));
 
         tx.unsubscribe_view(call.clone(), CAROL)?;
         tx.unsubscribe_view(absent.clone(), ALICE)?;
@@ -4544,7 +4546,7 @@ mod tests {
     fn test_view_unsubscribe_all_uses_effective_membership() -> ResultTest<()> {
         let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
         let mut tx = begin_mut_tx(&datastore);
-        let new_call = ViewCallInfo::anonymous(ViewId::from(10_001u32), &ProductValue::default());
+        let new_call = ViewCallInfo::anonymous(ViewId::from(10_001u32));
 
         // Changing Bob must not hide Alice's committed membership.
         tx.unsubscribe_view(call.clone(), BOB)?;
@@ -4630,8 +4632,8 @@ mod tests {
     #[test]
     fn test_view_rollback_discards_changes() -> ResultTest<()> {
         let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
-        let deleted = ViewCallInfo::sender(call.view_id, BOB, &ProductValue::default());
-        let created = ViewCallInfo::sender(call.view_id, CAROL, &ProductValue::default());
+        let deleted = ViewCallInfo::sender(call.view_id, BOB);
+        let created = ViewCallInfo::sender(call.view_id, CAROL);
         let mut tx = begin_mut_tx(&datastore);
         tx.subscribe_view(deleted.clone(), sender_args(BOB), BOB)?;
         tx.update_view_timestamp_at(deleted.clone(), sender_args(BOB), Timestamp::UNIX_EPOCH)?;
@@ -4693,10 +4695,10 @@ mod tests {
     #[test]
     fn test_view_mixed_changes_enumerate_once() -> ResultTest<()> {
         let (datastore, updated) = committed_subscribers(&[(ALICE, 2)])?;
-        let unchanged = ViewCallInfo::sender(updated.view_id, ALICE, &ProductValue::default());
-        let deleted = ViewCallInfo::sender(updated.view_id, BOB, &ProductValue::default());
-        let created = ViewCallInfo::sender(updated.view_id, CAROL, &ProductValue::default());
-        let transient = ViewCallInfo::anonymous(ViewId::from(10_001u32), &ProductValue::default());
+        let unchanged = ViewCallInfo::sender(updated.view_id, ALICE);
+        let deleted = ViewCallInfo::sender(updated.view_id, BOB);
+        let created = ViewCallInfo::sender(updated.view_id, CAROL);
+        let transient = ViewCallInfo::anonymous(ViewId::from(10_001u32));
         let mut tx = begin_mut_tx(&datastore);
         tx.subscribe_view(unchanged.clone(), sender_args(ALICE), ALICE)?;
         tx.subscribe_view(deleted.clone(), sender_args(BOB), BOB)?;
