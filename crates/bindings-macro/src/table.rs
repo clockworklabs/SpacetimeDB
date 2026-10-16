@@ -22,6 +22,7 @@ pub(crate) struct TableArgs {
     accessor: Ident,
     indices: Vec<IndexArg>,
     event: Option<Span>,
+    explicit_vis_private: Option<Span>,
 }
 
 enum TableAccess {
@@ -82,6 +83,8 @@ impl TableArgs {
         let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
         let mut event = None;
+        let mut explicit_vis_private = None;
+
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::public => {
@@ -149,6 +152,10 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor 
                     check_duplicate(&event, &meta)?;
                     event = Some(meta.path.span());
                 }
+                sym::vis_private => {
+                    check_duplicate(&explicit_vis_private, &meta)?;
+                    explicit_vis_private = Some(meta.path.span());
+                }
             });
             Ok(())
         })
@@ -188,6 +195,7 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
             indices,
             name,
             event,
+            explicit_vis_private,
         })
     }
 }
@@ -565,16 +573,16 @@ impl ValidatedIndex<'_> {
         flavor: AccessorType,
     ) -> TokenStream {
         if self.is_unique {
-            self.unique_accessor(row_type_ident, tbl_type_ident, flavor)
+            self.unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
         } else {
             self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
         }
     }
 
-    fn unique_accessor(&self, row_type_ident: &Ident, tbl_type_ident: &Ident, flavor: AccessorType) -> TokenStream {
+    fn unique_accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident, tbl_type_ident: &Ident, flavor: AccessorType) -> TokenStream {
         let col = self.kind.one_col().unwrap();
         let index_ident = self.accessor_name;
-        let vis = col.vis;
+        //let vis = col.vis;
         let col_ty = col.ty;
         let column_ident = col.ident;
 
@@ -657,11 +665,7 @@ impl ValidatedIndex<'_> {
             }
             ValidatedIndexType::Hash { .. } => (None, false),
         };
-        let vis = if self.is_unique {
-            self.kind.one_col().unwrap().vis
-        } else {
-            vis
-        };
+        
         let vis = superize_vis(vis);
 
         let cols = self.kind.columns();
@@ -825,7 +829,10 @@ fn is_first_appearance(struct_name: &str) -> bool {
 }
 
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    let vis = &item.vis;
+    let mut vis = &item.vis;
+    if args.explicit_vis_private.is_some() {
+        vis = &syn::Visibility::Inherited;
+    }
     let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
