@@ -76,9 +76,9 @@ private:
 	UFUNCTION()
 	void HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Identity, const FString& Token);
 	UFUNCTION()
-	void HandleConnectError(const FString& Error);
+	void HandleConnectError(const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 	UFUNCTION()
-	void HandleDisconnect(UDbConnection* InConn, const FString& Error);
+	void HandleDisconnect(UDbConnection* InConn, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 	UFUNCTION()
 	void HandleSubscriptionApplied(FSubscriptionEventContext& Context);
 
