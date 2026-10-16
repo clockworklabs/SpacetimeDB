@@ -180,6 +180,89 @@ export const delete_item = spacetimedb.reducer(
 );
 "#;
 
+const CS_VIEW_ARGS_MODULE: &str = r#"using SpacetimeDB;
+
+public static partial class Module
+{
+    [Table(Accessor = "item", Public = true)]
+    public partial struct Item
+    {
+        [SpacetimeDB.Index.BTree]
+        public uint id;
+        public Identity owner;
+        public uint value;
+    }
+
+    [Reducer]
+    public static void add_item(ReducerContext ctx, uint id, uint value)
+    {
+        ctx.Db.item.Insert(new Item { id = id, owner = ctx.Sender, value = value });
+    }
+
+    [View(Accessor = "by_id", Public = true)]
+    public static List<Item> by_id(AnonymousViewContext ctx, uint id)
+    {
+        return ctx.Db.item.id.Filter(id).ToList();
+    }
+
+    [View(Accessor = "by_id_query", Public = true)]
+    public static IQuery<Item> by_id_query(AnonymousViewContext ctx, uint id)
+    {
+        return ctx.From.item().Where(row => row.id.Eq(id));
+    }
+
+    [View(Accessor = "mine_by_id", Public = true)]
+    public static List<Item> mine_by_id(ViewContext ctx, uint id)
+    {
+        return ctx.Db.item.id.Filter(id).Where(item => item.owner == ctx.Sender).ToList();
+    }
+}
+"#;
+
+const TS_VIEW_ARGS_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
+
+const item = table(
+  { name: "item" },
+  {
+    id: t.u32().index("btree"),
+    owner: t.identity(),
+    value: t.u32(),
+  }
+);
+
+const spacetimedb = schema({ item });
+export default spacetimedb;
+
+export const add_item = spacetimedb.reducer(
+  { id: t.u32(), value: t.u32() },
+  (ctx, { id, value }) => {
+    ctx.db.item.insert({ id, owner: ctx.sender, value });
+  }
+);
+
+export const by_id = spacetimedb.anonymousView(
+  { public: true },
+  { id: t.u32() },
+  t.array(item.rowType),
+  (ctx, { id }) => [...ctx.db.item.id.filter(id)]
+);
+
+export const by_id_query = spacetimedb.anonymousView(
+  { public: true },
+  { id: t.u32() },
+  t.array(item.rowType),
+  (ctx, { id }) => ctx.from.item.where(row => row.id.eq(id)).build()
+);
+
+export const mine_by_id = spacetimedb.view(
+  { public: true },
+  { id: t.u32() },
+  t.array(item.rowType),
+  (ctx, { id }) =>
+    [...ctx.db.item.id.filter(id)].filter(item => item.owner.isEqual(ctx.sender))
+);
+"#;
+
 fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]) -> Vec<Value> {
     let project_row = |row: &Value| {
         if projected_fields.is_empty() {
@@ -240,6 +323,56 @@ fn assert_count_view_refresh_behavior(test: &Smoketest, view_name: &str, id: &st
 fn assert_all_count_view_refreshes(test: &Smoketest) {
     assert_count_view_refresh_behavior(test, "sender_table_count", "1", "10", "11");
     assert_count_view_refresh_behavior(test, "anon_table_count", "2", "20", "21");
+}
+
+/// The `value` column, the last one, of each row a one-off query returns, sorted.
+/// The rows' `owner` identity changes every run, so it's left out.
+fn sql_values(test: &Smoketest, query: &str) -> Vec<u32> {
+    let output = test.sql(query).unwrap();
+    let mut values: Vec<u32> = output
+        .lines()
+        .filter_map(|line| line.rsplit('|').next()?.trim().parse().ok())
+        .collect();
+    values.sort();
+    values
+}
+
+/// `by_id` returns rows and `by_id_query` returns a query, each for the `id` it's called with,
+/// and `mine_by_id` also only for the caller.
+fn assert_view_args(test: &Smoketest) {
+    test.call("add_item", &["1", "10"]).unwrap();
+    test.call("add_item", &["2", "20"]).unwrap();
+    for view in ["by_id", "by_id_query", "mine_by_id"] {
+        assert_eq!(sql_values(test, &format!("SELECT * FROM {view}(1)")), [10], "{view}(1)");
+    }
+
+    // Each call refreshes on an insert to its own rows.
+    let sub = test
+        .subscribe(&[
+            "select * from by_id(2)",
+            "select * from by_id_query(2)",
+            "select * from mine_by_id(2)",
+        ])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.call("add_item", &["2", "21"]).unwrap();
+    let events = sub.collect().unwrap();
+    for view in ["by_id", "by_id_query", "mine_by_id"] {
+        let projection = project_fields(events.clone(), view, &["id", "value"]);
+        assert_eq!(
+            serde_json::json!(projection),
+            serde_json::json!([
+                {view: {"deletes": [], "inserts": [{"id": 2, "value": 21}]}}
+            ])
+        );
+    }
+
+    // A second caller with the same args sees only its own rows from `mine_by_id`.
+    test.new_identity().unwrap();
+    test.call("add_item", &["1", "11"]).unwrap();
+    assert_eq!(sql_values(test, "SELECT * FROM mine_by_id(1)"), [11]);
+    assert_eq!(sql_values(test, "SELECT * FROM by_id(1)"), [10, 11]);
 }
 
 /// Tests that views populate the st_view_* system tables
@@ -970,6 +1103,41 @@ fn test_typescript_count_view_subscription_refreshes() {
         .unwrap();
 
     assert_all_count_view_refreshes(&test);
+}
+
+#[test]
+fn test_rust_view_args() {
+    let test = Smoketest::builder().precompiled_module("views-args").build();
+    assert_view_args(&test);
+}
+
+#[test]
+fn test_csharp_view_args() {
+    require_dotnet!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+    test.publish()
+        .name("views-args-csharp")
+        .source(ModuleLanguage::CSharp, "views-args-csharp", CS_VIEW_ARGS_MODULE)
+        .run()
+        .unwrap();
+
+    assert_view_args(&test);
+}
+
+#[test]
+fn test_typescript_view_args() {
+    require_pnpm!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-args-typescript-{}", random_string());
+    test.publish()
+        .name(&database_name)
+        .source(ModuleLanguage::TypeScript, "views-args-typescript", TS_VIEW_ARGS_MODULE)
+        .run()
+        .unwrap();
+
+    assert_view_args(&test);
 }
 
 #[test]
