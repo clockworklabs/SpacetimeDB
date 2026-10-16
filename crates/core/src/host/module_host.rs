@@ -3827,11 +3827,13 @@ impl ModuleHost {
         // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
         self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
         self.scheduler().close();
+        self.idc_sender().close();
         self.exited().await;
     }
 
     pub async fn exited(&self) {
-        self.scheduler().closed().await;
+        let idc_sender = self.idc_sender();
+        tokio::join!(self.scheduler().closed(), idc_sender.closed());
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
@@ -4233,6 +4235,13 @@ impl ModuleHost {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.module.scheduler(),
             ModuleHostInner::Js(js) => js.module.scheduler(),
+        }
+    }
+
+    fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        match &*self.inner {
+            ModuleHostInner::Wasm(wasm) => wasm.module.idc_sender(),
+            ModuleHostInner::Js(js) => js.module.idc_sender(),
         }
     }
 }

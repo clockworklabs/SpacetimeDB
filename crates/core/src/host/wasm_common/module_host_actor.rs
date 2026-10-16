@@ -465,6 +465,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> crate::host::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()
     }

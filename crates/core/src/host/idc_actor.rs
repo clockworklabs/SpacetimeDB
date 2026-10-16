@@ -23,7 +23,27 @@ use tokio::sync::mpsc;
 
 const NOTIFICATION_BATCH_SIZE: usize = 16;
 
-pub type IdcActorSender = mpsc::UnboundedSender<StOutboundMsgRow>;
+#[derive(Clone)]
+pub struct IdcActorSender {
+    tx: mpsc::UnboundedSender<StOutboundMsgRow>,
+    shutdown: mpsc::UnboundedSender<()>,
+}
+
+impl IdcActorSender {
+    pub fn send(&self, msg: StOutboundMsgRow) -> Result<(), mpsc::error::SendError<StOutboundMsgRow>> {
+        self.tx.send(msg)
+    }
+
+    /// Stop dispatching new work and drain active attempts.
+    pub fn close(&self) {
+        let _ = self.shutdown.send(());
+    }
+
+    /// Wait until the actor has stopped, including its active attempts.
+    pub async fn closed(&self) {
+        self.shutdown.closed().await;
+    }
+}
 
 /// HTTP and signing settings shared by the host's IDC actors.
 #[derive(Clone)]
@@ -35,17 +55,18 @@ pub struct IdcConfig {
 }
 
 pub struct IdcActor {
-    _abort: tokio::task::AbortHandle,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for IdcActor {
     fn drop(&mut self) {
-        self._abort.abort();
+        self.task.abort();
     }
 }
 
 pub struct IdcActorStarter {
     rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
+    shutdown_rx: mpsc::UnboundedReceiver<()>,
 }
 
 impl IdcActorStarter {
@@ -58,24 +79,33 @@ impl IdcActorStarter {
     ) -> anyhow::Result<IdcActor> {
         let mut streams = DeliveryStreams::default();
         restore_pending_streams(&db, &mut streams)?;
-        let abort = tokio::spawn(async move {
-            if let Err(error) = run_idc_loop(db, database_identity, config, module_host, self.rx, streams).await {
+        let task = tokio::spawn(async move {
+            if let Err(error) = run_idc_loop(
+                db,
+                database_identity,
+                config,
+                module_host,
+                self.rx,
+                streams,
+                self.shutdown_rx,
+            )
+            .await
+            {
                 log::error!(
                     "idc_actor: sender_identity={}: stopped: {error:#}",
                     database_identity.to_hex(),
                 );
             }
-        })
-        .abort_handle();
-        Ok(IdcActor { _abort: abort })
+        });
+        Ok(IdcActor { task })
     }
 }
 
-impl IdcActor {
-    pub fn open() -> (IdcActorStarter, IdcActorSender) {
-        let (tx, rx) = mpsc::unbounded_channel();
-        (IdcActorStarter { rx }, tx)
-    }
+/// Create the channels used to notify and stop an actor, which is started separately.
+pub fn channel() -> (IdcActorStarter, IdcActorSender) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let (shutdown, shutdown_rx) = mpsc::unbounded_channel();
+    (IdcActorStarter { rx, shutdown_rx }, IdcActorSender { tx, shutdown })
 }
 
 /// An outbox message and its metadata from the `st_outbound_*` tables.
@@ -156,77 +186,98 @@ async fn run_idc_loop(
     module_host: WeakModuleHost,
     mut notify_rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
     mut streams: DeliveryStreams,
+    mut shutdown: mpsc::UnboundedReceiver<()>,
 ) -> anyhow::Result<()> {
     let client = http_client();
     let mut in_flight = FuturesUnordered::new();
     let mut notifications = Vec::with_capacity(NOTIFICATION_BATCH_SIZE);
     let mut notifications_open = true;
 
-    loop {
-        // Start ready messages. Each future includes delivery, callback, and cleanup.
-        // Stopping the actor drops these futures, but cannot cancel work already
-        // running on the receiver or a callback already submitted to the local host.
-        while let Some(msg) = take_ready_message(&db, &mut streams)? {
-            let stream_id = msg.message().stream_id;
-            let seq = msg.message().sequence;
-            let (db, client, config, module_host) = (&db, &client, &config, &module_host);
-            in_flight.push(async move {
-                let result = handle_message(db, client, database_identity, config, module_host, msg).await;
-                (stream_id, seq, result)
-            });
-        }
+    let result = async {
+        loop {
+            // Honor explicit shutdown before normal work; dropping senders must not stop pending retries.
+            if shutdown.try_recv().is_ok() {
+                break Ok(());
+            }
 
-        let next_retry = streams.next_retry();
+            // Start ready messages. Each future includes delivery, callback, and cleanup.
+            while let Some(msg) = take_ready_message(&db, &mut streams)? {
+                let stream_id = msg.message().stream_id;
+                let seq = msg.message().sequence;
+                let (db, client, config, module_host) = (&db, &client, &config, &module_host);
+                in_flight.push(async move {
+                    let result = handle_message(db, client, database_identity, config, module_host, msg).await;
+                    (stream_id, seq, result)
+                });
+            }
 
-        tokio::select! {
-            // Start the next message after cleanup succeeds. Retry failed attempts after backoff.
-            Some((stream_id, seq, result)) = in_flight.next(), if !in_flight.is_empty() => {
-                match result {
-                    Ok(()) => {
-                        streams.finish(stream_id, seq);
-                    }
-                    Err(error) => {
-                        let delay = streams.retry(stream_id, seq);
-                        log::warn!(
-                            "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {delay:?}: {error:#}",
-                            database_identity.to_hex(),
-                        );
-                    }
-                }
-            },
-
-            // New inserts wake ready streams, but do not clear backoff.
-            // Bound each batch so a steady flow of inserts cannot hold up completions or retries.
-            count = notify_rx.recv_many(&mut notifications, NOTIFICATION_BATCH_SIZE),
-                if notifications_open =>
-            {
-                // Zero means the channel is closed and drained.
-                notifications_open = count != 0;
-                for msg in notifications.drain(..) {
-                    streams.push(StreamId(msg.stream_id));
-                }
-            },
-
-            // Wake the stream with the earliest retry deadline.
-            Some(stream_id) = async {
-                let (stream_id, delay) = next_retry?;
-                tokio::time::sleep(delay).await;
-                Some(stream_id)
-            }, if next_retry.is_some() => {
-                streams.push(stream_id);
-            },
-
-            // The notification channel is drained and no deliveries or retries remain.
-            else => {
+            let next_retry = streams.next_retry();
+            if !notifications_open && in_flight.is_empty() && next_retry.is_none() {
                 log::debug!(
                     "idc_actor: sender_identity={}: stopping; notification channel closed and no deliveries or retries remain",
                     database_identity.to_hex(),
                 );
-                break;
-            },
-        };
+                break Ok(());
+            }
+
+            tokio::select! {
+                Some(()) = shutdown.recv() => break Ok(()),
+
+                // Start the next message after cleanup succeeds. Retry failed attempts after backoff.
+                Some((stream_id, seq, result)) = in_flight.next(), if !in_flight.is_empty() => {
+                    match result {
+                        Ok(()) => {
+                            streams.finish(stream_id, seq);
+                        }
+                        Err(error) => {
+                            let delay = streams.retry(stream_id, seq);
+                            log::warn!(
+                                "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {delay:?}: {error:#}",
+                                database_identity.to_hex(),
+                            );
+                        }
+                    }
+                },
+
+                // Wake the stream with the earliest retry deadline.
+                Some(stream_id) = async {
+                    let (stream_id, delay) = next_retry?;
+                    // An overdue retry must stay ready even when other branches keep winning.
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
+                    Some(stream_id)
+                }, if next_retry.is_some() => {
+                    streams.push(stream_id);
+                },
+
+                // New inserts wake ready streams, but do not clear backoff.
+                // Bound each batch so a steady flow of inserts cannot hold up completions or retries.
+                count = notify_rx.recv_many(&mut notifications, NOTIFICATION_BATCH_SIZE),
+                    if notifications_open =>
+                {
+                    // Zero means the channel is closed and drained.
+                    notifications_open = count != 0;
+                    for msg in notifications.drain(..) {
+                        streams.push(StreamId(msg.stream_id));
+                    }
+                },
+            };
+        }
     }
-    Ok(())
+    .await;
+
+    // Submitted callbacks continue on the module executor even if their futures
+    // are dropped. Drain them before the caller can shut down the database.
+    // Failed attempts remain pending; shutdown must not schedule another retry.
+    while let Some((stream_id, seq, result)) = in_flight.next().await {
+        if let Err(error) = result {
+            log::warn!("idc_actor: stream_id={stream_id} sequence={seq}: left pending during shutdown: {error:#}");
+        }
+    }
+    // Closing the shutdown channel reports completion only after active work drains.
+    drop(shutdown);
+    result
 }
 
 /// Keep the stream active through delivery, callback, and cleanup.
@@ -868,7 +919,7 @@ mod tests {
         let first = store_success(&db, next_message(&db)?)?;
         let (mut env, _runtime) = super::super::instance_env::test::instance_env(db.clone())?;
         // Delivery must wait until the insert commits.
-        let (mut starter, sender) = IdcActor::open();
+        let (mut starter, sender) = channel();
         env.idc_sender = sender;
 
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);

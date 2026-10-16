@@ -295,6 +295,10 @@ impl JsModule {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info().clone()
     }
