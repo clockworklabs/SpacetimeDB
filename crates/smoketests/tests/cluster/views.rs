@@ -711,39 +711,53 @@ fn test_parameterized_view_instances_are_isolated() {
 fn test_parameterized_sender_view_per_caller() {
     let test = Smoketest::builder().precompiled_module("views-args").build();
 
+    // Rows include the caller's identity, so compare the initial update without the `owner` column.
+    let mine_by_id = || {
+        let initial = test
+            .subscribe(&["select * from mine_by_id(1)"])
+            .expect_rows(0)
+            .run()
+            .unwrap();
+        serde_json::json!(project_fields(initial, "mine_by_id", &["id", "value"]))
+    };
+
     test.call("add_item", &["1", "10"]).unwrap();
-    test.assert_sql(
-        "SELECT value FROM mine_by_id(1)",
-        r#" value
--------
- 10"#,
+    assert_eq!(
+        mine_by_id(),
+        json!([{ "mine_by_id": { "deletes": [], "inserts": [{ "id": 1, "value": 10 }] } }])
     );
 
     // A second caller with the same args sees only its own rows.
     test.new_identity().unwrap();
     test.call("add_item", &["1", "20"]).unwrap();
-    test.assert_sql(
-        "SELECT value FROM mine_by_id(1)",
-        r#" value
--------
- 20"#,
+    assert_eq!(
+        mine_by_id(),
+        json!([{ "mine_by_id": { "deletes": [], "inserts": [{ "id": 1, "value": 20 }] } }])
     );
 }
 
-/// A parameterized view call can be joined.
+/// A parameterized view can only be queried as `SELECT * FROM v(...)`, in SQL and in subscriptions.
 #[test]
-fn test_parameterized_view_join() {
+fn test_parameterized_view_select_all_only() {
     let test = Smoketest::builder().precompiled_module("views-args").build();
 
     test.call("add_item", &["1", "10"]).unwrap();
-    test.call("add_item", &["2", "20"]).unwrap();
 
-    test.assert_sql(
-        "SELECT v.value FROM by_id(1) AS v JOIN item ON v.id = item.id",
-        r#" value
--------
- 10"#,
-    );
+    for (query, error) in [
+        (
+            "SELECT * FROM by_id(1) WHERE value = 10",
+            "can only be queried as `SELECT * FROM by_id(...)`",
+        ),
+        (
+            "SELECT v.* FROM by_id(1) AS v JOIN item ON v.id = item.id",
+            "Unsupported view call in a JOIN",
+        ),
+    ] {
+        let sql = test.sql(query).unwrap_err();
+        assert!(format!("{sql:#}").contains(error), "SQL `{query}`: {sql:#}");
+        let sub = test.subscribe(&[query]).expect_rows(0).run().unwrap_err();
+        assert!(format!("{sub:#}").contains(error), "Subscription `{query}`: {sub:#}");
+    }
 }
 
 #[test]
