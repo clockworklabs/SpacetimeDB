@@ -1,0 +1,113 @@
+TAP version 13
+# Subtest: native text and binary WebSocket replies are dropped without changing requests or subprotocol
+    # Subtest: binary=false, loss=false, lookup failure=false
+    not ok 1 - binary=false, loss=false, lookup failure=false
+      ---
+      duration_ms: 1260.4236
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\response-loss.integration.js:168:17'
+      failureType: 'testCodeFailure'
+      error: 'page.waitForFunction: Timeout 1000ms exceeded.'
+      code: 'ERR_TEST_FAILURE'
+      name: 'TimeoutError'
+      stack: |-
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\response-loss.integration.js:214:28)
+        async TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\response-loss.integration.js:168:9)
+      ...
+    # Subtest: binary=false, loss=true, lookup failure=false
+    not ok 2 - binary=false, loss=true, lookup failure=false
+      ---
+      duration_ms: 3318.8575
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\response-loss.integration.js:168:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Only positively verified tooling may bypass response loss
+        + actual - expected
+        
+        + []
+        - [
+        -   'tooling-update'
+        - ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: 'tooling-update'
+      actual:
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/response-loss.integration.js:212:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/response-loss.integration.js:168:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: binary=true, loss=false, lookup failure=false
+    not ok 3 - binary=true, loss=false, lookup failure=false
+      ---
+      duration_ms: 1142.5393
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\response-loss.integration.js:168:17'
+      failureType: 'testCodeFailure'
+      error: 'page.waitForFunction: Timeout 1000ms exceeded.'
+      code: 'ERR_TEST_FAILURE'
+      name: 'TimeoutError'
+      stack: |-
+        TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\response-loss.integration.js:214:28)
+        async TestContext.<anonymous> (D:\Development\ClockworkLabs\SpacetimeDB\SpacetimeDB\tools\stack-bench\dist\tests\response-loss.integration.js:168:9)
+      ...
+    # Subtest: binary=true, loss=true, lookup failure=false
+    not ok 4 - binary=true, loss=true, lookup failure=false
+      ---
+      duration_ms: 3268.559
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\response-loss.integration.js:168:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Only positively verified tooling may bypass response loss
+        + actual - expected
+        
+        + []
+        - [
+        -   'tooling-update'
+        - ]
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected:
+        0: 'tooling-update'
+      actual:
+      operator: 'deepStrictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/response-loss.integration.js:212:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/response-loss.integration.js:168:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: binary=false, loss=true, lookup failure=true
+    ok 5 - binary=false, loss=true, lookup failure=true
+      ---
+      duration_ms: 152.2404
+      type: 'test'
+      ...
+    1..5
+not ok 1 - native text and binary WebSocket replies are dropped without changing requests or subprotocol
+  ---
+  duration_ms: 9332.4269
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\response-loss.integration.js:108:1'
+  failureType: 'subtestsFailed'
+  error: '4 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 6
+# suites 0
+# pass 1
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9738.1403

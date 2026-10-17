@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.reservations-features",
+  "stableId": "ecommerce.l3.reservations",
+  "moduleType": "feature",
+  "title": "Reservations",
+  "description": "Timed cart reservations, renewal, checkout, and expiry.",
+  "requiresPacks": [
+    "ecommerce.feature.checkout",
+    "ecommerce.feature.warehouse-admin"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 300000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.l3.reservations",
+        "path": "prompts/modular/reservations.md",
+        "order": 3000,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.l3.reservation-hooks",
+        "path": "contracts/reservations.md",
+        "order": 3900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "stock-hold",
+      "stableId": "reservations",
+      "source": "scenarios/03-reservations.json",
+      "feature": 301,
+      "role": "feature"
+    },
+    {
+      "id": "countdown",
+      "stableId": "reservations",
+      "source": "scenarios/03-reservations.json",
+      "feature": 305,
+      "role": "feature"
+    },
+    {
+      "id": "checkout",
+      "stableId": "reservations",
+      "source": "scenarios/03-reservations.json",
+      "feature": 306,
+      "role": "feature"
+    },
+    {
+      "id": "expiry",
+      "stableId": "reservations",
+      "source": "scenarios/03-reservations.json",
+      "feature": 307,
+      "role": "feature"
+    },
+    {
+      "id": "renewal",
+      "stableId": "reservations",
+      "source": "scenarios/03-reservations.json",
+      "feature": 308,
+      "role": "feature"
+    }
+  ]
+}

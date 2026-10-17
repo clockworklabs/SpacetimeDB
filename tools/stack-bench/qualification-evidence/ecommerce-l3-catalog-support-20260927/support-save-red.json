@@ -1,0 +1,392 @@
+{
+  "result": "failed",
+  "rerun": "node --test dist/tests/support-save.integration.js",
+  "evidence": [
+    {
+      "mode": "delayed",
+      "grade": {
+        "id": 611,
+        "name": "Support triage",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "611a",
+            "desc": "staff can assign a new ticket",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "staff",
+              "summary": "the support-assignee control shows \"\", expected \"staff\"",
+              "finding": {
+                "kind": "value-mismatch",
+                "fields": {
+                  "control": "support-assignee",
+                  "observed": "",
+                  "expected": "staff"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790497068641,
+                "completedAtMs": 1790497078019,
+                "durationMs": 9378
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "fill",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "filled": "support-assignee"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497068642,
+                      "completedAtMs": 1790497068763,
+                      "durationMs": 121,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "support-update"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497068764,
+                      "completedAtMs": 1790497070319,
+                      "durationMs": 1555,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497070320,
+                      "completedAtMs": 1790497072843,
+                      "durationMs": 2523,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "staff"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497072844,
+                      "completedAtMs": 1790497072862,
+                      "durationMs": 18,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link",
+                      "visible": "support-assignee"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497072862,
+                      "completedAtMs": 1790497072898,
+                      "durationMs": 36,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "support-queue-link",
+                      "visible": "support-assignee"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497072898,
+                      "completedAtMs": 1790497072912,
+                      "durationMs": 14,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the support-assignee control shows \"\", expected \"staff\"",
+                    "finding": {
+                      "kind": "value-mismatch",
+                      "fields": {
+                        "control": "support-assignee",
+                        "observed": "",
+                        "expected": "staff"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497072913,
+                      "completedAtMs": 1790497078018,
+                      "durationMs": 5105,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff can assign support tickets."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790497068636,
+            "completedAtMs": 1790497068636,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "events": [
+        {
+          "event": "page-load",
+          "at": 1790497068613,
+          "value": ""
+        },
+        {
+          "event": "poll-start",
+          "at": 1790497068632
+        },
+        {
+          "event": "save-start",
+          "at": 1790497068812,
+          "value": "staff"
+        },
+        {
+          "event": "page-load",
+          "at": 1790497070327,
+          "value": ""
+        },
+        {
+          "event": "poll-start",
+          "at": 1790497070341
+        },
+        {
+          "event": "save-committed",
+          "at": 1790497070813,
+          "value": "staff"
+        }
+      ],
+      "writes": 1,
+      "stored": "staff",
+      "steps": [
+        {
+          "do": "fill",
+          "actor": "staff",
+          "testid": "support-assignee",
+          "in": {
+            "testid": "support-ticket",
+            "contains": "Missing item"
+          },
+          "text": "staff"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "support-update",
+          "in": {
+            "testid": "support-ticket",
+            "contains": "Missing item"
+          },
+          "settleMs": 1500
+        },
+        {
+          "do": "reload",
+          "actor": "staff",
+          "settleMs": 2500
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "ifAvailable": true,
+          "unlessVisible": "support-assignee"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "support-queue-link",
+          "unlessVisible": "support-assignee",
+          "ifAvailable": true
+        },
+        {
+          "do": "expect",
+          "actor": "staff",
+          "testid": "support-assignee",
+          "in": {
+            "testid": "support-ticket",
+            "contains": "Missing item"
+          },
+          "value": "staff"
+        }
+      ]
+    }
+  ]
+}

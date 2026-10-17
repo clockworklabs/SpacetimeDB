@@ -1,0 +1,168 @@
+{
+  "baseline": "catalog-support-executable-current.json",
+  "current": "readiness-final-executable-inputs.json",
+  "rows": [
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "0b16b595754587aa5301736bf3f2ce48eb12884f52ab8dc907e023cd8325764c",
+      "toExecutableSha256": "7797b69093145170dc055c05838039a3c2d9a086c3fe56f0192f439c2292701e",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "0b16b595754587aa5301736bf3f2ce48eb12884f52ab8dc907e023cd8325764c",
+      "toExecutableSha256": "7797b69093145170dc055c05838039a3c2d9a086c3fe56f0192f439c2292701e",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "dcddd6929ab96216f79cbebf90e94adec6b9c9f9916123178963a9e342b1523d",
+      "toExecutableSha256": "3438bd353df49fcc6b2f1f6a0c9bd38d7fd247e984372cb8b08b6d33b4d4cf9d",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "dcddd6929ab96216f79cbebf90e94adec6b9c9f9916123178963a9e342b1523d",
+      "toExecutableSha256": "3438bd353df49fcc6b2f1f6a0c9bd38d7fd247e984372cb8b08b6d33b4d4cf9d",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2e7273897b9f80abc8a064d6aaa5b2bf8eb2d7bcf3903bf9b6325a36af6aa47f",
+      "toExecutableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2e7273897b9f80abc8a064d6aaa5b2bf8eb2d7bcf3903bf9b6325a36af6aa47f",
+      "toExecutableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "46d9f1887f0d3fc572e9c6dd5d081251800806323ce809ed7e893defe2f0117c",
+      "toExecutableSha256": "a94eb7fe1415d45004c9a997775a0b2bd903929eb39afd86a97414b02a2f7c17",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "46d9f1887f0d3fc572e9c6dd5d081251800806323ce809ed7e893defe2f0117c",
+      "toExecutableSha256": "a94eb7fe1415d45004c9a997775a0b2bd903929eb39afd86a97414b02a2f7c17",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "fromExecutableSha256": "0e1f1f6590e1dfc1f056b8c38d6f0c7c31d212584498bcc114f92db7e8d3eb65",
+      "toExecutableSha256": "250040d4ccfb1203a388f1bb82845965b69e694352a783369049a9627c2cdf9b",
+      "changed": [
+        {
+          "path": "src/actions/browser-action-executors.ts",
+          "fromSha256": "5cfbaccf66d3b82859943683e630bd2108adc9c550b828c848a874ec38724b13",
+          "toSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+        },
+        {
+          "path": "src/composition/definition-compiler.ts",
+          "fromSha256": "6d2428a21148634c59e12e371f898b52870c73b3c0c0d2744baa4692aebb350c",
+          "toSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+        }
+      ]
+    }
+  ]
+}

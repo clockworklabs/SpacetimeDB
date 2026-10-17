@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "approved": false,
+  "candidate": "fae0df803d79b2068c725d46d77b3d6bab05b17e",
+  "image": "sha256:eae464547eeab8f04f012cc188b61835b549080e7de3473cb2736395854fd194",
+  "source": "normal recipe and calibration compilers",
+  "metadata": [
+    {
+      "file": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "originalSha256": "11e37d755ad81c06fd608dc31e8e913b33583d8c14ad4933a7b77e0258c08410",
+      "recipeId": "ecommerce.progression-catalog",
+      "oldHashes": {
+        "meaningSha256": "18da50cd0c100320133f3d5676d40fa04b8433f1738e92b223e2056eba42a371",
+        "executionSha256": "019e0bd1c718d39fd40f1485396b7575e7a50683d726817943c3bdbf61a89e6e",
+        "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+      },
+      "newHashes": {
+        "meaningSha256": "5451150bef12d780d9ec242c5889f34b95edaf542be49add31fb40ccc3570f34",
+        "executionSha256": "6262f284d68a3dfb0440b3a8691d8329f0b935adeb244899157d2e1b4fdaa972",
+        "contentSha256": "2da1458d95e849a9380f362d900bca8903f94336bad6237ce3f5d9d0816aef5a"
+      },
+      "evidenceCount": 137,
+      "action": "Promote reviewed 17 fresh and 95 reused slices with metadata."
+    },
+    {
+      "file": "tracks/ecommerce/composition/calibrations/dependency-l6.json",
+      "originalSha256": "1d9ab8065d423bd3a9c9306e34edf858b3bf4d57cff56e9164623a463f3bdee4",
+      "recipeId": "ecommerce.progression-catalog",
+      "oldHashes": {
+        "meaningSha256": "18da50cd0c100320133f3d5676d40fa04b8433f1738e92b223e2056eba42a371",
+        "executionSha256": "019e0bd1c718d39fd40f1485396b7575e7a50683d726817943c3bdbf61a89e6e",
+        "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+      },
+      "newHashes": {
+        "meaningSha256": "5451150bef12d780d9ec242c5889f34b95edaf542be49add31fb40ccc3570f34",
+        "executionSha256": "6262f284d68a3dfb0440b3a8691d8329f0b935adeb244899157d2e1b4fdaa972",
+        "contentSha256": "2da1458d95e849a9380f362d900bca8903f94336bad6237ce3f5d9d0816aef5a"
+      },
+      "evidenceCount": 0,
+      "action": "Update three recipe hashes only; qualification remains empty."
+    },
+    {
+      "file": "tracks/ecommerce/composition/calibrations/sequential-l1.json",
+      "originalSha256": "a1345f926948c4d0506c2a3c2a15fe4c2836fbbe2121cf5871426d3762b57c01",
+      "recipeId": "ecommerce.sequential-l1",
+      "oldHashes": {
+        "meaningSha256": "6edb553a9221f2f513c2fb8afbc645ead4251eabb9b8c2ff475a11d4097d4e5e",
+        "executionSha256": "c110a5e1c300b7196946ef79c7d2056268b6c7375153a8d1fb708333501b2d34",
+        "contentSha256": "6f9f7f2fd5b23b55f41461379f3770d867b8c37c40201e4bd382956abb0e31e9"
+      },
+      "newHashes": {
+        "meaningSha256": "817ccebc492813e7c6728323165f5d35c7b21efd6004f34390468374769c639f",
+        "executionSha256": "e8fbb23a1130a8626e35adf5427e84990950f3438aa1df5d9245be14230bced6",
+        "contentSha256": "247df45e6db214e68e4f7cfecb56d83e2590a7dc3230979f6cb15c380162bd27"
+      },
+      "evidenceCount": 0,
+      "action": "Update three recipe hashes only; qualification remains empty."
+    },
+    {
+      "file": "tracks/ecommerce/composition/calibrations/sequential-l2.json",
+      "originalSha256": "5a96ae963d587ebd94d27e263f8171101aacd9f545053f2349f82136a81bcd91",
+      "recipeId": "ecommerce.sequential-l2",
+      "oldHashes": {
+        "meaningSha256": "9a3287bc0110d761691a6fede6d36b29926cf391d66018ff6fadf1b50a42f4a5",
+        "executionSha256": "82a3a539d27b787d7fdbe326d65efc604aacce250992526cab0388b216e53871",
+        "contentSha256": "839be6895bc07a10c363cb321adc64b5f770483ebdb2ec9827f8165b85a39568"
+      },
+      "newHashes": {
+        "meaningSha256": "5e96fd92cb9660d593406b463a9bc6533ac2740f5da6298ba423cf204b1568e0",
+        "executionSha256": "a5a276756264c93eba0f0266b5c6fb8715ca26eaa8a89957fbffa066f1826747",
+        "contentSha256": "d37cacb3ca4fc28dd81a1245a39e5493d0e55342568ef9da91023f3afb385599"
+      },
+      "evidenceCount": 0,
+      "action": "Update three recipe hashes only; qualification remains empty."
+    }
+  ],
+  "limits": "Hash metadata is not qualification. L6, sequential L1, and sequential L2 keep zero evidence. L3 requires normal slice validation and root approval.",
+  "requiredFinalCheck": "Run normal check-calibration after the reviewed tracked promotion."
+}

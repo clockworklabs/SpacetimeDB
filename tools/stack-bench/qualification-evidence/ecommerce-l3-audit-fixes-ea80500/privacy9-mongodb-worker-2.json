@@ -1,0 +1,128 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260927181605-4791",
+  "attempt": {
+    "id": "reference-live-mongodb-20260927181605-4791",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:16:05.964Z",
+    "completedAt": "2026-09-27T18:21:22.829Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "554c67b92aea78fe8d3ba7b65cd88fc2599915ab90eeb3159b6014e154287783"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 29,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "2a609df28d0b3f98ebe988241f4fd032f7ad25355a8a6ef08edd8dec44d663ef",
+      "executableSha256": "de4841f80ff5c46197c77fbb682e637d70ea1b3bdfa5211aa3f31bb7da320c8a",
+      "kind": "mutation",
+      "mutationSha256": "28e6d85bd49915fc824be6951fb0b26a198c577431152b31ca545eac883682fd",
+      "recipe": {
+        "contentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "eeeb1a4d93a6784fd63bf5872589a855b8d744826e75d36148c6a09bf2a07732"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "w2.runs/r1",
+        "durationMs": 316681,
+        "capacityWaitMs": 0,
+        "processError": null,
+        "harnessSha256Before": "53ded1f0a754552d96a76749f34cfcdc49895a00714c648236213c31a8f56232",
+        "harnessSha256After": "53ded1f0a754552d96a76749f34cfcdc49895a00714c648236213c31a8f56232",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-mongodb-run117-20260927181608-9d471da9",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "outcome": "passed",
+        "mutations": {
+          "caught": 4,
+          "completed": 4,
+          "total": 4,
+          "remaining": 0
+        },
+        "score": null,
+        "criteria": null,
+        "zeroPointCriteria": null,
+        "fingerprint": null,
+        "packRuntime": null
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "53ded1f0a754552d96a76749f34cfcdc49895a00714c648236213c31a8f56232",
+    "qualifiedCheckKeys": [
+      "ecommerce.progression.customer-profile.customer-profile.620c",
+      "ecommerce.progression.support-history.support-history.612c",
+      "ecommerce.spec.access-control.account-disclosure.110a",
+      "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.support-history-logout.612d",
+      "ecommerce.spec.access-control.support-history-privacy.612b",
+      "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "ecommerce.spec.state-durability.support-history-reload.612a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

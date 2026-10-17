@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: retained dependency evidence exports through the CLI and sends only validated private uploads
+ok 1 - retained dependency evidence exports through the CLI and sends only validated private uploads
+  ---
+  duration_ms: 73831.9484
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 74843.8305

@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1, "track": "ecommerce", "level": 2,
+  "name": "ample stock purchase contention",
+  "note": "Draft reference diagnostic; not selected by scored campaigns. Three fresh two-account cohorts at each width 1/4/16/64. Requests are distinct one-unit purchase intentions; these are not distinct client populations. Compare complete responses with per-buyer orders/payments and per-warehouse stock. No per-request durable identity, throughput or server-overlap claim. Correct and defective reference qualification required.",
+  "features": [
+    {"id":9200,"name":"ample: 1 calls, cohort 1","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-1-1-a"},
+        {"do":"signUp","actor":"b","name":"ample-1-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-1-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-1-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9200a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":1}
+        ]}]
+    },
+    {"id":9201,"name":"ample: 1 calls, cohort 2","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-1-2-a"},
+        {"do":"signUp","actor":"b","name":"ample-1-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-1-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-1-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9201a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":1}
+        ]}]
+    },
+    {"id":9202,"name":"ample: 1 calls, cohort 3","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-1-3-a"},
+        {"do":"signUp","actor":"b","name":"ample-1-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-1-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-1-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9202a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":1}
+        ]}]
+    },
+    {"id":9203,"name":"ample: 4 calls, cohort 1","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-4-1-a"},
+        {"do":"signUp","actor":"b","name":"ample-4-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-4-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-4-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9203a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":4}
+        ]}]
+    },
+    {"id":9204,"name":"ample: 4 calls, cohort 2","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-4-2-a"},
+        {"do":"signUp","actor":"b","name":"ample-4-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-4-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-4-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9204a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":4}
+        ]}]
+    },
+    {"id":9205,"name":"ample: 4 calls, cohort 3","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-4-3-a"},
+        {"do":"signUp","actor":"b","name":"ample-4-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-4-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-4-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9205a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":4}
+        ]}]
+    },
+    {"id":9206,"name":"ample: 16 calls, cohort 1","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-16-1-a"},
+        {"do":"signUp","actor":"b","name":"ample-16-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-16-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-16-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9206a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":16,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":16},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9207,"name":"ample: 16 calls, cohort 2","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-16-2-a"},
+        {"do":"signUp","actor":"b","name":"ample-16-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-16-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-16-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9207a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":16,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":16},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9208,"name":"ample: 16 calls, cohort 3","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-16-3-a"},
+        {"do":"signUp","actor":"b","name":"ample-16-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-16-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-16-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9208a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":16,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":16},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9209,"name":"ample: 64 calls, cohort 1","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-64-1-a"},
+        {"do":"signUp","actor":"b","name":"ample-64-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-64-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-64-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9209a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":64,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":64},
+          {"do":"expectCallOutcomes","accepted":64}
+        ]}]
+    },
+    {"id":9210,"name":"ample: 64 calls, cohort 2","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-64-2-a"},
+        {"do":"signUp","actor":"b","name":"ample-64-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-64-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-64-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9210a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":64,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":64},
+          {"do":"expectCallOutcomes","accepted":64}
+        ]}]
+    },
+    {"id":9211,"name":"ample: 64 calls, cohort 3","actors":["a","b"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"ample-64-3-a"},
+        {"do":"signUp","actor":"b","name":"ample-64-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbRecordCheckout","account":"{user:ample-64-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:ample-64-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9211a","category":"production","points":0,"desc":"all affordable purchases create matching orders, payments and stock effects",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":64,"settleMs":0},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":64},
+          {"do":"expectCallOutcomes","accepted":64}
+        ]}]
+    }
+  ]
+}

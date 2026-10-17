@@ -1,0 +1,340 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T18-16-54-916Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T18-16-54-916Z",
+    "parentId": "ecommerce-mongodb-run116-20260927181608-ad1f4ed6"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T18:16:54.916Z",
+    "completedAt": "2026-09-27T18:21:32.065Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 277150,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-I21iWc/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-I21iWc/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "../tracks/ecommerce/scenarios/progression-support-history.json",
+      "../tracks/ecommerce/scenarios/01-account-disclosure.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "profile-data-is-lost-on-server-restart",
+        "support-history-is-lost-on-server-restart",
+        "profile-summary-frozen-at-open",
+        "account-disclosure-rejects-login"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "8c77124e2b310ff893cb1594834ca0c1f178bd145fe80a4bf7f299b3314c2b6d"
+      },
+      "total": 13,
+      "max": 13,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "identitySha256": "9e58546f2bf5eba97e277804a4523a8c8fed2af7ebbfa4fb5e0158574da5e7fa",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "identitySha256": "41c21232391b5de1a47e0813dffb611623cd885fd64ae869b3aca57baf07f270",
+          "total": 7,
+          "max": 7
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "identitySha256": "45362204476af20baf0ea1d1f2d38f86c6bea2c4cd9071925e3235e07d51ed9d",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 4,
+      "completed": 4,
+      "total": 4,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "profile-data-is-lost-on-server-restart",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"14 Market Street profilemarker87e56df9-fac9-49f620\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "support-history-is-lost-on-server-restart",
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "targets": [
+          "ecommerce.spec.state-durability.support-history-reload.612a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.support-history-reload.612a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 612,
+            "criterion": "612a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Owner ticket ticketmarker69f56535-4eb4-4af612\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.support-history-reload.612a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "profile-summary-frozen-at-open",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.progression.customer-profile.customer-profile.620c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.customer-profile.customer-profile.620c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"14 Market Street profilemarkerd95623ad-8da7-4ff620\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.customer-profile.customer-profile.620c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "account-disclosure-rejects-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "targets": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 110,
+            "criterion": "110a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"private-password\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.account-disclosure.110a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "e5a6f367fa5b7de3473b200a942c03778a317d2065c75db143e74aca0b78cbd2",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "profile-data-is-lost-on-server-restart",
+          "support-history-is-lost-on-server-restart",
+          "profile-summary-frozen-at-open",
+          "account-disclosure-rejects-login"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "scenarioSha256": "726b5330f10e5c782b89c3e36f3ecfa95ba190c5240508cc70db9495f6aeb70e",
+          "mutationSha256": "5d756051c8658a7095331dbedeff1f630200220170c34d6d3a67558ed80011a5",
+          "selectionSha256": "dc22661c6d55c81a922124ae6703877aefe0bcecf9b276e841f7691c2507c453",
+          "identitySha256": "9e58546f2bf5eba97e277804a4523a8c8fed2af7ebbfa4fb5e0158574da5e7fa",
+          "mutationIds": [
+            "profile-data-is-lost-on-server-restart",
+            "profile-summary-frozen-at-open"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "scenarioSha256": "a9799e8d9c5d96e29eaafffcd1fc3f6e205a3f7f00b2f0bb2b157c4db8982492",
+          "mutationSha256": "080a653a80c793477536c28d73c7845c34f767c206a402fd4f9b6fe42a74ab1a",
+          "selectionSha256": "1b57aaf333e3aa86ac39641cc51fa95db1c7be82d3f8e960d2bb9a7c3d69eb4f",
+          "identitySha256": "41c21232391b5de1a47e0813dffb611623cd885fd64ae869b3aca57baf07f270",
+          "mutationIds": [
+            "support-history-is-lost-on-server-restart"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "scenarioSha256": "b078ded6d5350e83a6b754f01349e21ee5fd53434636164d2436aa66593bd2c0",
+          "mutationSha256": "e27244927b9611c541073eaf2435d86e6f1976247c3442824433ebc994566eb2",
+          "selectionSha256": "7fb7eb11f8baacc56ffe990b1ffd5a97a89c8c324b938c515c19c4df9718288f",
+          "identitySha256": "45362204476af20baf0ea1d1f2d38f86c6bea2c4cd9071925e3235e07d51ed9d",
+          "mutationIds": [
+            "account-disclosure-rejects-login"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T18:21:32.066Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "profile-data-is-lost-on-server-restart",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-zSqRqF/grade.json",
+          "sha256": "6690de254d46d82a70d081247030249161e00b7c9d6111ea858078d419369c8b"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "profile-summary-frozen-at-open",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-kKyOGh/grade.json",
+          "sha256": "bc2bbdc825d72be86a9e00b4c6477b6418adf44e0ba68644944cf86edbf251b7"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "mutationId": "support-history-is-lost-on-server-restart",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-GOKT9M/grade.json",
+          "sha256": "60d6d988b1197e2f44ff2d15304b28d0d60691703d72a8fc132e5b059b7af98f"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "mutationId": "account-disclosure-rejects-login",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-ru36gX/grade.json",
+          "sha256": "60fb5e6aa8ca41e46a5a8603b16bc7fdf052a00858a6fecde80f8bca918eb3d2"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

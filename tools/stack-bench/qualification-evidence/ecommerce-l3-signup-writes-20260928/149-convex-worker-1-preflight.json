@@ -1,0 +1,229 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "preflight",
+  "id": "ecommerce-convex-run424-20260928050027-a15c35e4-preflight",
+  "attempt": {
+    "id": "ecommerce-convex-run424-20260928050027-a15c35e4-preflight",
+    "parentId": "ecommerce-convex-run424-20260928050027-a15c35e4"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:00:33.342Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null,
+      "version": "1.0.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-09-28T05:00:31.502Z",
+    "request": {
+      "backends": [
+        "convex"
+      ],
+      "track": "ecommerce",
+      "levels": [
+        3
+      ],
+      "runIndex": 424,
+      "parallelism": 1,
+      "agentAdapter": "reference-fixture",
+      "guidance": "prescribed",
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "recipe": "ecommerce.progression-catalog",
+      "requestedScopeCount": 0,
+      "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "resultsDir": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1-workers/w1.runs/r1",
+      "agentSkills": null,
+      "smoke": true,
+      "modelFree": false
+    },
+    "ok": true,
+    "summary": {
+      "passed": 26,
+      "failed": 0,
+      "warnings": 1
+    },
+    "checks": [
+      {
+        "id": "request.scope",
+        "status": "pass",
+        "summary": "ecommerce L3 on convex"
+      },
+      {
+        "id": "runner.node",
+        "status": "pass",
+        "summary": "Node 24.18.1"
+      },
+      {
+        "id": "ownership.lease",
+        "status": "pass",
+        "summary": "Private lease matches this run and selected scope"
+      },
+      {
+        "id": "image.controller-reference",
+        "status": "pass",
+        "summary": "Controller image is immutable: sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730"
+      },
+      {
+        "id": "image.build-reference",
+        "status": "pass",
+        "summary": "Build image is immutable: sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      },
+      {
+        "id": "runner.architecture",
+        "status": "pass",
+        "summary": "linux/x64"
+      },
+      {
+        "id": "ambient.stack_bench_supervisor_state",
+        "status": "pass",
+        "summary": "Private supervisor handoff matches this run"
+      },
+      {
+        "id": "ambient.docker-host",
+        "status": "pass",
+        "summary": "Docker endpoint is local/default"
+      },
+      {
+        "id": "agent.credentials",
+        "status": "pass",
+        "summary": "Credential source available (not-required)"
+      },
+      {
+        "id": "storage.results",
+        "status": "pass",
+        "summary": "575.5 GiB free at /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1-workers/w1.runs/r1"
+      },
+      {
+        "id": "docker.engine",
+        "status": "pass",
+        "summary": "Docker 29.6.2 (linux/x86_64)"
+      },
+      {
+        "id": "docker.compose",
+        "status": "pass",
+        "summary": "Docker Compose 5.3.1"
+      },
+      {
+        "id": "runner.co-resident",
+        "status": "warn",
+        "summary": "38 co-resident container(s): sb-e7867116907fb331-browser, sb-b88e3eef494fc300-browser, sb-65d1922a21f8632d-browser, sb-e7867116907fb331-backend, sb-b88e3eef494fc300-backend, sb-65d1922a21f8632d-backend",
+        "remediation": "Run paid campaigns on a dedicated runner."
+      },
+      {
+        "id": "docker.cpu",
+        "status": "pass",
+        "summary": "32 CPUs reported by Docker"
+      },
+      {
+        "id": "docker.memory",
+        "status": "pass",
+        "summary": "45.9 GiB total memory allocation reported by Docker"
+      },
+      {
+        "id": "docker.capacity",
+        "status": "pass",
+        "summary": "1-worker container caps: 4 CPUs and 10.3 GiB RAM. Shared services and uncapped CPU are additional; this is not a measured minimum."
+      },
+      {
+        "id": "docker.clock",
+        "status": "pass",
+        "summary": "host/engine skew 0 ms"
+      },
+      {
+        "id": "image.build",
+        "status": "pass",
+        "summary": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455 -> sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      },
+      {
+        "id": "image.platform",
+        "status": "pass",
+        "summary": "linux/amd64"
+      },
+      {
+        "id": "registry.cache",
+        "status": "pass",
+        "summary": "http://127.0.0.1:4873/ answered 200"
+      },
+      {
+        "id": "image.convex",
+        "status": "pass",
+        "summary": "Owned Convex backend image sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743 is available"
+      },
+      {
+        "id": "materials.convex.skills",
+        "status": "pass",
+        "summary": "No skill documents are required",
+        "evidence": {
+          "skills": [],
+          "missing": []
+        }
+      },
+      {
+        "id": "port.convex.vite",
+        "status": "pass",
+        "summary": "Port 7347 belongs to the active attempt namespace"
+      },
+      {
+        "id": "port.convex.express",
+        "status": "pass",
+        "summary": "Port 7425 belongs to the active attempt namespace"
+      },
+      {
+        "id": "port.convex.host",
+        "status": "pass",
+        "summary": "Dedicated host port 13634 is free"
+      },
+      {
+        "id": "smoke.container",
+        "status": "pass",
+        "summary": "Container linux/x64 v22.22.0; 1 outbound destination(s); 1 database route(s); 0 agent executable(s); result mount persistent",
+        "evidence": {
+          "platform": "linux",
+          "arch": "x64",
+          "node": "v22.22.0",
+          "reached": [
+            {
+              "url": "https://registry.npmjs.org",
+              "status": 200,
+              "elapsedMs": 98
+            }
+          ],
+          "tcpReached": [
+            13634
+          ],
+          "executables": {},
+          "credentialStatus": "not-checked",
+          "diskFreeBytes": 617900937216
+        }
+      },
+      {
+        "id": "storage.container",
+        "status": "pass",
+        "summary": "575.5 GiB free in Docker storage"
+      }
+    ]
+  }
+}

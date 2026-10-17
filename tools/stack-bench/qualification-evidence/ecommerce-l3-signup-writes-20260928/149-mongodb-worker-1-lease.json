@@ -1,0 +1,155 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "backend_lease_evidence",
+  "id": "ecommerce-mongodb-run416-20260928045929-202e3ccc-backend-lease",
+  "attempt": {
+    "id": "ecommerce-mongodb-run416-20260928045929-202e3ccc-backend-lease",
+    "parentId": "ecommerce-mongodb-run416-20260928045929-202e3ccc"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:59:29.066Z",
+    "completedAt": "2026-09-28T05:07:00.553Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "version": 1,
+    "runId": "ecommerce-mongodb-run416-20260928045929-202e3ccc",
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "runIndex": 416,
+    "ownerPid": 8709,
+    "createdAt": "2026-09-28T04:59:29.066Z",
+    "stoppedAt": "2026-09-28T05:07:00.493Z",
+    "releasedAt": "2026-09-28T05:07:00.546Z",
+    "state": "released",
+    "resources": {
+      "serverUri": null,
+      "database": "app_ecom_run416",
+      "module": null,
+      "dataDir": null,
+      "container": {
+        "name": "sb-1b54e429b6264862-backend",
+        "id": "9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+        "image": "sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082",
+        "owned": true,
+        "networkMode": "0f8cddcaaf157e34bbc20a0d3e99e23a4aaf66dcfd950cc1a9006f8ba2b318b7",
+        "running": false,
+        "removedAt": "2026-09-28T05:06:59.735Z"
+      },
+      "buildContainer": {
+        "name": "sb-1b54e429b6264862-build",
+        "id": "62be86ae86e326bac45ea79a50a2cc58c48d6200bd9051d92fb8abb85bc81f2a",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "running": false,
+        "networkMode": "container:9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+        "resourceLimits": {
+          "cpuCount": 2,
+          "memoryBytes": 4294967296,
+          "memorySwapBytes": 4294967296,
+          "pids": 512
+        },
+        "workspaceHandedBackAt": "2026-09-28T05:06:58.779Z",
+        "removedAt": "2026-09-28T05:06:58.986Z"
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/dfdf0b258f66503d8dfdefbe35ca557052290173ba009ac3ec1578f3a6239d58.lock.json",
+          "key": "port:6817",
+          "digest": "dfdf0b258f66503d8dfdefbe35ca557052290173ba009ac3ec1578f3a6239d58",
+          "acquiredAt": "2026-09-28T04:59:29.220Z",
+          "releasedAt": "2026-09-28T05:07:00.546Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/ea6161586c71d544a879e6646802f6e2f565f47794ddef271b2e6a3e419105f0.lock.json",
+          "key": "port:7139",
+          "digest": "ea6161586c71d544a879e6646802f6e2f565f47794ddef271b2e6a3e419105f0",
+          "acquiredAt": "2026-09-28T04:59:29.220Z",
+          "releasedAt": "2026-09-28T05:07:00.546Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/85b757718f937b6c2d773b4b633a8f9aa43dbf589f42b343076070edf28fa98e.lock.json",
+          "key": "slot:ecommerce:mongodb:run416",
+          "digest": "85b757718f937b6c2d773b4b633a8f9aa43dbf589f42b343076070edf28fa98e",
+          "acquiredAt": "2026-09-28T04:59:29.220Z",
+          "releasedAt": "2026-09-28T05:07:00.546Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d8b235ebd5b890a886fd9b40d78b6c1695f9ba1d66bcae352791d7f85635c057.lock.json",
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-i7sBM6/app",
+          "digest": "d8b235ebd5b890a886fd9b40d78b6c1695f9ba1d66bcae352791d7f85635c057",
+          "acquiredAt": "2026-09-28T04:59:29.220Z",
+          "releasedAt": "2026-09-28T05:07:00.546Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-1b54e429b6264862-network",
+        "id": "0f8cddcaaf157e34bbc20a0d3e99e23a4aaf66dcfd950cc1a9006f8ba2b318b7",
+        "namespaceContainerId": "9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+        "hostAddresses": [
+          "10.0.0.65",
+          "10.0.0.73",
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "192.168.192.1",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.1",
+          "10.0.0.9",
+          "10.0.0.33",
+          "10.0.0.41"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.75",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "f92373a753774445e34c4ae357e4ca3d824212f851a81c809e8e521c63d7c2fa",
+        "firewallInstalledAt": "2026-09-28T04:59:32.350Z",
+        "ownAddresses": [
+          "10.0.0.74"
+        ],
+        "namespaceStartedAt": "2026-09-28T04:59:30.974711807Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-1b54e429b6264862-browser",
+        "id": "3d770eed1fb705e6284dcdfbff961e594201e05441c454cef5c73764c9f01de8",
+        "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+        "owned": true,
+        "networkMode": "container:9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+        "running": false,
+        "removedAt": "2026-09-28T05:06:58.278Z"
+      }
+    },
+    "ownership": {
+      "markerSha256": "93d0299608393e3e2a8d0352cfc2cb4f2413b4407ef165f05065d2616e09f954"
+    }
+  }
+}

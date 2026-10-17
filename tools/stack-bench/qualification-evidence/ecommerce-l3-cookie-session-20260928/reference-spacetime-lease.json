@@ -1,0 +1,167 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "backend_lease_evidence",
+  "id": "ecommerce-spacetime-run800-20260928234124-3e87427e-backend-lease",
+  "attempt": {
+    "id": "ecommerce-spacetime-run800-20260928234124-3e87427e-backend-lease",
+    "parentId": "ecommerce-spacetime-run800-20260928234124-3e87427e"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:41:24.339Z",
+    "completedAt": "2026-09-28T23:45:18.812Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "version": 1,
+    "runId": "ecommerce-spacetime-run800-20260928234124-3e87427e",
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "runIndex": 800,
+    "ownerPid": 77,
+    "createdAt": "2026-09-28T23:41:24.339Z",
+    "stoppedAt": "2026-09-28T23:45:18.726Z",
+    "releasedAt": "2026-09-28T23:45:18.803Z",
+    "state": "released",
+    "resources": {
+      "serverUri": "http://127.0.0.1:4110",
+      "database": null,
+      "module": "app-ecom-run800",
+      "dataDir": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/runtime/ecommerce-spacetime-run800-20260928234124-3e87427e/spacetime-data",
+      "container": {
+        "name": "sb-f81a97a9c311cc3c-backend",
+        "id": "738672a17308ddf1dc90d976a27e699c9bfe68f958b46338d3eb78ed88aae7a3",
+        "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+        "owned": true,
+        "networkMode": "7b6579ae4acb192d815b91a118abba1b47a080e909700f7022ed205fab0177d7",
+        "running": false,
+        "removedAt": "2026-09-28T23:45:17.937Z"
+      },
+      "buildContainer": {
+        "name": "sb-f81a97a9c311cc3c-build",
+        "id": "7a6aaded8df181680b94cf237e51cddab7b712c60aa76e4af29632cd7b652d13",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "running": false,
+        "networkMode": "container:738672a17308ddf1dc90d976a27e699c9bfe68f958b46338d3eb78ed88aae7a3",
+        "resourceLimits": {
+          "cpuCount": 2,
+          "memoryBytes": 4294967296,
+          "memorySwapBytes": 4294967296,
+          "pids": 512
+        },
+        "workspaceHandedBackAt": "2026-09-28T23:45:16.500Z",
+        "removedAt": "2026-09-28T23:45:16.812Z"
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f70e256c0f64ac318524fc36f92ad482f9127ddc2c8dfcb7c7fd38a7159cbecd.lock.json",
+          "key": "listener:http://127.0.0.1:4110",
+          "digest": "f70e256c0f64ac318524fc36f92ad482f9127ddc2c8dfcb7c7fd38a7159cbecd",
+          "acquiredAt": "2026-09-28T23:41:24.407Z",
+          "releasedAt": "2026-09-28T23:45:18.803Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/bbcbcb259c1df446babb07ed1b7b4423ef7a262c58d240b5fb15d92f5d848dce.lock.json",
+          "key": "port:4110",
+          "digest": "bbcbcb259c1df446babb07ed1b7b4423ef7a262c58d240b5fb15d92f5d848dce",
+          "acquiredAt": "2026-09-28T23:41:24.407Z",
+          "releasedAt": "2026-09-28T23:45:18.803Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d0779dcb6464ad9b41529441fb83bc15df381f00a73fb94373915aa93fa9e2d7.lock.json",
+          "key": "port:7273",
+          "digest": "d0779dcb6464ad9b41529441fb83bc15df381f00a73fb94373915aa93fa9e2d7",
+          "acquiredAt": "2026-09-28T23:41:24.407Z",
+          "releasedAt": "2026-09-28T23:45:18.803Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/ffe1b83d26baaa8685b2abdc7d578f5ef288fd3653b7b58c119e77fd62a42a07.lock.json",
+          "key": "slot:ecommerce:spacetime:run800",
+          "digest": "ffe1b83d26baaa8685b2abdc7d578f5ef288fd3653b7b58c119e77fd62a42a07",
+          "acquiredAt": "2026-09-28T23:41:24.407Z",
+          "releasedAt": "2026-09-28T23:45:18.803Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/250137561ec5e3aa8675259cd9b4d0fd6935573653db054c8a816e72a6c92fa3.lock.json",
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-0GJvHQ/app",
+          "digest": "250137561ec5e3aa8675259cd9b4d0fd6935573653db054c8a816e72a6c92fa3",
+          "acquiredAt": "2026-09-28T23:41:24.407Z",
+          "releasedAt": "2026-09-28T23:45:18.803Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-f81a97a9c311cc3c-network",
+        "id": "7b6579ae4acb192d815b91a118abba1b47a080e909700f7022ed205fab0177d7",
+        "namespaceContainerId": "738672a17308ddf1dc90d976a27e699c9bfe68f958b46338d3eb78ed88aae7a3",
+        "hostAddresses": [
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "192.168.192.1",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.21.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.9",
+          "10.0.0.33",
+          "10.0.0.41",
+          "10.0.0.65",
+          "10.0.0.73",
+          "10.0.0.81",
+          "10.0.0.97",
+          "10.0.0.105",
+          "10.0.0.113",
+          "10.0.0.1"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.3",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "d2087d4b09358fcaec0add62d2f7aff706658ecce3340b9678759041796a40d5",
+        "firewallInstalledAt": "2026-09-28T23:41:29.862Z",
+        "ownAddresses": [
+          "10.0.0.2"
+        ],
+        "namespaceStartedAt": "2026-09-28T23:41:27.73842708Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-f81a97a9c311cc3c-browser",
+        "id": "4f8a9114ad036f4c850bf4a34a5e0d18de542926982a81127aa7df5fa3ef732e",
+        "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+        "owned": true,
+        "networkMode": "container:738672a17308ddf1dc90d976a27e699c9bfe68f958b46338d3eb78ed88aae7a3",
+        "running": false,
+        "removedAt": "2026-09-28T23:45:15.922Z"
+      }
+    },
+    "ownership": {
+      "markerSha256": "ed9d2948e1c6cf2b40ba2a76b4739912ca6940ea6bae5dc0380b4e23a6616332"
+    }
+  }
+}

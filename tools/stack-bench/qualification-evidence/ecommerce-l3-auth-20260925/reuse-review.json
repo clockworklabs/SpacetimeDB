@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "sourceCommit": "97218b8d39",
+  "target": "2026-09-25 candidate",
+  "priorReview": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
+  "changedBehavior": {
+    "purchaseSession101a": "A cross-origin POST may be observed through independent Chromium network headers when browser response policy hides the body. SpacetimeDB credential replay can patch one schema-declared binary reducer call on the leased module socket.",
+    "warehouseBoundary103b": "SpacetimeDB credential replay can prove the native signup call and schema-declared absence of a role parameter.",
+    "transport620b": "Unread response bodies still make transport evidence incomplete. The new stderr metadata is bounded and redacted; it cannot change the grade."
+  },
+  "replacementEvidenceRequired": {
+    "allStacks": ["ecommerce.spec.access-control.purchase-session.101a"],
+    "spacetimeAlso": ["ecommerce.feature.warehouse-admin.admin-write.103a", "ecommerce.spec.access-control.warehouse-write-boundary.103b"],
+    "null": ["ecommerce.spec.access-control.purchase-session.101a", "ecommerce.spec.access-control.warehouse-write-boundary.103b"]
+  },
+  "reuseBoundary": "All other checks retain identical recipe, scenario, fixture, and mutation inputs. The new credential patch activates only inside the selected authentication probe. The network observer activates only inside the cross-origin POST probe. The transport change writes diagnostics after an already incomplete body read and does not change evidence or scoring. Existing evidence is reused only after the validator confirms its source snapshot, executable mapping, and non-overlapping check coverage."
+}

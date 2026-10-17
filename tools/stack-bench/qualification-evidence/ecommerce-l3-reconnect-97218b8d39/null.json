@@ -1,0 +1,129 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-25T02-28-26-017Z",
+  "attempt": {
+    "id": "null-control-2026-09-25T02-28-26-017Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-25T02:28:26.017Z",
+    "completedAt": "2026-09-25T02:28:50.779Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "42d1a38bc2c784141de6b163305641246db72b858f7178ff9e92d5ecf6eeab24"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "c1e134ac66ea4682989a814c3916122b34c3ccc1a628d956c77ffb0ae81db87e"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "63aaee2df48f7f6e8a0caaf5c04981a99a3be63aa9c6c99d05b5fc04be3f031c"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 24762,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 27,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "88c01711682ab1911f90e8fd44b76ad701a98de9c344db9b869a4deab9a1faca",
+      "executableSha256": "272845b7811dc374c203909430f73e21d0e798ea627b80b9f635b9fcfded0fd2",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "c1e134ac66ea4682989a814c3916122b34c3ccc1a628d956c77ffb0ae81db87e",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "06da1d38ac87f3290612f749f6deeaf089469405990da5eba9d68f3dda273b0a"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 2,
+      "points": 2,
+      "expectedFailures": {
+        "criteria": 2,
+        "points": 2
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 2,
+          "points": 2
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-017",
+        "scenario": "scenarios/01-external-reconnect-sync.json",
+        "feature": 901,
+        "featureName": "A reconnecting storefront catches up to an external write",
+        "criterion": "901d",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the item-stock control inside the item-card control in the entry matching \"Desk Lamp\" did not appear"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-060",
+        "scenario": "scenarios/progression-account-state-reconnect.json",
+        "feature": 105,
+        "featureName": "An account keeps what belongs to it",
+        "criterion": "105b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

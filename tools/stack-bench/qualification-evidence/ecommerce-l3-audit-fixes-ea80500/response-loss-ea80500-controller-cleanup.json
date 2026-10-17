@@ -1,0 +1,12 @@
+{
+  "checks": "All reports and logs hash-verified; controls passed; owned leases, resources and locks released.",
+  "removed": [
+    "a9dd8a5d85d7732d6d3f1ad71db9bd3491470c27fa7cb8c68e2ee73199335e27",
+    "70ffdd635762beb12f4789330708b51a766bbb4b18f3805b595788fa1ce4a1ad",
+    "1a1885838b06b2fdd33e14c28ed93636b19fbbf7e35fd62906cb2e0824fa4274",
+    "9366036451adfb7f173c954e554d02855738f993d3b76fa177acf48fe0409802",
+    "a5732cc0272148496d2c0b109d5ec7ad64ede25a2d44922a851a911b150f67fc"
+  ],
+  "at": "2026-09-27T18:58:56.7193184Z",
+  "evidence": "response-loss-ea80500-verification.json"
+}

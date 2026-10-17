@@ -1,0 +1,95 @@
+{
+  "browser": "151.0.7922.34",
+  "observations": [
+    {
+      "mode": "within-budget",
+      "locatorTimeoutMs": 100,
+      "withinMs": 1000,
+      "restoredAfterMs": 350,
+      "observedRestoreAfterMs": 384,
+      "elapsedMs": 141,
+      "status": "failed",
+      "finding": {
+        "kind": "page-timeout",
+        "fields": {
+          "control": "stock",
+          "scope": "warehouse",
+          "detail": "locator.evaluate: Timeout 100ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"warehouse\"]').filter({ hasText: 'East' }).locator('[data-testid=\"stock\"]').filter({ visible: true }).first()\u001b[22m\n"
+        }
+      },
+      "summary": "the stock control inside the warehouse control did not become available in time"
+    },
+    {
+      "mode": "after-budget",
+      "locatorTimeoutMs": 100,
+      "withinMs": 1000,
+      "restoredAfterMs": 1500,
+      "observedRestoreAfterMs": null,
+      "elapsedMs": 123,
+      "status": "failed",
+      "finding": {
+        "kind": "page-timeout",
+        "fields": {
+          "control": "stock",
+          "scope": "warehouse",
+          "detail": "locator.evaluate: Timeout 100ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"warehouse\"]').filter({ hasText: 'East' }).locator('[data-testid=\"stock\"]').filter({ visible: true }).first()\u001b[22m\n"
+        }
+      },
+      "summary": "the stock control inside the warehouse control did not become available in time"
+    },
+    {
+      "mode": "wrong-value",
+      "locatorTimeoutMs": 100,
+      "withinMs": 1000,
+      "restoredAfterMs": null,
+      "observedRestoreAfterMs": null,
+      "elapsedMs": 1078,
+      "status": "failed",
+      "finding": {
+        "kind": "number-mismatch",
+        "fields": {
+          "control": "stock",
+          "observed": 0,
+          "expected": {
+            "equals": 20
+          },
+          "scopeText": "East"
+        }
+      },
+      "summary": "the stock control reads 0, expected exactly 20 in the entry matching \"East\""
+    },
+    {
+      "mode": "input",
+      "locatorTimeoutMs": 100,
+      "withinMs": 1000,
+      "restoredAfterMs": null,
+      "observedRestoreAfterMs": null,
+      "elapsedMs": 33,
+      "status": "passed",
+      "finding": null,
+      "summary": null
+    },
+    {
+      "mode": "textarea",
+      "locatorTimeoutMs": 100,
+      "withinMs": 1000,
+      "restoredAfterMs": null,
+      "observedRestoreAfterMs": null,
+      "elapsedMs": 34,
+      "status": "passed",
+      "finding": null,
+      "summary": null
+    },
+    {
+      "mode": "select",
+      "locatorTimeoutMs": 100,
+      "withinMs": 1000,
+      "restoredAfterMs": null,
+      "observedRestoreAfterMs": null,
+      "elapsedMs": 33,
+      "status": "passed",
+      "finding": null,
+      "summary": null
+    }
+  ]
+}

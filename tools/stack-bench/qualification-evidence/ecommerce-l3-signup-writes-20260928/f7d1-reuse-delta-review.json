@@ -1,0 +1,217 @@
+{
+  "status": "review_only_not_qualification",
+  "from": "8b202ce2d19c05e08f8689eec1e9e9530f41f085",
+  "candidate": "f7d1d7af6a9a1f96bedc72792d913b4abe111e6a",
+  "selectedChecks": 112,
+  "retainedChecks": 101,
+  "replacementChecks": 11,
+  "decision": "No extra retained key requires a fresh control for this delta. Keep the 101/11 boundary, subject to regenerated executable mappings and normal qualification validation.",
+  "method": "Read-only Git delta and current buildRecipeQualificationDocuments(progression-catalog.json). Recursively enumerate feature setup, criterion steps and branches with the exact grader auth guard. No build, tests, Docker, or paid call launched. First evidence-writing attempt failed on a doubled repository path before writing; corrected paths here. Check groups with the same executionId and featureId were merged before the final auth-guard scan, matching grader feature scope.",
+  "sourceDelta": [
+    {
+      "path": "dashboard/check-guide-steps.ts",
+      "sha256": "6605cd591dbed1cfe728ac23f00de176b4edda5b05c533b5d14148882d84f29e"
+    },
+    {
+      "path": "src/actions/auth-request-patch.ts",
+      "sha256": "f1c42ac80d8e9b48ac0f7e0f0ab687053ac59d01699e6e5a2c2567405bec428c"
+    },
+    {
+      "path": "src/actions/runtime-action-executors.ts",
+      "sha256": "719da3b18e4e13ba9576b2390b949b447eb4d45719ff594fe14782a7643b935f"
+    },
+    {
+      "path": "src/actions/socketio-auth-capture.ts",
+      "sha256": "bd762619ee5cd141b104b2efb0dbd5a5b0c52ae279192610eb0a978e7cffcc7b"
+    },
+    {
+      "path": "src/stacks/backends/convex-adapter.ts",
+      "sha256": "2c201a3b5765e643fb88be6a627e1c8f5c679387bce4c7e28f5c54e96cbd115f"
+    },
+    {
+      "path": "src/stacks/backends/convex-operations.ts",
+      "sha256": "962e823659ec3feb7d549862360a84474620e5373979b9bd8d1f5872823a31c6"
+    },
+    {
+      "path": "tests/auth-request-patch.test.ts",
+      "sha256": "4d09c3a8a790bc9d5a784529781fb85025bec297eca8ad1e6e29642cc87340ca"
+    },
+    {
+      "path": "tests/convex-auth-write.test.ts",
+      "sha256": "da01034770945fa63d6531cd5b50097ab95744c8acab8f3d050cd3c788670c9e"
+    },
+    {
+      "path": "tests/order-data.test.ts",
+      "sha256": "ba9c6cba130bd7b33c515f590cecbc990aedfbaa79669998ad5f3f12740e523e"
+    },
+    {
+      "path": "tests/runtime-action-executors.test.ts",
+      "sha256": "591bcd57e6206d92d9ac83707685d4252f5dcca46453a732ea7900c6c02e234f"
+    }
+  ],
+  "priorEvidence": [
+    {
+      "path": "local-notes/sol6-four-stack-20260925/8b202-reuse-proposal.json",
+      "sha256": "62e44163b339a88099230b2603bbe5bb4488432574dbcb3243f57142c39ce4ab"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/8b202-reuse-review-draft.md",
+      "sha256": "dd200b59d5efc83b7199e3e7333c660f112d6d12b0b7056cea25d74ee76c893a"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/8b202-caller-audit.json",
+      "sha256": "1e23fcb70570e6b40f6da8ca1df165ab01ac0bc4c6546c36ba7d53796c369e4f"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/opaque-auth-qualification/f7d1d7af6-focused-validation.json",
+      "sha256": "f7ff036147a9ab6d20e54d91676f4c40c72a48fe6627f6157998c33e52aa7b10"
+    }
+  ],
+  "authEnabledFeatures": [
+    {
+      "key": "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "retained": false,
+      "source": "scenarios/01-admin-write-staff.json",
+      "featureId": 103
+    },
+    {
+      "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "retained": false,
+      "source": "scenarios/01-admin-write-staff.json",
+      "featureId": 103
+    },
+    {
+      "key": "ecommerce.spec.access-control.purchase-session.101a",
+      "retained": false,
+      "source": "scenarios/01-purchase-session.json",
+      "featureId": 101
+    }
+  ],
+  "retainedFaultAndPrivacyCallers": [
+    {
+      "key": "ecommerce.spec.access-control.account-disclosure.110a",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "actions": [
+        "prepareResponseLoss",
+        "loseCheckoutResponse"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "actions": [
+        "prepareResponseLoss",
+        "loseCheckoutResponse"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.external-data-sync.external-stock.901d",
+      "actions": [
+        "setOffline"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "actions": [
+        "setOffline"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.progression.customer-profile.customer-profile.620c",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.progression.support-history.support-history.612c",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.state-durability.support-history-reload.612a",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.access-control.support-history-privacy.612b",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    },
+    {
+      "key": "ecommerce.spec.access-control.support-history-logout.612d",
+      "actions": [
+        "expectNotReceived"
+      ],
+      "patchAuthentication": false
+    }
+  ],
+  "retainedTimedStorageCallers": [],
+  "findings": [
+    {
+      "path": "grader/grade.ts:981",
+      "finding": "patchAuthentication is per materialized feature, including all criteria merged from check groups with the same feature id. Actor.attach at line 335 installs the helper only when true. The enabled selected features cover 103a, 103b and 101a; all three are already fresh. No retained page installs the new Socket.IO route."
+    },
+    {
+      "path": "grader/grade.ts:610",
+      "finding": "Fresh observers inherit the actor flag. Each feature owns and closes its contexts. Helper session/owner state is page-local and cannot enable capture in a later retained feature."
+    },
+    {
+      "path": "src/actions/socketio-auth-capture.ts:104",
+      "finding": "Inactive polling traffic falls back unchanged after passive state tracking. WebSocket routing forwards frames; owner callbacks and payload patches activate only through captureAuthWrites. stop/dispose clear the owner. Retained callers do not install this route at all."
+    },
+    {
+      "path": "grader/response-loss.ts:49",
+      "finding": "Page WebSocket routing could override this context fault route if both were installed. The enumerated retained fault/offline and privacy features all have patchAuthentication=false. Their fault routes and payload capture (grade.ts:355) do not enter this delta. No extra F5/F7 control is justified by the selected caller graph."
+    },
+    {
+      "path": "src/stacks/backends/convex-operations.ts:24",
+      "finding": "The callback factory runs at startup and derives its origin through convexAuthReadEndpoints. That same active-Convex lease/serverUri check already ran at startup in 8b202 (grade.ts:1254). Callback invocation requires a requestPatch; no retained action has one. Fresh 101a uses a password patch, which line 27 returns undefined for before envelope parsing, preserving the old credential path."
+    },
+    {
+      "path": "src/actions/runtime-action-executors.ts:297",
+      "finding": "Read completion may now occur after the retry-start window. No retained stock/checkout caller has within, so the prior one-read/full-comparator rationale remains valid. All timed callers remain in the 11 fresh keys."
+    }
+  ],
+  "validation": {
+    "savedFocused": "78 passed, 0 failed, 2 live database fixture skips; typecheck and scoped ESLint passed per hashed candidate artifact. Not rerun here.",
+    "extraControlsRequired": [],
+    "limits": "Delta review only. Do not copy 8b202 executable target hashes to f7d1. Regenerate frozen-source mappings, finish fresh reference/defect/null controls, then use the normal validator. Future features that combine auth patching and response loss need routing review; none of the retained selected features does."
+  }
+}

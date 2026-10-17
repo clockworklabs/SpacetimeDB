@@ -1,0 +1,137 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-convex-20260926202930-30",
+  "attempt": {
+    "id": "reference-live-convex-20260926202930-30",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-26T20:29:30.396Z",
+    "completedAt": "2026-09-26T20:31:27.610Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3411af4aaf2973127de61e34282cde4d2061855b95db324dec4a4386781408c9"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "5af86e8add240d37f660a30a1e9fca7ec7313f19647af57c8c95c57111ce2de3"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-convex",
+      "sha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "c7da099d07e6d1bd8e01a897e2e106f5e30e00aa607d389d2b68db46fea70ca2"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-convex",
+    "fixtureSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 23,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "8ab968b5ba37db24009a835265d1fb7cbfde59ceaa62df3bebca9f8124d4af57",
+      "executableSha256": "696b6b426115e51aa5f83778e4d674ec0485f296c980b85c38c748415febe65b",
+      "kind": "mutation",
+      "mutationSha256": "43cb3530cddd06f7aef798fd608fe37f504def0e318b11b41de5d330793c8f2d",
+      "recipe": {
+        "contentSha256": "5af86e8add240d37f660a30a1e9fca7ec7313f19647af57c8c95c57111ce2de3",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "convex",
+        "reference": {
+          "id": "ecommerce-reference-convex",
+          "sourceSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe"
+        },
+        "version": "1.0.0"
+      },
+      "sha256": "e3bdcadee91affa9798ae1faeefb5d3abb1d5cd2232bab2c94fcd327f8b69a2e"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "convex-2.runs/r1",
+        "durationMs": 117097,
+        "capacityWaitMs": 0,
+        "processError": null,
+        "harnessSha256Before": "74501cb5e4302821f26ee7026d47a9502178397e6efd92ef81cf8b9ec510a5fa",
+        "harnessSha256After": "74501cb5e4302821f26ee7026d47a9502178397e6efd92ef81cf8b9ec510a5fa",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-convex-run42-20260926202931-d2deed4a",
+        "score": "1/1",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 1,
+        "zeroPointCriteria": 0,
+        "fingerprint": "94f7b7e6d1eb8752a521a15fc32ba76d929375a033f533907575cebee88a9c29",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.catalog-items",
+              "checkCount": 1,
+              "setupRuntimeMs": 177,
+              "criterionRuntimeMs": 96,
+              "measuredRuntimeMs": 273,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 1,
+          "completed": 1,
+          "total": 1,
+          "remaining": 0
+        }
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "74501cb5e4302821f26ee7026d47a9502178397e6efd92ef81cf8b9ec510a5fa",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.catalog.catalog-values.2a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

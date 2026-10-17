@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T09-26-36-752Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T09-26-36-752Z",
+    "parentId": "ecommerce-convex-run70-20260927092612-ba4f56e4"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T09:26:36.752Z",
+    "completedAt": "2026-09-27T09:28:22.150Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 105398,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-98TkFY/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-98TkFY/selected-mutations.json",
+    "fixtureSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-stock-alerts.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 1,
+      "count": 2,
+      "mutationIds": [
+        "stock-alerts-are-not-owner-scoped"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex-controls.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "69b81134cb36dd50e5bcd6ee8f0836b6453d8302a4590a57c232e4c1a17ba33a"
+      },
+      "total": 3,
+      "max": 3,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "identitySha256": "ee871a8ef83650af7b905c89442acce06b187d0fe163a4131e150587ab57fd70",
+          "total": 3,
+          "max": 3
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "stock-alerts-are-not-owner-scoped",
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "targets": [
+          "ecommerce.spec.access-control.stock-alert-privacy.631b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.stock-alert-privacy.631b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 631,
+            "criterion": "631b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the notification-item control matching \"Air Purifier\" was shown when it must not be",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.stock-alert-privacy.631b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8",
+      "recipeSha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a",
+      "fixtureSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c",
+      "calibrationSha256": "4c43ef267f7e0c2dc4584ea7312133159bccea97ce546abbb5ee3caf50b74338",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 1,
+        "count": 2,
+        "mutationIds": [
+          "stock-alerts-are-not-owner-scoped"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "scenarioSha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9",
+          "mutationSha256": "0053d68a77ba2cd7fd17c2a2077ad7ba1d7db40559db943ca40a1cf47f53ed4b",
+          "selectionSha256": "e5a777f4f07173d3eb5a140677d89b231e1031c327d31a7798c0d9f515eaf216",
+          "identitySha256": "ee871a8ef83650af7b905c89442acce06b187d0fe163a4131e150587ab57fd70",
+          "mutationIds": [
+            "stock-alerts-are-not-owner-scoped"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 60,
+      "updatedAt": "2026-09-27T09:28:22.150Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "mutationId": "stock-alerts-are-not-owner-scoped",
+        "status": "returned",
+        "report": {
+          "path": "../convex-controls.runs/r1-workers/w2.runs/r1/mutation-control.json.grades/invocation-rreETj/grade.json",
+          "sha256": "ba3219f048e462b2c49891fa78fce090d78d3a4c1f0f747a2587ce25be3b323c"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "at": "2026-09-27T23:02:46.214Z",
+  "verificationPath": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-verification.json",
+  "verificationSha256": "bf9f5c641cebd17858326e596a38ca3239282c8e56a5b27562c8aee6f3a2abf3",
+  "removed": [
+    {
+      "name": "stack-bench-crash-qual-spacetime-473ca5c2d",
+      "id": "620a5552f550b2a7ebd0d43ce97c2c35aec1eef661fab254f8c5ca9bea652da7",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "exitCode": 0
+    },
+    {
+      "name": "stack-bench-crash-qual-postgres-473ca5c2d",
+      "id": "0a95f1bab38b672aa48614722da01c4e5a7b02563e35022e82bfaf83d86f8a9b",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "exitCode": 0
+    },
+    {
+      "name": "stack-bench-crash-qual-mongodb-473ca5c2d",
+      "id": "cfa65cc166c769d097843ad6f70928b94caa10af6c33155a0d5eac187cdcf5c0",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "exitCode": 0
+    },
+    {
+      "name": "stack-bench-crash-qual-convex-473ca5c2d",
+      "id": "c7073bffe7e989eac7b48db014ef2e8660746fe9482985e21e27e32d19fc07ff",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "exitCode": 0
+    },
+    {
+      "name": "stack-bench-crash-qual-null-473ca5c2d",
+      "id": "bf5cf4fb3b5086922d45f7e555106053c75575050e1c4fe830852b8cebc977ab",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "exitCode": 0
+    }
+  ],
+  "remaining": [],
+  "sharedWorkerUntouched": true
+}

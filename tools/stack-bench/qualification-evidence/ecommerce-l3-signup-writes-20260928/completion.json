@@ -1,0 +1,176 @@
+{
+  "kind": "qualification_reuse_completion",
+  "candidate": "149fecf8bf454309cdc7473982e175c442b56286",
+  "controllerImage": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+  "status": "completed_model_free_controls",
+  "selectedChecks": 112,
+  "retainedChecks": 101,
+  "freshControls": 66,
+  "rows": [
+    {
+      "stack": "spacetime",
+      "baseline": "3/3",
+      "criteria": 2,
+      "caught": 5,
+      "total": 5,
+      "cleanup": {
+        "releasedRuns": 4,
+        "allRecoveryClean": true,
+        "allLocksReleased": true,
+        "removedRunContainers": [
+          "sb-1d825dcfd0422dc7-browser",
+          "sb-1d825dcfd0422dc7-build",
+          "sb-1d825dcfd0422dc7-backend",
+          "sb-31ba41671e0d63f4-browser",
+          "sb-31ba41671e0d63f4-build",
+          "sb-31ba41671e0d63f4-backend",
+          "sb-0e82da54ab1ddc77-browser",
+          "sb-0e82da54ab1ddc77-build",
+          "sb-0e82da54ab1ddc77-backend",
+          "sb-b5e75beec117315d-browser",
+          "sb-b5e75beec117315d-build",
+          "sb-b5e75beec117315d-backend"
+        ],
+        "allAbsent": true,
+        "safeRemoval": "docker rm stack-bench-combined11-spacetime-149fecf8b",
+        "preserveVolumes": true
+      },
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-spacetime-qualification.json",
+        "sha256": "4fa3eddecf9e4e8953e80eeffbdca3c63675129eba6bf42f63f4e942dc705dfd"
+      },
+      "audit": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-spacetime-audit.json",
+        "sha256": "213e9b97e41f61801740978a88a3ceeb970be2d5421eee9f0e89c80d623d724f"
+      }
+    },
+    {
+      "stack": "convex",
+      "baseline": "3/3",
+      "criteria": 2,
+      "caught": 5,
+      "total": 5,
+      "cleanup": {
+        "releasedRuns": 4,
+        "allRecoveryClean": true,
+        "allLocksReleased": true,
+        "removedRunContainers": [
+          "sb-cd2027d8d9f9cf3c-browser",
+          "sb-cd2027d8d9f9cf3c-build",
+          "sb-cd2027d8d9f9cf3c-backend",
+          "sb-65d1922a21f8632d-browser",
+          "sb-65d1922a21f8632d-build",
+          "sb-65d1922a21f8632d-backend",
+          "sb-b88e3eef494fc300-browser",
+          "sb-b88e3eef494fc300-build",
+          "sb-b88e3eef494fc300-backend",
+          "sb-e7867116907fb331-browser",
+          "sb-e7867116907fb331-build",
+          "sb-e7867116907fb331-backend"
+        ],
+        "allAbsent": true,
+        "safeRemoval": "docker rm stack-bench-convex-network-retry-149fecf8b",
+        "preserveVolumes": true
+      },
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-convex-qualification.json",
+        "sha256": "065a1314ed1e82ff6c712d88a8ee01884c4847d8486a99aaa9afb141a7654a24"
+      },
+      "audit": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-convex-audit.json",
+        "sha256": "28fb0d1a6b0fe7cf2a888a0e750dd7477e2fb7cecd57c9994885d25b33045561"
+      }
+    },
+    {
+      "stack": "postgres",
+      "baseline": "22/22",
+      "criteria": 11,
+      "caught": 30,
+      "total": 30,
+      "cleanup": {
+        "releasedRuns": 4,
+        "allRecoveryClean": true,
+        "allLocksReleased": true,
+        "removedRunContainers": [
+          "sb-66ae7b19c05dce3f-backend",
+          "sb-66ae7b19c05dce3f-build",
+          "sb-66ae7b19c05dce3f-browser",
+          "sb-3e5fc14ea9314967-backend",
+          "sb-3e5fc14ea9314967-build",
+          "sb-3e5fc14ea9314967-browser",
+          "sb-42728011d98bb143-backend",
+          "sb-42728011d98bb143-build",
+          "sb-42728011d98bb143-browser",
+          "sb-5bc8103f80ad2470-backend",
+          "sb-5bc8103f80ad2470-build",
+          "sb-5bc8103f80ad2470-browser"
+        ],
+        "allAbsent": true,
+        "safeRemoval": "docker rm stack-bench-combined11-postgres-149fecf8b",
+        "preserveVolumes": true
+      },
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-postgres-qualification.json",
+        "sha256": "ea0004c9cb9a9a52151d00ac3e6990d6f155e2b8f3646878d918168864fe4d2c"
+      },
+      "audit": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-postgres-audit.json",
+        "sha256": "5c461d170868020636ec091bf9a36eae24237c34333167145a91d44fdd0c2aab"
+      }
+    },
+    {
+      "stack": "mongodb",
+      "baseline": "22/22",
+      "criteria": 11,
+      "caught": 26,
+      "total": 26,
+      "cleanup": {
+        "releasedRuns": 4,
+        "allRecoveryClean": true,
+        "allLocksReleased": true,
+        "removedRunContainers": [
+          "sb-9bc37c2cceea800e-backend",
+          "sb-9bc37c2cceea800e-build",
+          "sb-9bc37c2cceea800e-browser",
+          "sb-1b54e429b6264862-backend",
+          "sb-1b54e429b6264862-build",
+          "sb-1b54e429b6264862-browser",
+          "sb-92215563a38a3633-backend",
+          "sb-92215563a38a3633-build",
+          "sb-92215563a38a3633-browser",
+          "sb-dfdc41d3b5a7b1bd-backend",
+          "sb-dfdc41d3b5a7b1bd-build",
+          "sb-dfdc41d3b5a7b1bd-browser"
+        ],
+        "allAbsent": true,
+        "safeRemoval": "docker rm stack-bench-combined11-mongodb-149fecf8b",
+        "preserveVolumes": true
+      },
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-mongodb-qualification.json",
+        "sha256": "3e2eac1d8415588a0169412fea312a8de6c6e15f07f845dd7565f93de9993039"
+      },
+      "audit": {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-mongodb-audit.json",
+        "sha256": "c5482e38ce3d49d1e1ffc812fca09f84253f6d529b04df1575e1f3114054728f"
+      }
+    }
+  ],
+  "snapshotDeduplication": {
+    "originalNames": [
+      "149-spacetime-qualification-inputs.json",
+      "149-convex-qualification-inputs.json",
+      "149-postgres-qualification-inputs.json",
+      "149-mongodb-qualification-inputs.json"
+    ],
+    "canonicalPath": "qualification-evidence/ecommerce-l3-signup-writes-20260928/inputs-a176a3c7c578.json",
+    "sha256": "a176a3c7c578d29a6959f9fdbef741efed718c0bf6b326e60c05765be9548a12",
+    "policy": "Original collector snapshots remain unchanged. These four byte-identical copies share the canonical retained file."
+  },
+  "limits": [
+    "Native103b diagnostic supports transport coverage but earns no score.",
+    "Original failed Convex preflight remains in local/state evidence; only the fresh passing five-control retry is cited.",
+    "This completes the pending source-review proposal. The normal calibration validator and immutable official image check remain separate release gates.",
+    "L6 and sequential calibration drafts contain no qualification evidence and remain unqualified."
+  ]
+}

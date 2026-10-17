@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "candidateCommit": "318f8e3a60c7ef0944d03032ccc13d581ade0c00",
+  "inputs": [
+    {
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sha256": "75b46e9800aea9cdff01f576a24102b2e319ffffd55137ee0daa79101aeb5321"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l6.json",
+      "sha256": "c616e89046315b1e36022ebbd01f5de76194009047ecef57f58a83da95ed3c3b"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/sequential-l1.json",
+      "sha256": "cddc04682f3664554be01b2bc27578d7d75b3cc14287c05bf3b9d120396916e8"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/sequential-l2.json",
+      "sha256": "85ba7b7b659366cde2fc1a3f1238e4a3641ae5ab6ce66d55b986f13962de071c"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/browser-evidence.json",
+      "sha256": "83afc52c775d7dbc2d5ca3c8f9416d96d47fbac62c1ed2f0d2f8b29de298bf0d"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/rendered-pair-verification.json",
+      "sha256": "10bd2a6c2e2a340623195e6f3b11d7135ed49d947adf1bb9c47ec3b6f70e45f3"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/reuse-review.json",
+      "sha256": "66ace66d9211c7d442a9a3549c0a6928db61af94ad182c290aed60c5d15435e1"
+    }
+  ],
+  "commands": [
+    {
+      "command": "node dist/commands/check-calibration.js",
+      "exitCode": 0,
+      "validCalibrations": 4
+    },
+    {
+      "command": "node dist/commands/qualification-cli.js status --track ecommerce --level 3 --recipe ecommerce.progression-catalog",
+      "exitCode": 0,
+      "calibrationContentSha256": "edac5df9a7e1da4e9a4359337c23afcb95044c09dbd128be259a00f683f64b5d",
+      "ready": true,
+      "launchOk": true,
+      "blockers": [],
+      "requiredPopulations": 9,
+      "scoredChecks": 112,
+      "coveredChecksPerStack": {
+        "convex": 112,
+        "mongodb": 112,
+        "postgres": 112,
+        "spacetime": 112
+      }
+    }
+  ],
+  "historicalArtifactHashesUnchanged": true
+}

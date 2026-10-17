@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T11-22-39-269Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T11-22-39-269Z",
+    "parentId": "ecommerce-convex-run426-20260928112148-51c69b01"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:22:39.269Z",
+    "completedAt": "2026-09-28T11:23:26.153Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 46885,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-QzGwSO/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-QzGwSO/selected-mutations.json",
+    "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-core.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "purchase-counts-never-affect-ranking"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "c445fe3db1ef6d0535a437ec9d0111bf92d5f6ebbef6abc9a5753b04d5ea4d39"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+          "identitySha256": "bee43965a6891f2f8c91f16c449afa3ec4df5cfccb75e10f0cc0b7b63f00ecec",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "purchase-counts-never-affect-ranking",
+        "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+        "targets": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.live-state.ranking.2c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.spec.live-state.ranking.2c",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c",
+      "recipeSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "fixtureSha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+      "calibrationSha256": "dd9eb769e56f3b8bc1348f1fccac8b49db7da12f2c8ffd800051c425aed8bc51",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "purchase-counts-never-affect-ranking"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+          "scenarioSha256": "75d1622ecbf6c18c26aa941518748656116f5ae41d664c11d96ecf192fd7aaf3",
+          "mutationSha256": "f38b5576d949c8f5ba34904f9683285bf46a37e83ee1b57389681c9390187681",
+          "selectionSha256": "06c35a8376748f7c404e0d94d594929d108aa85a73bbb1d28787d74108b627b6",
+          "identitySha256": "bee43965a6891f2f8c91f16c449afa3ec4df5cfccb75e10f0cc0b7b63f00ecec",
+          "mutationIds": [
+            "purchase-counts-never-affect-ranking"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T11:23:26.154Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-core.json",
+        "mutationId": "purchase-counts-never-affect-ranking",
+        "status": "returned",
+        "report": {
+          "path": "../convex.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-G5VYLB/grade.json",
+          "sha256": "444d944ef182421cada4e3a8392a6cbd7d825b76bf6a3de1cc90550138f11d31"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

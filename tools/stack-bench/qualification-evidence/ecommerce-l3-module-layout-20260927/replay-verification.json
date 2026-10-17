@@ -1,0 +1,145 @@
+{
+  "at": "2026-09-27T05:59:28.134Z",
+  "source": {
+    "sha256": "072ae8552b3f0744afa50d56e6e5061b79da8e89a49ff32429ddffe9e876190e",
+    "files": 32
+  },
+  "sourceAfter": {
+    "sha256": "072ae8552b3f0744afa50d56e6e5061b79da8e89a49ff32429ddffe9e876190e"
+  },
+  "selectedChecks": [
+    "ecommerce.feature.accounts.accounts.1a"
+  ],
+  "outcome": {
+    "kind": "passed",
+    "phase": "grading",
+    "reason": null,
+    "appFailures": [],
+    "inconclusive": [],
+    "harnessFailures": []
+  },
+  "score": {
+    "score": 1,
+    "max": 1,
+    "dirty": false,
+    "contractPass": true,
+    "regression": null
+  },
+  "modelCalls": 0,
+  "additionalModelCostUsd": 0,
+  "controllerImage": "sha256:15c5db3a3a9fab7692b543b603bc42516201f7716b8226a9028192a2b34ec410",
+  "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+  "resetTimings": [
+    {
+      "phase": "reset",
+      "suite": null,
+      "durationMs": 1884.1613260000004,
+      "threw": false
+    },
+    {
+      "phase": "reset",
+      "suite": null,
+      "durationMs": 2385.6593470000007,
+      "threw": false
+    },
+    {
+      "phase": "reset",
+      "suite": "selected-source-001",
+      "durationMs": 1820.1576540000024,
+      "threw": false
+    }
+  ],
+  "provenance": {
+    "ok": true,
+    "reason": "leased database requires runtime marker verification",
+    "runtime": {
+      "ok": true,
+      "verified": true,
+      "matches": 1,
+      "reason": "the application marker exists in the leased SpacetimeDB module"
+    }
+  },
+  "cleanupSucceeded": true,
+  "recovery": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-spacetime-run5-20260927055652-d3976646",
+    "backend": "spacetime",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "5e183688e1f661b364c7b19ee6b5ff746d70c1a1fba2fa7c896a83d6cdee6f4a",
+        "name": "sb-bac75c4f5be3077f-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "listener:http://127.0.0.1:3215",
+          "released": true
+        },
+        {
+          "key": "port:3215",
+          "released": true
+        },
+        {
+          "key": "port:6478",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:spacetime:run5",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "8a9a5d6805550b2f7e3c847bc7710939f467d9c073f309fb91c3aa4bad4c4fb8"
+  },
+  "resources": [
+    {
+      "name": "sb-bac75c4f5be3077f-backend",
+      "kind": "container",
+      "present": false
+    },
+    {
+      "name": "sb-bac75c4f5be3077f-build",
+      "kind": "container",
+      "present": false
+    },
+    {
+      "name": "sb-bac75c4f5be3077f-network",
+      "kind": "network",
+      "present": false
+    },
+    {
+      "name": "sb-bac75c4f5be3077f-browser",
+      "kind": "container",
+      "present": false
+    }
+  ],
+  "files": [
+    {
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed/regrade.json",
+      "sha256": "daaf7b45236eee098311fe41de42f5591871e498ed40babe1ac29c3548efcded"
+    },
+    {
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed/recovery.json",
+      "sha256": "b93faf7cd26de9469fb1d6fe95552e497bf8f20e4b177e53f1c508c0343e838c"
+    },
+    {
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed/backend-lease.json",
+      "sha256": "ce1ff665772c1362300eccdcf2462e250d4b1facd6cf4ef7cb121a6d065fa525"
+    },
+    {
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed/grading/bundle.json",
+      "sha256": "169745dcca901ba3f62023ba1dd2aee744d5588c3612f6482cc76bb8740819ed"
+    }
+  ]
+}

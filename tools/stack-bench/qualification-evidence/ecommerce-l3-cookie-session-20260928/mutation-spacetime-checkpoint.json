@@ -1,0 +1,308 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T23-53-25-225Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T23-53-25-225Z",
+    "parentId": "ecommerce-spacetime-run800-20260928234956-6b404f23"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:53:25.225Z",
+    "completedAt": "2026-09-28T23:57:48.983Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 263758,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-ECbRSW/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-ECbRSW/selected-mutations.json",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-purchase-session.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 1,
+      "mutationIds": [
+        "guest-purchase-falls-back-to-the-admin-account",
+        "signout-keeps-session",
+        "query-like-password-bypasses-signin",
+        "purchase-session-rejects-returning-login"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "2a9d5be3655dafc212aa4ec41d6321bddc248be018eb1759de1ef4c13f8cd300"
+      },
+      "total": 2,
+      "max": 2,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "identitySha256": "4f4326091473f53b184a8a8a0aa8f2592370b499fe9c62baef4d3ca91783fd4b",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 4,
+      "completed": 4,
+      "total": 4,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "guest-purchase-falls-back-to-the-admin-account",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the buy action was accepted for guest, who must be refused",
+            "failedAction": "expectActionOutcome",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "signout-keeps-session",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase orders for account kim9715cfac-75c2-49f101 control reads 1, expected exactly 0",
+            "failedAction": "dbExpectNoPurchase",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "query-like-password-bypasses-signin",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase orders for account kim25c4664e-54e5-43f101 control reads 1, expected exactly 0",
+            "failedAction": "dbExpectNoPurchase",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "purchase-session-rejects-returning-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"kimd56906b9-9181-47f101\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79",
+      "recipeSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+      "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "calibrationSha256": "6812ff2a29d3f4fc278e3e5f6f5a994cce483514154408e48e6ccdfdb75d70a0",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 1,
+        "mutationIds": [
+          "guest-purchase-falls-back-to-the-admin-account",
+          "signout-keeps-session",
+          "query-like-password-bypasses-signin",
+          "purchase-session-rejects-returning-login"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "scenarioSha256": "68a86b2164627ecc5ede0d916e98881e77e731f6f840e9637bfa2b5f6cda5b01",
+          "mutationSha256": "579e93db2e6d6874475663de8e32ccfc8a63cd871e812cbf20de1b3dc1580e67",
+          "selectionSha256": "93900497e87d382fb33acbd636b7bb3d8c6165595640215e49c5a1e0deeb6c1f",
+          "identitySha256": "4f4326091473f53b184a8a8a0aa8f2592370b499fe9c62baef4d3ca91783fd4b",
+          "mutationIds": [
+            "guest-purchase-falls-back-to-the-admin-account",
+            "signout-keeps-session",
+            "query-like-password-bypasses-signin",
+            "purchase-session-rejects-returning-login"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T23:57:48.983Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "guest-purchase-falls-back-to-the-admin-account",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1/mutation-control.json.grades/invocation-8wQPcV/grade.json",
+          "sha256": "27f1d899f5c6443df70dd5d9940f256ccb3622ea7cda1263c4f558dc5dfface7"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "signout-keeps-session",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1/mutation-control.json.grades/invocation-uhmm1P/grade.json",
+          "sha256": "cef23d1007e1f2d231766c8ceb828437367a888bac9b775ca529b9bd90bb0287"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "query-like-password-bypasses-signin",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1/mutation-control.json.grades/invocation-YqTk0i/grade.json",
+          "sha256": "4218646277aa63dfab5ad22938bd32cc50e0af7a5ca20113686b62c51a6faa34"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "purchase-session-rejects-returning-login",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1/mutation-control.json.grades/invocation-ouRkaB/grade.json",
+          "sha256": "d846d524fc6ec3efcc372729d33312511c96c102f60228ffecf6b6b3acedf413"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

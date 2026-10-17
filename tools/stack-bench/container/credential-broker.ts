@@ -1,0 +1,538 @@
+#!/usr/bin/env node
+import { createServer } from 'node:http';
+import type { ClientRequest, IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import type { RequestOptions } from 'node:https';
+import { connect } from 'node:net';
+import type { Socket } from 'node:net';
+import { createSecureContext, TLSSocket } from 'node:tls';
+import { linkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
+import { zstdDecompressSync } from 'node:zlib';
+import type { AddressInfo } from 'node:net';
+import { classifyProviderFailure } from '../src/agents/provider-failure.js';
+import type { ProviderFailure } from '../src/agents/provider-failure.js';
+import { brokerProtocol } from './broker-protocols.js';
+
+import { normalizeClaudeUsage } from '../src/evidence/claude-usage-cost.js';
+import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
+import { BROKER_LEDGER_SCHEMA_VERSION, CLAUDE_USAGE_FIELDS, firstUnpricedReason, noEstimates, noUnpriced,
+  priceNormalizedClaudeUsage, validateBrokerConfig,
+  writeCredentialBrokerLedger } from './credential-broker-accounting.js';
+import type { BrokerConfig, EstimateReason, PricingRates, UnpricedReason }
+  from './credential-broker-accounting.js';
+
+const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
+const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
+const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade'];
+
+// Grok Build zstd-compresses large request bodies. The broker reads them as JSON and
+// forwards the plain body it re-serialises.
+function requestBody(body: Buffer, encoding: string | undefined, limit: number): Buffer {
+  if (!encoding || encoding === 'identity') return body;
+  if (encoding === 'zstd') return zstdDecompressSync(body, { maxOutputLength: limit });
+  throw new Error('unsupported request content-encoding');
+}
+export type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
+type JsonRecord = Record<string, unknown>;
+export interface BrokerStats {
+  acceptedRequests: number;
+  billableRequests: number;
+  completedBillableRequests: number;
+  estimatedBillableRequests: number;
+  spentUsd: number;
+  reservedUsd: number;
+}
+
+export interface CreatedCredentialBroker {
+  server: ReturnType<typeof createServer>;
+  stats: () => BrokerStats;
+  abandonInFlight: () => void;
+}
+
+type UpstreamRequest = (options: RequestOptions,
+  callback: (response: IncomingMessage) => void) => ClientRequest;
+
+const roundUsd = (value: number): number => Number(value.toFixed(6));
+const reserveUsd = (value: number): number => Math.ceil(value * 1e6) / 1e6;
+
+function fail(message: string): never {
+  throw new Error(`credential broker: ${message}`);
+}
+
+function clientAuthorized(request: IncomingMessage, sessionToken: string): boolean {
+  return request.headers.authorization === `Bearer ${sessionToken}`
+    || request.headers['x-api-key'] === sessionToken || request.headers['x-goog-api-key'] === sessionToken;
+}
+
+function requestPath(value: string | undefined): string | null {
+  try { return new URL(value ?? '', 'http://credential-broker.invalid').pathname; }
+  catch { return null; }
+}
+
+function rejectRequest(request: IncomingMessage, response: ServerResponse,
+  status: number, message: string): void {
+  request.on('error', () => {});
+  response.on('error', () => {});
+  try {
+    response.shouldKeepAlive = false;
+    response.writeHead(status, { 'content-type': 'text/plain', connection: 'close' });
+    response.end(message);
+  } catch { response.destroy(); }
+  request.resume();
+}
+
+function requestCostCeiling(bodyBytes: number, maxTokens: number, rates: PricingRates): number {
+  const inputRate = Math.max(rates.input, rates.cacheRead, rates.cacheWrite5m, rates.cacheWrite1h);
+  return bodyBytes * inputRate / 1e6 + maxTokens * rates.output / 1e6;
+}
+
+export function createCredentialBroker(configInput: unknown, {
+  requestUpstream = httpsRequest as UpstreamRequest,
+  upstream,
+  maxRequestBytes = MAX_REQUEST_BYTES,
+}: { requestUpstream?: UpstreamRequest;
+  upstream?: { protocol: string; hostname: string; port: number };
+  maxRequestBytes?: number } = {}): CreatedCredentialBroker {
+  const config = validateBrokerConfig(configInput);
+  const protocol = brokerProtocol(config);
+  const destination = upstream ?? { protocol: 'https:', hostname: protocol.hostname, port: 443 };
+  let acceptedRequests = 0;
+  // Settles each paid call still open when the broker stops.
+  const inFlight = new Set<() => void>();
+  let lastResponseRequest = 0;
+  let providerFailure: ProviderFailure | null = null;
+  // A side call that finishes later must not hide the session's own refused call.
+  const sideCalls = new Set<number>();
+  const recordFailure = (request: number, failure: ProviderFailure | null): void => {
+    if (sideCalls.has(request)) return;
+    if (request >= lastResponseRequest) { lastResponseRequest = request; providerFailure = failure; }
+  };
+  let billableRequests = 0;
+  let completedBillableRequests = 0;
+  let estimatedBillableRequests = 0;
+  const estimatedByReason = noEstimates();
+  let unpricedBillableRequests = 0;
+  const unpricedByReason = noUnpriced();
+  let spentUsd = 0;
+  let providerReportedCostUsd = 0;
+  let providerIntegrityError: string | undefined;
+  const upstreamProviders = new Set<string>();
+  let reservedUsd = 0;
+  const usageTotals: ClaudeUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
+  const recordLedger = () => writeCredentialBrokerLedger(config.ledgerPath, {
+    schemaVersion: BROKER_LEDGER_SCHEMA_VERSION,
+    ...(config.provider === 'openrouter' ? { provider: config.provider, providerRoute: config.providerRoute,
+      providerReportedCostUsd: roundUsd(providerReportedCostUsd), upstreamProviders: [...upstreamProviders],
+      ...(providerIntegrityError ? { providerIntegrityError } : {}) } : {}),
+    providerFailure,
+    model: config.model,
+    maxBudgetUsd: config.maxBudgetUsd ?? null,
+    acceptedRequests,
+    billableRequests,
+    completedBillableRequests,
+    estimatedBillableRequests,
+    estimatedByReason,
+    unpricedBillableRequests,
+    unpricedByReason,
+    spentUsd: Number(spentUsd.toFixed(6)),
+    reservedUsd: Number(reservedUsd.toFixed(6)),
+    usage: usageTotals,
+    complete: reservedUsd === 0 && completedBillableRequests === billableRequests,
+    updatedAt: new Date().toISOString(),
+  });
+  recordLedger();
+  // A renewed sign-in arrives as a new file; the next request uses it.
+  const reloadCredential = (): void => {
+    if (!config.credentialPath) return;
+    try { config.credential = readFileSync(config.credentialPath, 'utf8').trim() || config.credential; }
+    catch { /* keep the last credential */ }
+  };
+  const server = createServer((request, response) => {
+    // A client can disappear while the broker is still draining an upstream
+    // response. Socket errors must not terminate the broker and strand a paid
+    // request reservation in the ledger.
+    request.on('error', () => {});
+    request.on('aborted', () => {});
+    response.on('error', () => {});
+    const responseOpen = (): boolean => !response.destroyed && !response.writableEnded;
+    const writeHead = (status: number, headers: OutgoingHttpHeaders): void => {
+      if (!responseOpen() || response.headersSent) return;
+      try { response.writeHead(status, headers); }
+      catch { response.destroy(); }
+    };
+    const endResponse = (body?: string | Buffer): void => {
+      if (!responseOpen()) return;
+      try { response.end(body); }
+      catch { response.destroy(); }
+    };
+    if (!clientAuthorized(request, config.sessionToken)) {
+      rejectRequest(request, response, 401, 'unauthorized');
+      return;
+    }
+    if (providerIntegrityError) {
+      rejectRequest(request, response, 502, 'provider accounting or routing validation failed');
+      return;
+    }
+    reloadCredential();
+    const path = requestPath(request.url);
+    const unbilled = path !== null && (request.method === 'GET' ? protocol.readPaths
+      : request.method === 'POST' ? protocol.controlPaths : undefined)?.has(path);
+    if (unbilled) {
+      // An account or configuration read: forwarded with the credential, outside the spend ledger.
+      const headers = protocol.headers(request);
+      for (const name of HOP_BY_HOP) delete headers[name];
+      if (request.method === 'GET') delete headers['content-length'];
+      const read = requestUpstream({ protocol: destination.protocol, hostname: destination.hostname, port: destination.port,
+        method: request.method, path: protocol.upstreamPath(path + new URL(request.url ?? '', 'http://credential-broker.invalid').search),
+        headers }, upstreamResponse => {
+        writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        upstreamResponse.on('data', (chunk: Buffer) => {
+          if (!responseOpen()) return;
+          try { response.write(chunk); } catch { response.destroy(); }
+        });
+        upstreamResponse.on('end', () => endResponse());
+        upstreamResponse.once('error', () => { if (responseOpen()) response.destroy(); });
+      });
+      read.on('error', () => { writeHead(502, { 'content-type': 'text/plain' }); endResponse('upstream request failed'); });
+      request.pipe(read);
+      return;
+    }
+    if (request.method !== 'POST' || path === null || !protocol.allowedPaths.has(path)) {
+      recordFailure(acceptedRequests + 1, { category: 'request', status: 404, code: 'broker-path' });
+      recordLedger();
+      rejectRequest(request, response, 404, 'not found');
+      return;
+    }
+    acceptedRequests += 1;
+    const requestOrdinal = acceptedRequests;
+    recordLedger();
+
+    const chunks: Buffer[] = [];
+    let received = 0;
+    let tooLarge = false;
+    request.on('data', (chunk: Buffer) => {
+      if (tooLarge) return;
+      received += chunk.length;
+      if (received > maxRequestBytes) {
+        tooLarge = true;
+        recordFailure(requestOrdinal, { category: 'request', status: 413, code: 'broker-body-limit' });
+        recordLedger();
+        writeHead(413, { 'content-type': 'text/plain' });
+        endResponse('request is too large');
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      if (tooLarge) return;
+      const body = Buffer.concat(chunks);
+      let payload: JsonRecord;
+      try { payload = protocol.parseRequest(requestBody(body, request.headers['content-encoding'], maxRequestBytes), path); }
+      catch {
+        recordFailure(requestOrdinal, { category: 'request', status: 400, code: 'broker-request-invalid' });
+        recordLedger();
+        writeHead(400, { 'content-type': 'text/plain' });
+        endResponse('invalid provider request');
+        return;
+      }
+      if (protocol.sideCall?.(path, payload)) sideCalls.add(requestOrdinal);
+      const billable = protocol.billable(path) && config.maxBudgetUsd != null;
+      // Preserve agent capabilities. This cap covers priced spend; receipts
+      // retain unpriced charges as unknown instead of refusing provider features.
+      const pricing = protocol.requestPricing(payload);
+      const costCeiling = billable
+        ? reserveUsd(requestCostCeiling(received + (protocol.inputTokenAdjustment?.(payload) ?? 0), protocol.outputLimit(payload),
+          config.pricingRates as PricingRates)) : 0;
+      const budget = config.maxBudgetUsd;
+      if (billable && budget !== null && budget !== undefined
+        && spentUsd + reservedUsd + costCeiling > budget) {
+        const measuredSpend = config.provider === 'openrouter' ? providerReportedCostUsd
+          : priceNormalizedClaudeUsage(usageTotals, config.pricingRates as PricingRates);
+        recordFailure(requestOrdinal, { category: 'broker-budget', status: 402, code: 'reservation-exceeds-budget',
+          budget: { maxBudgetUsd: budget, spentUsd, reservedUsd, requestCeilingUsd: costCeiling,
+            estimatedSpendUsd: roundUsd(Math.max(0, spentUsd - measuredSpend)) } });
+        recordLedger();
+        writeHead(402, { 'content-type': 'text/plain' });
+        endResponse('session budget cannot cover the next request reservation');
+        return;
+      }
+      if (billable) billableRequests += 1;
+      reservedUsd = roundUsd(reservedUsd + costCeiling);
+      recordLedger();
+      let billableSettled = !billable;
+      let abandoned = false;
+      // Without response usage, a declared feature cannot be shown unused.
+      const unprovenPricing = firstUnpricedReason(pricing.unpriced, pricing.requiresUsage);
+      const settleBillable = ({ usage = null, estimated = null, reportedCost = null, unpriced = null }:
+        { usage?: ClaudeUsage | null; estimated?: EstimateReason | null; reportedCost?: number | null;
+          unpriced?: UnpricedReason | null } = {}): void => {
+        if (billableSettled) return;
+        billableSettled = true;
+        reservedUsd = roundUsd(reservedUsd - costCeiling);
+        completedBillableRequests += 1;
+        if (unpriced) {
+          unpricedBillableRequests += 1;
+          unpricedByReason[unpriced] += 1;
+        }
+        if (estimated) {
+          estimatedBillableRequests += 1;
+          estimatedByReason[estimated] += 1;
+          spentUsd = roundUsd(spentUsd + costCeiling);
+        } else if (usage) {
+          spentUsd = roundUsd(spentUsd + (reportedCost ?? priceNormalizedClaudeUsage(usage, config.pricingRates as PricingRates)));
+          if (reportedCost !== null) {
+            providerReportedCostUsd = roundUsd(providerReportedCostUsd + reportedCost);
+            if (pricing.bounded && reportedCost > costCeiling + 0.000001) {
+              providerIntegrityError = 'OpenRouter reported cost exceeds the request reservation';
+            }
+          }
+          for (const field of CLAUDE_USAGE_FIELDS) usageTotals[field] += usage[field];
+        }
+        recordLedger();
+      };
+      const headers = protocol.headers(request);
+      for (const name of [...HOP_BY_HOP, 'content-encoding']) delete headers[name];
+      const forwardedBody = Buffer.from(JSON.stringify(payload));
+      headers['content-length'] = String(forwardedBody.length);
+      const upstreamRequest = requestUpstream({
+        protocol: destination.protocol,
+        hostname: destination.hostname,
+        port: destination.port,
+        method: request.method,
+        path: protocol.upstreamPath(path + new URL(request.url ?? '', 'http://credential-broker.invalid').search),
+        headers,
+      }, upstreamResponse => {
+        writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        const responseChunks: Buffer[] = [];
+        let responseBytes = 0;
+        upstreamResponse.on('data', (chunk: Buffer) => {
+          responseBytes += chunk.length;
+          if (responseBytes <= maxRequestBytes) responseChunks.push(chunk);
+          if (responseOpen()) {
+            try { response.write(chunk); }
+            catch { response.destroy(); }
+          }
+        });
+        upstreamResponse.on('end', () => {
+          const status = upstreamResponse.statusCode ?? 502;
+          recordFailure(requestOrdinal, status >= 200 && status < 300 ? null
+            : classifyProviderFailure(status, Buffer.concat(responseChunks)));
+          recordLedger();
+          endResponse();
+          if (!billable) return;
+          if ((upstreamResponse.statusCode ?? 502) >= 200
+            && (upstreamResponse.statusCode ?? 502) < 300) {
+            const usage = responseBytes <= maxRequestBytes
+              ? protocol.responseUsage(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding'])
+              : null;
+            const rejection = usage || responseBytes > maxRequestBytes ? null
+              : protocol.responseRejection?.(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding']) ?? null;
+            if (rejection) {
+              // The provider refused before producing output, so nothing is charged, as for an error status.
+              recordFailure(requestOrdinal, { ...rejection, status });
+              settleBillable();
+            } else if (!usage) {
+              if (config.provider === 'openrouter') providerIntegrityError = 'OpenRouter response lacks verified cost and routing metadata';
+              recordFailure(requestOrdinal, { category: 'transport', status, code: 'incomplete-response' });
+              settleBillable({ estimated: 'no-usage', unpriced: unprovenPricing });
+            }
+            else try {
+              if (typeof usage.upstream_provider === 'string') upstreamProviders.add(usage.upstream_provider);
+              settleBillable({ usage: normalizeClaudeUsage(usage),
+                reportedCost: typeof usage.provider_reported_cost_usd === 'number' ? usage.provider_reported_cost_usd : null,
+                unpriced: firstUnpricedReason(pricing.unpriced, usage.unpriced_reason as UnpricedReason | null) });
+            }
+            catch {
+              recordFailure(requestOrdinal, { category: 'transport', status, code: 'invalid-usage' });
+              settleBillable({ estimated: 'no-usage', unpriced: unprovenPricing });
+            }
+          } else {
+            settleBillable();
+          }
+        });
+        const settleAbortedResponse = () => {
+          if (!abandoned) recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
+          settleBillable({ estimated: 'response-aborted', unpriced: unprovenPricing });
+          if (responseOpen()) response.destroy();
+        };
+        upstreamResponse.once('aborted', settleAbortedResponse);
+        upstreamResponse.once('error', settleAbortedResponse);
+      });
+      // The broker stops only after the coding session has ended. A call still open
+      // then can no longer reach the agent; its spend is the reservation ceiling.
+      const abandon = () => {
+        abandoned = true;
+        settleBillable({ estimated: 'response-aborted', unpriced: unprovenPricing });
+        upstreamRequest.destroy();
+      };
+      inFlight.add(abandon);
+      upstreamRequest.once('close', () => inFlight.delete(abandon));
+      // A request whose connection never opened did not reach the provider.
+      let connected = false;
+      upstreamRequest.on('socket', socket => {
+        if (!socket.connecting) connected = true;
+        else socket.once(destination.protocol === 'https:' ? 'secureConnect' : 'connect', () => { connected = true; });
+      });
+      upstreamRequest.on('error', () => {
+        if (abandoned) return;
+        if (connected) {
+          recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
+          settleBillable({ estimated: 'upstream-error', unpriced: unprovenPricing });
+        } else {
+          recordFailure(requestOrdinal, { category: 'unreachable', status: null, code: null });
+          settleBillable();
+        }
+        writeHead(502, { 'content-type': 'text/plain' });
+        endResponse('upstream request failed');
+      });
+      upstreamRequest.end(forwardedBody);
+    });
+  });
+  // The CLI sends its account check to another host through its HTTPS proxy, which is this
+  // broker. The broker terminates TLS for that host alone, with a per-session certificate the
+  // CLI trusts, and answers the check with the account's id and nothing that names the person.
+  // Every other host is tunnelled unchanged: the broker shares the coding container's network.
+  const lookup = protocol.accountLookup;
+  if (lookup && config.tlsKeyPath && config.tlsCertPath) {
+    const secureContext = createSecureContext({ key: readFileSync(config.tlsKeyPath), cert: readFileSync(config.tlsCertPath) });
+    const lookupServer = createServer((request, response) => {
+      response.on('error', () => {});
+      if (request.method !== 'GET' || requestPath(request.url) !== lookup.path
+        || !clientAuthorized(request, config.sessionToken)) {
+        rejectRequest(request, response, 404, 'not found');
+        return;
+      }
+      reloadCredential();
+      const target = upstream ?? { protocol: 'https:', hostname: lookup.hostname, port: 443 };
+      requestUpstream({ ...target, method: 'GET', path: request.url,
+        headers: { authorization: `Bearer ${config.credential}`, accept: 'application/json' } }, upstreamResponse => {
+        const chunks: Buffer[] = [];
+        upstreamResponse.on('data', (chunk: Buffer) => chunks.push(chunk));
+        upstreamResponse.on('end', () => {
+          const status = upstreamResponse.statusCode ?? 502;
+          let id: unknown = null;
+          try { id = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as JsonRecord).id; } catch { /* no id */ }
+          const body = status === 200 && typeof id === 'string'
+            ? JSON.stringify({ id, email: 'agent@stack-bench.invalid', verified_email: true }) : '{}';
+          response.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+          response.end(body);
+        });
+      }).on('error', () => rejectRequest(request, response, 502, 'upstream request failed')).end();
+    });
+    server.on('connect', (request: IncomingMessage, client: Socket, head: Buffer) => {
+      client.on('error', () => {});
+      const [host = '', port = '443'] = (request.url ?? '').split(':');
+      if (host === lookup.hostname && port === '443') {
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        lookupServer.emit('connection', new TLSSocket(client, { isServer: true, secureContext }));
+        return;
+      }
+      const tunnel = connect(Number(port), host, () => {
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        tunnel.write(head);
+        tunnel.pipe(client);
+        client.pipe(tunnel);
+      });
+      tunnel.on('error', () => client.destroy());
+      client.on('close', () => tunnel.destroy());
+    });
+  }
+  // Node closes a connection idle for five seconds. A client that reuses it at that moment
+  // loses the request it was sending (seen from agy as a broken pipe). The broker serves
+  // one session and closes its connections when it stops, so idle ones stay open.
+  server.keepAliveTimeout = 0;
+  server.on('clientError', (_error: Error, socket: Socket) => {
+    socket.on('error', () => {});
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+    else socket.destroy();
+  });
+  return { server, abandonInFlight: () => { for (const abandon of inFlight) abandon(); }, stats: () => ({ acceptedRequests,
+    billableRequests, completedBillableRequests, estimatedBillableRequests,
+    estimatedByReason: { ...estimatedByReason },
+    spentUsd: Number(spentUsd.toFixed(6)), reservedUsd: Number(reservedUsd.toFixed(6)) }) };
+}
+
+function parseArgs(argv: string[]): string {
+  const { values } = parseNodeArgs({ args: argv, options: { config: { type: 'string' } } });
+  const configPath = values.config;
+  if (!configPath || argv.length !== 2) fail('use --config <private-file>');
+  return resolve(configPath);
+}
+
+async function main() {
+  const configPath = parseArgs(process.argv.slice(2));
+  let config: BrokerConfig;
+  try { config = validateBrokerConfig(JSON.parse(readFileSync(configPath, 'utf8'))); }
+  finally { rmSync(configPath, { force: true }); }
+  if (!config.readyPath) fail('readyPath is invalid');
+  const { server, abandonInFlight } = createCredentialBroker(config);
+  const sockets = new Set<Socket>();
+  server.on('connection', (socket: Socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  server.on('error', (error: Error) => {
+    process.stderr.write(`credential broker: ${error.message}\n`);
+    process.exitCode = 1;
+  });
+  const readyPath = config.readyPath;
+  server.listen(0, config.listenHost ?? '127.0.0.1', () => {
+    const address: string | AddressInfo | null = server.address();
+    if (!address || typeof address === 'string') fail('listener address is unavailable');
+    // Publish the file whole: the starter polls for it and reads it at once.
+    const pending = `${readyPath}.pending`;
+    writeFileSync(pending, `${JSON.stringify({ host: address.address, port: address.port })}\n`,
+      { flag: 'wx', mode: 0o600 });
+    linkSync(pending, readyPath);
+    rmSync(pending);
+  });
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    abandonInFlight();
+    const force = setTimeout(() => {
+      for (const socket of sockets) socket.destroy();
+      server.closeAllConnections?.();
+      process.exit(0);
+    }, BROKER_SERVER_CLOSE_GRACE_MS);
+    force.unref();
+    server.close(() => {
+      clearTimeout(force);
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
+  };
+  const parentPid = config.parentPid;
+  if (parentPid) {
+    setInterval(() => {
+      try { process.kill(parentPid, 0); }
+      catch { stop(); }
+    }, 1_000).unref();
+  }
+  // A Docker broker cannot see the controller process; the controller touches this
+  // file instead, and a stale file means it died.
+  const heartbeatPath = config.heartbeatPath;
+  if (heartbeatPath) {
+    setInterval(() => { if (heartbeatStale(heartbeatPath, Date.now())) stop(); }, 5_000).unref();
+  }
+  const expiresAt = config.expiresAt;
+  if (expiresAt) setTimeout(stop, Math.max(1, expiresAt - Date.now())).unref();
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+}
+
+export function heartbeatStale(path: string, now: number): boolean {
+  try { return now - statSync(path).mtimeMs > 60_000; }
+  catch { return true; }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

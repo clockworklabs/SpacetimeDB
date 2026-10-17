@@ -1,0 +1,60 @@
+{
+  "rerun": "STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern=\"account creation accepts explicit login\" dist/tests/account-navigation.integration.js",
+  "evidence": [
+    {
+      "mode": "patched-silent-refusal",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "expectedFailure": true,
+          "requestPatch": {
+            "shape": "object",
+            "status": 409,
+            "bodySha256": "14aabc15b7a9f8d342fd3f764007d8ed8c7f255f3162334e8c4c16905506fcf0"
+          }
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495322881,
+          "completedAtMs": 1790495325725,
+          "durationMs": 2844,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "role": "admin",
+          "signupPending": false
+        },
+        {
+          "path": "/signin",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": false,
+      "currentUser": "",
+      "privilegedStatus": null
+    }
+  ]
+}

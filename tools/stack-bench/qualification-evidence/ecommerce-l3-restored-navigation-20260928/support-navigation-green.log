@@ -1,0 +1,132 @@
+TAP version 13
+# Subtest: saved views and purchase history work after confirmation or closing and still reject missing content
+    # Subtest: progression-support-history.json
+    ok 1 - progression-support-history.json
+      ---
+      duration_ms: 4963.6706
+      type: 'test'
+      ...
+    # Subtest: progression-managed-support-privacy.json
+    ok 2 - progression-managed-support-privacy.json
+      ---
+      duration_ms: 5032.3929
+      type: 'test'
+      ...
+    # Subtest: progression-managed-support-shared.json
+    ok 3 - progression-managed-support-shared.json
+      ---
+      duration_ms: 5054.0356
+      type: 'test'
+      ...
+    # Subtest: progression-customer-profile.json
+    ok 4 - progression-customer-profile.json
+      ---
+      duration_ms: 5082.1629
+      type: 'test'
+      ...
+    # Subtest: progression-notification-preferences.json
+    ok 5 - progression-notification-preferences.json
+      ---
+      duration_ms: 5042.3498
+      type: 'test'
+      ...
+    # Subtest: progression-purchasing.json
+    ok 6 - progression-purchasing.json
+      ---
+      duration_ms: 4502.5073
+      type: 'test'
+      ...
+    # Subtest: 01-purchase-attribution.json
+    ok 7 - 01-purchase-attribution.json
+      ---
+      duration_ms: 5357.5624
+      type: 'test'
+      ...
+    # Subtest: 01-cart.json
+    ok 8 - 01-cart.json
+      ---
+      duration_ms: 4994.2354
+      type: 'test'
+      ...
+    1..8
+ok 1 - saved views and purchase history work after confirmation or closing and still reject missing content
+  ---
+  duration_ms: 40219.2491
+  type: 'test'
+  ...
+# Subtest: support history reaches persistence and privacy checks through restored support dialogs
+    # Subtest: direct
+    ok 1 - direct
+      ---
+      duration_ms: 10840.2292
+      type: 'test'
+      ...
+    # Subtest: menu
+    ok 2 - menu
+      ---
+      duration_ms: 11010.9614
+      type: 'test'
+      ...
+    # Subtest: restored-dialog
+    ok 3 - restored-dialog
+      ---
+      duration_ms: 6937.0504
+      type: 'test'
+      ...
+    # Subtest: confirmation
+    ok 4 - confirmation
+      ---
+      duration_ms: 8303.4407
+      type: 'test'
+      ...
+    # Subtest: lost-history
+    ok 5 - lost-history
+      ---
+      duration_ms: 3839.2253
+      type: 'test'
+      ...
+    # Subtest: private-leak
+    ok 6 - private-leak
+      ---
+      duration_ms: 5849.3995
+      type: 'test'
+      ...
+    # Subtest: logout-leak
+    ok 7 - logout-leak
+      ---
+      duration_ms: 6168.5069
+      type: 'test'
+      ...
+    # Subtest: wrong-account
+    ok 8 - wrong-account
+      ---
+      duration_ms: 1055.1914
+      type: 'test'
+      ...
+    # Subtest: reject-all
+    ok 9 - reject-all
+      ---
+      duration_ms: 1427.5387
+      type: 'test'
+      ...
+    1..9
+ok 2 - support history reaches persistence and privacy checks through restored support dialogs
+  ---
+  duration_ms: 55573.288
+  type: 'test'
+  ...
+# Subtest: managed support live status observes a distinct change without reopening the observer
+ok 3 - managed support live status observes a distinct change without reopening the observer
+  ---
+  duration_ms: 2808.0785
+  type: 'test'
+  ...
+1..3
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 99042.5882

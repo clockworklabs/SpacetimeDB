@@ -1,0 +1,9 @@
+{
+  "approved": true,
+  "at": "2026-09-28T23:33:22.166Z",
+  "candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+  "inputsSha256": "93e7fb015821348de16f11b4e33c1465d024431e9e79f330acbec0d069b47b57",
+  "dockerfileSha256": "641ebb9c23f23cafad6a57d0843e303ef32f315ca0097a303c96e582876ae554",
+  "scope": "Model-free diagnostic only; one shared cookie guard change plus reviewed probe removal; exact source/emits/deletions reviewed. Qualification remains pending.",
+  "paidStudyUnchanged": true
+}

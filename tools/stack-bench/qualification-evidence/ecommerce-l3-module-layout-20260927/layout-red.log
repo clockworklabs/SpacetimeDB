@@ -1,0 +1,30 @@
+TAP version 13
+# Subtest: Spacetime root target takes precedence over nested scaffolds and stays inside the mounted app
+not ok 1 - Spacetime root target takes precedence over nested scaffolds and stays inside the mounted app
+  ---
+  duration_ms: 32.1142
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\readiness-20260927\\layout-build\\tests\\reset-backend.test.js:352:1'
+  failureType: 'testCodeFailure'
+  error: 'SpacetimeDB module directory is not a TypeScript module: backend\\spacetimedb'
+  code: 'generated_app_layout'
+  name: 'GeneratedAppLayoutError'
+  stack: |-
+    fail (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/readiness-20260927/layout-build/src/runtime/spacetime-layout.js:15:11)
+    validateTarget (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/readiness-20260927/layout-build/src/runtime/spacetime-layout.js:125:9)
+    resolveSpacetimeModuleLayout (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/readiness-20260927/layout-build/src/runtime/spacetime-layout.js:166:17)
+    TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/readiness-20260927/layout-build/tests/reset-backend.test.js:372:22)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 407.1384

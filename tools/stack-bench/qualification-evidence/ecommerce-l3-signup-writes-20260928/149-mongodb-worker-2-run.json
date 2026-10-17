@@ -1,0 +1,662 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-mongodb-run417-20260928045929-239a1dca",
+  "attempt": {
+    "id": "ecommerce-mongodb-run417-20260928045929-239a1dca",
+    "parentId": "reference-live-mongodb-20260928045927-8548"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:59:41.289Z",
+    "completedAt": "2026-09-28T05:06:44.326Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null,
+      "version": "1.5.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "mongodb",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-mongodb-run417-20260928045929-239a1dca",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "runIndex": 417,
+      "ownerPid": 8703,
+      "createdAt": "2026-09-28T04:59:29.031Z",
+      "state": "released",
+      "resources": {
+        "serverUri": null,
+        "database": "app_ecom_run417",
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-92215563a38a3633-backend",
+          "id": "78f34455c8090d607a38890a90b4869a5697c2dfb776885c269836add0e79ca8",
+          "image": "sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082",
+          "owned": true,
+          "networkMode": "b3a4446dd7871604931d3b3176499f0021752d726006995a47392fe4d9599d60",
+          "running": false,
+          "removedAt": "2026-09-28T05:06:46.213Z"
+        },
+        "buildContainer": {
+          "name": "sb-92215563a38a3633-build",
+          "id": "6774837be8c4352ec6ff355c85d7fcb6ac33d2902d1ccd3c956dad4edc806c06",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:78f34455c8090d607a38890a90b4869a5697c2dfb776885c269836add0e79ca8",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T05:06:45.272Z",
+          "removedAt": "2026-09-28T05:06:45.459Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/effadca109ac4a6de641e3ed8b3d73658750377b79dab7420694f0350e572e79.lock.json",
+            "key": "port:6818",
+            "digest": "effadca109ac4a6de641e3ed8b3d73658750377b79dab7420694f0350e572e79",
+            "acquiredAt": "2026-09-28T04:59:29.089Z",
+            "releasedAt": "2026-09-28T05:06:47.113Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/5e522d22abefde6f8cddbe0f2220785fdbd2ffb2ccbd2ff351b4707e2fee2ead.lock.json",
+            "key": "port:7140",
+            "digest": "5e522d22abefde6f8cddbe0f2220785fdbd2ffb2ccbd2ff351b4707e2fee2ead",
+            "acquiredAt": "2026-09-28T04:59:29.089Z",
+            "releasedAt": "2026-09-28T05:06:47.113Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/a3cea8600f3364e5e7fcb2ba225c0eb1fe124887f7b95b72bb9f5bbfe22003b0.lock.json",
+            "key": "slot:ecommerce:mongodb:run417",
+            "digest": "a3cea8600f3364e5e7fcb2ba225c0eb1fe124887f7b95b72bb9f5bbfe22003b0",
+            "acquiredAt": "2026-09-28T04:59:29.089Z",
+            "releasedAt": "2026-09-28T05:06:47.113Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/652ea99af1b36580dbafef1e233c5c2ed367a753250008ea26b34ab8cc7de645.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-uyMXee/app",
+            "digest": "652ea99af1b36580dbafef1e233c5c2ed367a753250008ea26b34ab8cc7de645",
+            "acquiredAt": "2026-09-28T04:59:29.089Z",
+            "releasedAt": "2026-09-28T05:06:47.113Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-92215563a38a3633-network",
+          "id": "b3a4446dd7871604931d3b3176499f0021752d726006995a47392fe4d9599d60",
+          "namespaceContainerId": "78f34455c8090d607a38890a90b4869a5697c2dfb776885c269836add0e79ca8",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.1",
+            "10.0.0.9",
+            "10.0.0.33",
+            "10.0.0.41",
+            "10.0.0.17"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.19",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "c7643a77d28b52eb540b4273b1b6cf06a2967f9c35be3066144b7eb7233857c6",
+          "firewallInstalledAt": "2026-09-28T04:59:31.969Z",
+          "ownAddresses": [
+            "10.0.0.18"
+          ],
+          "namespaceStartedAt": "2026-09-28T04:59:30.875293977Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-92215563a38a3633-browser",
+          "id": "50cfcb3c0a3f17e0a766b7c63e0aa7a8cda55837c68cb2441d413c64dadeb6f7",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:78f34455c8090d607a38890a90b4869a5697c2dfb776885c269836add0e79ca8",
+          "running": false,
+          "removedAt": "2026-09-28T05:06:44.775Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T05:06:47.055Z",
+      "releasedAt": "2026-09-28T05:06:47.113Z",
+      "ownership": {
+        "markerSha256": "99c3f6e12639603993b75748330aa790441f5ecbe491dad76fe8374eb9a409c4"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/mongodb.runs/r1-workers/w2.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "score": null,
+        "max": null,
+        "graded": false,
+        "contractPass": null,
+        "selection": null,
+        "outcome": {
+          "kind": "ungraded",
+          "phase": "reference-mutation-only",
+          "reason": "the parent qualification owns the full clean grade",
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "buildSessions": [
+          {
+            "sessionId": "reference-mongodb-1790571595763",
+            "costUsd": 0,
+            "durationMs": 14236,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-mongodb-1790571595763"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "buildCostUsd": 0,
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 14236,
+          "activeDurationMs": 14236,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "costUsd": 0,
+        "durationMs": 14507
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "mutationControl": {
+      "ok": true,
+      "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/mongodb.runs/r1-workers/w2.runs/r1/mutation-control.json",
+      "processError": null,
+      "summary": {
+        "caught": 9,
+        "completed": 9,
+        "total": 9,
+        "remaining": 0
+      },
+      "outcome": null,
+      "results": [
+        {
+          "id": "unauthenticated-purchase-defaults-to-admin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the buy action was accepted for guest, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "cart-repeat-does-not-increment",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the cart-quantity control reads 1, expected exactly 2 in the entry matching \"Headphones\"",
+              "failedAction": "expectNumber",
+              "key": "ecommerce.feature.cart-checkout.cart.4a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "scheduled-restock-never-becomes-due-after-restart",
+          "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+          "targets": [
+            "ecommerce.l3.server-time.server-time.312a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.l3.server-time.server-time.312a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 312,
+              "criterion": "312a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the pending-restock-item control did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.l3.server-time.server-time.312a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-read-write-loses-concurrent-stock",
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "targets": [
+            "ecommerce.spec.concurrency-safety.restock-race.202a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.concurrency-safety.restock-race.202a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 202,
+              "criterion": "202a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Bluetooth Speaker control reads 103, expected exactly 106",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "tampered-session-can-purchase",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim0a8727d1-57b3-4df101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "checkout-trusts-submitted-price",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4d",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the checkout order total in minor units control reads 100, expected exactly 10600",
+              "failedAction": "dbExpectCheckout",
+              "key": "ecommerce.feature.cart-checkout.cart.4d",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "overlapping-cart-add-rejected",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4d",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "1 of 2 simultaneous checkout calls were accepted, expected 2",
+              "failedAction": "expectCallOutcomes",
+              "key": "ecommerce.feature.cart-checkout.cart.4d",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"kim0924e47c-8870-42f101\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "admin-boundary-rejects-all-signups",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"claimant-ordinaryc7dfeade-2b9e-45f103\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        }
+      ]
+    },
+    "totals": {
+      "score": 0,
+      "max": 0,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 14236,
+      "durationSec": 423,
+      "ungraded": [
+        3
+      ]
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "mutation-control",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.concurrency-safety.restock-race.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a",
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+        "ecommerce.l3.deferred-integrity.exactly-once.311a",
+        "ecommerce.l3.server-time.server-time.312a",
+        "ecommerce.feature.cart-checkout.cart.4a",
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7140"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

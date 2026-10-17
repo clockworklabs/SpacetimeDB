@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T22-59-12-943Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T22-59-12-943Z",
+    "parentId": "ecommerce-mongodb-run256-20260927225837-400080e9"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T22:59:12.944Z",
+    "completedAt": "2026-09-27T23:00:21.145Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 68202,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-rc9SRM/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-rc9SRM/selected-mutations.json",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-checkout-crash.json"
+    ],
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 3,
+      "mutationIds": [
+        "checkout-crash-integrity"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../mongodb.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "554e6dbc0e6dc318ff472e40bc0237b367fafbb48fae64a01aa875ab9bee1baf"
+      },
+      "total": 2,
+      "max": 2,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "identitySha256": "5e301c2215e97b5a7b23f172302b009b8c10fac44b7572c406df5fdda604b944",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "checkout-crash-integrity",
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "targets": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 910,
+            "criterion": "910a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the remaining cart lines after checkout control reads 1, expected exactly 0",
+            "failedAction": "expectCrashCheckout",
+            "key": "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c",
+      "recipeSha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f",
+      "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+      "calibrationSha256": "3d86dc87f1d8607c2587a5bb2cfd4fb7a066fee29f997927de567e5c90c5ab65",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 3,
+        "mutationIds": [
+          "checkout-crash-integrity"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+          "scenarioSha256": "a53ddfa1802a484691ed4632f3461d0e8bebca95086b6bc3d6161d44eae6cb7b",
+          "mutationSha256": "4c49fe75b2aa2c5be237a4ddef0aa09f0b61e63faa552c02260dd1556225c36a",
+          "selectionSha256": "2a39cea079f06a3090f95fbbdddb808f63dbc34af61d1478c3d5c3bc111bf981",
+          "identitySha256": "5e301c2215e97b5a7b23f172302b009b8c10fac44b7572c406df5fdda604b944",
+          "mutationIds": [
+            "checkout-crash-integrity"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T23:00:21.146Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-checkout-crash.json",
+        "mutationId": "checkout-crash-integrity",
+        "status": "returned",
+        "report": {
+          "path": "../mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-CqV6PW/grade.json",
+          "sha256": "426aa14a81ec080e5d7111f283c5cf5efe68c4235a17a778c4c9dcbeffd67b6c"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

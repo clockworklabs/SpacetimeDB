@@ -1,0 +1,106 @@
+{
+  "group": "purchase",
+  "candidate": "a7b9bf72925ef5dcd778e731b4efed7114c37c95",
+  "image": "sha256:a24978e57b35d3c61644f73142edfde8b79eb3fd72c5ad5fca3e63daa8bc2258",
+  "originalControlSha256": "5a045a19ceb3121040528de143f130c21001e391b8133327a849aaf7ee1f5a1a",
+  "rows": [
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "ok": true,
+      "reportSha256": "a8a0656d95d1186ae6ee69699f2ac9c714835f212214c6ed91a98fb0f666e86e",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "ok": true,
+      "reportSha256": "1c53670f7260aee677388d480e5a359f64ba11eeeb1b9baeb94aa74d0c039043",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "ok": true,
+      "reportSha256": "8fc6f9c175a9ff2967814e8d3bab04bd9e4ec4c35c7e600e2de0ae73bc8e98f2",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "ok": true,
+      "reportSha256": "3855e5b08ed97993511f573fad8510b0421e862fb30a72f8c16323f5219ca639",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "null",
+      "stack": "null",
+      "ok": true,
+      "reportSha256": "72abee8cfad634aa70db07065af17d20958d3a40f078f68944c0ba304923587e",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "ok": true,
+      "reportSha256": "4e343487a371ef0c207a3205c48937da5e20ca39c5bb36100cf9bdff36add639",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": 1,
+      "mutationIds": [
+        "signed-out-purchase-bypasses-account-check"
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "ok": true,
+      "reportSha256": "c836807b6e7c8d8bb34f669bf375c6d51d0e4f4351102bcd8697c002446dd785",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": 1,
+      "mutationIds": [
+        "signed-out-purchase-uses-default-account"
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "ok": true,
+      "reportSha256": "0b6daf7c4bbffd21243cfddb6c24cfd47eae57758d0c09b71852fa85ddc3639a",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": 1,
+      "mutationIds": [
+        "signed-out-visitor-purchase-is-accepted"
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "ok": true,
+      "reportSha256": "fb11e2105ce1fce8909205b5b56c72fc4ac72de7a903b0520100fdec9bfdacd7",
+      "inputSha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084",
+      "score": null,
+      "mutationsCaught": 1,
+      "mutationIds": [
+        "signed-out-visitor-purchase-is-accepted"
+      ]
+    }
+  ]
+}

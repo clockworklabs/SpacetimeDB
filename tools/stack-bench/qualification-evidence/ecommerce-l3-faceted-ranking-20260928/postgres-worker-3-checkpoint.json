@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-28T11-21-30-171Z",
+  "attempt": {
+    "id": "mutation-2026-09-28T11-21-30-171Z",
+    "parentId": "ecommerce-postgres-run410-20260928112059-27c136c5"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:21:30.171Z",
+    "completedAt": "2026-09-28T11:21:59.959Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 29788,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-jByZCm/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-jByZCm/selected-mutations.json",
+    "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-catalog-ranking.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "progression-catalog-ranking-is-reversed"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "20be2db5c1105d37e2a7868aebe2d5bfe37c6f6fcc7a9176a9b7e047c7cb2754"
+      },
+      "total": 1,
+      "max": 1,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+          "identitySha256": "ba166cd13ee591bf472fbbf3f490c7bb4d11faa9568d620875b92a9bfbb8d973",
+          "total": 1,
+          "max": 1
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "progression-catalog-ranking-is-reversed",
+        "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+        "targets": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.catalog.catalog-ranking.2b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-name control entries are not in the required order",
+            "failedAction": "expectSequence",
+            "key": "ecommerce.feature.catalog.catalog-ranking.2b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c",
+      "recipeSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "fixtureSha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+      "calibrationSha256": "dd9eb769e56f3b8bc1348f1fccac8b49db7da12f2c8ffd800051c425aed8bc51",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "progression-catalog-ranking-is-reversed"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+          "scenarioSha256": "59647930d98beb0a27cb81b7675ebc1f6a4e3c714a960e8196bf87b501580fbc",
+          "mutationSha256": "d22b9bdce7d1a7b789bf5f42e65d3a6f79c5db3fe79c550609b3976be21dc83b",
+          "selectionSha256": "0c680639735cd3fa115044770fb4a9dad98d1327a8e1dc938910af90697ec498",
+          "identitySha256": "ba166cd13ee591bf472fbbf3f490c7bb4d11faa9568d620875b92a9bfbb8d973",
+          "mutationIds": [
+            "progression-catalog-ranking-is-reversed"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 30,
+      "updatedAt": "2026-09-28T11:21:59.959Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-catalog-ranking.json",
+        "mutationId": "progression-catalog-ranking-is-reversed",
+        "status": "returned",
+        "report": {
+          "path": "../postgres.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-ENPKWf/grade.json",
+          "sha256": "67f7cc96b2b498c2eef76ab3918ce04478d9eab6db9e35192cbbe22417866824"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

@@ -44,6 +44,8 @@ pub struct Entity {
 
 Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, `index(...)`
 
+Tables are private by default: only server-side code such as reducers and views reads them. `public` exposes all of a table's rows to every client through subscriptions.
+
 `ctx.db` accessors use the `accessor` name (snake_case).
 
 ## Column Types
@@ -149,6 +151,8 @@ pub fn on_connect(ctx: &ReducerContext) { ... }
 #[spacetimedb::reducer(client_disconnected)]
 pub fn on_disconnect(ctx: &ReducerContext) { ... }
 ```
+
+Connection hooks run once per connection. The same authenticated principal keeps the same identity (`ctx.sender()`) across connections, while each connection has its own connection ID (`ctx.connection_id()`). A disconnect ends one connection; it does not end the identity, which returns unchanged on the next connection with the same token. Use connection IDs for presence and other connection-scoped state.
 
 The current connection ID is available through `ctx.connection_id()` (not a public field) and may be absent outside connection-scoped calls.
 

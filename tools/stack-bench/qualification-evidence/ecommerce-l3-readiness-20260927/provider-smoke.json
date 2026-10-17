@@ -1,0 +1,86 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "preflight",
+  "id": "provider-smoke-146916",
+  "attempt": {
+    "id": "provider-smoke-146916",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T04:47:49.683Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "9c371b0a572c767a5f24d50043bbb882941b95b3d6968c15424cf02cd2c4529b"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-09-27T04:47:49.682Z",
+    "request": {
+      "command": "node local-notes/sol6-four-stack-20260925/provider-smoke-e2e.mjs"
+    },
+    "ok": true,
+    "checks": [
+      {
+        "id": "transport.e2e",
+        "status": "pass",
+        "evidence": {
+          "command": "node local-notes/sol6-four-stack-20260925/provider-smoke-e2e.mjs",
+          "head": "69d6dff0cbf488d61baa762b491a28cb357f59f5",
+          "image": "sha256:9dd57dc7ac77d60daee1595ed2f29e5baebc8a583826277043a9362c992d6fc1",
+          "fixture": "localhost HTTP HEAD 403; closed port refuses",
+          "sources": {
+            "src/runtime/container-smoke.ts": "48826e499f12ff20ed8caf9be67a69fa871a047e108a01a97adc92c6472efa10",
+            "src/runtime/preflight.ts": "c9284027560675ecd68bc78db03f0a37a324577e96466bcb1fdbe9fd1a6186d7",
+            "container/broker-protocols.ts": "b6f33b5e945793fe07b04933c9e7b3e435d619932bf33ddd081ce35a6a24f156"
+          },
+          "observations": [
+            {
+              "label": "reachable",
+              "expected": "pass",
+              "observed": "pass",
+              "result": {
+                "platform": "linux",
+                "arch": "x64",
+                "node": "v24.18.1",
+                "reached": [
+                  {
+                    "url": "http://127.0.0.1:19443",
+                    "status": 403,
+                    "elapsedMs": 46
+                  }
+                ],
+                "tcpReached": [
+                  19443
+                ],
+                "executables": {
+                  "node": "/usr/bin/node"
+                },
+                "credentialStatus": "not-checked",
+                "diskFreeBytes": 653213679616
+              }
+            },
+            {
+              "label": "refused",
+              "expected": "fail",
+              "observed": "fail",
+              "receipt": "Error: Outbound probe failed: {\"origin\":\"http://127.0.0.1:19444\",\"elapsedMs\":36,\"error\":{\"name\":\"TypeError\",\"cause\":{\"name\":\"Error\",\"code\":\"ECONNREFUSED\",\"syscall\":\"connect\"}}}"
+            }
+          ],
+          "cleanup": true,
+          "networkMode": "container:99fe0fa061f30713c970bf985d92181c8eb7705b6b4419295301e5b9b2599a6f"
+        }
+      }
+    ]
+  }
+}

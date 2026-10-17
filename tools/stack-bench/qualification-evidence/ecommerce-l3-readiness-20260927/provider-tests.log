@@ -1,0 +1,334 @@
+TAP version 13
+# Subtest: credential broker rejects unauthorized and unsupported requests before upstream
+ok 1 - credential broker rejects unauthorized and unsupported requests before upstream
+  ---
+  duration_ms: 44.0539
+  type: 'test'
+  ...
+# Subtest: Anthropic broker forwards server-side features and marks spend it cannot price
+ok 2 - Anthropic broker forwards server-side features and marks spend it cannot price
+  ---
+  duration_ms: 248.5938
+  type: 'test'
+  ...
+# Subtest: credential broker rejects an unauthorized request before its body completes
+ok 3 - credential broker rejects an unauthorized request before its body completes
+  ---
+  duration_ms: 5.9266
+  type: 'test'
+  ...
+# Subtest: credential broker survives a downstream disconnect and settles exact upstream usage
+ok 4 - credential broker survives a downstream disconnect and settles exact upstream usage
+  ---
+  duration_ms: 105.9584
+  type: 'test'
+  ...
+# Subtest: credential broker survives malformed client socket input
+ok 5 - credential broker survives malformed client socket input
+  ---
+  duration_ms: 8.3749
+  type: 'test'
+  ...
+# Subtest: credential broker replaces the session credential for api-key
+ok 6 - credential broker replaces the session credential for api-key
+  ---
+  duration_ms: 4.8258
+  type: 'test'
+  ...
+# Subtest: credential broker replaces the session credential for subscription-token
+ok 7 - credential broker replaces the session credential for subscription-token
+  ---
+  duration_ms: 4.2938
+  type: 'test'
+  ...
+# Subtest: credential broker limits body size without truncating authorized sessions at 512 requests
+ok 8 - credential broker limits body size without truncating authorized sessions at 512 requests
+  ---
+  duration_ms: 1960.8312
+  type: 'test'
+  ...
+# Subtest: credential broker enforces model, output token, and session cost limits
+ok 9 - credential broker enforces model, output token, and session cost limits
+  ---
+  duration_ms: 6.5003
+  type: 'test'
+  ...
+# Subtest: credential broker charges reported usage and reserves enough for the next request
+ok 10 - credential broker charges reported usage and reserves enough for the next request
+  ---
+  duration_ms: 28.7792
+  type: 'test'
+  ...
+# Subtest: credential broker clears different concurrent reservations before the next request
+ok 11 - credential broker clears different concurrent reservations before the next request
+  ---
+  duration_ms: 7.1989
+  type: 'test'
+  ...
+# Subtest: credential broker prices repeated compressed streams instead of exhausting the request cap
+ok 12 - credential broker prices repeated compressed streams instead of exhausting the request cap
+  ---
+  duration_ms: 41.3019
+  type: 'test'
+  ...
+# Subtest: credential broker estimates a settled request without exact provider usage
+ok 13 - credential broker estimates a settled request without exact provider usage
+  ---
+  duration_ms: 33.0931
+  type: 'test'
+  ...
+# Subtest: streamed provider usage produces a reconciled campaign-priced receipt
+ok 14 - streamed provider usage produces a reconciled campaign-priced receipt
+  ---
+  duration_ms: 15.1974
+  type: 'test'
+  ...
+# Subtest: campaign pricing is authoritative when CLI pricing differs
+ok 15 - campaign pricing is authoritative when CLI pricing differs
+  ---
+  duration_ms: 0.6652
+  type: 'test'
+  ...
+# Subtest: spend ledgers count unpriced requests consistently and still read version 4
+ok 16 - spend ledgers count unpriced requests consistently and still read version 4
+  ---
+  duration_ms: 21.7868
+  type: 'test'
+  ...
+# Subtest: broker retains cache write classes that the CLI summary combines
+ok 17 - broker retains cache write classes that the CLI summary combines
+  ---
+  duration_ms: 0.5158
+  type: 'test'
+  ...
+# Subtest: missing or incomplete broker ledgers fail closed with a conservative receipt
+ok 18 - missing or incomplete broker ledgers fail closed with a conservative receipt
+  ---
+  duration_ms: 1.5258
+  type: 'test'
+  ...
+# Subtest: receipt reconciliation accepts provider usage that includes CLI-omitted calls
+ok 19 - receipt reconciliation accepts provider usage that includes CLI-omitted calls
+  ---
+  duration_ms: 0.5677
+  type: 'test'
+  ...
+# Subtest: receipt reconciliation rejects provider usage below the CLI lower bound
+ok 20 - receipt reconciliation rejects provider usage below the CLI lower bound
+  ---
+  duration_ms: 0.4491
+  type: 'test'
+  ...
+# Subtest: estimated receipts cover both recorders without making missing usage exact
+ok 21 - estimated receipts cover both recorders without making missing usage exact
+  ---
+  duration_ms: 0.6389
+  type: 'test'
+  ...
+# Subtest: receipt reconciliation rejects spend that cannot be reproduced from broker usage
+ok 22 - receipt reconciliation rejects spend that cannot be reproduced from broker usage
+  ---
+  duration_ms: 0.2856
+  type: 'test'
+  ...
+# Subtest: credential broker lifecycle removes credentials and retains its spend ledger
+ok 23 - credential broker lifecycle removes credentials and retains its spend ledger
+  ---
+  duration_ms: 234.6689
+  type: 'test'
+  ...
+# Subtest: credential broker diagnostics retain child exit, stderr, and the final ledger
+ok 24 - credential broker diagnostics retain child exit, stderr, and the final ledger
+  ---
+  duration_ms: 234.7133
+  type: 'test'
+  ...
+# Subtest: credential broker closes an active request after its parent exits
+ok 25 - credential broker closes an active request after its parent exits
+  ---
+  duration_ms: 387.8208
+  type: 'test'
+  ...
+# Subtest: credential broker shutdown retains settled spend even if its caller later loses the receipt
+ok 26 - credential broker shutdown retains settled spend even if its caller later loses the receipt
+  ---
+  duration_ms: 27.4214
+  type: 'test'
+  ...
+# Subtest: credential broker forces termination and records typed shutdown errors
+ok 27 - credential broker forces termination and records typed shutdown errors
+  ---
+  duration_ms: 1.67
+  type: 'test'
+  ...
+# Subtest: OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars
+ok 28 - OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars
+  ---
+  duration_ms: 92.754
+  type: 'test'
+  ...
+# Subtest: broker persists structured quota rejection without recording secret error text
+ok 29 - broker persists structured quota rejection without recording secret error text
+  ---
+  duration_ms: 16.9143
+  type: 'test'
+  ...
+# Subtest: OpenRouter broker freezes routing and records reported cost, not reservation pricing
+ok 30 - OpenRouter broker freezes routing and records reported cost, not reservation pricing
+  ---
+  duration_ms: 150.1671
+  type: 'test'
+  ...
+# Subtest: OpenAI inline screenshots retain input and reserve bounded vision tokens
+ok 31 - OpenAI inline screenshots retain input and reserve bounded vision tokens
+  ---
+  duration_ms: 4.811
+  type: 'test'
+  ...
+# Subtest: output reservations honor API caps without assuming account endpoints enforce them
+ok 32 - output reservations honor API caps without assuming account endpoints enforce them
+  ---
+  duration_ms: 0.3036
+  type: 'test'
+  ...
+# Subtest: a Docker broker treats a missing or stale controller heartbeat as controller loss
+ok 33 - a Docker broker treats a missing or stale controller heartbeat as controller loss
+  ---
+  duration_ms: 1.2679
+  type: 'test'
+  ...
+# Subtest: preflight requires only the selected provider route and keeps its failures visible
+ok 34 - preflight requires only the selected provider route and keeps its failures visible
+  ---
+  duration_ms: 44.3574
+  type: 'test'
+  ...
+# Subtest: container smoke keeps safe transport causes without error bodies
+ok 35 - container smoke keeps safe transport causes without error bodies
+  ---
+  duration_ms: 5.5593
+  type: 'test'
+  ...
+# Subtest: PostgreSQL preflight proves the configured role, password, and database
+ok 36 - PostgreSQL preflight proves the configured role, password, and database
+  ---
+  duration_ms: 0.5337
+  type: 'test'
+  ...
+# Subtest: preflight validates exact scope and a model-free container/result-volume smoke
+ok 37 - preflight validates exact scope and a model-free container/result-volume smoke
+  ---
+  duration_ms: 130.9845
+  type: 'test'
+  ...
+# Subtest: appliance preflight accepts immutable local and registry images but rejects mutable or malformed references
+ok 38 - appliance preflight accepts immutable local and registry images but rejects mutable or malformed references
+  ---
+  duration_ms: 12.6947
+  type: 'test'
+  ...
+# Subtest: preflight does not count Docker info latency as clock skew
+ok 39 - preflight does not count Docker info latency as clock skew
+  ---
+  duration_ms: 3.3091
+  type: 'test'
+  ...
+# Subtest: appliance pool caps warn without replacing the single-worker startup baseline
+ok 40 - appliance pool caps warn without replacing the single-worker startup baseline
+  ---
+  duration_ms: 6.0132
+  type: 'test'
+  ...
+# Subtest: pure preflight creates no containers and does not claim smoke evidence
+ok 41 - pure preflight creates no containers and does not claim smoke evidence
+  ---
+  duration_ms: 3.4881
+  type: 'test'
+  ...
+# Subtest: preflight validates campaign-owned dependency selections through the progression graph
+ok 42 - preflight validates campaign-owned dependency selections through the progression graph
+  ---
+  duration_ms: 16099.4222
+  type: 'test'
+  ...
+# Subtest: preflight fails before a paid run when the selected agent executable is absent
+ok 43 - preflight fails before a paid run when the selected agent executable is absent
+  ---
+  duration_ms: 4.4172
+  type: 'test'
+  ...
+# Subtest: expired OpenAI account credentials fail preflight without exposing the token
+ok 44 - expired OpenAI account credentials fail preflight without exposing the token
+  ---
+  duration_ms: 10.257
+  type: 'test'
+  ...
+# Subtest: long-lived subscription token is mounted read-only and checked without exposing its value
+ok 45 - long-lived subscription token is mounted read-only and checked without exposing its value
+  ---
+  duration_ms: 3.723
+  type: 'test'
+  ...
+# Subtest: preflight fails before launch when a stack default skill document is absent
+ok 46 - preflight fails before launch when a stack default skill document is absent
+  ---
+  duration_ms: 781.6535
+  type: 'test'
+  ...
+# Subtest: preflight fails closed on inherited ownership, unavailable Docker, and occupied ports
+ok 47 - preflight fails closed on inherited ownership, unavailable Docker, and occupied ports
+  ---
+  duration_ms: 2.3823
+  type: 'test'
+  ...
+# Subtest: a supervised benchmark accepts only its exact fresh handoff path
+ok 48 - a supervised benchmark accepts only its exact fresh handoff path
+  ---
+  duration_ms: 4.3077
+  type: 'test'
+  ...
+# Subtest: admitted child preflight accepts its private lease and supervisor but rejects foreign ownership
+ok 49 - admitted child preflight accepts its private lease and supervisor but rejects foreign ownership
+  ---
+  duration_ms: 4217.8677
+  type: 'test'
+  ...
+# Subtest: preflight argument parsing rejects ambiguous ranges and missing backends
+ok 50 - preflight argument parsing rejects ambiguous ranges and missing backends
+  ---
+  duration_ms: 0.7325
+  type: 'test'
+  ...
+# Subtest: unknown requested scope becomes a failed report instead of terminating the process
+ok 51 - unknown requested scope becomes a failed report instead of terminating the process
+  ---
+  duration_ms: 2.6077
+  type: 'test'
+  ...
+# Subtest: loopback port proof detects a listener without relying on process visibility
+ok 52 - loopback port proof detects a listener without relying on process visibility
+  ---
+  duration_ms: 67.1201
+  type: 'test'
+  ...
+# Subtest: OpenRouter preflight requires its own key and a pinned route without revealing secrets
+ok 53 - OpenRouter preflight requires its own key and a pinned route without revealing secrets
+  ---
+  duration_ms: 12.184
+  type: 'test'
+  ...
+# Subtest: a key read from its file reaches preflight as the one selected source
+ok 54 - a key read from its file reaches preflight as the one selected source
+  ---
+  duration_ms: 1.3632
+  type: 'test'
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 54
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 22206.7767

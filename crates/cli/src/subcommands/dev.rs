@@ -85,6 +85,12 @@ pub fn cli() -> Command {
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server to publish to"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("ready-file")
+                .long("ready-file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .help("Write this file after the initial build cycle succeeds and file watching starts. This is a startup receipt, not ongoing health."),
+        )
         .arg(common_args::clear_database())
         .arg(
             Arg::new("template")
@@ -150,6 +156,13 @@ struct DatabaseRow {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    if let Some(path) = args.get_one::<PathBuf>("ready-file") {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("Failed to clear development readiness file"),
+        }
+    }
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let module_path_from_cli = args.get_one::<PathBuf>("module-path");
     let module_bindings_path = args.get_one::<PathBuf>("module-bindings-path").unwrap();
@@ -760,7 +773,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let loaded_config_dir = loaded_config.as_ref().map(|lc| lc.config_dir.clone());
 
     generate_build_and_publish(
-        &config,
+        &mut config,
         &project_dir,
         loaded_config_dir.as_deref(),
         &spacetimedb_dir,
@@ -861,6 +874,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         watcher.watch(watch_dir, RecursiveMode::Recursive)?;
     }
 
+    if let Some(path) = args.get_one::<PathBuf>("ready-file") {
+        fs::write(path, "ready\n").context("Failed to write development readiness file")?;
+    }
+
     let mut debounce_timer;
     loop {
         // Use recv_timeout so we can periodically check if the client process exited
@@ -876,7 +893,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
                 println!("\n{}", "File change detected, rebuilding...".yellow());
                 match generate_build_and_publish(
-                    &config,
+                    &mut config,
                     &project_dir,
                     loaded_config_dir.as_deref(),
                     &spacetimedb_dir,
@@ -1024,7 +1041,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
 
 #[allow(clippy::too_many_arguments)]
 async fn generate_build_and_publish(
-    config: &Config,
+    config: &mut Config,
     project_dir: &Path,
     config_dir: Option<&Path>,
     spacetimedb_dir: &Path,
@@ -1181,7 +1198,8 @@ async fn generate_build_and_publish(
             publish_entry.insert("break-clients".to_string(), json!(true));
         }
 
-        publish::exec_from_entry(config.clone(), publish_entry, config_dir, clear_database, yes).await?;
+        // Preserve a token created during publish for logs and later rebuilds.
+        publish::exec_from_entry(config, publish_entry, config_dir, clear_database, yes).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());
@@ -2043,12 +2061,17 @@ mod tests {
         // Verify that --skip-publish and --skip-generate flags are registered
         let cmd = cli();
 
-        let matches = cmd
-            .clone()
-            .get_matches_from(vec!["dev", "--skip-publish", "--skip-generate"]);
+        let matches = cmd.clone().get_matches_from(vec![
+            "dev",
+            "--skip-publish",
+            "--skip-generate",
+            "--ready-file",
+            "ready",
+        ]);
 
         assert!(matches.get_flag("skip_publish"));
         assert!(matches.get_flag("skip_generate"));
+        assert_eq!(matches.get_one::<PathBuf>("ready-file"), Some(&PathBuf::from("ready")));
     }
 
     #[test]

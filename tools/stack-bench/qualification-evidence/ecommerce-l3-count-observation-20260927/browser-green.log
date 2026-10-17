@@ -1,0 +1,221 @@
+TAP version 13
+# Subtest: count observations wait for a rendered list without accepting missing or duplicate rows
+    # Subtest: delayed
+    ok 1 - delayed
+      ---
+      duration_ms: 406.7618
+      type: 'test'
+      ...
+    # Subtest: missing
+    ok 2 - missing
+      ---
+      duration_ms: 691.4971
+      type: 'test'
+      ...
+    # Subtest: duplicates
+    ok 3 - duplicates
+      ---
+      duration_ms: 758.7091
+      type: 'test'
+      ...
+    # Subtest: late
+    ok 4 - late
+      ---
+      duration_ms: 689.4395
+      type: 'test'
+      ...
+    # Subtest: scoped
+    ok 5 - scoped
+      ---
+      duration_ms: 99.5102
+      type: 'test'
+      ...
+    1..5
+ok 1 - count observations wait for a rendered list without accepting missing or duplicate rows
+  ---
+  duration_ms: 2891.2773
+  type: 'test'
+  ...
+# Subtest: script canary detects execution after DOM removal and rejects missing observers
+ok 2 - script canary detects execution after DOM removal and rejects missing observers
+  ---
+  duration_ms: 426.1512
+  type: 'test'
+  ...
+# Subtest: UI failures retain bounded observations but exclude passwords and unproven missing choices
+ok 3 - UI failures retain bounded observations but exclude passwords and unproven missing choices
+  ---
+  duration_ms: 16.2673
+  type: 'test'
+  ...
+# Subtest: observation and selection errors cannot become missing-control findings
+ok 4 - observation and selection errors cannot become missing-control findings
+  ---
+  duration_ms: 1.856
+  type: 'test'
+  ...
+# Subtest: message order requires observed messages and compares the merged sender sequence
+ok 5 - message order requires observed messages and compares the merged sender sequence
+  ---
+  duration_ms: 3.9182
+  type: 'test'
+  ...
+# Subtest: optional clicks operate enabled controls and skip unavailable controls
+ok 6 - optional clicks operate enabled controls and skip unavailable controls
+  ---
+  duration_ms: 2.6282
+  type: 'test'
+  ...
+# Subtest: interaction scopes expand scoped values and can match separate text fragments without assuming punctuation
+ok 7 - interaction scopes expand scoped values and can match separate text fragments without assuming punctuation
+  ---
+  duration_ms: 0.8683
+  type: 'test'
+  ...
+# Subtest: fill adapts values to date input types
+ok 8 - fill adapts values to date input types
+  ---
+  duration_ms: 1.1745
+  type: 'test'
+  ...
+# Subtest: stock observations accept an explicit zero-stock state without relaxing other numeric controls
+ok 9 - stock observations accept an explicit zero-stock state without relaxing other numeric controls
+  ---
+  duration_ms: 1.4597
+  type: 'test'
+  ...
+# Subtest: an observation mismatch is application evidence, not a harness crash
+ok 10 - an observation mismatch is application evidence, not a harness crash
+  ---
+  duration_ms: 0.6515
+  type: 'test'
+  ...
+# Subtest: a visible but blank field does not satisfy a non-empty assertion
+ok 11 - a visible but blank field does not satisfy a non-empty assertion
+  ---
+  duration_ms: 0.5845
+  type: 'test'
+  ...
+# Subtest: absence checks do not pass before a late element appears
+ok 12 - absence checks do not pass before a late element appears
+  ---
+  duration_ms: 0.7991
+  type: 'test'
+  ...
+# Subtest: unavailable checks do not pass before a control becomes enabled
+ok 13 - unavailable checks do not pass before a control becomes enabled
+  ---
+  duration_ms: 102.3661
+  type: 'test'
+  ...
+# Subtest: missing values do not satisfy agreement across actors
+ok 14 - missing values do not satisfy agreement across actors
+  ---
+  duration_ms: 5.0309
+  type: 'test'
+  ...
+# Subtest: expect can verify a persisted form value or an element attribute
+ok 15 - expect can verify a persisted form value or an element attribute
+  ---
+  duration_ms: 0.7405
+  type: 'test'
+  ...
+# Subtest: element counts use visible observations instead of hidden duplicate markup
+ok 16 - element counts use visible observations instead of hidden duplicate markup
+  ---
+  duration_ms: 0.4679
+  type: 'test'
+  ...
+# Subtest: element counts can be scoped to a matching parent
+ok 17 - element counts can be scoped to a matching parent
+  ---
+  duration_ms: 0.4099
+  type: 'test'
+  ...
+# Subtest: relative element counts preserve existing rows and accept an empty baseline
+ok 18 - relative element counts preserve existing rows and accept an empty baseline
+  ---
+  duration_ms: 3.9325
+  type: 'test'
+  ...
+# Subtest: relative count assertions reject missing records and invalid count targets
+ok 19 - relative count assertions reject missing records and invalid count targets
+  ---
+  duration_ms: 2.0941
+  type: 'test'
+  ...
+# Subtest: unactionable controls are application evidence while crashes and code bugs remain harness failures
+ok 20 - unactionable controls are application evidence while crashes and code bugs remain harness failures
+  ---
+  duration_ms: 2.0979
+  type: 'test'
+  ...
+# Subtest: a click that removes its target before timing out is inconclusive and is not repeated
+ok 21 - a click that removes its target before timing out is inconclusive and is not repeated
+  ---
+  duration_ms: 2455.4132
+  type: 'test'
+  ...
+# Subtest: relative number bounds use recorded values and report the resolved bound
+ok 22 - relative number bounds use recorded values and report the resolved bound
+  ---
+  duration_ms: 3.7107
+  type: 'test'
+  ...
+# Subtest: optional navigation waits for delayed controls or inline content
+ok 23 - optional navigation waits for delayed controls or inline content
+  ---
+  duration_ms: 0.9995
+  type: 'test'
+  ...
+# Subtest: navigation retries a replaced destination without repeating clicks or hiding errors
+ok 24 - navigation retries a replaced destination without repeating clicks or hiding errors
+  ---
+  duration_ms: 148.6363
+  type: 'test'
+  ...
+# Subtest: unreadable destinations never trigger a blind toggle click
+ok 25 - unreadable destinations never trigger a blind toggle click
+  ---
+  duration_ms: 1.2276
+  type: 'test'
+  ...
+# Subtest: covered navigation accepts a destination that finishes loading without another click
+ok 26 - covered navigation accepts a destination that finishes loading without another click
+  ---
+  duration_ms: 1925.901
+  type: 'test'
+  ...
+# Subtest: covered navigation preserves cancellation and browser failures
+ok 27 - covered navigation preserves cancellation and browser failures
+  ---
+  duration_ms: 1.2768
+  type: 'test'
+  ...
+# Subtest: reload timeouts fail the app while proven browser crashes stay harness failures
+ok 28 - reload timeouts fail the app while proven browser crashes stay harness failures
+  ---
+  duration_ms: 0.7301
+  type: 'test'
+  ...
+# Subtest: containsText polls the selected item without requiring an exact status value
+ok 29 - containsText polls the selected item without requiring an exact status value
+  ---
+  duration_ms: 2.8065
+  type: 'test'
+  ...
+# Subtest: failed disappearance identifies the matched entry and scope
+ok 30 - failed disappearance identifies the matched entry and scope
+  ---
+  duration_ms: 0.325
+  type: 'test'
+  ...
+1..30
+# tests 35
+# suites 0
+# pass 35
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8705.4807

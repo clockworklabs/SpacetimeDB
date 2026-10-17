@@ -1,0 +1,850 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "grade_bundle",
+  "id": "recovery-test-grade-bundle-l1",
+  "attempt": {
+    "id": "recovery-test-grade-bundle-l1",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T22:56:48.170Z",
+    "completedAt": "2026-09-28T22:57:44.944Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "stub",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "definitionSchemaVersion": 1,
+    "recipeRelease": null,
+    "calibration": null,
+    "label": "recovery-test",
+    "track": "recovery-test-RAgvTX",
+    "backend": "stub",
+    "url": "http://127.0.0.1:50382",
+    "app": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\recovery-test-RAgvTX\\app",
+    "level": 1,
+    "suites": {
+      "lint": {
+        "label": "recovery-test",
+        "url": "http://127.0.0.1:50382",
+        "level": 1,
+        "selectedHooks": null,
+        "pass": true,
+        "harness": false,
+        "unmeasured": false,
+        "counts": {
+          "lintable": 1,
+          "pass": 1,
+          "fail": 0,
+          "blocked": 0,
+          "scenario": 0
+        },
+        "results": [
+          {
+            "id": "app-title",
+            "status": "PASS"
+          }
+        ],
+        "artifactSchemaVersion": 2,
+        "kind": "contract_lint",
+        "id": "recovery-test-grade-bundle-l1-contract-lint",
+        "artifactEnvelope": {
+          "attempt": {
+            "id": "recovery-test-grade-bundle-l1-contract-lint",
+            "parentId": "recovery-test-grade-bundle-l1"
+          },
+          "timestamps": {
+            "startedAt": "2026-09-28T22:56:49.429Z",
+            "completedAt": null
+          },
+          "identities": {
+            "engine": {
+              "id": "stack-bench",
+              "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+            },
+            "recipe": null,
+            "fixture": null,
+            "calibration": null,
+            "experiment": null,
+            "agentAdapter": null,
+            "stackAdapter": null,
+            "packs": []
+          }
+        }
+      },
+      "good": {
+        "definitionSchemaVersion": 1,
+        "recipeRelease": null,
+        "label": "recovery-test-good",
+        "url": "http://127.0.0.1:50382",
+        "level": 1,
+        "runId": "e922afb9-2378-4d",
+        "total": 1,
+        "max": 1,
+        "features": [
+          {
+            "id": 1,
+            "name": "good",
+            "score": 1,
+            "max": 1,
+            "criteria": [
+              {
+                "id": "good",
+                "desc": "good",
+                "points": 1,
+                "evidence": {
+                  "schemaVersion": 2,
+                  "status": "passed",
+                  "code": "completed",
+                  "phase": "assertion",
+                  "actor": null,
+                  "summary": null,
+                  "finding": null,
+                  "observation": null,
+                  "expected": null,
+                  "retryable": false,
+                  "timing": {
+                    "startedAtMs": 1790636210581,
+                    "completedAtMs": 1790636210770,
+                    "durationMs": 189
+                  },
+                  "actions": [
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "click",
+                          "version": "1.0.0"
+                        },
+                        "status": "passed",
+                        "type": "browser-interaction-evidence",
+                        "code": "completed",
+                        "phase": "execute",
+                        "summary": null,
+                        "finding": null,
+                        "observation": {
+                          "clicked": "good"
+                        },
+                        "expected": null,
+                        "retryable": false,
+                        "timing": {
+                          "startedAtMs": 1790636210582,
+                          "completedAtMs": 1790636210760,
+                          "durationMs": 178,
+                          "deadlineMs": 60000
+                        },
+                        "attachments": [],
+                        "sensitivity": [
+                          "user-content"
+                        ]
+                      }
+                    },
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "expect",
+                          "version": "1.0.0"
+                        },
+                        "status": "passed",
+                        "type": "browser-observation-evidence",
+                        "code": "completed",
+                        "phase": "execute",
+                        "summary": null,
+                        "finding": null,
+                        "observation": {
+                          "visible": true
+                        },
+                        "expected": null,
+                        "retryable": false,
+                        "timing": {
+                          "startedAtMs": 1790636210761,
+                          "completedAtMs": 1790636210769,
+                          "durationMs": 8,
+                          "deadlineMs": 300000
+                        },
+                        "attachments": [],
+                        "sensitivity": []
+                      }
+                    }
+                  ],
+                  "attachments": [],
+                  "sensitivity": [
+                    "user-content"
+                  ]
+                },
+                "stableKey": null
+              }
+            ],
+            "consoleErrors": [],
+            "setupEvidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "setup",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790636210577,
+                "completedAtMs": 1790636210577,
+                "durationMs": 0
+              },
+              "actions": [],
+              "attachments": [],
+              "sensitivity": []
+            }
+          }
+        ],
+        "inconclusive": [],
+        "selection": null,
+        "artifactSchemaVersion": 2,
+        "kind": "grade",
+        "id": "grade-e922afb9-2378-4d",
+        "artifactEnvelope": {
+          "attempt": {
+            "id": "grade-e922afb9-2378-4d",
+            "parentId": "recovery-test-grade-bundle-l1"
+          },
+          "timestamps": {
+            "startedAt": "2026-09-28T22:56:50.389Z",
+            "completedAt": "2026-09-28T22:56:50.783Z"
+          },
+          "identities": {
+            "engine": {
+              "id": "stack-bench",
+              "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+            },
+            "recipe": null,
+            "fixture": null,
+            "calibration": null,
+            "experiment": null,
+            "agentAdapter": null,
+            "stackAdapter": {
+              "id": "stub",
+              "sha256": null
+            },
+            "packs": []
+          }
+        }
+      },
+      "bad": {
+        "definitionSchemaVersion": 1,
+        "recipeRelease": null,
+        "label": "recovery-test-bad",
+        "url": "http://127.0.0.1:50382",
+        "level": 1,
+        "runId": "cc1511c7-212d-49",
+        "total": 0,
+        "max": 1,
+        "features": [
+          {
+            "id": 1,
+            "name": "bad",
+            "score": 0,
+            "max": 1,
+            "criteria": [
+              {
+                "id": "bad",
+                "desc": "bad",
+                "points": 1,
+                "evidence": {
+                  "schemaVersion": 2,
+                  "status": "failed",
+                  "code": "application_failure",
+                  "phase": "assertion",
+                  "actor": "viewer",
+                  "summary": "the missing control did not appear",
+                  "finding": {
+                    "kind": "control-missing",
+                    "fields": {
+                      "control": "missing"
+                    }
+                  },
+                  "observation": null,
+                  "expected": null,
+                  "retryable": false,
+                  "timing": {
+                    "startedAtMs": 1790636211787,
+                    "completedAtMs": 1790636212105,
+                    "durationMs": 318
+                  },
+                  "actions": [
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "click",
+                          "version": "1.0.0"
+                        },
+                        "status": "passed",
+                        "type": "browser-interaction-evidence",
+                        "code": "completed",
+                        "phase": "execute",
+                        "summary": null,
+                        "finding": null,
+                        "observation": {
+                          "clicked": "bad"
+                        },
+                        "expected": null,
+                        "retryable": false,
+                        "timing": {
+                          "startedAtMs": 1790636211788,
+                          "completedAtMs": 1790636211958,
+                          "durationMs": 170,
+                          "deadlineMs": 60000
+                        },
+                        "attachments": [],
+                        "sensitivity": [
+                          "user-content"
+                        ]
+                      }
+                    },
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "expect",
+                          "version": "1.0.0"
+                        },
+                        "status": "failed",
+                        "type": "browser-observation-evidence",
+                        "code": "application_failure",
+                        "phase": "execute",
+                        "summary": "the missing control did not appear",
+                        "finding": {
+                          "kind": "control-missing",
+                          "fields": {
+                            "control": "missing"
+                          }
+                        },
+                        "observation": null,
+                        "expected": null,
+                        "retryable": false,
+                        "timing": {
+                          "startedAtMs": 1790636211959,
+                          "completedAtMs": 1790636212069,
+                          "durationMs": 110,
+                          "deadlineMs": 300000
+                        },
+                        "attachments": [],
+                        "sensitivity": []
+                      }
+                    }
+                  ],
+                  "attachments": [
+                    {
+                      "kind": "screenshot",
+                      "ref": "recovery-test-bad-f1-bad-viewer.png"
+                    }
+                  ],
+                  "sensitivity": [
+                    "user-content"
+                  ]
+                },
+                "stableKey": null
+              }
+            ],
+            "consoleErrors": [],
+            "setupEvidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "setup",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790636211781,
+                "completedAtMs": 1790636211782,
+                "durationMs": 1
+              },
+              "actions": [],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "screenshots": [
+              "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\tracks\\recovery-test-RAgvTX\\results\\failure-media\\recovery-test-bad-f1-bad-viewer.png"
+            ]
+          }
+        ],
+        "inconclusive": [],
+        "selection": null,
+        "artifactSchemaVersion": 2,
+        "kind": "grade",
+        "id": "grade-cc1511c7-212d-49",
+        "artifactEnvelope": {
+          "attempt": {
+            "id": "grade-cc1511c7-212d-49",
+            "parentId": "recovery-test-grade-bundle-l1"
+          },
+          "timestamps": {
+            "startedAt": "2026-09-28T22:56:51.627Z",
+            "completedAt": "2026-09-28T22:56:52.118Z"
+          },
+          "identities": {
+            "engine": {
+              "id": "stack-bench",
+              "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+            },
+            "recipe": null,
+            "fixture": null,
+            "calibration": null,
+            "experiment": null,
+            "agentAdapter": null,
+            "stackAdapter": {
+              "id": "stub",
+              "sha256": null
+            },
+            "packs": []
+          }
+        }
+      },
+      "stall": {
+        "definitionSchemaVersion": 1,
+        "recipeRelease": null,
+        "label": "recovery-test-stall-retry",
+        "url": "http://127.0.0.1:50382",
+        "level": 1,
+        "runId": "7f687fda-dc98-45",
+        "total": 0,
+        "max": 1,
+        "features": [
+          {
+            "id": 1,
+            "name": "stall",
+            "score": 0,
+            "max": 1,
+            "criteria": [
+              {
+                "id": "stall",
+                "desc": "stall",
+                "points": 1,
+                "evidence": {
+                  "schemaVersion": 2,
+                  "status": "inconclusive",
+                  "code": "inconclusive",
+                  "phase": "assertion",
+                  "actor": "viewer",
+                  "summary": "application navigation timed out before the page was ready",
+                  "finding": null,
+                  "observation": {
+                    "pendingResources": [
+                      "stylesheet http://127.0.0.1:50382"
+                    ]
+                  },
+                  "expected": "DOMContentLoaded before the navigation deadline",
+                  "retryable": true,
+                  "timing": {
+                    "startedAtMs": 1790636239412,
+                    "completedAtMs": 1790636264603,
+                    "durationMs": 25191
+                  },
+                  "actions": [
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "click",
+                          "version": "1.0.0"
+                        },
+                        "status": "passed",
+                        "type": "browser-interaction-evidence",
+                        "code": "completed",
+                        "phase": "execute",
+                        "summary": null,
+                        "finding": null,
+                        "observation": {
+                          "clicked": "stall"
+                        },
+                        "expected": null,
+                        "retryable": false,
+                        "timing": {
+                          "startedAtMs": 1790636239413,
+                          "completedAtMs": 1790636239574,
+                          "durationMs": 161,
+                          "deadlineMs": 60000
+                        },
+                        "attachments": [],
+                        "sensitivity": [
+                          "user-content"
+                        ]
+                      }
+                    },
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "reload",
+                          "version": "1.0.0"
+                        },
+                        "status": "inconclusive",
+                        "type": "browser-interaction-evidence",
+                        "code": "inconclusive",
+                        "phase": "execute",
+                        "summary": "application navigation timed out before the page was ready",
+                        "finding": null,
+                        "observation": {
+                          "pendingResources": [
+                            "stylesheet http://127.0.0.1:50382"
+                          ]
+                        },
+                        "expected": "DOMContentLoaded before the navigation deadline",
+                        "retryable": true,
+                        "timing": {
+                          "startedAtMs": 1790636239575,
+                          "completedAtMs": 1790636259594,
+                          "durationMs": 20019,
+                          "deadlineMs": 60000
+                        },
+                        "attachments": [],
+                        "sensitivity": [
+                          "user-content"
+                        ]
+                      }
+                    }
+                  ],
+                  "attachments": [],
+                  "sensitivity": [
+                    "user-content"
+                  ]
+                },
+                "stableKey": null
+              }
+            ],
+            "consoleErrors": [],
+            "setupEvidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "setup",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790636239409,
+                "completedAtMs": 1790636239409,
+                "durationMs": 0
+              },
+              "actions": [],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "inconclusive": [
+              {
+                "id": "stall",
+                "points": 1,
+                "status": "inconclusive",
+                "code": "inconclusive",
+                "phase": "assertion",
+                "summary": "application navigation timed out before the page was ready"
+              }
+            ]
+          }
+        ],
+        "inconclusive": [
+          {
+            "points": 1
+          }
+        ],
+        "selection": null,
+        "artifactSchemaVersion": 2,
+        "kind": "grade",
+        "id": "grade-7f687fda-dc98-45",
+        "artifactEnvelope": {
+          "attempt": {
+            "id": "grade-7f687fda-dc98-45",
+            "parentId": "recovery-test-grade-bundle-l1"
+          },
+          "timestamps": {
+            "startedAt": "2026-09-28T22:57:19.287Z",
+            "completedAt": "2026-09-28T22:57:44.619Z"
+          },
+          "identities": {
+            "engine": {
+              "id": "stack-bench",
+              "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+            },
+            "recipe": null,
+            "fixture": null,
+            "calibration": null,
+            "experiment": null,
+            "agentAdapter": null,
+            "stackAdapter": {
+              "id": "stub",
+              "sha256": null
+            },
+            "packs": []
+          }
+        }
+      }
+    },
+    "totals": {
+      "score": 1,
+      "max": 3,
+      "dirty": false,
+      "contractPass": true,
+      "regression": null
+    },
+    "code": {
+      "serverLoc": 0,
+      "serverFiles": 0,
+      "totalLoc": 0,
+      "totalFiles": 0,
+      "runtimeDeps": 0
+    },
+    "provenance": {
+      "ok": true,
+      "reason": "no external database for this backend",
+      "runtime": {
+        "ok": null,
+        "verified": false,
+        "reason": "exact runtime database marker proof is not implemented for this stack"
+      }
+    },
+    "selection": null,
+    "observation": "scored",
+    "source": {
+      "sha256": "7e08642477721eed59974ebe67fb6b177820c95ff89794bbac83418e04610fe8"
+    },
+    "phaseTimings": [
+      {
+        "phase": "grader",
+        "suite": "good",
+        "durationMs": 1290.3752,
+        "threw": false
+      },
+      {
+        "phase": "grader",
+        "suite": "bad",
+        "durationMs": 1359.9005000000002,
+        "threw": false
+      },
+      {
+        "phase": "grader",
+        "suite": "stall",
+        "durationMs": 26286.3993,
+        "threw": false
+      },
+      {
+        "phase": "grader",
+        "suite": "stall",
+        "durationMs": 26192.9902,
+        "threw": false
+      }
+    ],
+    "suiteRetries": {
+      "stall": {
+        "definitionSchemaVersion": 1,
+        "recipeRelease": null,
+        "label": "recovery-test-stall",
+        "url": "http://127.0.0.1:50382",
+        "level": 1,
+        "runId": "fec14d50-f0eb-47",
+        "total": 0,
+        "max": 1,
+        "features": [
+          {
+            "id": 1,
+            "name": "stall",
+            "score": 0,
+            "max": 1,
+            "criteria": [
+              {
+                "id": "stall",
+                "desc": "stall",
+                "points": 1,
+                "evidence": {
+                  "schemaVersion": 2,
+                  "status": "inconclusive",
+                  "code": "inconclusive",
+                  "phase": "assertion",
+                  "actor": "viewer",
+                  "summary": "application navigation timed out before the page was ready",
+                  "finding": null,
+                  "observation": {
+                    "pendingResources": [
+                      "stylesheet http://127.0.0.1:50382"
+                    ]
+                  },
+                  "expected": "DOMContentLoaded before the navigation deadline",
+                  "retryable": true,
+                  "timing": {
+                    "startedAtMs": 1790636213199,
+                    "completedAtMs": 1790636238411,
+                    "durationMs": 25212
+                  },
+                  "actions": [
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "click",
+                          "version": "1.0.0"
+                        },
+                        "status": "passed",
+                        "type": "browser-interaction-evidence",
+                        "code": "completed",
+                        "phase": "execute",
+                        "summary": null,
+                        "finding": null,
+                        "observation": {
+                          "clicked": "stall"
+                        },
+                        "expected": null,
+                        "retryable": false,
+                        "timing": {
+                          "startedAtMs": 1790636213200,
+                          "completedAtMs": 1790636213380,
+                          "durationMs": 180,
+                          "deadlineMs": 60000
+                        },
+                        "attachments": [],
+                        "sensitivity": [
+                          "user-content"
+                        ]
+                      }
+                    },
+                    {
+                      "actor": "viewer",
+                      "evidence": {
+                        "schemaVersion": 2,
+                        "action": {
+                          "id": "reload",
+                          "version": "1.0.0"
+                        },
+                        "status": "inconclusive",
+                        "type": "browser-interaction-evidence",
+                        "code": "inconclusive",
+                        "phase": "execute",
+                        "summary": "application navigation timed out before the page was ready",
+                        "finding": null,
+                        "observation": {
+                          "pendingResources": [
+                            "stylesheet http://127.0.0.1:50382"
+                          ]
+                        },
+                        "expected": "DOMContentLoaded before the navigation deadline",
+                        "retryable": true,
+                        "timing": {
+                          "startedAtMs": 1790636213381,
+                          "completedAtMs": 1790636233403,
+                          "durationMs": 20022,
+                          "deadlineMs": 60000
+                        },
+                        "attachments": [],
+                        "sensitivity": [
+                          "user-content"
+                        ]
+                      }
+                    }
+                  ],
+                  "attachments": [],
+                  "sensitivity": [
+                    "user-content"
+                  ]
+                },
+                "stableKey": null
+              }
+            ],
+            "consoleErrors": [],
+            "setupEvidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "setup",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790636213192,
+                "completedAtMs": 1790636213193,
+                "durationMs": 1
+              },
+              "actions": [],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "inconclusive": [
+              {
+                "id": "stall",
+                "points": 1,
+                "status": "inconclusive",
+                "code": "inconclusive",
+                "phase": "assertion",
+                "summary": "application navigation timed out before the page was ready"
+              }
+            ]
+          }
+        ],
+        "inconclusive": [
+          {
+            "points": 1
+          }
+        ],
+        "selection": null,
+        "artifactSchemaVersion": 2,
+        "kind": "grade",
+        "id": "grade-fec14d50-f0eb-47",
+        "artifactEnvelope": {
+          "attempt": {
+            "id": "grade-fec14d50-f0eb-47",
+            "parentId": "recovery-test-grade-bundle-l1"
+          },
+          "timestamps": {
+            "startedAt": "2026-09-28T22:56:53.038Z",
+            "completedAt": "2026-09-28T22:57:18.424Z"
+          },
+          "identities": {
+            "engine": {
+              "id": "stack-bench",
+              "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+            },
+            "recipe": null,
+            "fixture": null,
+            "calibration": null,
+            "experiment": null,
+            "agentAdapter": null,
+            "stackAdapter": {
+              "id": "stub",
+              "sha256": null
+            },
+            "packs": []
+          }
+        }
+      }
+    }
+  }
+}

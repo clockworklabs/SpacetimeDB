@@ -1,0 +1,149 @@
+TAP version 13
+# Subtest: staff and role navigation follows declared account and role entry controls
+    # Subtest: staff: direct
+    ok 1 - staff: direct
+      ---
+      duration_ms: 2633.3737
+      type: 'test'
+      ...
+    # Subtest: staff: menu
+    ok 2 - staff: menu
+      ---
+      duration_ms: 2367.4673
+      type: 'test'
+      ...
+    # Subtest: staff: already-open
+    ok 3 - staff: already-open
+      ---
+      duration_ms: 2213.429
+      type: 'test'
+      ...
+    # Subtest: staff: menu-noop
+    ok 4 - staff: menu-noop
+      ---
+      duration_ms: 2606.7063
+      type: 'test'
+      ...
+    # Subtest: staff: missing-target
+    ok 5 - staff: missing-target
+      ---
+      duration_ms: 2605.2298
+      type: 'test'
+      ...
+    # Subtest: staff: customer-hidden
+    ok 6 - staff: customer-hidden
+      ---
+      duration_ms: 2317.0054
+      type: 'test'
+      ...
+    # Subtest: staff: customer-leak
+    ok 7 - staff: customer-leak
+      ---
+      duration_ms: 822.3555
+      type: 'test'
+      ...
+    # Subtest: roles: direct
+    ok 8 - roles: direct
+      ---
+      duration_ms: 846.7773
+      type: 'test'
+      ...
+    # Subtest: roles: menu
+    ok 9 - roles: menu
+      ---
+      duration_ms: 912.0269
+      type: 'test'
+      ...
+    # Subtest: roles: already-open
+    ok 10 - roles: already-open
+      ---
+      duration_ms: 805.2964
+      type: 'test'
+      ...
+    # Subtest: roles: role-tab
+    ok 11 - roles: role-tab
+      ---
+      duration_ms: 906.005
+      type: 'test'
+      ...
+    # Subtest: roles: broken-tab
+    ok 12 - roles: broken-tab
+      ---
+      duration_ms: 1163.9617
+      type: 'test'
+      ...
+    # Subtest: roles: missing-tab
+    ok 13 - roles: missing-tab
+      ---
+      duration_ms: 1841.7939
+      type: 'test'
+      ...
+    # Subtest: roles: wrong-row
+    ok 14 - roles: wrong-row
+      ---
+      duration_ms: 2250.8492
+      type: 'test'
+      ...
+    # Subtest: roles: disabled-role-save
+    not ok 15 - roles: disabled-role-save
+      ---
+      duration_ms: 923.6005
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:114:21'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"kind":"roles","layout":"disabled-role-save","passed":true,"grade":{"id":621,"name":"Staff roles","score":0,"max":2,"criteria":[{"id":"621b","desc":"a staff member cannot assign roles through the UI or a replayed request","points":2,"evidence":{"schemaVersion":2,"status":"failed","code":"application_failure","phase":"assertion","actor":"staff","summary":"the staff-role-save control was shown when it must not be","finding":{"kind":"control-present","fields":{"control":"staff-role-save"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510637,"completedAtMs":1790513511079,"durationMs":442},"actions":[{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"reload","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"reloaded":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510637,"completedAtMs":1790513510646,"durationMs":9,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510646,"completedAtMs":1790513510733,"durationMs":87,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"current-user","visible":"admin-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510734,"completedAtMs":1790513510745,"durationMs":11,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"admin-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510746,"completedAtMs":1790513510786,"durationMs":40,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-roles-link","visible":"staff-role-account-staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510786,"completedAtMs":1790513510811,"durationMs":25,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"fill","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"filled":"staff-role-select"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510811,"completedAtMs":1790513510821,"durationMs":10,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"staff-role-save"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510821,"completedAtMs":1790513510851,"durationMs":30,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"reload","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"reloaded":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510851,"completedAtMs":1790513510875,"durationMs":24,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"ensureSignedIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"restored":false,"user":"admin"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510875,"completedAtMs":1790513510887,"durationMs":12,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"current-user","visible":"staff-role-account-staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510887,"completedAtMs":1790513510910,"durationMs":23,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"admin-link","visible":"staff-role-account-staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510910,"completedAtMs":1790513510928,"durationMs":18,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-roles-link","visible":"staff-role-account-staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510928,"completedAtMs":1790513510944,"durationMs":16,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"replayAdmin","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"passed","type":"browser-observation-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"visible":true,"value":"staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510944,"completedAtMs":1790513510951,"durationMs":7,"deadlineMs":300000},"attachments":[],"sensitivity":[]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"reload","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"reloaded":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510951,"completedAtMs":1790513510969,"durationMs":18,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"staff","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510969,"completedAtMs":1790513511049,"durationMs":80,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"current-user","visible":"staff-area"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513511050,"completedAtMs":1790513511066,"durationMs":16,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-link","visible":"staff-area"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513511066,"completedAtMs":1790513511077,"durationMs":11,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"staff","evidence":{"schemaVersion":2,"action":{"id":"expect","version":"1.0.0"},"status":"failed","type":"browser-observation-evidence","code":"application_failure","phase":"execute","summary":"the staff-role-save control was shown when it must not be","finding":{"kind":"control-present","fields":{"control":"staff-role-save"}},"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790513511077,"completedAtMs":1790513511079,"durationMs":2,"deadlineMs":300000},"attachments":[],"sensitivity":[]}}],"attachments":[],"sensitivity":["credential","user-content"]},"statedBy":"A staff member cannot assign or change roles."}],"consoleErrors":[],"setupEvidence":{"schemaVersion":2,"status":"passed","code":"completed","phase":"setup","actor":null,"summary":null,"finding":null,"observation":null,"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510433,"completedAtMs":1790513510637,"durationMs":204},"actions":[{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"signIn","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"user":"admin","authenticationPath":"local-form","signedIn":true},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510433,"completedAtMs":1790513510516,"durationMs":83,"deadlineMs":60000},"attachments":[],"sensitivity":["credential","user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"current-user","visible":"admin-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510516,"completedAtMs":1790513510529,"durationMs":13,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"admin-link"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510529,"completedAtMs":1790513510571,"durationMs":42,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":false,"testid":"staff-roles-link","visible":"staff-role-account-staff"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510571,"completedAtMs":1790513510594,"durationMs":23,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"fill","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"filled":"staff-role-select"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510594,"completedAtMs":1790513510605,"durationMs":11,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}},{"actor":"admin","evidence":{"schemaVersion":2,"action":{"id":"click","version":"1.0.0"},"status":"passed","type":"browser-interaction-evidence","code":"completed","phase":"execute","summary":null,"finding":null,"observation":{"clicked":"staff-role-save"},"expected":null,"retryable":false,"timing":{"startedAtMs":1790513510605,"completedAtMs":1790513510637,"durationMs":32,"deadlineMs":60000},"attachments":[],"sensitivity":["user-content"]}}],"attachments":[],"sensitivity":["credential","user-content"]}},"visits":["GET /","GET /","GET /","GET /","GET /","GET /","GET /admin","PUT /api/staff/1/role","GET /","GET /","GET /admin","PUT /api/staff/1/role","GET /admin","GET /","GET /"],"accountVisitors":[],"assignedRole":"staff","roleWrites":[{"actor":"admin","role":"inventory","status":200},{"actor":"admin","role":"staff","status":200}]}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:138:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:114:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: roles: disabled-role-unsafe
+    not ok 16 - roles: disabled-role-unsafe
+      ---
+      duration_ms: 932.8653
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:114:21'
+      failureType: 'testCodeFailure'
+      error: 'reach the actual unauthorized write'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:140:28)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/account-navigation.integration.js:114:13)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..16
+not ok 1 - staff and role navigation follows declared account and role entry controls
+  ---
+  duration_ms: 26714.3738
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\account-navigation.integration.js:13:1'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 17
+# suites 0
+# pass 14
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 27278.3432

@@ -1,0 +1,147 @@
+  sandbox    ... coding container is isolated from the controller and grading files
+  preflight  ... 22 checks passed, 2 warning(s)
+  preflight  ... 24 checks passed, 1 warning(s)
+{"containerName":"sb-bac75c4f5be3077f-build","identity":"5e183688e1f661b364c7b19ee6b5ff746d70c1a1fba2fa7c896a83d6cdee6f4a sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455","networkMode":"container:9ef2f9d4ac133485c037cd06af468c3da70c7d468a5300250a519b2e9719970c"}
+
+=== spacetime-regrade (spacetime) ===
+  app: /var/lib/docker/volumes/stack-bench-state/_data/work/spacetime-ecom-run5-ecommerce-spacetime-run5-20260927055652-d3976646/app
+  url: http://localhost:6478
+  recipe: L1 -> ecommerce.progression-catalog (4f5c06438874)
+  scope: 1 check(s), 1 point(s)
+    features: ecommerce.feature.accounts, ecommerce.feature.catalog-items, ecommerce.progression.staff-access, ecommerce.progression.support-intake
+    extra checks: ecommerce.feature.accounts.accounts.1a
+  code        ... 104 server LOC in 2 files, 194 total LOC, 5 runtime deps
+  database    ... leased database requires runtime marker verification
+  stop application ... ok
+  reset database ... ok
+  restart     ... ok
+  stop application ... ok
+  reset database ... ok
+  restart     ... ok
+  db runtime  ... the application marker exists in the leased SpacetimeDB module
+  contract lint ... DEFERRED (17 interfaces checked during feature grading)
+  actions    ... 4 MISSING — buy, addToCart, checkout, restock
+  stop application ... ok
+  reset database ... ok
+  restart     ... ok
+  selected-source-001 ... 1/1
+  selected-source-002 ... not selected
+  selected-source-003 ... not selected
+  selected-source-004 ... not selected
+  selected-source-005 ... not selected
+  selected-source-006 ... not selected
+  selected-source-007 ... not selected
+  selected-source-008 ... not selected
+  selected-source-009 ... not selected
+  selected-source-010 ... not selected
+  selected-source-011 ... not selected
+  selected-source-012 ... not selected
+  selected-source-013 ... not selected
+  selected-source-014 ... not selected
+  selected-source-015 ... not selected
+  selected-source-016 ... not selected
+  selected-source-017 ... not selected
+  selected-source-018 ... not selected
+  selected-source-019 ... not selected
+  selected-source-020 ... not selected
+  selected-source-021 ... not selected
+  selected-source-022 ... not selected
+  selected-source-023 ... not selected
+  selected-source-024 ... not selected
+  selected-source-025 ... not selected
+  selected-source-026 ... not selected
+  selected-source-027 ... not selected
+  selected-source-028 ... not selected
+  selected-source-029 ... not selected
+  selected-source-030 ... not selected
+  selected-source-031 ... not selected
+  selected-source-032 ... not selected
+  selected-source-033 ... not selected
+  selected-source-034 ... not selected
+  selected-source-035 ... not selected
+  selected-source-036 ... not selected
+  selected-source-037 ... not selected
+  selected-source-038 ... not selected
+  selected-source-039 ... not selected
+  selected-source-040 ... not selected
+  selected-source-041 ... not selected
+  selected-source-042 ... not selected
+  selected-source-043 ... not selected
+  selected-source-044 ... not selected
+  selected-source-045 ... not selected
+  selected-source-046 ... not selected
+  selected-source-047 ... not selected
+  selected-source-048 ... not selected
+  selected-source-049 ... not selected
+  selected-source-050 ... not selected
+  selected-source-051 ... not selected
+  selected-source-052 ... not selected
+  selected-source-053 ... not selected
+  selected-source-054 ... not selected
+  selected-source-055 ... not selected
+  selected-source-056 ... not selected
+  selected-source-057 ... not selected
+  selected-source-058 ... not selected
+  selected-source-059 ... not selected
+  selected-source-060 ... not selected
+  selected-source-061 ... not selected
+  selected-source-062 ... not selected
+  selected-source-063 ... not selected
+  selected-source-064 ... not selected
+  selected-source-065 ... not selected
+  selected-source-066 ... not selected
+  selected-source-067 ... not selected
+  selected-source-068 ... not selected
+  selected-source-069 ... not selected
+  selected-source-070 ... not selected
+  selected-source-071 ... not selected
+  selected-source-072 ... not selected
+  selected-source-073 ... not selected
+  selected-source-074 ... not selected
+  selected-source-075 ... not selected
+  selected-source-076 ... not selected
+  selected-source-077 ... not selected
+  selected-source-078 ... not selected
+  selected-source-079 ... not selected
+  selected-source-080 ... not selected
+  selected-source-081 ... not selected
+  selected-source-082 ... not selected
+  selected-source-083 ... not selected
+  selected-source-084 ... not selected
+  selected-source-085 ... not selected
+  selected-source-086 ... not selected
+  selected-source-087 ... not selected
+  selected-source-088 ... not selected
+  selected-source-089 ... not selected
+  selected-source-090 ... not selected
+  selected-source-091 ... not selected
+  selected-source-092 ... not selected
+  selected-source-093 ... not selected
+  selected-source-094 ... not selected
+  selected-source-095 ... not selected
+  selected-source-096 ... not selected
+  selected-source-097 ... not selected
+  selected-source-098 ... not selected
+  selected-source-099 ... not selected
+  selected-source-100 ... not selected
+  selected-source-101 ... not selected
+  selected-source-102 ... not selected
+  selected-source-103 ... not selected
+  selected-source-104 ... not selected
+  selected-source-105 ... not selected
+  selected-source-106 ... not selected
+  selected-source-107 ... not selected
+  selected-source-108 ... not selected
+  selected-source-109 ... not selected
+  selected-source-110 ... not selected
+  selected-source-111 ... not selected
+  selected-source-112 ... not selected
+  selected-source-113 ... not selected
+  selected-source-114 ... not selected
+  evidence write and source verification ... 82.8ms
+  TOTAL      ... 1/1
+  bundle: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed/grading/bundle.json
+  removed the leased run container sb-bac75c4f5be3077f-browser
+  removed the leased run container sb-bac75c4f5be3077f-build
+  removed the leased run container sb-bac75c4f5be3077f-backend
+Saved-source regrade: passed; evidence /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/layout-37e56c5e2/saved-r2-fixed

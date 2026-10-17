@@ -1,0 +1,153 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "backend_lease_evidence",
+  "id": "ecommerce-postgres-run409-20260928045831-cb32624b-backend-lease",
+  "attempt": {
+    "id": "ecommerce-postgres-run409-20260928045831-cb32624b-backend-lease",
+    "parentId": "ecommerce-postgres-run409-20260928045831-cb32624b"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:58:31.224Z",
+    "completedAt": "2026-09-28T05:04:56.974Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "version": 1,
+    "runId": "ecommerce-postgres-run409-20260928045831-cb32624b",
+    "backend": "postgres",
+    "track": "ecommerce",
+    "runIndex": 409,
+    "ownerPid": 9297,
+    "createdAt": "2026-09-28T04:58:31.224Z",
+    "stoppedAt": "2026-09-28T05:04:56.913Z",
+    "releasedAt": "2026-09-28T05:04:56.968Z",
+    "state": "released",
+    "resources": {
+      "serverUri": null,
+      "database": "app_ecom_run409",
+      "module": null,
+      "dataDir": null,
+      "container": {
+        "name": "sb-42728011d98bb143-backend",
+        "id": "3ddb566ccd0e985aa0adc279b09b217eff03a4d0f4dc23febf5e9c6263d2fa3a",
+        "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+        "owned": true,
+        "networkMode": "eeb5a89ef8d5e08c727725c70bc4cfd7404041ac5091764932d4717bcccf0c0c",
+        "running": false,
+        "removedAt": "2026-09-28T05:04:56.114Z"
+      },
+      "buildContainer": {
+        "name": "sb-42728011d98bb143-build",
+        "id": "cefe248a451f777ae05d2fe13b8fe76eff56b04c9bc4fe1cacb95a92d4f91993",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "running": false,
+        "networkMode": "container:3ddb566ccd0e985aa0adc279b09b217eff03a4d0f4dc23febf5e9c6263d2fa3a",
+        "resourceLimits": {
+          "cpuCount": 2,
+          "memoryBytes": 4294967296,
+          "memorySwapBytes": 4294967296,
+          "pids": 512
+        },
+        "workspaceHandedBackAt": "2026-09-28T05:04:54.884Z",
+        "removedAt": "2026-09-28T05:04:55.134Z"
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/212e4960e9a8fd9623c4c4e4bec026e2522a62ef78dccc2f1227c6fa9051360a.lock.json",
+          "key": "port:6710",
+          "digest": "212e4960e9a8fd9623c4c4e4bec026e2522a62ef78dccc2f1227c6fa9051360a",
+          "acquiredAt": "2026-09-28T04:58:31.276Z",
+          "releasedAt": "2026-09-28T05:04:56.968Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/90bc69b8674cc3525f0a2a5a686d2b452bd1a051ff6a3b5066eb23558f90c734.lock.json",
+          "key": "port:6982",
+          "digest": "90bc69b8674cc3525f0a2a5a686d2b452bd1a051ff6a3b5066eb23558f90c734",
+          "acquiredAt": "2026-09-28T04:58:31.276Z",
+          "releasedAt": "2026-09-28T05:04:56.968Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/136a56554a8639f19a69148e7589e51f07550f54d6d66caad4d77372a5f5b4c4.lock.json",
+          "key": "slot:ecommerce:postgres:run409",
+          "digest": "136a56554a8639f19a69148e7589e51f07550f54d6d66caad4d77372a5f5b4c4",
+          "acquiredAt": "2026-09-28T04:58:31.276Z",
+          "releasedAt": "2026-09-28T05:04:56.968Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/7dc63598cde6090515f7fc7c30eee5be99b016403fe85de7dd064337398e9a18.lock.json",
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-zUYnCx/app",
+          "digest": "7dc63598cde6090515f7fc7c30eee5be99b016403fe85de7dd064337398e9a18",
+          "acquiredAt": "2026-09-28T04:58:31.276Z",
+          "releasedAt": "2026-09-28T05:04:56.968Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-42728011d98bb143-network",
+        "id": "eeb5a89ef8d5e08c727725c70bc4cfd7404041ac5091764932d4717bcccf0c0c",
+        "namespaceContainerId": "3ddb566ccd0e985aa0adc279b09b217eff03a4d0f4dc23febf5e9c6263d2fa3a",
+        "hostAddresses": [
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "192.168.192.1",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.17",
+          "10.0.0.1",
+          "10.0.0.33",
+          "10.0.0.9"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.11",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "3a12e82785dd7f41d792e599e78b6e49a4e4d6ae804910acc3250e1d399dad63",
+        "firewallInstalledAt": "2026-09-28T04:58:34.186Z",
+        "ownAddresses": [
+          "10.0.0.10"
+        ],
+        "namespaceStartedAt": "2026-09-28T04:58:33.019899396Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-42728011d98bb143-browser",
+        "id": "12d8dd0fdd7ff63c17eedc9a0e2ffc7354c014a207095e0f896a58bdc370ed4b",
+        "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+        "owned": true,
+        "networkMode": "container:3ddb566ccd0e985aa0adc279b09b217eff03a4d0f4dc23febf5e9c6263d2fa3a",
+        "running": false,
+        "removedAt": "2026-09-28T05:04:54.287Z"
+      }
+    },
+    "ownership": {
+      "markerSha256": "b0430f621ed40c3f82218fc54fac7095759d6fa8fd3a331943063ef0cfb78ba7"
+    }
+  }
+}

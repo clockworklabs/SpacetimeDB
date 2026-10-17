@@ -1,0 +1,226 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T09-26-37-007Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T09-26-37-007Z",
+    "parentId": "ecommerce-convex-run69-20260927092612-16406bfd"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T09:26:37.008Z",
+    "completedAt": "2026-09-27T09:29:30.598Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 173590,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-SvNcf0/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-SvNcf0/selected-mutations.json",
+    "fixtureSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c",
+    "spec": [
+      "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "../tracks/ecommerce/scenarios/progression-stock-alerts.json"
+    ],
+    "backend": "convex",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 2,
+      "mutationIds": [
+        "stock-alert-delivery-is-suppressed",
+        "stock-alert-repeats-while-in-stock"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../convex-controls.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "69b81134cb36dd50e5bcd6ee8f0836b6453d8302a4590a57c232e4c1a17ba33a"
+      },
+      "total": 4,
+      "max": 4,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+          "identitySha256": "b07cdd205b8a4888814a2a4a8c31f98db33c5a89a487fed1c2f1b01c76d3a7e2",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "identitySha256": "88776b52da169106b9e4a0869ceef37fc086f5ea778215ce6ac1dd48a5da8f53",
+          "total": 3,
+          "max": 3
+        }
+      ]
+    },
+    "summary": {
+      "caught": 2,
+      "completed": 2,
+      "total": 2,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "stock-alert-delivery-is-suppressed",
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+        "targets": [
+          "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 631,
+            "criterion": "631c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stock-alert-delivery control matching \"Air Purifier\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "stock-alert-repeats-while-in-stock",
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "targets": [
+          "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 631,
+            "criterion": "631a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "2 stock-alert-delivery entries shown, expected 1",
+            "failedAction": "expectElementCount",
+            "key": "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "038bceb1f845a2058433320b6100021569b25f3decdfd966770addbd73f9bbb8",
+      "recipeSha256": "a20f883684f5875a0a51de8297fbe5468e1bdb723acfa46c551c909560c32d3a",
+      "fixtureSha256": "a93649c4283ce7ba76db8fbbb5dae66c5b140a1c634c851e6a4096428831584c",
+      "calibrationSha256": "4c43ef267f7e0c2dc4584ea7312133159bccea97ce546abbb5ee3caf50b74338",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 2,
+        "mutationIds": [
+          "stock-alert-delivery-is-suppressed",
+          "stock-alert-repeats-while-in-stock"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+          "scenarioSha256": "b58c38ad7afd8c7ee984bdae953b26020c5189164e95c367e8a5301d03f56226",
+          "mutationSha256": "d6d2d244e77706fda2ca469b13605ef6f40607709f83d8a2ebb4596c1a137ca7",
+          "selectionSha256": "3601c968bc0df4531b20d4403c3967397140294d179f76dba919f278e32df228",
+          "identitySha256": "b07cdd205b8a4888814a2a4a8c31f98db33c5a89a487fed1c2f1b01c76d3a7e2",
+          "mutationIds": [
+            "stock-alert-delivery-is-suppressed"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+          "scenarioSha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9",
+          "mutationSha256": "121f2849057b5392e47da802bf6ef1be8703161a9b2d58c09adf7072fa2f2336",
+          "selectionSha256": "e5a777f4f07173d3eb5a140677d89b231e1031c327d31a7798c0d9f515eaf216",
+          "identitySha256": "88776b52da169106b9e4a0869ceef37fc086f5ea778215ce6ac1dd48a5da8f53",
+          "mutationIds": [
+            "stock-alert-repeats-while-in-stock"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 60,
+      "updatedAt": "2026-09-27T09:29:30.598Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+        "mutationId": "stock-alert-delivery-is-suppressed",
+        "status": "returned",
+        "report": {
+          "path": "../convex-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-SGP7wT/grade.json",
+          "sha256": "5d073c77e09053b22ee776a1d411da2b47ac7dd38df3fb565a955a097908fa64"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alerts.json",
+        "mutationId": "stock-alert-repeats-while-in-stock",
+        "status": "returned",
+        "report": {
+          "path": "../convex-controls.runs/r1-workers/w1.runs/r1/mutation-control.json.grades/invocation-A6alKJ/grade.json",
+          "sha256": "97c6c2bea6ddfafd1fe973b6a54daf5ccf3cb62cf5f9ac0143e4f2981eb64401"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

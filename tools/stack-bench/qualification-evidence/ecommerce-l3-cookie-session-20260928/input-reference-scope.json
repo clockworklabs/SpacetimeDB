@@ -1,0 +1,90 @@
+{
+  "candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+  "check": "ecommerce.spec.access-control.purchase-session.101a",
+  "rows": [
+    {
+      "backend": "spacetime",
+      "slot": 800,
+      "ports": [
+        7273,
+        4110
+      ],
+      "locks": [
+        "listener:http://127.0.0.1:4110",
+        "slot:ecommerce:spacetime:run800",
+        "port:7273",
+        "port:4110"
+      ]
+    },
+    {
+      "backend": "postgres",
+      "slot": 808,
+      "ports": [
+        7381,
+        7109
+      ],
+      "locks": [
+        "slot:ecommerce:postgres:run808",
+        "port:7381",
+        "port:7109"
+      ]
+    },
+    {
+      "backend": "mongodb",
+      "slot": 816,
+      "ports": [
+        7539,
+        7217
+      ],
+      "locks": [
+        "slot:ecommerce:mongodb:run816",
+        "port:7539",
+        "port:7217"
+      ]
+    },
+    {
+      "backend": "convex",
+      "slot": 824,
+      "ports": [
+        7747,
+        7825,
+        14034
+      ],
+      "locks": [
+        "listener:http://127.0.0.1:14034",
+        "slot:ecommerce:convex:run824",
+        "port:7747",
+        "port:7825",
+        "port:14034"
+      ]
+    }
+  ],
+  "ports": [
+    7273,
+    4110,
+    7381,
+    7109,
+    7539,
+    7217,
+    7747,
+    7825,
+    14034
+  ],
+  "locks": [
+    "listener:http://127.0.0.1:4110",
+    "slot:ecommerce:spacetime:run800",
+    "port:7273",
+    "port:4110",
+    "slot:ecommerce:postgres:run808",
+    "port:7381",
+    "port:7109",
+    "slot:ecommerce:mongodb:run816",
+    "port:7539",
+    "port:7217",
+    "listener:http://127.0.0.1:14034",
+    "slot:ecommerce:convex:run824",
+    "port:7747",
+    "port:7825",
+    "port:14034"
+  ]
+}

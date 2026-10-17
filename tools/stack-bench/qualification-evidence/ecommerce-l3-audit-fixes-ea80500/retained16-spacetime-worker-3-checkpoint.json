@@ -1,0 +1,827 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T16-29-01-620Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T16-29-01-620Z",
+    "parentId": "ecommerce-spacetime-run62-20260927162804-43a8105f"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T16:29:01.621Z",
+    "completedAt": "2026-09-27T16:41:26.408Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7fa11ad07acb2fc8799439dd009e621b5abfa30b057d4148eb144910e4142494"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 744787,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-YLjc2s/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-YLjc2s/selected-mutations.json",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "spec": [
+      "../tracks/ecommerce/scenarios/01-restock-race.json",
+      "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "../tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "../tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "../tracks/ecommerce/scenarios/progression-support-history.json",
+      "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "../tracks/ecommerce/scenarios/01-purchase-session.json"
+    ],
+    "backend": "spacetime",
+    "track": "ecommerce",
+    "shard": {
+      "index": 2,
+      "count": 3,
+      "mutationIds": [
+        "restock-race-records-wrong-order-total",
+        "profile-is-lost-on-fresh-account-login",
+        "notification-preferences-are-not-saved",
+        "promotion-rule-stores-the-wrong-discount",
+        "stock-alert-delivery-is-suppressed",
+        "support-history-is-lost-on-fresh-account-login",
+        "authorized-restock-does-not-change-stock",
+        "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+        "account-disclosure-rejects-login",
+        "purchase-session-rejects-returning-login",
+        "signup-accepts-admin-claim"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../spacetime.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "f632cea7bc170100d5c492d3e7d04f404e88176e8b846fbcbcb903ac7a950b6f"
+      },
+      "total": 36,
+      "max": 36,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "identitySha256": "47c4f6f3d76e103de91f95727cb9c0b2b5a9e42fc70731c5eb346a6703c7c500",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "identitySha256": "68318a31790b63fdba318582140719ae92496b673799766b054db9f66e2c4470",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-notification-preferences.json",
+          "identitySha256": "425cbde3c2b7db6cad50cce51b43d9ad17afbc28f780f725124c9e9d8538e5bd",
+          "total": 5,
+          "max": 5
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-promotion-rules.json",
+          "identitySha256": "fba3d663369fe374ded7503a2398d618a9f8a8de6bbb89448c65f683d33f8bf6",
+          "total": 4,
+          "max": 4
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+          "identitySha256": "33d8eafb1705392773a1c6608367bc517e40ed1a9746dff2c9121bd65457d477",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "identitySha256": "4f8fd476a181664dfac3e50843b2c408ad0296703cacb94ffe7f85314fd03372",
+          "total": 7,
+          "max": 7
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "identitySha256": "f2a017013e594f57ba2c7f8548031346fff22bbf50aa642cb6f185928433a2b7",
+          "total": 3,
+          "max": 3
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "identitySha256": "2327cecef387e27e49dd7d66c2eaf5a8d9c87491e1e7b8d33fe8813a404145be",
+          "total": 7,
+          "max": 7
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "identitySha256": "9343d4381367fae0b8cd7bc9da4eb66d0ac983f2e5ca5f05a44fed1540afdcb2",
+          "total": 1,
+          "max": 1
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "identitySha256": "41670e74ffc610ab60f7c39483f26677c627cfb3a76e53febf39b4d2dadad056",
+          "total": 2,
+          "max": 2
+        }
+      ]
+    },
+    "summary": {
+      "caught": 11,
+      "completed": 11,
+      "total": 11,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "restock-race-records-wrong-order-total",
+        "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+        "targets": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.concurrency-safety.restock-race.202a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 202,
+            "criterion": "202a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the purchase order total control reads 8050, expected exactly 7950",
+            "failedAction": "dbExpectPurchases",
+            "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "profile-is-lost-on-fresh-account-login",
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "targets": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.customer-profile-reload.620a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the profile-address-summary control matching \"14 Market Street profilemarker39cea86d-2ca0-45f620\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.customer-profile-reload.620a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "notification-preferences-are-not-saved",
+        "scenario": "../tracks/ecommerce/scenarios/progression-notification-preferences.json",
+        "targets": [
+          "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+          "ecommerce.spec.access-control.notification-preferences-privacy.630b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+          "ecommerce.spec.access-control.notification-preferences-privacy.630b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 630,
+            "criterion": "630a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the notification-order control shows \"off\", expected \"on\"",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+            "expected": true
+          },
+          {
+            "feature": 630,
+            "criterion": "630b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the notification-order control shows \"off\", expected \"on\"",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "promotion-rule-stores-the-wrong-discount",
+        "scenario": "../tracks/ecommerce/scenarios/progression-promotion-rules.json",
+        "targets": [
+          "ecommerce.progression.promotion-rules.promotion-rule-values.620a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.promotion-rules.promotion-rule-values.620a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 620,
+            "criterion": "620a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the promotion-discount control reads 1, expected exactly 10 in the entry matching \"SAVE10\"",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "stock-alert-delivery-is-suppressed",
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+        "targets": [
+          "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 631,
+            "criterion": "631c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stock-alert-delivery control matching \"Air Purifier\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "support-history-is-lost-on-fresh-account-login",
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "targets": [
+          "ecommerce.spec.state-durability.support-history-reload.612a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.state-durability.support-history-reload.612a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 612,
+            "criterion": "612a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the support-ticket control matching \"Owner ticket ticketmarker5fb19f93-30a2-4ff612\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.state-durability.support-history-reload.612a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "authorized-restock-does-not-change-stock",
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "targets": [
+          "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 103,
+            "criterion": "103a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the item-stock control reads 100, expected exactly 101 in the entry matching \"Air Purifier\"",
+            "failedAction": "expectNumber",
+            "key": "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "expected": true
+          },
+          {
+            "feature": 103,
+            "criterion": "103b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Air Purifier control reads 100, expected exactly 101",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "targets": [
+          "ecommerce.progression.staff-roles.staff-roles.621c"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.progression.staff-roles.staff-roles.621c"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 621,
+            "criterion": "621c",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+            "failedAction": "expect",
+            "key": "ecommerce.progression.staff-roles.staff-roles.621c",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "account-disclosure-rejects-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "targets": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.account-disclosure.110a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 110,
+            "criterion": "110a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"private-password\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.account-disclosure.110a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "purchase-session-rejects-returning-login",
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "targets": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.purchase-session.101a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 101,
+            "criterion": "101a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the current-user control matching \"kim\" did not appear",
+            "failedAction": "expect",
+            "key": "ecommerce.spec.access-control.purchase-session.101a",
+            "expected": true
+          }
+        ]
+      },
+      {
+        "id": "signup-accepts-admin-claim",
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "targets": [
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 103,
+            "criterion": "103b",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "7fa11ad07acb2fc8799439dd009e621b5abfa30b057d4148eb144910e4142494",
+      "recipeSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+      "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "calibrationSha256": "c42e10424ded6443636a12601299fa21a45d420d4ca0a919a934069b7a3825e3",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 2,
+        "count": 3,
+        "mutationIds": [
+          "restock-race-records-wrong-order-total",
+          "profile-is-lost-on-fresh-account-login",
+          "notification-preferences-are-not-saved",
+          "promotion-rule-stores-the-wrong-discount",
+          "stock-alert-delivery-is-suppressed",
+          "support-history-is-lost-on-fresh-account-login",
+          "authorized-restock-does-not-change-stock",
+          "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+          "account-disclosure-rejects-login",
+          "purchase-session-rejects-returning-login",
+          "signup-accepts-admin-claim"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "scenarioSha256": "0c83f462e100859d240d387185a61ede1ee68ca9edfe525446aa9ce21e27f589",
+          "mutationSha256": "7346cf335a24a6c3371914f50a2d88962c49106b3f4378b8a012a50c01cbc68b",
+          "selectionSha256": "927ccffa556c5c1183b5d6aa48d3e485f05efca8d3a3d821acae647245dfea3e",
+          "identitySha256": "47c4f6f3d76e103de91f95727cb9c0b2b5a9e42fc70731c5eb346a6703c7c500",
+          "mutationIds": [
+            "restock-race-records-wrong-order-total"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+          "scenarioSha256": "726b5330f10e5c782b89c3e36f3ecfa95ba190c5240508cc70db9495f6aeb70e",
+          "mutationSha256": "0803ce04de4058d07a786687393ec4a506999ae25e47c53013d8c4a0475bb84f",
+          "selectionSha256": "dc22661c6d55c81a922124ae6703877aefe0bcecf9b276e841f7691c2507c453",
+          "identitySha256": "68318a31790b63fdba318582140719ae92496b673799766b054db9f66e2c4470",
+          "mutationIds": [
+            "profile-is-lost-on-fresh-account-login"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-notification-preferences.json",
+          "scenarioSha256": "06689c31b22e1b27c9f860f30bf90debf30e1e230cd5f10b05fc190b750f9f85",
+          "mutationSha256": "8b8de242d7c9be3d50e61ebc6dd92db7d7f1d4de59734d415c79eb91b93d5e74",
+          "selectionSha256": "dc74925194aa29cb9cee9bb813cfd1424f5ed49daf94bda545dfda439e693078",
+          "identitySha256": "425cbde3c2b7db6cad50cce51b43d9ad17afbc28f780f725124c9e9d8538e5bd",
+          "mutationIds": [
+            "notification-preferences-are-not-saved"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-promotion-rules.json",
+          "scenarioSha256": "a88aa34411b6e3d37d11552120998341ff4f5b700898d52e6f4364e908c58486",
+          "mutationSha256": "28131f934ea4c05ac5d596bc5bac1642431eb1230bfddd8053b4ef4b05123afd",
+          "selectionSha256": "8d4749d501216a5b702ea163d7b87cb97bb6063610255b2e3dcff3048fe64a1c",
+          "identitySha256": "fba3d663369fe374ded7503a2398d618a9f8a8de6bbb89448c65f683d33f8bf6",
+          "mutationIds": [
+            "promotion-rule-stores-the-wrong-discount"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+          "scenarioSha256": "fcf2a5578ae83e28f6192a77ee128c31d529a995231da36a37bdef7f76c6ecc0",
+          "mutationSha256": "41e5cf82dacff15e5b3e3f6212101c6a72ceb486cde5f35e5054675b50ecf3aa",
+          "selectionSha256": "3601c968bc0df4531b20d4403c3967397140294d179f76dba919f278e32df228",
+          "identitySha256": "33d8eafb1705392773a1c6608367bc517e40ed1a9746dff2c9121bd65457d477",
+          "mutationIds": [
+            "stock-alert-delivery-is-suppressed"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+          "scenarioSha256": "a9799e8d9c5d96e29eaafffcd1fc3f6e205a3f7f00b2f0bb2b157c4db8982492",
+          "mutationSha256": "3f0479812cb4eff8ae7dd01f2819e5181af0fd086b7ca04e67581ce4c12aea31",
+          "selectionSha256": "1b57aaf333e3aa86ac39641cc51fa95db1c7be82d3f8e960d2bb9a7c3d69eb4f",
+          "identitySha256": "4f8fd476a181664dfac3e50843b2c408ad0296703cacb94ffe7f85314fd03372",
+          "mutationIds": [
+            "support-history-is-lost-on-fresh-account-login"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "scenarioSha256": "e99eaae07757128759389706ec70626452c13e1c11e6603631123c47d7bf0940",
+          "mutationSha256": "bf5fc439765bb4ec2e2769982b730c3bc547df68aa8e61fd99066379562cd3ab",
+          "selectionSha256": "bd93e0f7ed3cbc398e8633c33bd54bd305e73fd7fc95cf7da498a89402d1e772",
+          "identitySha256": "f2a017013e594f57ba2c7f8548031346fff22bbf50aa642cb6f185928433a2b7",
+          "mutationIds": [
+            "authorized-restock-does-not-change-stock",
+            "signup-accepts-admin-claim"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+          "scenarioSha256": "3f0015b0cf30a3cbc5f5a40b83e71ddb06012b4aa469dc27445a06f8e1f60dc2",
+          "mutationSha256": "8c144ca568f61dd185dc8d0832e49b34562a5a2c80721a17918fbd5b177026b5",
+          "selectionSha256": "c22761b31be21bcc70de2c8911188a0b47c36eca3f65e6d7fa8f2e5d08edf8fe",
+          "identitySha256": "2327cecef387e27e49dd7d66c2eaf5a8d9c87491e1e7b8d33fe8813a404145be",
+          "mutationIds": [
+            "saving-a-staff-role-snaps-the-input-back-to-the-stored-role"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+          "scenarioSha256": "b078ded6d5350e83a6b754f01349e21ee5fd53434636164d2436aa66593bd2c0",
+          "mutationSha256": "af775c045e82fe7e01fbbd7f37f36ccbfa5f01d47ed887e331d1bef2ebda0039",
+          "selectionSha256": "7fb7eb11f8baacc56ffe990b1ffd5a97a89c8c324b938c515c19c4df9718288f",
+          "identitySha256": "9343d4381367fae0b8cd7bc9da4eb66d0ac983f2e5ca5f05a44fed1540afdcb2",
+          "mutationIds": [
+            "account-disclosure-rejects-login"
+          ]
+        },
+        {
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "scenarioSha256": "c8d6c1598540cc153d2a4aa70f8cea9d18520b899fbdbb66e9e39c63e3ff3a4f",
+          "mutationSha256": "8a4986c2ad7ec1b311574b3bf5d5c4f65c2dfd5b610cff2f13d6b87a09f4bec8",
+          "selectionSha256": "93900497e87d382fb33acbd636b7bb3d8c6165595640215e49c5a1e0deeb6c1f",
+          "identitySha256": "41670e74ffc610ab60f7c39483f26677c627cfb3a76e53febf39b4d2dadad056",
+          "mutationIds": [
+            "purchase-session-rejects-returning-login"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 120,
+      "updatedAt": "2026-09-27T16:41:26.408Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+        "mutationId": "restock-race-records-wrong-order-total",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-fxluo5/grade.json",
+          "sha256": "3bbc7a4bc0febdf839bc45cbf7ba69c4c0208111a91d735089d678db44088c4c"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-customer-profile.json",
+        "mutationId": "profile-is-lost-on-fresh-account-login",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-v6cYYT/grade.json",
+          "sha256": "21d2600198c741a5fe8b723111641e3bfb99749765ecd898e055a96be180986c"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-notification-preferences.json",
+        "mutationId": "notification-preferences-are-not-saved",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-lMfKZx/grade.json",
+          "sha256": "9be092072d3311c3bec1a1a2c24af640ac9ba65009aaf9a5c5c44b2558cb4017"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-promotion-rules.json",
+        "mutationId": "promotion-rule-stores-the-wrong-discount",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-QMK6Ek/grade.json",
+          "sha256": "7eff2572c678c653588f7168ccbe21cb574eee2d9e1c0143c92d8875f454875f"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+        "mutationId": "stock-alert-delivery-is-suppressed",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-xV0EH3/grade.json",
+          "sha256": "d5bd4730c422d23b15b9779cf662518a7e068109417d382a6f51b5913fdd7676"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-support-history.json",
+        "mutationId": "support-history-is-lost-on-fresh-account-login",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-QQnK6B/grade.json",
+          "sha256": "978bf851ffa3850eb7085ac653d0b1f0b9581c815d4fbe5a36e02bd33651bbed"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "mutationId": "authorized-restock-does-not-change-stock",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-rvhUPB/grade.json",
+          "sha256": "5bed338ce175df6578adda6e8cf47789de99aff71e2ee339af8ee4694362d752"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+        "mutationId": "signup-accepts-admin-claim",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-dfcDSr/grade.json",
+          "sha256": "046afd3819fc68e6fa7a9374b0158be6bcad2392fcc60c77e01e3bf8c93e3a2d"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/progression-staff-roles.json",
+        "mutationId": "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-RnZTN4/grade.json",
+          "sha256": "714bbd297fb8a6bfef2eba6fc49f5b4d9ec0349247ef4a1e8da1dfb996220f85"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-account-disclosure.json",
+        "mutationId": "account-disclosure-rejects-login",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-PoDmjY/grade.json",
+          "sha256": "e8d06d15789b3460a79e1d35825cad23aef78aca8304457bc5a6dc19ee76701c"
+        }
+      },
+      {
+        "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+        "mutationId": "purchase-session-rejects-returning-login",
+        "status": "returned",
+        "report": {
+          "path": "../spacetime.runs/r1-workers/w3.runs/r1/mutation-control.json.grades/invocation-7FEMAM/grade.json",
+          "sha256": "b0fa460001389990d32ea1660ff371d11c2e166dbe43fd9eff7103a77ef81ca9"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Cart recovery",
+  "features": [
+    {
+      "id": 503,
+      "name": "Expired carts restore only available items",
+      "actors": [
+        "available-shopper",
+        "partial-shopper"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"available-shopper","name":"cart-recovery-available"},
+        {"do":"click","actor":"available-shopper","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"signUp","actor":"partial-shopper","name":"cart-recovery-partial"},
+        {"do":"click","actor":"partial-shopper","testid":"add-to-cart","in":{"testid":"item-card","contains":"Gaming Mouse"}},
+        {"do":"click","actor":"partial-shopper","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
+        {"do":"wait","actor":"available-shopper","ms":310000}
+      ],
+      "criteria": [
+        {
+          "id": "503a",
+          "category": "feature",
+          "desc": "restoring an expired cart reserves available items again",
+          "points": 3,
+          "statedBy": "A customer can restore the available items from an expired cart.",
+          "steps": [
+            {"do":"reload","actor":"available-shopper","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"available-shopper","name":"cart-recovery-available","readyTestid":"current-user"},
+            {"do":"expect","actor":"available-shopper","testid":"expired-cart"},
+            {"do":"expectNumber","actor":"available-shopper","testid":"cart-count","equals":0},
+            {"do":"recordNumber","actor":"available-shopper","testid":"item-stock","in":{"testid":"item-card","contains":"Keyboard"},"as":"restore-available-shopper"},
+            {"do":"click","actor":"available-shopper","testid":"restore-cart","in":{"testid":"expired-cart"}},
+            {"do":"click","actor":"available-shopper","testid":"cart-toggle"},
+            {"do":"expect","actor":"available-shopper","testid":"cart-item","contains":"Keyboard"},
+            {"do":"expect","actor":"available-shopper","testid":"cart-restore-warning","absent":true},
+            {"do":"expectNumber","actor":"available-shopper","testid":"cart-quantity","in":{"testid":"cart-item","contains":"Keyboard"},"equals":1},
+            {"do":"reload","actor":"available-shopper","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"available-shopper","name":"cart-recovery-available","readyTestid":"current-user"},
+            {"do":"click","actor":"available-shopper","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"available-shopper","testid":"catalog-link","unlessVisible":"item-card"},
+            {"do":"expectNumber","actor":"available-shopper","testid":"item-stock","in":{"testid":"item-card","contains":"Keyboard"},"relativeTo":"restore-available-shopper","plus":-1}
+          ]
+        },
+        {
+          "id": "503b",
+          "category": "feature",
+          "desc": "a partial restore keeps available items and names each unavailable item",
+          "points": 3,
+          "statedBy": "Restore the available items and list each item that could not be restored.",
+          "steps": [
+            {"do":"reload","actor":"partial-shopper","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"partial-shopper","name":"cart-recovery-partial","readyTestid":"current-user"},
+            {"do":"expect","actor":"partial-shopper","testid":"expired-cart"},
+            {"do":"expectNumber","actor":"partial-shopper","testid":"cart-count","equals":0},
+            {"do":"recordNumber","actor":"partial-shopper","testid":"item-stock","in":{"testid":"item-card","contains":"Gaming Mouse"},"as":"restore-partial-shopper"},
+            {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":0,"settleMs":2000},
+            {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":2000},
+            {"do":"click","actor":"partial-shopper","testid":"restore-cart","in":{"testid":"expired-cart"}},
+            {"do":"click","actor":"partial-shopper","testid":"cart-toggle"},
+            {"do":"expect","actor":"partial-shopper","testid":"cart-item","contains":"Gaming Mouse"},
+            {"do":"expect","actor":"partial-shopper","testid":"cart-item","contains":"Desk Lamp","absent":true},
+            {"do":"expect","actor":"partial-shopper","testid":"cart-restore-warning","contains":"Desk Lamp"},
+            {"do":"expectNumber","actor":"partial-shopper","testid":"cart-quantity","in":{"testid":"cart-item","contains":"Gaming Mouse"},"equals":1},
+            {"do":"reload","actor":"partial-shopper","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"partial-shopper","name":"cart-recovery-partial","readyTestid":"current-user"},
+            {"do":"click","actor":"partial-shopper","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"partial-shopper","testid":"catalog-link","unlessVisible":"item-card"},
+            {"do":"expectNumber","actor":"partial-shopper","testid":"item-stock","in":{"testid":"item-card","contains":"Gaming Mouse"},"relativeTo":"restore-partial-shopper","plus":-1}
+          ]
+        }
+      ]
+    }
+  ],
+  "note": "Draft: revised observations require matching reference and defect-control qualification."
+}

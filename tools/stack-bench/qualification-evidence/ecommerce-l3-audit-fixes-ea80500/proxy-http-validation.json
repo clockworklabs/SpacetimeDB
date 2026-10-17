@@ -1,0 +1,67 @@
+{
+  "createdAt": "2026-09-27T17:39:42.3025634Z",
+  "base": "27e01bd86a2d0432c25dc3ec7e3872744806f268",
+  "qualification": "pending",
+  "tests": {
+    "priorScope": "68/68",
+    "finalTransport": "52/52"
+  },
+  "files": [
+    {
+      "path": "container/browser-network-proxy.ts",
+      "sha256": "040ac095ba1ca4ac10385af4c433590c66f4be47bdefb06de6d36f88155e19e1"
+    },
+    {
+      "path": "grader/grade.ts",
+      "sha256": "d22629c2e8629aa3d662e44738c4dc4a79d1bc1e696aba21b34b41f9acd027e8"
+    },
+    {
+      "path": "grader/transport-frames.ts",
+      "sha256": "b3aae62c39da40da0296f9d83f6668cbc02e6c3a420f99b78f9ca360fb41ea1c"
+    },
+    {
+      "path": "src/actions/actor-action-runtime.ts",
+      "sha256": "6eddb95160ced3d7195013d8c26d6244eb3ed79340dd57f4a065d3f1e6d8ffa6"
+    },
+    {
+      "path": "src/actions/actor-transport-action-executors.ts",
+      "sha256": "67f8a57f7e2f22af649d5bc559aebc928fbfbf762cbb9df2c9a0f08a6823660d"
+    },
+    {
+      "path": "src/actions/network-interruption.ts",
+      "sha256": "65d076067aad674ae6d84839bc62b9a165344295b2e1ec8b4b9a28f908ff4e94"
+    },
+    {
+      "path": "tests/network-interruption.integration.ts",
+      "sha256": "2145742d006c10cc22a649f98c5a9b3f3bcb6b51935f734030b31e4987afd648"
+    },
+    {
+      "path": "tests/transport-cache.integration.ts",
+      "sha256": "ad896aa3432ebf83fb6b9d7fe9509ce5d23d61ea0d339dc8cc8f59e244f603c4"
+    },
+    {
+      "path": "docs/grading-coverage.md",
+      "sha256": "1c56ed008d340344eee282767ef6764041339b0707594a1353392131dde05157"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/proxy-http-final.log",
+      "sha256": "a4cf9ce6ffac9f685d96c4a584f1fabdd8210d07b1840fcf163ea88c313219b3"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/proxy-http-final-helper.json",
+      "sha256": "a0faa3f43832087f37bdb96750c8aaa2fe876903b0d88ef728bfac7f6a419882"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/proxy-http-candidate.log",
+      "sha256": "120694506ffd7e06dab2769ee704b8f0a3407b1f6c6a95c0542a1d5402eb559c"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/proxy-http-candidate-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/proxy-http-typecheck-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "grade",
+  "id": "grade-e922afb9-2378-4d",
+  "attempt": {
+    "id": "grade-e922afb9-2378-4d",
+    "parentId": "recovery-test-grade-bundle-l1"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T22:56:50.389Z",
+    "completedAt": "2026-09-28T22:56:50.783Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "stub",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "definitionSchemaVersion": 1,
+    "recipeRelease": null,
+    "label": "recovery-test-good",
+    "url": "http://127.0.0.1:50382",
+    "level": 1,
+    "runId": "e922afb9-2378-4d",
+    "total": 1,
+    "max": 1,
+    "features": [
+      {
+        "id": 1,
+        "name": "good",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "good",
+            "desc": "good",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790636210581,
+                "completedAtMs": 1790636210770,
+                "durationMs": 189
+              },
+              "actions": [
+                {
+                  "actor": "viewer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "good"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790636210582,
+                      "completedAtMs": 1790636210760,
+                      "durationMs": 178,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "viewer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790636210761,
+                      "completedAtMs": 1790636210769,
+                      "durationMs": 8,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "user-content"
+              ]
+            },
+            "stableKey": null
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790636210577,
+            "completedAtMs": 1790636210577,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      }
+    ],
+    "selection": null,
+    "inconclusive": []
+  }
+}

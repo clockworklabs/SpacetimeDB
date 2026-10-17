@@ -1,0 +1,119 @@
+TAP version 13
+# Subtest: staff and role navigation follows declared account and role entry controls
+    # Subtest: staff: direct
+    ok 1 - staff: direct
+      ---
+      duration_ms: 2594.2378
+      type: 'test'
+      ...
+    # Subtest: staff: menu
+    ok 2 - staff: menu
+      ---
+      duration_ms: 2658.9806
+      type: 'test'
+      ...
+    # Subtest: staff: already-open
+    ok 3 - staff: already-open
+      ---
+      duration_ms: 2309.9017
+      type: 'test'
+      ...
+    # Subtest: staff: menu-noop
+    ok 4 - staff: menu-noop
+      ---
+      duration_ms: 2737.3479
+      type: 'test'
+      ...
+    # Subtest: staff: missing-target
+    ok 5 - staff: missing-target
+      ---
+      duration_ms: 2675.3831
+      type: 'test'
+      ...
+    # Subtest: staff: customer-hidden
+    ok 6 - staff: customer-hidden
+      ---
+      duration_ms: 2448.8038
+      type: 'test'
+      ...
+    # Subtest: staff: customer-leak
+    ok 7 - staff: customer-leak
+      ---
+      duration_ms: 1016.1177
+      type: 'test'
+      ...
+    # Subtest: roles: direct
+    ok 8 - roles: direct
+      ---
+      duration_ms: 1300.0785
+      type: 'test'
+      ...
+    # Subtest: roles: menu
+    ok 9 - roles: menu
+      ---
+      duration_ms: 1358.8992
+      type: 'test'
+      ...
+    # Subtest: roles: already-open
+    ok 10 - roles: already-open
+      ---
+      duration_ms: 1167.329
+      type: 'test'
+      ...
+    # Subtest: roles: role-tab
+    ok 11 - roles: role-tab
+      ---
+      duration_ms: 1387.197
+      type: 'test'
+      ...
+    # Subtest: roles: broken-tab
+    ok 12 - roles: broken-tab
+      ---
+      duration_ms: 1267.785
+      type: 'test'
+      ...
+    # Subtest: roles: missing-tab
+    ok 13 - roles: missing-tab
+      ---
+      duration_ms: 1929.8632
+      type: 'test'
+      ...
+    # Subtest: roles: wrong-row
+    ok 14 - roles: wrong-row
+      ---
+      duration_ms: 1839.9286
+      type: 'test'
+      ...
+    # Subtest: roles: disabled-role-save
+    ok 15 - roles: disabled-role-save
+      ---
+      duration_ms: 1702.3449
+      type: 'test'
+      ...
+    # Subtest: roles: disabled-role-unsafe
+    ok 16 - roles: disabled-role-unsafe
+      ---
+      duration_ms: 2449.5874
+      type: 'test'
+      ...
+    1..16
+ok 1 - staff and role navigation follows declared account and role entry controls
+  ---
+  duration_ms: 31066.1961
+  type: 'test'
+  ...
+# Subtest: signout supports a direct button and account dialog but rejects missing or broken behavior
+ok 2 - signout supports a direct button and account dialog but rejects missing or broken behavior
+  ---
+  duration_ms: 3202.9283
+  type: 'test'
+  ...
+1..2
+# tests 18
+# suites 0
+# pass 18
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 34984.1075

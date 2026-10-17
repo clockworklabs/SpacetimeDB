@@ -1,0 +1,572 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-postgres-run808-20260928234125-a39bc37e",
+  "attempt": {
+    "id": "ecommerce-postgres-run808-20260928234125-a39bc37e",
+    "parentId": "reference-live-postgres-20260928234122-30"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:41:38.766Z",
+    "completedAt": "2026-09-28T23:43:51.507Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null,
+      "version": "1.6.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "postgres",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-postgres-run808-20260928234125-a39bc37e",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "runIndex": 808,
+      "ownerPid": 80,
+      "createdAt": "2026-09-28T23:41:25.097Z",
+      "state": "released",
+      "resources": {
+        "serverUri": null,
+        "database": "app_ecom_run808",
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-5f43cc1f8e450502-backend",
+          "id": "ef2c471da08321dc9964b48767e3ed38cf21ce2f4d18340841d5cd840a3ab4ff",
+          "image": "sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7",
+          "owned": true,
+          "networkMode": "4d1e8f367b35efff9b666a405228cfac9d749fbf957c1447a1ec39ff9e5aa84a",
+          "running": false,
+          "removedAt": "2026-09-28T23:43:54.167Z"
+        },
+        "buildContainer": {
+          "name": "sb-5f43cc1f8e450502-build",
+          "id": "0ef0bc4fe113e59d8010e56eb292cc00422460a854280427de37a7e28c83bd58",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:ef2c471da08321dc9964b48767e3ed38cf21ce2f4d18340841d5cd840a3ab4ff",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T23:43:52.732Z",
+          "removedAt": "2026-09-28T23:43:53.088Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/9d5c4c7da6452e52609119ff55427687b6e1774ffe84cdc01df3ffde444a4506.lock.json",
+            "key": "port:7109",
+            "digest": "9d5c4c7da6452e52609119ff55427687b6e1774ffe84cdc01df3ffde444a4506",
+            "acquiredAt": "2026-09-28T23:41:25.201Z",
+            "releasedAt": "2026-09-28T23:43:55.166Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/32c3a4edb54b52069f9e955858146f978ad6e28a72f56d09f247bf6ba84aa9d2.lock.json",
+            "key": "port:7381",
+            "digest": "32c3a4edb54b52069f9e955858146f978ad6e28a72f56d09f247bf6ba84aa9d2",
+            "acquiredAt": "2026-09-28T23:41:25.201Z",
+            "releasedAt": "2026-09-28T23:43:55.166Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f4d7efe62351195aadb1bc52e7827689909bd534b72b8d82f4ef89adc7d56abb.lock.json",
+            "key": "slot:ecommerce:postgres:run808",
+            "digest": "f4d7efe62351195aadb1bc52e7827689909bd534b72b8d82f4ef89adc7d56abb",
+            "acquiredAt": "2026-09-28T23:41:25.201Z",
+            "releasedAt": "2026-09-28T23:43:55.166Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/c0a62b25e01f6aef9cf282fab652e6928b724df4c2f0491d109827620c2db331.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-gsTg0H/app",
+            "digest": "c0a62b25e01f6aef9cf282fab652e6928b724df4c2f0491d109827620c2db331",
+            "acquiredAt": "2026-09-28T23:41:25.201Z",
+            "releasedAt": "2026-09-28T23:43:55.166Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-5f43cc1f8e450502-network",
+          "id": "4d1e8f367b35efff9b666a405228cfac9d749fbf957c1447a1ec39ff9e5aa84a",
+          "namespaceContainerId": "ef2c471da08321dc9964b48767e3ed38cf21ce2f4d18340841d5cd840a3ab4ff",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.21.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.9",
+            "10.0.0.33",
+            "10.0.0.41",
+            "10.0.0.65",
+            "10.0.0.73",
+            "10.0.0.81",
+            "10.0.0.97",
+            "10.0.0.105",
+            "10.0.0.113",
+            "10.0.0.1",
+            "10.0.0.17"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.19",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "8338956457d903e983f18162b14cabc2ec9eabd82ac824c38ceaf855a260060d",
+          "firewallInstalledAt": "2026-09-28T23:41:30.642Z",
+          "ownAddresses": [
+            "10.0.0.18"
+          ],
+          "namespaceStartedAt": "2026-09-28T23:41:28.538396044Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-5f43cc1f8e450502-browser",
+          "id": "c02c971b5cca1cd7eb2e5de40966718b9db2a5f48676066aa2788efa750c331d",
+          "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+          "owned": true,
+          "networkMode": "container:ef2c471da08321dc9964b48767e3ed38cf21ce2f4d18340841d5cd840a3ab4ff",
+          "running": false,
+          "removedAt": "2026-09-28T23:43:52.075Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T23:43:55.086Z",
+      "releasedAt": "2026-09-28T23:43:55.166Z",
+      "ownership": {
+        "markerSha256": "172da5122e6a17657d7cdbc9cd713822613ff6919c42ba08df3e434d7a355e6d"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/postgres-reference.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [
+          3
+        ],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "graded": true,
+        "score": 2,
+        "max": 2,
+        "regression": null,
+        "selection": {
+          "schemaVersion": 3,
+          "recipe": {
+            "id": "ecommerce.progression-catalog",
+            "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+          },
+          "requested": {
+            "features": [
+              "ecommerce.feature.accounts",
+              "ecommerce.feature.cart",
+              "ecommerce.feature.catalog-discovery",
+              "ecommerce.feature.catalog-items",
+              "ecommerce.feature.checkout",
+              "ecommerce.feature.purchasing",
+              "ecommerce.feature.reviews",
+              "ecommerce.feature.warehouse-admin",
+              "ecommerce.l2.inventory-dashboard",
+              "ecommerce.l2.order-cancellation-features",
+              "ecommerce.l2.recommendations",
+              "ecommerce.l2.sales-dashboard",
+              "ecommerce.l2.stock-transfers-features",
+              "ecommerce.l3.scheduled-restocks-features",
+              "ecommerce.progression.catalog-management",
+              "ecommerce.progression.customer-profile",
+              "ecommerce.progression.faceted-search",
+              "ecommerce.progression.fulfilment-queue",
+              "ecommerce.progression.managed-support",
+              "ecommerce.progression.notification-preferences",
+              "ecommerce.progression.promotion-rules",
+              "ecommerce.progression.staff-access",
+              "ecommerce.progression.staff-roles",
+              "ecommerce.progression.stock-alerts",
+              "ecommerce.progression.support-history",
+              "ecommerce.progression.support-intake",
+              "ecommerce.progression.support-triage"
+            ],
+            "specifications": {
+              "requested": [],
+              "expected": [
+                "ecommerce.l3.deferred-access-specifications",
+                "ecommerce.l3.deferred-integrity-specifications",
+                "ecommerce.l3.server-time-specifications",
+                "ecommerce.progression.cancellation-accounting-specifications",
+                "ecommerce.progression.inventory-conservation-specifications",
+                "ecommerce.progression.operations-access-specifications",
+                "ecommerce.progression.review-access-specifications",
+                "ecommerce.spec.access-control",
+                "ecommerce.spec.concurrency-safety",
+                "ecommerce.spec.external-data-sync",
+                "ecommerce.spec.live-state",
+                "ecommerce.spec.search-ordering",
+                "ecommerce.spec.state-durability",
+                "ecommerce.spec.transactional-integrity"
+              ],
+              "observed": []
+            },
+            "checks": [
+              "ecommerce.spec.access-control.purchase-session.101a"
+            ]
+          },
+          "features": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "specifications": {
+            "requested": [],
+            "expected": [
+              "ecommerce.l3.deferred-access-specifications",
+              "ecommerce.l3.deferred-integrity-specifications",
+              "ecommerce.l3.server-time-specifications",
+              "ecommerce.progression.cancellation-accounting-specifications",
+              "ecommerce.progression.inventory-conservation-specifications",
+              "ecommerce.progression.operations-access-specifications",
+              "ecommerce.progression.review-access-specifications",
+              "ecommerce.spec.access-control",
+              "ecommerce.spec.concurrency-safety",
+              "ecommerce.spec.external-data-sync",
+              "ecommerce.spec.live-state",
+              "ecommerce.spec.search-ordering",
+              "ecommerce.spec.state-durability",
+              "ecommerce.spec.transactional-integrity"
+            ],
+            "observed": []
+          },
+          "promptPacks": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "scoredChecks": [
+            {
+              "category": "production",
+              "checkGroupId": "purchase-session",
+              "criterionId": "101a",
+              "description": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+              "executionId": "selected-source-022",
+              "featureId": 101,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-purchase-session.json",
+              "stableKey": "ecommerce.spec.access-control.purchase-session.101a",
+              "treatment": "expected"
+            }
+          ],
+          "checks": [
+            {
+              "category": "production",
+              "checkGroupId": "purchase-session",
+              "criterionId": "101a",
+              "description": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+              "executionId": "selected-source-022",
+              "featureId": 101,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-purchase-session.json",
+              "stableKey": "ecommerce.spec.access-control.purchase-session.101a",
+              "treatment": "expected"
+            }
+          ],
+          "observedChecks": [],
+          "scoredPoints": 2,
+          "taskSelectionSha256": "9b8f8f6340cf8d7ce1aff6f31faed94717c5bff321506f4f8a5dab4d40dc60e0",
+          "sha256": "7e72706c1086271315ac2fd1330c888113feca54494efe9734b9c8feeb3bfc00",
+          "attemptedChecks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "reportedChecks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "notRun": []
+        },
+        "firstBuild": {
+          "score": 2,
+          "max": 2,
+          "regression": null,
+          "contractPass": true,
+          "outcome": {
+            "kind": "passed",
+            "phase": "grading",
+            "reason": null,
+            "appFailures": [],
+            "inconclusive": [],
+            "harnessFailures": []
+          },
+          "source": {
+            "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+            "files": 30
+          },
+          "missed": []
+        },
+        "buildCostUsd": 0,
+        "buildSessions": [
+          {
+            "sessionId": "reference-postgres-1790638922532",
+            "costUsd": 0,
+            "durationMs": 23554,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-postgres-1790638922532"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "contractPass": true,
+        "code": {
+          "serverLoc": 2608,
+          "serverFiles": 11,
+          "totalLoc": 4526,
+          "totalFiles": 19,
+          "runtimeDeps": 10
+        },
+        "repairCostUsd": 0,
+        "repairSessions": [],
+        "repairHistory": [],
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 23554,
+          "activeDurationMs": 23554,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "tokens": 0,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheWrite": 0,
+          "cacheRead": 0
+        },
+        "turns": 0,
+        "promptBytes": 0,
+        "tokensPerTurn": null,
+        "thinking": null,
+        "repairs": 0,
+        "repair": {
+          "status": "not-needed",
+          "limit": 0,
+          "used": 0,
+          "stallLimitRounds": 3,
+          "stopReason": "not-needed"
+        },
+        "checkpoint": {
+          "artifact": "level-l3-checkpoint.json",
+          "directory": "level-l3-source",
+          "sha256": "2acc7001793a49f8a660bfdb22a1f948590f131db5c63c43d8371c4115465fce",
+          "files": 30
+        },
+        "stalled": false,
+        "regressed": false,
+        "outcome": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "durationSec": 133
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "totals": {
+      "score": 2,
+      "max": 2,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 23554,
+      "durationSec": 133,
+      "ungraded": []
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "grading",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": [],
+      "levels": {
+        "3": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        }
+      }
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7381"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

@@ -35,12 +35,36 @@ pub fn atomic_write(file_path: &Path, data: String) -> anyhow::Result<()> {
             .write(true)
             .create_new(true)
             .open(&temp_path);
-        if let Ok(file) = opened {
-            temp_file = file;
-            break;
+        match opened {
+            Ok(file) => {
+                temp_file = file;
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
         }
     }
     temp_file.write_all(data.as_bytes())?;
     std::fs::rename(&temp_path, file_path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::atomic_write;
+
+    #[test]
+    fn atomic_write_replaces_contents_and_returns_open_errors() {
+        let dir = tempdir::TempDir::new("atomic-write").unwrap();
+        let path = dir.path().join("config");
+        atomic_write(&path, "before".into()).unwrap();
+        atomic_write(&path, "after".into()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
+
+        let error = atomic_write(&dir.path().join("missing/config"), "data".into()).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
 }

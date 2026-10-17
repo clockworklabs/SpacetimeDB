@@ -1,0 +1,453 @@
+{
+  "observations": [
+    {
+      "mode": "accepted",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "380e7bf471e9222513fc0ef0ca7c91fe82a5f5255f30cb01afe4642b9ecd8cee"
+        }
+      }
+    },
+    {
+      "mode": "localhost",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "380e7bf471e9222513fc0ef0ca7c91fe82a5f5255f30cb01afe4642b9ecd8cee"
+        }
+      }
+    },
+    {
+      "mode": "refused",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": false,
+          "transport": "spacetime-websocket",
+          "bodySha256": "380e7bf471e9222513fc0ef0ca7c91fe82a5f5255f30cb01afe4642b9ecd8cee"
+        }
+      }
+    },
+    {
+      "mode": "renamed",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "8a4c9dba577141253c364c3c4f7f23fce3164c0d72038f364675606a3ca47080"
+        }
+      }
+    },
+    {
+      "mode": "scalar-fields",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "secret",
+          true,
+          17
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "2ae6084888a60e3f0aaa7298c0de4889c0bf7ea7dc740464cb84759dc8530dd0"
+        }
+      }
+    },
+    {
+      "mode": "u64-fields",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified",
+          {
+            "bigint": "9007199254740993"
+          }
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "85f0b44681e2ea9217c22aefce87b50918c85b682e19f6e4df8a12922688cf3a"
+        }
+      }
+    },
+    {
+      "mode": "optional-some",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified",
+          false
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "ccfa8f5286c121ff266878468819c6136c945a4018affa15971d5a7509041ea3"
+        }
+      }
+    },
+    {
+      "mode": "optional-none",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified",
+          null
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "c8e6e16586ac139066e6a3f96c90605fc1a9b53d1553c996087d42c819b0cb31"
+        }
+      }
+    },
+    {
+      "mode": "enum-fields",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified",
+          {
+            "tag": "Customer",
+            "value": {}
+          }
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "054dc2886d63f1d985a500d1dd8dbb38df2c22b79ead9bbd27b75e49f3a83df1"
+        }
+      }
+    },
+    {
+      "mode": "type-changing-fields",
+      "measured": false,
+      "connections": 1,
+      "received": [],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "nonmatching-credentials",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "different-customer",
+          "secret"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "missing-claim",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "secret"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "d234aa32646d4a5a6388910690fc7b6bd18c1e32d20fa62e85484e56b5b26f47",
+          "absentParameters": [
+            "role"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "reload-after-receipt",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "380e7bf471e9222513fc0ef0ca7c91fe82a5f5255f30cb01afe4642b9ecd8cee"
+        }
+      }
+    },
+    {
+      "mode": "http-reload",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "status": 200,
+          "bodySha256": "0155c66cafe0e0304c18cb5fa4dd38da2e474705eecdbd99baab1b8fa9d611c9"
+        }
+      }
+    },
+    {
+      "mode": "lost-receipt",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "reconnected-second",
+      "measured": false,
+      "connections": 2,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "second-after-receipt",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "second-then-submit-error",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "malformed-outbound",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "malformed-inbound",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "wrong-module",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "secret"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "foreign-target",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "secret"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "unsupported-protocol",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "secret"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "unsupported-schema",
+      "measured": false,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "secret"
+        ]
+      ],
+      "outcome": {
+        "name": "ActionInconclusive",
+        "message": "could not issue the replay as authentication form"
+      }
+    },
+    {
+      "mode": "app-proxy",
+      "measured": true,
+      "connections": 1,
+      "received": [
+        [
+          "customer",
+          "modified"
+        ]
+      ],
+      "outcome": {
+        "submitted": true,
+        "requestPatch": {
+          "shape": "positional",
+          "success": true,
+          "transport": "spacetime-websocket",
+          "bodySha256": "380e7bf471e9222513fc0ef0ca7c91fe82a5f5255f30cb01afe4642b9ecd8cee"
+        }
+      }
+    }
+  ],
+  "rerun": "node --test --test-name-pattern=\"SpacetimeDB auth receipts\" dist/tests/spacetime-captured-replay.integration.js"
+}

@@ -1,0 +1,186 @@
+{
+  "rerun": "node --test dist/tests/reference-request.integration.js",
+  "sources": [
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/request.ts",
+      "sha256": "b03b4554b25d8e66cc03fdc4ea27aa6522ee37b5a52738fc0f7244a5396c28b5"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/request.ts",
+      "sha256": "c26ff6caa6598e929d88a1eab07493b4e8a822062fe7ec9bcd98c3d9e3af8a11"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/App.tsx",
+      "sha256": "2cb7ff02d81e2c934c677be88fbf95f9b0bde2bb7d9d0eb552e1199696af0af9"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/App.tsx",
+      "sha256": "496408166c715a9ac23aad94da6d657596d6477fbb6937397071e9499ef97c43"
+    }
+  ],
+  "observations": [
+    {
+      "stack": "postgres",
+      "case": "json",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {
+        "ok": true
+      }
+    },
+    {
+      "stack": "postgres",
+      "case": "empty",
+      "httpStatus": 204,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {}
+    },
+    {
+      "stack": "postgres",
+      "case": "text",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {}
+    },
+    {
+      "stack": "postgres",
+      "case": "refused",
+      "httpStatus": 403,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "postgres",
+      "case": "body-aborted",
+      "httpStatus": 200,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "mongodb",
+      "case": "json",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {
+        "ok": true
+      }
+    },
+    {
+      "stack": "mongodb",
+      "case": "empty",
+      "httpStatus": 204,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {}
+    },
+    {
+      "stack": "mongodb",
+      "case": "text",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {}
+    },
+    {
+      "stack": "mongodb",
+      "case": "refused",
+      "httpStatus": 403,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "mongodb",
+      "case": "body-aborted",
+      "httpStatus": 200,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "mongodb-app",
+      "case": "json",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {
+        "ok": true
+      }
+    },
+    {
+      "stack": "mongodb-app",
+      "case": "empty",
+      "httpStatus": 204,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {}
+    },
+    {
+      "stack": "mongodb-app",
+      "case": "text",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {}
+    },
+    {
+      "stack": "mongodb-app",
+      "case": "refused",
+      "httpStatus": 403,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "mongodb-app",
+      "case": "body-aborted",
+      "httpStatus": 200,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "postgres-app",
+      "case": "json",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": {
+        "ok": true
+      }
+    },
+    {
+      "stack": "postgres-app",
+      "case": "empty",
+      "httpStatus": 204,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": null
+    },
+    {
+      "stack": "postgres-app",
+      "case": "text",
+      "httpStatus": 200,
+      "expectedRejection": false,
+      "rejected": false,
+      "value": null
+    },
+    {
+      "stack": "postgres-app",
+      "case": "refused",
+      "httpStatus": 403,
+      "expectedRejection": true,
+      "rejected": true
+    },
+    {
+      "stack": "postgres-app",
+      "case": "body-aborted",
+      "httpStatus": 200,
+      "expectedRejection": true,
+      "rejected": true
+    }
+  ],
+  "cleanup": {
+    "serverClosed": true
+  }
+}

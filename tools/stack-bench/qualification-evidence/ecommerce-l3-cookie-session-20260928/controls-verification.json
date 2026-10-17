@@ -1,0 +1,1592 @@
+{
+  "at": "2026-09-28T23:57:58.656Z",
+  "candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+  "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+  "rows": [
+    {
+      "type": "reference",
+      "backend": "spacetime",
+      "controller": "stack-bench-cookie-reference-spacetime-0ab41064a",
+      "id": "559ceb82f109afd9771867127fc541e154f4cb6af9746a59af2d3a26da3edc8b",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-report.json",
+          "sha256": "80d2c11df7628672c738de42bfdf85cf1e6f5d76ccc9f04f2c09d10aefe7b1fd"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-run.json",
+          "sha256": "5219e035bca0eb632c78a89ac62f51b6d134eab87debe11d11f9e29fac7a7667"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-grade-bundle.json",
+          "sha256": "447b61b66defb5065c29fe068ddd1c7bad70020fb8e3e13d9f5e3c17ff15300f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-lease.json",
+          "sha256": "7d09bdc42a5c969a0bb7f399b02b66367dc271b528a59170cc05fb260b5369e0"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-recovery.json",
+          "sha256": "31e9fd7676fdd2e2b5812c746ff6333b1b277682478b08463c2359f640c0fd2a"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-stdout.log",
+          "sha256": "fb539fc2762ea5eec575fd40032132c012f306c4a2ba34c21d0e9cf40e69999a"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-spacetime-controller-state.json",
+          "sha256": "c474d27ee7ac860739abaa942c6bdc9c40266346e6a9d17354b7bcd4844002a6"
+        }
+      ],
+      "results": [],
+      "summary": null,
+      "runId": "ecommerce-spacetime-run800-20260928234124-3e87427e",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f70e256c0f64ac318524fc36f92ad482f9127ddc2c8dfcb7c7fd38a7159cbecd.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/bbcbcb259c1df446babb07ed1b7b4423ef7a262c58d240b5fb15d92f5d848dce.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d0779dcb6464ad9b41529441fb83bc15df381f00a73fb94373915aa93fa9e2d7.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/ffe1b83d26baaa8685b2abdc7d578f5ef288fd3653b7b58c119e77fd62a42a07.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/250137561ec5e3aa8675259cd9b4d0fd6935573653db054c8a816e72a6c92fa3.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "80d2c11df7628672c738de42bfdf85cf1e6f5d76ccc9f04f2c09d10aefe7b1fd"
+    },
+    {
+      "type": "reference",
+      "backend": "postgres",
+      "controller": "stack-bench-cookie-reference-postgres-0ab41064a",
+      "id": "d5d8cb4bcf78083ec18b8388f37ffc70800cf9955963c07d36871921fe8bc47a",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-report.json",
+          "sha256": "00403fa29ff8954c81dc0bcc78fb1cffa7ab7fe18cb5a21f3643c5035f49d735"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-run.json",
+          "sha256": "50a8de81ae7de6ce9d3f88e501ac94082d86140b31b48ffede99f1842aec8f0f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-grade-bundle.json",
+          "sha256": "a67ce5157e336e79be3027ab7bf64d8e2dbe10b404d17bf2451762d910f7706f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-lease.json",
+          "sha256": "74d53c7163d7ad38cbcd053453c25b842e9b7c11dd02f0cc8882f42ceb5d8483"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-recovery.json",
+          "sha256": "e6568c1399877bec4066ae6a27d7d87b5a87c72a8abeda9ec6f404199ae1a582"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-stdout.log",
+          "sha256": "19408ead094ed44f03bdd404e3f89be996d54a0ec0fd59830856aa4f58ef2be2"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-postgres-controller-state.json",
+          "sha256": "47f28c2630d2168ba8155df0aa51a15ee1b8e8d5c8c69bd08190b63537e9beb7"
+        }
+      ],
+      "results": [],
+      "summary": null,
+      "runId": "ecommerce-postgres-run808-20260928234125-a39bc37e",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/9d5c4c7da6452e52609119ff55427687b6e1774ffe84cdc01df3ffde444a4506.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/32c3a4edb54b52069f9e955858146f978ad6e28a72f56d09f247bf6ba84aa9d2.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f4d7efe62351195aadb1bc52e7827689909bd534b72b8d82f4ef89adc7d56abb.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/c0a62b25e01f6aef9cf282fab652e6928b724df4c2f0491d109827620c2db331.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "00403fa29ff8954c81dc0bcc78fb1cffa7ab7fe18cb5a21f3643c5035f49d735"
+    },
+    {
+      "type": "reference",
+      "backend": "mongodb",
+      "controller": "stack-bench-cookie-reference-mongodb-0ab41064a",
+      "id": "e8ed104f69b1be4d88a41963d19067434da18201bd911f562a3ac8a4a04f77ee",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-report.json",
+          "sha256": "b3dbc0a8540de18f7f868f7c514db8730e4fe0b490f3f9132e945c3ff32b5b1c"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-run.json",
+          "sha256": "39cf527d36f04bee764b5d161bdb3d4b40a0799289c7618a3c6169c63629e38c"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-grade-bundle.json",
+          "sha256": "b1a7c87be3109577f6a2c6a54c6fb81228807fd01e99e8a7e21f66a82929dcf0"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-lease.json",
+          "sha256": "a536161eb35d29a54fcd627c3e00f1ffe4217885146943d22ed9fadc670aa118"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-recovery.json",
+          "sha256": "1d14b47c4984facfe5048d6acf3ca726e294b3b98cd6d7dce0265af19c2f3c27"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-stdout.log",
+          "sha256": "3893448f0008bf241f463a1b18a69f6af81c470a6252c24dc1b510484cf830ac"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-mongodb-controller-state.json",
+          "sha256": "c2244cad03f33e36ff3c611ac4fdbc437adcd0ff160cebdaa73e07dbb41b72f5"
+        }
+      ],
+      "results": [],
+      "summary": null,
+      "runId": "ecommerce-mongodb-run816-20260928234125-c9846678",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/5307944ae76e5734777d8013fd7c214999f2e80f2de402d6609f773ba400a6d4.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/3b2ad8681b87eeb99cd648f5b64a7a9d51c5c68a0826d044e37a99f366385c8c.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/92b6b0b1d5cc2522f4c3088becdab5c868b75142ca3ea2571e7bb8095cd1acd1.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/6708a52179268b76c2ead97546c7f2e0d92790b89ab13942eeeaaa96f79c44be.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "b3dbc0a8540de18f7f868f7c514db8730e4fe0b490f3f9132e945c3ff32b5b1c"
+    },
+    {
+      "type": "reference",
+      "backend": "convex",
+      "controller": "stack-bench-cookie-reference-convex-0ab41064a",
+      "id": "c8a5e70715bc66c3843d3aaee34cbbe6fa167b9e62c347f0c8ee6e062bea4449",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-report.json",
+          "sha256": "469c42c390d56643d8c9b39884b45106aa75f5a96f1cb0f8ef74900a192c909d"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-run.json",
+          "sha256": "3617b2b7a3555b8cfe8d07a2d0a71596b876052b3aca0abd6219a7d2181eabe4"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-grade-bundle.json",
+          "sha256": "c35482f7e214c899e621c5e2965c0879e062e38fb348109ffc7870c4c45f2fb6"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-lease.json",
+          "sha256": "2fe82685705cf50746dd1be1e96143d92335cf94bd13827ccf4b1dc36fea46ca"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-recovery.json",
+          "sha256": "2831948bd085896665234025d410078de1c135cf899dd2f4633f18053058ce5a"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-stdout.log",
+          "sha256": "b06aa106e41ecba2d0e623cc3485cc645bd14515e21ddb5d438e3e0336257e70"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-convex-controller-state.json",
+          "sha256": "681990ea3c00116331e25be8d01ba2f800473d5befbe127246824eacab0d87ba"
+        }
+      ],
+      "results": [],
+      "summary": null,
+      "runId": "ecommerce-convex-run824-20260928234126-481bd7c2",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/00300248c88b3f1f85affbbf94b397d8f3318d7a7e88fb37e78978adfde7ad44.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/485a2575b0f9edfe018de616d5aff33b330ece7b8174a35e820949d159608830.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/e200e27f6c98adf9b4fd07ac862a0b78e897f5f1eaf53105e14fa774b2aa9808.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/fb808623b6776895ef1fad956bf50d9235578e2f1bbf138e25e4d015a4a16df9.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/8bbf0f99e61d2df7dab6f49d9767979f0536a49fec76ea148e1c0f5a7ec509d9.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/b0fa6ea694b0d9b7124eb2c115a4c9b8d1447c8806d66afc5dff85b29ec6bfd9.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "469c42c390d56643d8c9b39884b45106aa75f5a96f1cb0f8ef74900a192c909d"
+    },
+    {
+      "type": "reference",
+      "backend": "null",
+      "controller": "stack-bench-cookie-reference-null-0ab41064a",
+      "id": "1095e1492057b57b621ec3fb6ddc61d7836c649c312f924fb7c1d7cb506fd7ce",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-null-report.json",
+          "sha256": "5e53fb8474b5de5c5cebdee5f4744b0fe448116e71676e7b1a11961f8c12184e"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-null-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-null-stdout.log",
+          "sha256": "694e44c17132926289995f16a220a79a8feb31222fcb04716e6c72120d71b892"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-null-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/reference-null-controller-state.json",
+          "sha256": "f13eaf735308d8b90e89931005a4466b1757f44190627ca6506f326f620da01d"
+        }
+      ],
+      "results": [],
+      "summary": {
+        "criteria": 1,
+        "points": 2,
+        "expectedFailures": {
+          "criteria": 1,
+          "points": 2
+        },
+        "expectedFailureStages": {
+          "setup": {
+            "criteria": 1,
+            "points": 2
+          },
+          "assertion": {
+            "criteria": 0,
+            "points": 0
+          }
+        },
+        "vacuousPasses": {
+          "criteria": 0,
+          "points": 0
+        },
+        "oracleGaps": {
+          "criteria": 0,
+          "points": 0
+        },
+        "unscored": {
+          "criteria": 0,
+          "passed": 0,
+          "failed": 0,
+          "inconclusive": 0
+        }
+      },
+      "runId": null,
+      "recovery": null,
+      "lockPaths": [],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "5e53fb8474b5de5c5cebdee5f4744b0fe448116e71676e7b1a11961f8c12184e"
+    },
+    {
+      "type": "mutation",
+      "backend": "spacetime",
+      "controller": "stack-bench-cookie-mutation-spacetime-0ab41064a",
+      "id": "f4a687d94e6bae59069da2a7952d071f995599106b565b232cea72939eebfe03",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-report.json",
+          "sha256": "72bf5b93774b1040dbad7e270f16ac96bf821f255fa5016db469a2887f7528ac"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-run.json",
+          "sha256": "e47e59336b2c7d4869a8a900600cfb73a220ea2b37794ee678b790a03399eee2"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-grade-bundle.json",
+          "sha256": "2a9d5be3655dafc212aa4ec41d6321bddc248be018eb1759de1ef4c13f8cd300"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-lease.json",
+          "sha256": "a4218a3aeda4b82b52fb1ef7455db6957352466b844818011e84aaed6801a154"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-recovery.json",
+          "sha256": "ff5a1c9baa150cd9481f39f7ae6bb83834f25197c90101afff07d12c4ebef4e1"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-mutation-control.json",
+          "sha256": "1d5f521bbd20f1d31caac161f0615a1373c649c3bcec9c89285d01f772e81563"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-checkpoint.json",
+          "sha256": "41b6c73c29a1e1d66859661bc078b8ae8f3486270802e367b376aee534d2e25b"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-stdout.log",
+          "sha256": "0d6b2698a7a265c5f6e4a02c6e9fa0e9406de17290259dbc2e59e81b604e43a8"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-spacetime-controller-state.json",
+          "sha256": "fc4de488fbdd7b659623c6c707b06905c5b5a6426e9626fdff88981026327db1"
+        }
+      ],
+      "results": [
+        {
+          "id": "guest-purchase-falls-back-to-the-admin-account",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the buy action was accepted for guest, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "signout-keeps-session",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim9715cfac-75c2-49f101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim25c4664e-54e5-43f101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"kimd56906b9-9181-47f101\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "caught": 4,
+        "completed": 4,
+        "total": 4,
+        "remaining": 0
+      },
+      "runId": "ecommerce-spacetime-run800-20260928234956-6b404f23",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f70e256c0f64ac318524fc36f92ad482f9127ddc2c8dfcb7c7fd38a7159cbecd.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/bbcbcb259c1df446babb07ed1b7b4423ef7a262c58d240b5fb15d92f5d848dce.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d0779dcb6464ad9b41529441fb83bc15df381f00a73fb94373915aa93fa9e2d7.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/ffe1b83d26baaa8685b2abdc7d578f5ef288fd3653b7b58c119e77fd62a42a07.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/784600d920337f51b9fae65fb18f7ca1dde2b25764fb142e5acc349d7dcf1e2b.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "72bf5b93774b1040dbad7e270f16ac96bf821f255fa5016db469a2887f7528ac"
+    },
+    {
+      "type": "mutation",
+      "backend": "postgres",
+      "controller": "stack-bench-cookie-mutation-postgres-0ab41064a",
+      "id": "cd9d9a194c62ba504c344ebf1b6f072bf16b7858cca41aa9274187715fb041f6",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-report.json",
+          "sha256": "6ad422812156dbc15b2b561ee7d1ed66e725c6f991caed3184065faf37db5c7e"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-run.json",
+          "sha256": "f2908515ad9f309e7ea003f886ab6e10bc201f4041f6b5f2d3addfac783d08c3"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-grade-bundle.json",
+          "sha256": "ef936b615327e501379c8fe43d5179963df84d7bd1a16be3e3034dc731d7fbd4"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-lease.json",
+          "sha256": "04c2c1e0857e5c49b85a72ea96ac6a7a01b94c85dd136a5b64741debe7751a95"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-recovery.json",
+          "sha256": "27a662b28b529139956c62291ca96e1eafb5be9053157f8d429ae53c4760b03a"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-mutation-control.json",
+          "sha256": "a1546cf5016fec38de752195be315806c60fe8aa0944722abd991f9e0f3ed539"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-checkpoint.json",
+          "sha256": "43b4f0875a5d9146e668eb3a87abcca8298ba85b799a76efcdb32f8b9ed6ebe2"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-stdout.log",
+          "sha256": "3b1d55885868b998c1bbfbd644f3ffec7d9ec3be85c77502c47358eb0f546968"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-postgres-controller-state.json",
+          "sha256": "fea9a55bd5e6e82c7e32d47afcb48976cd344dc850fafbf881895b3cadb5798c"
+        }
+      ],
+      "results": [
+        {
+          "id": "unauthenticated-direct-purchase-uses-default-account",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the buy action was accepted for guest, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "tampered-session-can-purchase",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim7f654dc1-8157-4af101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-trusts-cross-origin-cookie",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kimadea0b38-cd4f-4ff101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "signout-keeps-session",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control was shown when it must not be",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kimb3099f31-0898-4cf101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"kim9ef64d42-3423-47f101\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "caught": 6,
+        "completed": 6,
+        "total": 6,
+        "remaining": 0
+      },
+      "runId": "ecommerce-postgres-run808-20260928234956-e6a0a994",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/9d5c4c7da6452e52609119ff55427687b6e1774ffe84cdc01df3ffde444a4506.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/32c3a4edb54b52069f9e955858146f978ad6e28a72f56d09f247bf6ba84aa9d2.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/f4d7efe62351195aadb1bc52e7827689909bd534b72b8d82f4ef89adc7d56abb.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/026878272231b533d8b88dcf81143acad1af979175e383a6d7fd1bba1a1bd13c.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "6ad422812156dbc15b2b561ee7d1ed66e725c6f991caed3184065faf37db5c7e"
+    },
+    {
+      "type": "mutation",
+      "backend": "mongodb",
+      "controller": "stack-bench-cookie-mutation-mongodb-0ab41064a",
+      "id": "0d60c6c82e756f21f5c080521c830d7f107754edfdc32f3bd363bdc14a61cdc0",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-report.json",
+          "sha256": "939ba17aaee4a9c5273dc8c6dbf33be92a1d559bd60fe90d0b36f18b154bd6b3"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-run.json",
+          "sha256": "f517da1922f79fbf8b244f84005ea6f97e268592026019cb8da7f0b7a6e28ea7"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-grade-bundle.json",
+          "sha256": "3dc8ab505d48a2aee6514ded7baafe05d74061d5caecb5727856dd38a7cd8306"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-lease.json",
+          "sha256": "de345a4e370ef182bc7eef653a222fcafda3958e590c0ff8aef81b381e5a1e89"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-recovery.json",
+          "sha256": "a910daaef6e1b0a6753aaecbf549c365d6fae45ec4461950aa646b8e780bae59"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-mutation-control.json",
+          "sha256": "f5f9283a0b55b2bbbf029c0e0a890c198d5981808d542f3ee4bcde1cd80945e2"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-checkpoint.json",
+          "sha256": "96c0e09ce5673f21f3af80c2fd4ceb392cd12f5a71acc07e029249495c09e0a7"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-stdout.log",
+          "sha256": "17d044c890f68c20d3a78975c1d13c18a574556c452d5a26899a1e0f9a9fa83c"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-mongodb-controller-state.json",
+          "sha256": "1271e742c7af6ac0097fbc948bb9839a0667e400409f14aebd40d246ad84831b"
+        }
+      ],
+      "results": [
+        {
+          "id": "unauthenticated-purchase-defaults-to-admin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the buy action was accepted for guest, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "tampered-session-can-purchase",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim203ff67d-03d9-4ff101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "tampered-session-commits-then-refuses",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim995fc028-3e8b-4ef101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "signout-keeps-session",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control was shown when it must not be",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim297a4419-0b88-4df101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"kim2e88f455-28d1-47f101\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "rejected-query-login-creates-order",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim2b22c016-b564-46f101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "caught": 7,
+        "completed": 7,
+        "total": 7,
+        "remaining": 0
+      },
+      "runId": "ecommerce-mongodb-run816-20260928234957-ad451ae2",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/5307944ae76e5734777d8013fd7c214999f2e80f2de402d6609f773ba400a6d4.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/3b2ad8681b87eeb99cd648f5b64a7a9d51c5c68a0826d044e37a99f366385c8c.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/92b6b0b1d5cc2522f4c3088becdab5c868b75142ca3ea2571e7bb8095cd1acd1.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d50070748a17385e7eb4959838ea24f68a7be0de153270ef6c5752b32e5f6b42.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "939ba17aaee4a9c5273dc8c6dbf33be92a1d559bd60fe90d0b36f18b154bd6b3"
+    },
+    {
+      "type": "mutation",
+      "backend": "convex",
+      "controller": "stack-bench-cookie-mutation-convex-0ab41064a",
+      "id": "902335cbeffc6fe04afceb45d5840485389ec77f7e7dd44e544ea35576c9e623",
+      "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+      "exitCode": 0,
+      "ok": true,
+      "failures": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-report.json",
+          "sha256": "0a5d5107ad7781e88cda5490f41a1f8526931e16b2f2f6e6c5a49f42f12cf327"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-inputs.json",
+          "sha256": "6eeb398657f0f3a5391a8d230b9903de2a65e9eb05ed0cd5d641f6509718073f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-run.json",
+          "sha256": "6e7228d07f958114340aec32f65ca4bc0cae7dddc20fce3abc74989cf61b6cec"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-grade-bundle.json",
+          "sha256": "7fa53b648c7f59a06aa7089fc5f4989c4c21af950e70f89700bf55289eb5a20a"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-lease.json",
+          "sha256": "0bc568da1c5458d4f6463f3e0566e4100ae6b7d6ecf09ab65d7c8ee7a6625714"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-recovery.json",
+          "sha256": "af686cc94b9f7ecddf697452af53f7879a13ea4c754571ed99fc9810747d0b27"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-mutation-control.json",
+          "sha256": "daea43b4860111d07b020785431827d2c58a2ab5f59fbefd18ca162372be0f60"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-checkpoint.json",
+          "sha256": "2c9249d2cc44d04fb83a615843c830b591c4ed9765262bc3a40aa7e02fbe40ca"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-stdout.log",
+          "sha256": "16b9fc6329bc30dd3016f378040ff6d438b456500404d449e53d7ee426cbf51a"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/mutation-convex-controller-state.json",
+          "sha256": "90226ea95d4701801636e683019680b11a73e6720518db39f40c68822efae8c7"
+        }
+      ],
+      "results": [
+        {
+          "id": "unauthenticated-purchase-defaults-to-admin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the buy action was accepted for guest, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim6e858e10-f842-44f101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "signout-keeps-session",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control was shown when it must not be",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "purchase-session-rejects-returning-login",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the current-user control matching \"kim9812f67f-2625-4ef101\" did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "caught": 4,
+        "completed": 4,
+        "total": 4,
+        "remaining": 0
+      },
+      "runId": "ecommerce-convex-run824-20260928234958-6b813d41",
+      "recovery": "clean",
+      "lockPaths": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/00300248c88b3f1f85affbbf94b397d8f3318d7a7e88fb37e78978adfde7ad44.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/485a2575b0f9edfe018de616d5aff33b330ece7b8174a35e820949d159608830.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/e200e27f6c98adf9b4fd07ac862a0b78e897f5f1eaf53105e14fa774b2aa9808.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/fb808623b6776895ef1fad956bf50d9235578e2f1bbf138e25e4d015a4a16df9.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/8bbf0f99e61d2df7dab6f49d9767979f0536a49fec76ea148e1c0f5a7ec509d9.lock.json",
+          "present": false,
+          "currentRunId": null
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/e3765d49ba918eaba9c664b4d2ff05595dd177fbac92e0dc679e589d79030bc3.lock.json",
+          "present": false,
+          "currentRunId": null
+        }
+      ],
+      "remaining": [],
+      "networkPresent": false,
+      "reportSha256": "0a5d5107ad7781e88cda5490f41a1f8526931e16b2f2f6e6c5a49f42f12cf327"
+    }
+  ],
+  "pending": [],
+  "inputFiles": [
+    {
+      "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/input-reference-launch.json",
+      "sha256": "1e4b7176f9dfd1240d1a0e204c9bea99961fbb2dd507ab245631f149848fcdb7"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/input-mutation-launch.json",
+      "sha256": "b89d9dbf5f6b9a0797e4b1a231bd59d12167dca0fb18d5726d12345698299c5a"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/input-reference-scope.json",
+      "sha256": "c88bed5f072dd2ea3be9083cbe9015b144225243d95170ef6c4058e8976976dd"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/input-inputs.json",
+      "sha256": "93e7fb015821348de16f11b4e33c1465d024431e9e79f330acbec0d069b47b57"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/input-build-verification.json",
+      "sha256": "d7ebdf7b1d0caf1edb6c95c67f6c6050a5874dab6a1a6f741e39a3ccda73a31b"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/cookie-session-qualification/qualification-evidence/input-root-review.json",
+      "sha256": "69a94425ed39161d38029be25db6650fb9507a6abdd48f73772c33e4ef1c3d83"
+    }
+  ],
+  "expected": {
+    "references": 4,
+    "null": 1,
+    "mutationWorkers": 4,
+    "defects": 21,
+    "leases": 8
+  },
+  "ok": true
+}

@@ -1,0 +1,241 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-27T08-41-14-567Z",
+  "attempt": {
+    "id": "null-control-2026-09-27T08-41-14-567Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T08:41:14.568Z",
+    "completedAt": "2026-09-27T08:42:43.591Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a2df8bfcc481c060903ee29a325e5badf028f37c0778bc476188aea344552032"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "d68704b751883dd91b4cfcdf2030387a32209551ccbb475f4491318e9eeb6164"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 89023,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 46,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "dacff94c546a277dabfd9c4f800864624609eba03e50987e586e41f4aa91a0fc",
+      "executableSha256": "a624ae4170d100a9133db5ed2ac3686a6be63153564eedd333c1cdae11c4c817",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "3166219805952c8b40592c74fbe56f81499f5c23ef6a988f5a5615799ab1fa20",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "de389b07471bf1b3bc20622a8f647612dd9332c6d9ba919e69321938162bd679"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 10,
+      "points": 16,
+      "expectedFailures": {
+        "criteria": 10,
+        "points": 16
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 9,
+          "points": 15
+        },
+        "assertion": {
+          "criteria": 1,
+          "points": 1
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-012",
+        "scenario": "scenarios/01-catalog-search.json",
+        "feature": 2,
+        "featureName": "Public catalog search",
+        "criterion": "2d",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "failed",
+        "failureStage": "assertion",
+        "detail": "the search-input control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-070",
+        "scenario": "scenarios/progression-catalog-management.json",
+        "feature": 622,
+        "featureName": "Catalog management",
+        "criterion": "622a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-070",
+        "scenario": "scenarios/progression-catalog-management.json",
+        "feature": 622,
+        "featureName": "Catalog management",
+        "criterion": "622b",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-071",
+        "scenario": "scenarios/progression-catalog-volume.json",
+        "feature": 622,
+        "featureName": "Catalog management",
+        "criterion": "622c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-076",
+        "scenario": "scenarios/progression-faceted-filters.json",
+        "feature": 401,
+        "featureName": "Filters compose",
+        "criterion": "401a",
+        "points": 3,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the category-filter control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-077",
+        "scenario": "scenarios/progression-faceted-pagination.json",
+        "feature": 402,
+        "featureName": "Pages are stable",
+        "criterion": "402a",
+        "points": 3,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the minimum-price control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-096",
+        "scenario": "scenarios/progression-search-ordering.json",
+        "feature": 402,
+        "featureName": "Purchases preserve search ordering",
+        "criterion": "402b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-114",
+        "scenario": "scenarios/progression-support-triage.json",
+        "feature": 611,
+        "featureName": "Support triage",
+        "criterion": "611a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the support-link control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-114",
+        "scenario": "scenarios/progression-support-triage.json",
+        "feature": 611,
+        "featureName": "Support triage",
+        "criterion": "611b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the support-link control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-114",
+        "scenario": "scenarios/progression-support-triage.json",
+        "feature": 611,
+        "featureName": "Support triage",
+        "criterion": "611c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the support-link control did not become available in time"
+      }
+    ]
+  }
+}

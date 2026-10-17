@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "kind": "classifier_qualification_reuse_review",
+  "reviewedAt": "2026-09-28T15:47:54.156Z",
+  "baseCommit": "cbd3e8354a4c2a5a8da5b55d2d5818a4bfed7f7b",
+  "candidateCommit": null,
+  "diff": {
+    "command": "git diff --binary HEAD -- tools/stack-bench/src/actions/browser-action-executors.ts tools/stack-bench/tests/browser-action-executors.test.ts",
+    "sha256": "dfe12a5d21ba220c1cd9eb420c53877c036d3def591ac2675e0f4299e80b9d71",
+    "bytes": 7620,
+    "files": [
+      {
+        "path": "tools/stack-bench/src/actions/browser-action-executors.ts",
+        "rawSha256": "b3340ca963402817f5f11db9ad4c0e7dcfede75f565a4e88c9ec43f04dc167d8",
+        "lfSha256": "cff84ac08c14fa7ba4da515c204c1f888758c981a4b8864f650cf34eedd3675b"
+      },
+      {
+        "path": "tools/stack-bench/tests/browser-action-executors.test.ts",
+        "rawSha256": "21f177c4b207c1ce700eb5e6b145b85e8b906adf28a2776c4f438b5f818e588b",
+        "lfSha256": "21f177c4b207c1ce700eb5e6b145b85e8b906adf28a2776c4f438b5f818e588b"
+      }
+    ]
+  },
+  "finding": "No correctness or unnecessary-complexity finding in the per-attempt click classifier. Completed clicks and unresolved earlier attempts stay inconclusive. Explicit same-attempt pointer interception may reach the existing control-blocked application finding.",
+  "mechanism": {
+    "installedPlaywright": "1.62.1",
+    "coreSha256": "9393fa79e1c67c74edc26b610d65a4f7ed73d345a762465cc88340a33a2454ac",
+    "proof": "Installed first trusted matching event fixes interceptor result; an interception prevents subsequent down/up/click propagation. A result of done cannot later become interception in the same attempt.",
+    "audit": {
+      "path": "postgres-r3-transfer-audit/audit.json",
+      "sha256": "4f0760d57db5f0b589e35b2a54730ae487be7989ef4350485d3042e39b483b1e"
+    }
+  },
+  "reuse": {
+    "proposedFreshScoredChecks": 0,
+    "retainedChecks": 112,
+    "slices": 110,
+    "artifacts": 64,
+    "calibration": {
+      "path": "tools/stack-bench/tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sha256": "db36b7c4bdf1886b1dc5dd20d6b5aa4b96efe89a4e5246f9d523c4b280482676"
+    },
+    "selectedKeysSha256": "4c132dd7afe06bddfb29f9d773d1040da645ea6462e28ceeb98e2873c522137d",
+    "sliceBindingsSha256": "2284cf0403c7477021b40de46649fdbe519e46c9c104c520cf49f7ab9d3cd2a2",
+    "rationale": "Only an old inconclusive blocked-click path changes classification. Hash-verified accepted references and mutation runs are all passed with zero run failures/process errors; accepted null criteria are all expected_fail. They cannot rely on this changed inconclusive path. Scenarios, selectors, references, fixtures, mutations, budgets and delivered contracts are unchanged. Auth patch and response-loss callers propagate submission failures; they do not turn this inconclusive branch into a passing accepted observation.",
+    "requiredPromotion": "After freeze, derive exact executable mappings for each original measured kind/stack/mutation scope using existing qualificationReuse. Preserve all original slices/history. Normal check-calibration and qualification-status must pass. This review does not change qualification or waive those checks.",
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-reference.json",
+        "sha256": "c984f9495874f4924732d79a1985c6a2c4dcf0a16c2e18fa0d44da469f859635"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/convex-mutation.json",
+        "sha256": "8b2bfde52ac6a816bfa7dee2d9733fb82677b9a88418dbf06da53116006991c1"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-reference.json",
+        "sha256": "241e507d6d3f5748a2b7c525caed31ff8edf63fdf834dc0e560dcf2f50f27bdb"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/spacetime-mutation.json",
+        "sha256": "1f8506fb9a3110f69ccdbfb691f950885546a51cdd0107f847e520d7635b17f5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-3213109f5/null.json",
+        "sha256": "aea50eb653e6f5380dc0ea4163d85df2bb43f502fb709442e0b653ac197234f7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-reference.json",
+        "sha256": "1c7260b43cd367419f30356d1cf493ec4359acdae57ec5be6cac6df7a8b70a2f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-mutation.json",
+        "sha256": "9929e0620404d3e0e7f2023c7ace6b13997f38669940b2c3d5dd1bf6f7d545f2"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-remaining-composed.json",
+        "sha256": "d8dbd0936f12c2f63319b4ff95eafc374d96d56fcabd7013839133f9b907f8fd"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/spacetime.json",
+        "sha256": "9a342f905d219d9bd35a7d054486258770ab1a586fb61eeb8cab96ba9af13d67"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/postgres.json",
+        "sha256": "923abde3099cb6a1a30c8636c069d684344ddf6b19d48c34d556890d4ccb8d2f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/convex.json",
+        "sha256": "d367e27302edf416beb555109cb66e4c0c1134029d5b42d6f2fc26a396c9cd90"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/mongodb.json",
+        "sha256": "425a084e605fac74c7f4f942832bca12f0a615ad77bd2429b4e098b9957c2edf"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/null.json",
+        "sha256": "1f567d2ca9593cbe7cfe51cc4f11d82651ad740d3fe688a8a758f0f303a19cb2"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-navigation-20260927/mongodb.json",
+        "sha256": "4d187a594a1b2c00312c2058bf3b5133abbea2a592a6e06a1112e283ca0c7c14"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-navigation-20260927/postgres.json",
+        "sha256": "be48305da255d52f183d590a6aba886b3721689632452824194acbec96d2c53c"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-navigation-20260927/spacetime.json",
+        "sha256": "b7061a85767031e426af8d36c08e658087ca41aa0cf442730bdacafdacc3bc2f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-navigation-20260927/convex.json",
+        "sha256": "58de2cd2a7e7a9aa326c96fd5a4a8d374a573cb04cb8731c98935397e3db46d0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-navigation-20260927/null.json",
+        "sha256": "f634ff10016fcb326c1b3112e93743f4e09b8d3d7129cfd7ba964e2e4a170e6e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.json",
+        "sha256": "fcd2a5346c286b3fff2782aa43f367098a752721a0ffcab736477da0ab6016a3"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/spacetime-controls.json",
+        "sha256": "04e1f6fcc6aae1c0f302d6d9b57583a3471dffb0861371020202857230115e56"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/postgres-controls.json",
+        "sha256": "2570a146dd44d55aab4250c50be0dc7ac1fb1e8f077ecdca8f36d06badaa5b99"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/mongodb-controls.json",
+        "sha256": "885621424fd2c633b49c70b97bf10cf549163ddaeff4b3a38849671b8fd379ae"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/convex-controls.json",
+        "sha256": "254df573258d713cb2e3249fd2e8e157d59d33cd8bf168c439c51765002b4e14"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/null-appliance.json",
+        "sha256": "d4c535e3b0e3e50c0dc7a21d9345cea26b392fd6d606b48071c0c5953ab6a16e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/spacetime-controls.json",
+        "sha256": "3fd4f2730c32f1b9352e75569538c5ac9340e2ced4fc7d53efb0ac61e53bf073"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/postgres-controls.json",
+        "sha256": "0731e174f79aa6e7a4d1c2c6c3ffe39abc99179a4b291d7043b23934e3f15ac6"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/mongodb-controls.json",
+        "sha256": "bffbfd5e49aaa63eb832f0178a4e608f60378f1086050badab0dbc6205239985"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/convex-controls.json",
+        "sha256": "9b068b7355613c88ef8e96053cd57b5cc9ff538e73d0d66dd13503b736be7141"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/null.json",
+        "sha256": "24fb70b9254b47eb954aece0cbe1816b6ae7fde842dd961ed011414f01f51e3b"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-spacetime.json",
+        "sha256": "08f50dfbe591884d67e6a8c89857451da0edb53bbc0099a0854da82ee1148ed0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-postgres.json",
+        "sha256": "c132dc4a33cc07c752284d27ffae53df2c7dc8e11e27d2671371fc8fdd05aa79"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-mongodb.json",
+        "sha256": "b2eb14f687cdee0b8767900d480fcd7472c33878505bc42edd19ef460ee177ee"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-convex.json",
+        "sha256": "3c49aa41b91d9983d5d3b6c6e6bb5307bd62caf1104c25abcc2c105b4f61b974"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/entry-navigation-null.json",
+        "sha256": "190a0ab4a918193709180be1fe87b2f777a2bbc163a4f87d61b67ad7b7358edd"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-spacetime-controls.json",
+        "sha256": "f108017a151aad19d6e0afa3eaf9b8d3bf5ae7e124b43566f2427c59674093ea"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-postgres-controls.json",
+        "sha256": "2cd4f9b5d2ef4e0085f4c060c0281f2d310155a15bed41109359fcbd5aa51504"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-mongodb-controls.json",
+        "sha256": "46f0c2ed442cade8142d0404b3a0f3ff8e4e16e2c4ff9153f80aae8309c1cee5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/retained16-convex-controls.json",
+        "sha256": "e1d367d3c57a9880d83bd0ad44424ed2373715ff3f921d642c5c85467ffdb235"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-spacetime-controls.json",
+        "sha256": "c672f7c24ce611cd1235e97e688c334020a5392881fbc48b09a4e88dc8d28e24"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-postgres-controls.json",
+        "sha256": "ee4647ef1fd5220de7032d64f0b48ea9128077192a66a6181247ddc1883f08f0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-mongodb-controls.json",
+        "sha256": "92f3114ac287e3e9c1c8e3cdda193729d872372c840fa999c5135ca4e8d81003"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-convex-controls.json",
+        "sha256": "6f396ab7fded12bb05aed3400906d02abe6293ecd0a7b279b8b66afb539cd36d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/null.json",
+        "sha256": "57e7ba0d3937a3e4554743a2e96fb299851b76abfcff408f4fa520b35d18dfa6"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/privacy9-null.json",
+        "sha256": "5d6b05d8683498b67f6eb95a790fe776aabb4c87401aa80da4257917ab77cab0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/reused-spacetime.json",
+        "sha256": "303917ec0605dbbb71f33d584de36a230e2fa65d8c99b659d07ba3e867beb2ba"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/reused-convex.json",
+        "sha256": "fcc8d528fc478b6611c3342ed00539c0f256a1a546a80872026e46cc79021a48"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/reused-null.json",
+        "sha256": "a14d286df655e0207634296ea4daf14c02bf9ca20b73620e5916f8bbe927724e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-postgres-qualification.json",
+        "sha256": "ea0004c9cb9a9a52151d00ac3e6990d6f155e2b8f3646878d918168864fe4d2c"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149-mongodb-qualification.json",
+        "sha256": "3e2eac1d8415588a0169412fea312a8de6c6e15f07f845dd7565f93de9993039"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/spacetime.json",
+        "sha256": "4209a76841f5f49d9148193e7d7fb4167456f959a2bac3cc0b1c7b7807bc4d1f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/postgres.json",
+        "sha256": "5dd91f6da23103d7d3f9db7f65fbdabe0348e5ec7ea93795ec5bbf1622751633"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/mongodb.json",
+        "sha256": "96e3daedd3f32185df9fdc5f9e5e85a814345f2736566b0003cf4678a0e30c89"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/convex.json",
+        "sha256": "cac9d56d2db15010f6026eac152d4509869aba436b6db936c692b2c96f3cf87e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/null.json",
+        "sha256": "0d71f88e4a2f552bba64dbc91845131ac60adeb6418cfa2cb4dbea5a27df0039"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-faceted-ranking-20260928/spacetime.json",
+        "sha256": "c3fd2f3caff6ae74a696d712b2c45e0cb945e03357c684f16bbdc8b3881e8ca8"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-faceted-ranking-20260928/postgres.json",
+        "sha256": "eb885dea3356dfadd478c258530175e9f039e2bbc96b68ea34b6c97f3a479e28"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-faceted-ranking-20260928/mongodb.json",
+        "sha256": "0cbbcd27bd7b2a1d7dc8ba791ffadf228fd45887118b11a42cd304dd07ce4a17"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-faceted-ranking-20260928/convex.json",
+        "sha256": "4cd21392ea118520b91193bcb6a0b4d60dd7c7c7bca63c356fc227d53f504ef2"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-faceted-ranking-20260928/null.json",
+        "sha256": "55bcaa98f3f869fd5d28abc2b740061fbbcb529c64d1ca134ec118f733772cb5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-readiness-20260928/spacetime.json",
+        "sha256": "975f41f2300992ea6de7b24e17445cb0b0a5b89836ef3f8a00ff9d03a6ee7940"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-readiness-20260928/postgres.json",
+        "sha256": "5a65511113fe1840dd113f00b2ec9fad6fcb280abaf02d680b709e5972f2d01a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-readiness-20260928/mongodb.json",
+        "sha256": "81b8efde3088b3f8ae41a2f036eabb180f2cf97f0b162c9a67db3a9a98dd0d40"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-readiness-20260928/convex.json",
+        "sha256": "d39058cbdaa3ab85d8a45644180b64f97af14dc9d603f321a238917b7d551d6e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-readiness-20260928/null.json",
+        "sha256": "9eed680b81fd0e83939ab34d7e0a3375f0c58ffc2e391c0677a07b04247bd3d4"
+      }
+    ]
+  },
+  "validation": {
+    "files": [
+      {
+        "path": "click-interception-red-2.json",
+        "sha256": "c670b577615fc78880460b83bbf2c535e3739b572117eddda45f8bf59e5105de"
+      },
+      {
+        "path": "click-interception-red-2.json.mixed.json",
+        "sha256": "d1fbcd559889d40a4e78256667c16be98c7a3896b738d441bc6420555e3aaf58"
+      },
+      {
+        "path": "click-interception-red-2.log",
+        "sha256": "204aa4b3bda153086fb72e99e4ec0e115a8f4a455ce58ea27388294225c73a0f"
+      },
+      {
+        "path": "click-interception-green.json",
+        "sha256": "6ed46d2432aa22998ffa29b19bbd2087430f7b6e9aade5b80e40ace53f9f2dc0"
+      },
+      {
+        "path": "click-interception-green.json.mixed.json",
+        "sha256": "7f571ebd9487e0327b96c1a238e322953054c525cc12e14b7475d6100758f6d3"
+      },
+      {
+        "path": "click-interception-green.log",
+        "sha256": "4b3940ddd01f5fdd3e180dc1cac528c726889b55464dc0644553d7a53b162a95"
+      }
+    ],
+    "red": "Prevented-event case failed with incorrect inconclusive; delivered and mixed cases passed.",
+    "green": "All three real browser cases passed. Prevented pointerdown/click remain absent and outcome is failed/control-blocked. Mixed blocked-then-delivered remains inconclusive with exactly one delivered click and one locator invocation.",
+    "otherParentReported": [
+      "typecheck passed",
+      "page-failure tests3 passed"
+    ],
+    "runsByReviewer": 0
+  },
+  "limits": [
+    "No calibration edit, build, launch or commit performed.",
+    "Smooth-scroll investigation remains separate and unsettled. This review does not classify the underlying PG3 clickability as an app defect or authorize reuse after a scrolling behavior change.",
+    "Preserve original PG3 inconclusive grade. Any later grade is separate evidence."
+  ]
+}

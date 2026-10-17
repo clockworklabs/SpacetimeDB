@@ -1,0 +1,34 @@
+== mongodb reference (dependency L6, selected deep scenarios)
+  TOTAL 44/44  $0  0 repair(s)  1227s
+CAUGHT               customer-can-save-reorder-rule — expected ecommerce.spec.access-control.automatic-reorder-access.502c
+CAUGHT               delivery-timer-advances-cancelled-orders — expected ecommerce.l3.order-delivery.order-delivery.305a
+CAUGHT               shipped-order-delivery-waits-an-hour — expected ecommerce.l3.order-delivery.order-delivery.303a
+CAUGHT               automatic-restock-skips-threshold-boundary — expected ecommerce.progression.automatic-reorder.automatic-reorder.502a
+CAUGHT               pending-order-shows-return-button — expected ecommerce.returns-pricing.cancellation-and-return.3e
+CAUGHT               promotion-revenue-records-undiscounted-subtotal — expected ecommerce.progression.promotion-reporting.promotion-report-revenue.622b
+CAUGHT               customer-can-issue-support-refund — expected ecommerce.spec.access-control.support-refund-access.615c
+CAUGHT               inactive-cart-expiry-reset-by-reservation-release — expected ecommerce.l3.cart-expiration.cart-expiration.304a
+CAUGHT               partial-restore-drops-unavailable-silently — expected ecommerce.progression.cart-recovery.cart-recovery.503b
+CAUGHT               automatic-restock-dedupe-keyed-by-stock-level — expected ecommerce.spec.transactional-integrity.automatic-reorder-deduplication.502b
+CAUGHT               support-order-link-is-not-saved — expected ecommerce.progression.order-support.order-support-owned.614a
+CAUGHT               catalog-creation-not-recorded-in-activity — expected ecommerce.progression.staff-activity.staff-activity.624a
+CAUGHT               support-refund-leaves-case-open — expected ecommerce.progression.support-refunds.support-refunds-resolution.615a
+CAUGHT               delivery-notifications-are-not-owner-scoped — expected ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               promotion-redemption-counted-when-applied — expected ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a
+CAUGHT               customer-sees-staff-activity-tools — expected ecommerce.spec.access-control.staff-activity-privacy.624b
+CAUGHT               full-cart-restore-shows-unavailable-warning — expected ecommerce.progression.cart-recovery.cart-recovery.503a
+CAUGHT               support-order-link-skips-order-ownership — expected ecommerce.spec.access-control.order-support-ownership.614b
+CAUGHT               recommendation-dismissals-are-not-owner-scoped — expected ecommerce.spec.access-control.recommendation-feedback-privacy.504b
+CAUGHT               support-refund-replay-overwrites-case-total — expected ecommerce.spec.transactional-integrity.support-refund-accounting.615b
+== mongodb level 3 reference
+  TOTAL 176/176  $0  0 repair(s)  2415s
+
+== mongodb round 2: reference on the affected deep scenarios
+  TOTAL 26/26  $0  0 repair(s)  705s
+CAUGHT               startup-delivery-catch-up-duplicates-delivered-orders — expected ecommerce.l3.deferred-integrity.exactly-once.312a
+CAUGHT               delivery-notification-addressed-to-order-id — expected ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a, ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               recommendations-capped-at-highest-purchase-price — expected ecommerce.progression.personalized-recommendations.personalized-recommendations.403a
+CAUGHT               startup-restarts-cart-inactivity-deadlines — expected ecommerce.l3.deferred-durability.restart-survival.316a
+CAUGHT               delivery-due-time-kept-only-in-memory — expected ecommerce.l3.deferred-durability.restart-survival.315a
+CAUGHT               dismissal-does-not-refresh-open-recommendations — expected ecommerce.progression.recommendation-feedback.recommendation-feedback.504a, ecommerce.spec.access-control.recommendation-feedback-privacy.504b
+CAUGHT               recommendations-exclude-only-first-order-items — expected ecommerce.spec.access-control.recommendation-profile-isolation.403b

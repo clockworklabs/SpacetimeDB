@@ -1,0 +1,576 @@
+{
+  "result": "passed",
+  "rerun": "node --test dist/tests/item-navigation.integration.js",
+  "evidence": [
+    {
+      "layout": "separate",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog search",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2d",
+            "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790497692167,
+                "completedAtMs": 1790497693747,
+                "durationMs": 1580
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "fill",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "filled": "search-input"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497692167,
+                      "completedAtMs": 1790497693740,
+                      "durationMs": 1573,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497693741,
+                      "completedAtMs": 1790497693746,
+                      "durationMs": 5,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "user-content"
+              ]
+            },
+            "statedBy": "Search matches any part of an item name without regard to case across the full catalog"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790497692044,
+            "completedAtMs": 1790497692162,
+            "durationMs": 118
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "catalog-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790497692045,
+                  "completedAtMs": 1790497692160,
+                  "durationMs": 115,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      },
+      "routes": [
+        "/",
+        "/catalog"
+      ],
+      "setup": [
+        {
+          "do": "click",
+          "actor": "visitor",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "unlessVisible": "search-input"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "2d",
+          "category": "feature",
+          "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+          "points": 1,
+          "statedBy": "Search matches any part of an item name without regard to case across the full catalog",
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "mirrorLESS",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Mirrorless Camera",
+              "in": {
+                "testid": "search-results"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "layout": "direct",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog search",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2d",
+            "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790497693854,
+                "completedAtMs": 1790497695404,
+                "durationMs": 1550
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "fill",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "filled": "search-input"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497693854,
+                      "completedAtMs": 1790497695397,
+                      "durationMs": 1543,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497695398,
+                      "completedAtMs": 1790497695403,
+                      "durationMs": 5,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "user-content"
+              ]
+            },
+            "statedBy": "Search matches any part of an item name without regard to case across the full catalog"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790497693815,
+            "completedAtMs": 1790497693854,
+            "durationMs": 39
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "search-input"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790497693815,
+                  "completedAtMs": 1790497693854,
+                  "durationMs": 39,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      },
+      "routes": [
+        "/"
+      ],
+      "setup": [
+        {
+          "do": "click",
+          "actor": "visitor",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "unlessVisible": "search-input"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "2d",
+          "category": "feature",
+          "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+          "points": 1,
+          "statedBy": "Search matches any part of an item name without regard to case across the full catalog",
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "mirrorLESS",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Mirrorless Camera",
+              "in": {
+                "testid": "search-results"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "layout": "missing-link",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog search",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2d",
+            "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "visitor",
+              "summary": "the search-input control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "search-input",
+                  "detail": "locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"search-input\"],#search-input').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790497715494,
+                "completedAtMs": 1790497720498,
+                "durationMs": 5004
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "fill",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-interaction-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the search-input control did not become available in time",
+                    "finding": {
+                      "kind": "page-timeout",
+                      "fields": {
+                        "control": "search-input",
+                        "detail": "locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"search-input\"],#search-input').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790497715494,
+                      "completedAtMs": 1790497720496,
+                      "durationMs": 5002,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "user-content"
+              ]
+            },
+            "statedBy": "Search matches any part of an item name without regard to case across the full catalog"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790497695481,
+            "completedAtMs": 1790497715493,
+            "durationMs": 20012
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790497695481,
+                  "completedAtMs": 1790497715493,
+                  "durationMs": 20012,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      },
+      "routes": [
+        "/"
+      ],
+      "setup": [
+        {
+          "do": "click",
+          "actor": "visitor",
+          "testid": "catalog-link",
+          "ifAvailable": true,
+          "unlessVisible": "search-input"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "2d",
+          "category": "feature",
+          "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+          "points": 1,
+          "statedBy": "Search matches any part of an item name without regard to case across the full catalog",
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "mirrorLESS",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Mirrorless Camera",
+              "in": {
+                "testid": "search-results"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

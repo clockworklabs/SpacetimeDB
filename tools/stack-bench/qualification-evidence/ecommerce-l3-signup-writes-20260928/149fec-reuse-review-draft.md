@@ -1,0 +1,11 @@
+# 149fec retained evidence proposal
+
+Candidate: 149fecf8bf454309cdc7473982e175c442b56286. Frozen diagnostic image: sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730. This is a proposal, not qualification or a calibration change. All 66 current controls and matching reference evidence must pass before promotion.
+
+This extends the c033 retained-101 proposal. The final source review is 149fec-reuse-delta-review.json, SHA256 964c659bfdbd951620718f49a0dd06fbca92f6db92ef97be34a1d8667a39dc55. The changed hook runs only for captured signup in 103a/103b. It gives baseline and modified signup the same minimum two-second observation window. No retained historical key, retained f7 nine-key caller, or null path gains a caller. Root reports 28 behavioral checks passed. This supports the source review but does not replace live qualification.
+
+prepare-149fec-reuse.mjs verifies exact candidate, frozen image/source/output bytes, current reference sources, original artifact/snapshot hashes, retained check identities, selected mutation controls and slice closure. It derives each executable mapping with qualificationScopeIdentity. It keeps historical 101 coverage separate from supplemental f7 SpacetimeDB/Convex nine-key slices and the successful 8b eleven-key null slice.
+
+Supplemental source snapshots and the null artifact were copied without changes from the retained state volume through the existing dashboard controller. All three original snapshots have the same SHA256 a176a3c7c578d29a6959f9fdbef741efed718c0bf6b326e60c05765be9548a12. They are qualification snapshots, not reconstructed builder inputs. The original mutation qualification artifacts support both their reference and mutation slice entries through the existing measured-kind validation. Each supplemental entry must pass normal validateQualificationSlice before the proposal is written. Failed prior PostgreSQL/MongoDB artifacts are excluded.
+
+Promotion must preserve original artifacts, snapshots, image IDs and hashes. Add the exact reviewed executable pairs and complete non-overlapping slices, then run the normal calibration validator. The saved 8b null slice covers the eleven replacement keys; historical null slices retain the other 101. This proposal does not alter production calibration.

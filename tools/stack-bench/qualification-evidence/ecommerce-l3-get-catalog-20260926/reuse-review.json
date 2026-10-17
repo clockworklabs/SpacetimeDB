@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "0b843829d0e3774dd175d65a6ee60f69738d9cf8",
+  "contractTextEquivalences": [
+    {
+      "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
+      "toTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7"
+    },
+    {
+      "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
+      "toTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7"
+    }
+  ],
+  "changes": {
+    "capture": "Privacy actors track started GET/OPTIONS as well as writes before ordinary reload/application-return. Native EventSource remains observed through its existing stream path and is not awaited to EOF. Existing deadline, missing-body policy, public predicates, fault reloads and write replay are unchanged. Long polls may exhaust the deadline and stay inconclusive. The final absence assertion also drains started requests before headers within its existing one-second drain. A captured leak takes precedence; outstanding requests cannot establish absence.",
+    "catalog": "The catalog may be on the initial page or behind catalog-link. The catalog-only contract now declares that hook. Check2a optionally navigates unless item-list is already visible, then runs unchanged name/price/stock assertions.",
+    "reuse": "Exact old/new task hashes authorize contract TEXT equivalence only. Requirements, task mode, contract identity/ownership/metadata, shared runtime/fixture/budgets, execution order, checks and scenarios still must match. Changed catalog scenario cannot reuse old evidence."
+  },
+  "contractReview": {
+    "diff": "Only catalog-items contract adds optional navigation prose and a catalog-link hook row. Product fields, fixture and reference app sources do not change.",
+    "execution": "Contract first-column IDs feed hook selection; catalog-link is scenario-deferred and has no added scored lint assertion. Existing grader storage-interface decisions use unchanged contract IDs. The fixed reference agent ignores rendered task contents. Thus this text clarification does not change unrelated fixed reference/control executions.",
+    "scope": "All prior scenarios remain reusable only after existing exact checks pass; catalog2a is replaced for every stack and null. Mongo customer-profile scenario is replaced in full.",
+    "normalization": "Four distinct saved input snapshots have two raw task hashes. After existing interface-neutral normalization, only catalog-items shared text differs. Earlier raw interface-block differences remain covered by the existing stack-scope rule."
+  },
+  "validation": {
+    "capture": "33 real Chromium checks pass. Both the GET/reload race and final pre-header absence gap failed their before controls. After: clean passes, leaking fails, stalled is inconclusive; GET/PUT, delayed headers, never-arriving headers and open EventSource are covered. The first final-header compile attempt had a diagnostic type error; it is preserved locally, fixed with the existing empty transport-incomplete finding, and the final build/typecheck and all33 checks passed.",
+    "catalog": "Five real browser cases: initial and linked catalog pass; wrong price, missing item and dead link fail. One earlier initial navigation inconclusive was retained; no timeout/retry policy changed.",
+    "references": "Four catalog references pass1/1 and four matching price defects are caught. Mongo profile passes5/5 and all three profile defects are caught. Empty app fails catalog2a at the assertion. On the final observer, all five absence checks on each of the four stacks get new positive reference evidence (complete four-scenario order, nine checks per stack). Final Mongo profile evidence also catches its three defects. Other mutation evidence is reused: predicates, scenarios, canaries and reference source are unchanged; the new guard only refuses missing evidence and preserves observed-leak failure.",
+    "reuse": "Failure cases were written before implementation. Wrong task hashes, absent/changed evidence, changed requirements/owners/scenario and empty rationale rejected. Assembled normal calibration compiler remains the final gate.",
+    "savedL3": "Affected canceled Mongo L3 has no completed bundle; normal saved-source replay refuses it. No fabricated bundle, source repair or historical relabeling. Exact original pending-body cause remains unproved."
+  },
+  "evidence": [
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/reload-before.json",
+      "sha256": "4023fd4bdf7745b9448a324ddd3eba0b560fa5c44e447c0de8950d481001a999"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/headers-before.json",
+      "sha256": "b608a6e57aedd5e9616c97fbd7f0fd76dfa69cc20827068f3f318517e3b4e808"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/reload-after.json",
+      "sha256": "c19a5cebd65f581d0353a77cd9b52a402c72722cb594a0800e9ae207697ce6c1"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/pending-after.json",
+      "sha256": "5a38fe44b8e5bda77fa9f5d09bdab80aafbaa5e3c2ba904b56def5198f926e72"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/capture-after.json",
+      "sha256": "0cc98fdbdfc7f6c4c3488f469403d30a9ef0af9d8a287dcf4dd1d94d30bef80f"
+    },
+    {
+      "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/reuse-controls.json",
+      "sha256": "b407f4a7e7866db1a9bf71e94b60beefa396374aaec02923d4a215726f93aa25"
+    }
+  ],
+  "sources": [
+    {
+      "path": "grader/grade.ts",
+      "lineEndings": "lf",
+      "sha256": "eddab842f55f840179ca72ad9e74fa797dd199d949d1b50c9408fb992f2ff527"
+    },
+    {
+      "path": "src/composition/qualification-slices.ts",
+      "lineEndings": "lf",
+      "sha256": "f2f2753019257cb1f6fc8b044b2cfba29cb66d19aa97ec40de08e065891e053b"
+    },
+    {
+      "path": "src/composition/calibration-compiler.ts",
+      "lineEndings": "lf",
+      "sha256": "0dafc973e5e43dd9a02f89e07cbc97004f07609d957ddddfff749dffbd947e3d"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/catalog-items.md",
+      "lineEndings": "lf",
+      "sha256": "9f20f9931f1018a9e86d0e00cc1962b059c300487ff9ff0e99e27ea2ba35a43f"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "lineEndings": "lf",
+      "sha256": "fffd19ffdd581ab2171b5e85382a388759086d08172fe4ab7e680e3c429eb96c"
+    }
+  ],
+  "limits": "Four-stack dependency L1-L3 only. No Supabase, sequential or L6 qualification. No historical results are promoted by this review. Prior failed diagnostic launch with two workers for one mutation is preserved locally; it ran no mutation and corrected launches use one worker."
+}

@@ -1,0 +1,1011 @@
+{
+  "rerun": "STACK_BENCH_ITEM_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern=\"catalog ranking distinguishes\" dist/tests/item-navigation.integration.js",
+  "browserVersion": "151.0.7922.34",
+  "names": [
+    "Air Purifier",
+    "Bluetooth Speaker",
+    "Coffee Grinder",
+    "Desk Lamp",
+    "Espresso Machine",
+    "Gaming Mouse",
+    "Headphones",
+    "Induction Cooktop",
+    "Keyboard",
+    "Laptop Stand"
+  ],
+  "scenario": {
+    "schemaVersion": 1,
+    "track": "ecommerce",
+    "level": 1,
+    "name": "Ecommerce L1 catalog ranking",
+    "note": "This scenario owns only the initial storefront ranking check.",
+    "features": [
+      {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "actors": [
+          "visitor"
+        ],
+        "setup": [
+          {
+            "do": "click",
+            "actor": "visitor",
+            "testid": "catalog-link",
+            "ifAvailable": true,
+            "unlessVisible": "item-list"
+          }
+        ],
+        "criteria": [
+          {
+            "id": "2b",
+            "category": "feature",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "statedBy": "Show the ten most-purchased items and break ties by item name",
+            "steps": [
+              {
+                "do": "expectSequence",
+                "actor": "visitor",
+                "testid": "item-name",
+                "in": {
+                  "testid": "item-list"
+                },
+                "equals": [
+                  "Air Purifier",
+                  "Bluetooth Speaker",
+                  "Coffee Grinder",
+                  "Desk Lamp",
+                  "Espresso Machine",
+                  "Gaming Mouse",
+                  "Headphones",
+                  "Induction Cooktop",
+                  "Keyboard",
+                  "Laptop Stand"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "mode": "plain",
+      "expected": "passed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577498023,
+                "completedAtMs": 1790577498030,
+                "durationMs": 7
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "values": [
+                        "Air Purifier",
+                        "Bluetooth Speaker",
+                        "Coffee Grinder",
+                        "Desk Lamp",
+                        "Espresso Machine",
+                        "Gaming Mouse",
+                        "Headphones",
+                        "Induction Cooktop",
+                        "Keyboard",
+                        "Laptop Stand"
+                      ]
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577498024,
+                      "completedAtMs": 1790577498030,
+                      "durationMs": 6,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577497921,
+            "completedAtMs": 1790577498019,
+            "durationMs": 98
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577497921,
+                  "completedAtMs": 1790577498018,
+                  "durationMs": 97,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "outside-icon",
+      "expected": "passed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 1,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577498132,
+                "completedAtMs": 1790577498135,
+                "durationMs": 3
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "values": [
+                        "Air Purifier",
+                        "Bluetooth Speaker",
+                        "Coffee Grinder",
+                        "Desk Lamp",
+                        "Espresso Machine",
+                        "Gaming Mouse",
+                        "Headphones",
+                        "Induction Cooktop",
+                        "Keyboard",
+                        "Laptop Stand"
+                      ]
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577498132,
+                      "completedAtMs": 1790577498135,
+                      "durationMs": 3,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577498100,
+            "completedAtMs": 1790577498131,
+            "durationMs": 31
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577498100,
+                  "completedAtMs": 1790577498131,
+                  "durationMs": 31,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "inside-icon",
+      "expected": "failed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "visitor",
+              "summary": "the item-name control entries are not in the required order",
+              "finding": {
+                "kind": "order-mismatch",
+                "fields": {
+                  "control": "item-name"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577498230,
+                "completedAtMs": 1790577503233,
+                "durationMs": 5003
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the item-name control entries are not in the required order",
+                    "finding": {
+                      "kind": "order-mismatch",
+                      "fields": {
+                        "control": "item-name"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577498230,
+                      "completedAtMs": 1790577503232,
+                      "durationMs": 5002,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577498188,
+            "completedAtMs": 1790577498230,
+            "durationMs": 42
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577498188,
+                  "completedAtMs": 1790577498230,
+                  "durationMs": 42,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "wrong-order",
+      "expected": "failed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "visitor",
+              "summary": "the item-name control entries are not in the required order",
+              "finding": {
+                "kind": "order-mismatch",
+                "fields": {
+                  "control": "item-name"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577503313,
+                "completedAtMs": 1790577508321,
+                "durationMs": 5008
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the item-name control entries are not in the required order",
+                    "finding": {
+                      "kind": "order-mismatch",
+                      "fields": {
+                        "control": "item-name"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577503313,
+                      "completedAtMs": 1790577508320,
+                      "durationMs": 5007,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577503289,
+            "completedAtMs": 1790577503313,
+            "durationMs": 24
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577503289,
+                  "completedAtMs": 1790577503313,
+                  "durationMs": 24,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "missing",
+      "expected": "failed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "visitor",
+              "summary": "the item-name control entries are not in the required order",
+              "finding": {
+                "kind": "order-mismatch",
+                "fields": {
+                  "control": "item-name"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577508413,
+                "completedAtMs": 1790577513673,
+                "durationMs": 5260
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the item-name control entries are not in the required order",
+                    "finding": {
+                      "kind": "order-mismatch",
+                      "fields": {
+                        "control": "item-name"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577508413,
+                      "completedAtMs": 1790577513673,
+                      "durationMs": 5260,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577508382,
+            "completedAtMs": 1790577508413,
+            "durationMs": 31
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577508382,
+                  "completedAtMs": 1790577508412,
+                  "durationMs": 30,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "duplicate",
+      "expected": "failed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "visitor",
+              "summary": "the item-name control entries are not in the required order",
+              "finding": {
+                "kind": "order-mismatch",
+                "fields": {
+                  "control": "item-name"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577513763,
+                "completedAtMs": 1790577518767,
+                "durationMs": 5004
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the item-name control entries are not in the required order",
+                    "finding": {
+                      "kind": "order-mismatch",
+                      "fields": {
+                        "control": "item-name"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577513763,
+                      "completedAtMs": 1790577518767,
+                      "durationMs": 5004,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577513727,
+            "completedAtMs": 1790577513762,
+            "durationMs": 35
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577513727,
+                  "completedAtMs": 1790577513762,
+                  "durationMs": 35,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    },
+    {
+      "mode": "changed-name",
+      "expected": "failed",
+      "grade": {
+        "id": 2,
+        "name": "Public catalog ranking",
+        "score": 0,
+        "max": 1,
+        "criteria": [
+          {
+            "id": "2b",
+            "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "visitor",
+              "summary": "the item-name control entries are not in the required order",
+              "finding": {
+                "kind": "order-mismatch",
+                "fields": {
+                  "control": "item-name"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790577518847,
+                "completedAtMs": 1790577523881,
+                "durationMs": 5034
+              },
+              "actions": [
+                {
+                  "actor": "visitor",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectSequence",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the item-name control entries are not in the required order",
+                    "finding": {
+                      "kind": "order-mismatch",
+                      "fields": {
+                        "control": "item-name"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790577518847,
+                      "completedAtMs": 1790577523881,
+                      "durationMs": 5034,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "Show the ten most-purchased items and break ties by item name"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790577518820,
+            "completedAtMs": 1790577518847,
+            "durationMs": 27
+          },
+          "actions": [
+            {
+              "actor": "visitor",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790577518820,
+                  "completedAtMs": 1790577518846,
+                  "durationMs": 26,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "user-content"
+          ]
+        }
+      }
+    }
+  ]
+}

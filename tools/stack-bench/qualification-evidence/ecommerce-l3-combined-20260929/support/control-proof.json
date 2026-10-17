@@ -1,0 +1,129 @@
+{
+  "group": "support",
+  "candidate": "c8a83a6b86ba25fe9111707ec31acf252b01ac54",
+  "image": "sha256:b0209e164038969add5318bc20eb7f1c0101cd23076cc2190905465abb93d06c",
+  "originalControlSha256": "3f8c5926e4f5526f370f3205ce64647642997693a9c1f3c1dbc4319b380360c1",
+  "rows": [
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "ok": true,
+      "reportSha256": "81d25ea91def32c4e6a8b4c5936f8ac1a719f239ef344e4f11f80e224e3ffa6d",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "ok": true,
+      "reportSha256": "e1e4d86925d8abe9c574a7cc29020a70824d85fc6347d734fc69cbc00ee2ff70",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "ok": true,
+      "reportSha256": "3fd63750d357435540e5a989404cdce9c51351f4a4c5a4b92bd9dd0b68b03425",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "ok": true,
+      "reportSha256": "27dda27a3702382a491c609fc0f82343d9e7ce8bd4d9a0cddb3832b8b09316d1",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": null,
+      "mutationIds": []
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "ok": true,
+      "reportSha256": "ab5a24025ee66a4b5c927d00183e2883d0f061951a0fc2959228669cb20dc192",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": 8,
+      "mutationIds": [
+        "managed-support-leaks-and-accepts-cross-account-replies",
+        "managed-support-replies-are-empty",
+        "managed-support-live-replies-stay-at-initial-snapshot",
+        "support-history-is-lost-on-fresh-account-login",
+        "support-history-leaks-across-customers",
+        "support-history-rows-are-hidden",
+        "stored-support-replies-are-hidden-after-reload",
+        "support-history-leaks-to-signed-out-visitors"
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "ok": true,
+      "reportSha256": "bc9a7bf6da8d4a487ee72359e1b8d3abf810f352089bdabd6b92427c6f436d5b",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": 7,
+      "mutationIds": [
+        "progression-support-history-is-not-persisted",
+        "progression-support-history-leaks",
+        "progression-managed-support-is-not-shared",
+        "progression-managed-support-leaks",
+        "support-history-rows-are-hidden",
+        "support-first-reply-is-hidden",
+        "progression-support-history-anonymous-leak"
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "ok": true,
+      "reportSha256": "ef3f81491fc63938171cf308706104ebbb0255ac210077bf7aee754a3ea76c76",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": 7,
+      "mutationIds": [
+        "managed-support-live-refresh-keeps-stale-tickets",
+        "managed-support-allows-another-customer",
+        "support-history-is-lost-on-server-restart",
+        "support-history-is-not-owner-scoped",
+        "support-history-rows-are-hidden",
+        "support-replies-present-at-open-are-hidden",
+        "support-history-leaks-to-signed-out-visitors"
+      ]
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "ok": true,
+      "reportSha256": "e9d8e817cc13235d52ee17de71c47392fbd2c3d2a5852e379930816d5785ad6a",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": "11/11",
+      "mutationsCaught": 5,
+      "mutationIds": [
+        "support-history-rows-are-hidden",
+        "support-replies-present-at-open-are-hidden",
+        "support-read-not-owner-scoped",
+        "support-reply-not-owner-scoped",
+        "managed-support-live-refresh-keeps-stale-tickets"
+      ]
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "ok": true,
+      "reportSha256": "dd17c93c64cb5fcea2271f1d929bc29d3cfbd124a84855b6ec307647beaa19ba",
+      "inputSha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3",
+      "score": null,
+      "mutationsCaught": null,
+      "mutationIds": []
+    }
+  ]
+}

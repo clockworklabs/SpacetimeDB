@@ -1,0 +1,602 @@
+{
+  "candidate": "fae0df803d79b2068c725d46d77b3d6bab05b17e",
+  "image": "sha256:eae464547eeab8f04f012cc188b61835b549080e7de3473cb2736395854fd194",
+  "tag": "stack-bench-controller:diagnostic-status-fae0df803d",
+  "baseImage": "sha256:a24978e57b35d3c61644f73142edfde8b79eb3fd72c5ad5fca3e63daa8bc2258",
+  "baseLayersMatch": true,
+  "scope": {
+    "candidate": "fae0df803d79b2068c725d46d77b3d6bab05b17e",
+    "checks": [
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.returns-pricing.refund-accounting.203a",
+      "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "ecommerce.returns-pricing.cancellation-and-return.3b",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.l3.deferred-integrity.exactly-once.311a",
+      "ecommerce.inventory-operations.shipping-accounting.202e"
+    ],
+    "mutations": {
+      "mongodb": [
+        {
+          "id": "shipping-counts-sale-twice",
+          "targets": [
+            "ecommerce.inventory-operations.shipping-accounting.202e"
+          ]
+        },
+        {
+          "id": "cancel-does-not-restore-stock-feature",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3a"
+          ]
+        },
+        {
+          "id": "cancellation-accounting-loses-stock-restoration",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "cancel-restores-stock-but-keeps-pending-status",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3b"
+          ]
+        },
+        {
+          "id": "cancelled-order-remains-in-revenue-feature",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3a"
+          ]
+        },
+        {
+          "id": "cancelled-order-remains-in-revenue-invariant",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "customer-can-ship-order-direct-1-1",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "customer-can-cancel-foreign-order-1-1",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "ship-acknowledges-without-changing-status",
+          "targets": [
+            "ecommerce.operations-access.fulfilment-queue.1c"
+          ]
+        },
+        {
+          "id": "transfer-creates-stock-during-race",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "completed-restock-is-replayed",
+          "targets": [
+            "ecommerce.l3.deferred-integrity.exactly-once.311a"
+          ]
+        },
+        {
+          "id": "opposing-transfer-ignored",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "opposing-transfer-rejected",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "shipping-trusts-submitted-staff-role",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "shipping-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "cancel-trusts-submitted-owner",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "cancel-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        }
+      ],
+      "postgres": [
+        {
+          "id": "shipping-counts-sale-twice",
+          "targets": [
+            "ecommerce.inventory-operations.shipping-accounting.202e"
+          ]
+        },
+        {
+          "id": "cancel-does-not-restore-stock-feature",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3a"
+          ]
+        },
+        {
+          "id": "cancellation-accounting-loses-stock-restoration",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "cancel-restores-stock-but-keeps-pending-status",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3b"
+          ]
+        },
+        {
+          "id": "customer-can-ship-order-direct-1-1",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "customer-can-cancel-foreign-order-1-1",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "transfer-overwrites-concurrent-purchase-with-stale-stock",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "progression-cancelled-orders-remain-in-revenue",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "progression-shipping-keeps-order-pending",
+          "targets": [
+            "ecommerce.operations-access.fulfilment-queue.1c"
+          ]
+        },
+        {
+          "id": "progression-restock-can-apply-more-than-once",
+          "targets": [
+            "ecommerce.l3.deferred-integrity.exactly-once.311a"
+          ]
+        },
+        {
+          "id": "opposing-transfer-ignored",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "opposing-transfer-rejected",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "shipping-trusts-submitted-staff-role",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "shipping-claim-commits-then-refuses",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "shipping-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "cancel-trusts-submitted-owner",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "cancel-claim-commits-then-refuses",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "cancel-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        }
+      ],
+      "spacetime": [
+        {
+          "id": "shipping-counts-sale-twice",
+          "targets": [
+            "ecommerce.inventory-operations.shipping-accounting.202e"
+          ]
+        },
+        {
+          "id": "cancel-does-not-restore-stock-feature",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3a"
+          ]
+        },
+        {
+          "id": "cancellation-accounting-loses-stock-restoration",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "cancel-restores-stock-but-keeps-pending-status",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3b"
+          ]
+        },
+        {
+          "id": "cancelled-order-remains-in-revenue-feature",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3a"
+          ]
+        },
+        {
+          "id": "cancelled-order-remains-in-revenue-invariant",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "customer-can-ship-order-direct-1-1",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "customer-can-cancel-foreign-order-1-1",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "ship-acknowledges-without-changing-status",
+          "targets": [
+            "ecommerce.operations-access.fulfilment-queue.1c"
+          ]
+        },
+        {
+          "id": "operator-authorization-allows-customer-shipping",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "transfer-creates-stock-during-race",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "completed-restock-remains-pending",
+          "targets": [
+            "ecommerce.l3.deferred-integrity.exactly-once.311a"
+          ]
+        },
+        {
+          "id": "opposing-transfer-ignored",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "opposing-transfer-rejected",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "shipping-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "cancel-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        }
+      ],
+      "convex": [
+        {
+          "id": "shipping-counts-sale-twice",
+          "targets": [
+            "ecommerce.inventory-operations.shipping-accounting.202e"
+          ]
+        },
+        {
+          "id": "transfer-creates-stock-during-race",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "completed-restock-is-replayed",
+          "targets": [
+            "ecommerce.l3.deferred-integrity.exactly-once.311a"
+          ]
+        },
+        {
+          "id": "ship-acknowledges-without-changing-status",
+          "targets": [
+            "ecommerce.operations-access.fulfilment-queue.1c"
+          ]
+        },
+        {
+          "id": "customer-can-ship-order-direct-1-1",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "customer-can-cancel-foreign-order-1-1",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "cancel-does-not-restore-stock-feature",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3a"
+          ]
+        },
+        {
+          "id": "cancel-restores-stock-but-keeps-pending-status",
+          "targets": [
+            "ecommerce.returns-pricing.cancellation-and-return.3b"
+          ]
+        },
+        {
+          "id": "cancellation-accounting-loses-stock-restoration",
+          "targets": [
+            "ecommerce.returns-pricing.refund-accounting.203a"
+          ]
+        },
+        {
+          "id": "opposing-transfer-ignored",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "opposing-transfer-rejected",
+          "targets": [
+            "ecommerce.inventory-operations.stock-conservation.202d"
+          ]
+        },
+        {
+          "id": "shipping-trusts-submitted-staff-role",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "shipping-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.operator-authorization.201c"
+          ]
+        },
+        {
+          "id": "cancel-trusts-submitted-owner",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        },
+        {
+          "id": "cancel-rejects-every-request",
+          "targets": [
+            "ecommerce.operations-access.order-owner.204a"
+          ]
+        }
+      ]
+    },
+    "manifestHashes": {
+      "mongodb": "c34fb587384594e4b4367231e1bd322cbfa5d01d849661959b5ec8e7b609f75a",
+      "postgres": "ce0c0c10dad084ed5c694c0db8afa40cb3ae101484c24fe64eda07ad2563f37e",
+      "spacetime": "5d37f436793c4311671c50578e84b3656a1124c76cba1625b6c7a9b5d48b1dbb",
+      "convex": "13b26c47cb482ed3e1ff4338d603e1d524c20bfbffe2cf4ee8d746c413b7efeb"
+    },
+    "recipeSha256": "2da1458d95e849a9380f362d900bca8903f94336bad6237ce3f5d9d0816aef5a",
+    "rows": [
+      {
+        "backend": "spacetime",
+        "slot": 980,
+        "ports": {
+          "vite": 7453,
+          "express": null,
+          "dbPort": null
+        }
+      },
+      {
+        "backend": "postgres",
+        "slot": 988,
+        "ports": {
+          "vite": 7561,
+          "express": 7289,
+          "dbPort": 6532
+        }
+      },
+      {
+        "backend": "mongodb",
+        "slot": 996,
+        "ports": {
+          "vite": 7719,
+          "express": 7397,
+          "dbPort": 6537
+        }
+      },
+      {
+        "backend": "convex",
+        "slot": 1004,
+        "ports": {
+          "vite": 7927,
+          "express": 8005,
+          "dbPort": null
+        }
+      }
+    ],
+    "qualified": false,
+    "modelCalls": 0
+  },
+  "inputsSha256": "fb7d7570f6e63e6bbe1bf241bebb28701033f9a2cb68e207e2fff3b16184a85b",
+  "sourceFiles": [
+    {
+      "path": "tools/stack-bench/src/actions/browser-action-executors.ts",
+      "sha256": "5705fc2d07472cb047da8c36d44ec8ba877b322db886d3b9a69b86b416c61204"
+    },
+    {
+      "path": "tools/stack-bench/src/composition/definition-compiler.ts",
+      "sha256": "7a6eebb042ebee3dccbe0b4195d0627cce196440aba131e83986833d16266ec8"
+    },
+    {
+      "path": "tools/stack-bench/tests/browser-action-executors.test.ts",
+      "sha256": "284da4291c2cefee5e5aa27f2f7aa362ed3493ca118e41113378337879991985"
+    },
+    {
+      "path": "tools/stack-bench/tests/snapshots/definitions/ecommerce.snapshot.json",
+      "sha256": "ae78f81d3b208addf3a60b4efc31e9985fac26b771eff6fa8938eafbd0c7f157"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/contracts/operations-access.md",
+      "sha256": "026cf0f69454dda8368c599b7b245081ba18bea26bfe8d0eb867418849fd3cc5"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/contracts/order-cancellation.md",
+      "sha256": "597f2b2f8a5a4aef3e78a7555e24b776720b8f4f2c12e66304ef08a17714a820"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "sha256": "8eb59d03747c9d93e6933b60c06ab5094983598040453ab80a815b3835cd61eb"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "sha256": "94d46955d3a2e0d8bec8f059d015f286fbcff89d40aef7ba8b03067415cdcdee"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-invariants.json",
+      "sha256": "53c95ddf0a86879c5e42bfc8dad0aa9c6581d2bb9959d84a2bbcc3d9bda0ccda"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "sha256": "fe288366d28c776bfd903624254632c28a1dfacd113904c0fc98426f95ede4e5"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-order-cancellation-history.json",
+      "sha256": "feb7875f0cc8719c4d4ccb57b3215a9b050e6544ec53d26ab82411900b665565"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/02-server-actions.json",
+      "sha256": "c971a4b15a799482aa81ff5e43ae722f66c0ace3cce6ac01394964545f04523a"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "sha256": "03db162e91a3ac4bec1ea0bbae1198448def0cb5fd60bfb1f563ff77b4d203c6"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "sha256": "d8f25ae51ce340fd82f1bcca018eaf9c089f44b07e644e5ba56461fa8085a4bc"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/03-order-delivery.json",
+      "sha256": "adcf782a3c061f29b2f6bbc3cd682ba9d69af1fc6d7122df3120db3e4d77bf4b"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "sha256": "14820070ec8269e9340f409c1ed5443b44f2aa1983d972e0c8a7c4e6ed3fa63d"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "sha256": "c52db23c36b776d4b0da764172bb724c68c205b3edff25e9130e363b2559b590"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-order-return-boundary.json",
+      "sha256": "4a70a811b47801be5db6f88fe487ae4be073e45d49d9f4a9f60f31034310b330"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-order-return-complete.json",
+      "sha256": "730dcdb6ed6a6398f5e4e65260b71a4c43a42aecc26baf5c2534f9c507b9dde7"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "sha256": "48dc312d8f986269f26a2f21b0d6138b269c4ddbf4bb54d6dc00e39ddedc49f7"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-support-refunds-access.json",
+      "sha256": "b62cc3eccbd99076341f08f9424c2e4aee2c0af55cf4a31a3aa8b4d0848dab0b"
+    },
+    {
+      "path": "tools/stack-bench/tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "sha256": "176e4c756701287ff7bdeda08fe55b9a05a038f75405e9369b096e60efccedbd"
+    }
+  ],
+  "emitted": [
+    {
+      "source": "tools/stack-bench/src/actions/browser-action-executors.ts",
+      "sourceSha256": "5705fc2d07472cb047da8c36d44ec8ba877b322db886d3b9a69b86b416c61204",
+      "jsSha256": "0ee27fbca7659e32d2fcf9a875d767f1a3a8083e0cd2f743c4c96739939d9c7f",
+      "mapSha256": "675ea6cf8ac8f8927cde6043b6bd88956ec0f8cdd61782e7e5d807378aa2abad"
+    },
+    {
+      "source": "tools/stack-bench/src/composition/definition-compiler.ts",
+      "sourceSha256": "7a6eebb042ebee3dccbe0b4195d0627cce196440aba131e83986833d16266ec8",
+      "jsSha256": "e95ade43947b5f084ecdc633aeb70d793fd2c229f7cbecaec89e6b7a56363960",
+      "mapSha256": "8497404b6a13853e8042ba16335c714f5216d89b69907d0dc826636533575180"
+    },
+    {
+      "source": "tools/stack-bench/tests/browser-action-executors.test.ts",
+      "sourceSha256": "284da4291c2cefee5e5aa27f2f7aa362ed3493ca118e41113378337879991985",
+      "jsSha256": "2122100013732086b8e85ea061e0ce97f1cfe40717200f9eb45487b60be173a3",
+      "mapSha256": "76fe40895785af363388ad82c53fd95b9998185f726fe75a206093ec76b572c6"
+    }
+  ],
+  "helper": {
+    "id": "e78f9eb7f7c2ba5c2ffce2cff6daf8df8002a3240211562a9dcc2bec14c702e3",
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-29T01:10:13.570323655Z",
+      "FinishedAt": "2026-09-29T01:10:13.713758851Z"
+    },
+    "removed": "e78f9eb7f7c2ba5c2ffce2cff6daf8df8002a3240211562a9dcc2bec14c702e3"
+  }
+}

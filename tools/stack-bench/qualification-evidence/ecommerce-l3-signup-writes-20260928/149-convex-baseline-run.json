@@ -1,0 +1,612 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-convex-run424-20260928045821-048531fe",
+  "attempt": {
+    "id": "ecommerce-convex-run424-20260928045821-048531fe",
+    "parentId": "reference-live-convex-20260928045818-31"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:58:26.290Z",
+    "completedAt": "2026-09-28T05:00:17.520Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null,
+      "version": "1.0.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "convex",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-convex-run424-20260928045821-048531fe",
+      "backend": "convex",
+      "track": "ecommerce",
+      "runIndex": 424,
+      "ownerPid": 98,
+      "createdAt": "2026-09-28T04:58:21.466Z",
+      "state": "released",
+      "resources": {
+        "serverUri": "http://127.0.0.1:13634",
+        "database": null,
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-cd2027d8d9f9cf3c-backend",
+          "id": "0406f9b60ddb7d41cfd03d86d44c8bd01ca0b92702198b49e080d7739ff50eda",
+          "image": "sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743",
+          "owned": true,
+          "networkMode": "4f1ddbaf99866cf5c89b8db131ef23cc1be868943bc0c6c8628ca2f7c173eec5",
+          "running": false,
+          "removedAt": "2026-09-28T05:00:19.854Z"
+        },
+        "buildContainer": {
+          "name": "sb-cd2027d8d9f9cf3c-build",
+          "id": "1983c94d47b19c46735d444ad347c9f16e2c8ea74cd96fb01fcba4d3b9058381",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:0406f9b60ddb7d41cfd03d86d44c8bd01ca0b92702198b49e080d7739ff50eda",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T05:00:18.540Z",
+          "removedAt": "2026-09-28T05:00:18.766Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/9811f625b3c71ceaed75222c1132b0336c4d6c88ebfee2d77a0aa55e45c76523.lock.json",
+            "key": "listener:http://127.0.0.1:13634",
+            "digest": "9811f625b3c71ceaed75222c1132b0336c4d6c88ebfee2d77a0aa55e45c76523",
+            "acquiredAt": "2026-09-28T04:58:21.511Z",
+            "releasedAt": "2026-09-28T05:00:20.711Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/97630cea41461f42c70069268f97eb19bef4c931644e58ffc463e9a620358da0.lock.json",
+            "key": "port:13634",
+            "digest": "97630cea41461f42c70069268f97eb19bef4c931644e58ffc463e9a620358da0",
+            "acquiredAt": "2026-09-28T04:58:21.511Z",
+            "releasedAt": "2026-09-28T05:00:20.711Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/1a9080101f5dae817e2b0592e3ce16fcb129c27d14a2f3457f21edd5f85a73fb.lock.json",
+            "key": "port:7347",
+            "digest": "1a9080101f5dae817e2b0592e3ce16fcb129c27d14a2f3457f21edd5f85a73fb",
+            "acquiredAt": "2026-09-28T04:58:21.511Z",
+            "releasedAt": "2026-09-28T05:00:20.711Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/444f1cce2207f07b1bcfc058c0d33d62daf936dc26c4e2b19aacdc9d039ccdab.lock.json",
+            "key": "port:7425",
+            "digest": "444f1cce2207f07b1bcfc058c0d33d62daf936dc26c4e2b19aacdc9d039ccdab",
+            "acquiredAt": "2026-09-28T04:58:21.511Z",
+            "releasedAt": "2026-09-28T05:00:20.711Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/03d5fb825c227910bfbf85841235a14d5e755b1abb41a5a9ed0a02ff72ba60d4.lock.json",
+            "key": "slot:ecommerce:convex:run424",
+            "digest": "03d5fb825c227910bfbf85841235a14d5e755b1abb41a5a9ed0a02ff72ba60d4",
+            "acquiredAt": "2026-09-28T04:58:21.511Z",
+            "releasedAt": "2026-09-28T05:00:20.711Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/6a6c3eb311e49845ebf8719f81ef10b206d3f85b41a6ce3411b52109d40dc1ea.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-98hqb5/app",
+            "digest": "6a6c3eb311e49845ebf8719f81ef10b206d3f85b41a6ce3411b52109d40dc1ea",
+            "acquiredAt": "2026-09-28T04:58:21.511Z",
+            "releasedAt": "2026-09-28T05:00:20.711Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-cd2027d8d9f9cf3c-network",
+          "id": "4f1ddbaf99866cf5c89b8db131ef23cc1be868943bc0c6c8628ca2f7c173eec5",
+          "namespaceContainerId": "0406f9b60ddb7d41cfd03d86d44c8bd01ca0b92702198b49e080d7739ff50eda",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.9",
+            "10.0.0.17",
+            "10.0.0.1"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.3",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "19ca430032f615fc4c87dd1a321434b6c801e13a70c8ca96a4f7b8abee250406",
+          "firewallInstalledAt": "2026-09-28T04:58:24.017Z",
+          "ownAddresses": [
+            "10.0.0.2"
+          ],
+          "namespaceStartedAt": "2026-09-28T04:58:23.090658376Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-cd2027d8d9f9cf3c-browser",
+          "id": "1253c2ce2931325293650eb630081fe349397760393c1aa81dc5ee406f4dd35b",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:0406f9b60ddb7d41cfd03d86d44c8bd01ca0b92702198b49e080d7739ff50eda",
+          "running": false,
+          "removedAt": "2026-09-28T05:00:18.010Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T05:00:20.647Z",
+      "releasedAt": "2026-09-28T05:00:20.711Z",
+      "ownership": {
+        "markerSha256": "93ae696547d82e2e53b955d9a5d2b174bbae6c27ee58fd2ed3ddd64e8de7f031"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-network-retry-149fecf8b/convex.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [
+          3
+        ],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "graded": true,
+        "score": 3,
+        "max": 3,
+        "regression": null,
+        "selection": {
+          "schemaVersion": 3,
+          "recipe": {
+            "id": "ecommerce.progression-catalog",
+            "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+          },
+          "requested": {
+            "features": [
+              "ecommerce.feature.accounts",
+              "ecommerce.feature.cart",
+              "ecommerce.feature.catalog-discovery",
+              "ecommerce.feature.catalog-items",
+              "ecommerce.feature.checkout",
+              "ecommerce.feature.purchasing",
+              "ecommerce.feature.reviews",
+              "ecommerce.feature.warehouse-admin",
+              "ecommerce.l2.inventory-dashboard",
+              "ecommerce.l2.order-cancellation-features",
+              "ecommerce.l2.recommendations",
+              "ecommerce.l2.sales-dashboard",
+              "ecommerce.l2.stock-transfers-features",
+              "ecommerce.l3.scheduled-restocks-features",
+              "ecommerce.progression.catalog-management",
+              "ecommerce.progression.customer-profile",
+              "ecommerce.progression.faceted-search",
+              "ecommerce.progression.fulfilment-queue",
+              "ecommerce.progression.managed-support",
+              "ecommerce.progression.notification-preferences",
+              "ecommerce.progression.promotion-rules",
+              "ecommerce.progression.staff-access",
+              "ecommerce.progression.staff-roles",
+              "ecommerce.progression.stock-alerts",
+              "ecommerce.progression.support-history",
+              "ecommerce.progression.support-intake",
+              "ecommerce.progression.support-triage"
+            ],
+            "specifications": {
+              "requested": [],
+              "expected": [
+                "ecommerce.l3.deferred-access-specifications",
+                "ecommerce.l3.deferred-integrity-specifications",
+                "ecommerce.l3.server-time-specifications",
+                "ecommerce.progression.cancellation-accounting-specifications",
+                "ecommerce.progression.inventory-conservation-specifications",
+                "ecommerce.progression.operations-access-specifications",
+                "ecommerce.progression.review-access-specifications",
+                "ecommerce.spec.access-control",
+                "ecommerce.spec.concurrency-safety",
+                "ecommerce.spec.external-data-sync",
+                "ecommerce.spec.live-state",
+                "ecommerce.spec.search-ordering",
+                "ecommerce.spec.state-durability",
+                "ecommerce.spec.transactional-integrity"
+              ],
+              "observed": []
+            },
+            "checks": [
+              "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+            ]
+          },
+          "features": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "specifications": {
+            "requested": [],
+            "expected": [
+              "ecommerce.l3.deferred-access-specifications",
+              "ecommerce.l3.deferred-integrity-specifications",
+              "ecommerce.l3.server-time-specifications",
+              "ecommerce.progression.cancellation-accounting-specifications",
+              "ecommerce.progression.inventory-conservation-specifications",
+              "ecommerce.progression.operations-access-specifications",
+              "ecommerce.progression.review-access-specifications",
+              "ecommerce.spec.access-control",
+              "ecommerce.spec.concurrency-safety",
+              "ecommerce.spec.external-data-sync",
+              "ecommerce.spec.live-state",
+              "ecommerce.spec.search-ordering",
+              "ecommerce.spec.state-durability",
+              "ecommerce.spec.transactional-integrity"
+            ],
+            "observed": []
+          },
+          "promptPacks": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "scoredChecks": [
+            {
+              "category": "feature",
+              "checkGroupId": "admin-write",
+              "criterionId": "103a",
+              "description": "an administrator can restock a warehouse",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "packId": "ecommerce.feature.warehouse-admin",
+              "points": 1,
+              "role": "feature",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "treatment": "requested"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "warehouse-write-boundary",
+              "criterionId": "103b",
+              "description": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.accounts",
+                "ecommerce.feature.warehouse-admin"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "treatment": "expected"
+            }
+          ],
+          "checks": [
+            {
+              "category": "feature",
+              "checkGroupId": "admin-write",
+              "criterionId": "103a",
+              "description": "an administrator can restock a warehouse",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "packId": "ecommerce.feature.warehouse-admin",
+              "points": 1,
+              "role": "feature",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.feature.warehouse-admin.admin-write.103a",
+              "treatment": "requested"
+            },
+            {
+              "category": "production",
+              "checkGroupId": "warehouse-write-boundary",
+              "criterionId": "103b",
+              "description": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+              "executionId": "selected-source-007",
+              "featureId": 103,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.accounts",
+                "ecommerce.feature.warehouse-admin"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-admin-write-staff.json",
+              "stableKey": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "treatment": "expected"
+            }
+          ],
+          "observedChecks": [],
+          "scoredPoints": 3,
+          "taskSelectionSha256": "d87ed8644ee94d049dd4719cff243cbb5287f96b1fbfd93a2f4bb05704024cdc",
+          "sha256": "27c919329853884dbbd86dd310c9b079a46002e9a10ee2b81237f8e79e1cef0d",
+          "attemptedChecks": [
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "reportedChecks": [
+            "ecommerce.feature.warehouse-admin.admin-write.103a",
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "notRun": []
+        },
+        "firstBuild": {
+          "score": 3,
+          "max": 3,
+          "regression": null,
+          "contractPass": true,
+          "outcome": {
+            "kind": "passed",
+            "phase": "grading",
+            "reason": null,
+            "appFailures": [],
+            "inconclusive": [],
+            "harnessFailures": []
+          },
+          "source": {
+            "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+            "files": 26
+          },
+          "missed": []
+        },
+        "buildCostUsd": 0,
+        "buildSessions": [
+          {
+            "sessionId": "reference-convex-1790571526835",
+            "costUsd": 0,
+            "durationMs": 20383,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-convex-1790571526835"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "contractPass": true,
+        "code": {
+          "serverLoc": 468,
+          "serverFiles": 9,
+          "totalLoc": 2105,
+          "totalFiles": 16,
+          "runtimeDeps": 7
+        },
+        "repairCostUsd": 0,
+        "repairSessions": [],
+        "repairHistory": [],
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 20383,
+          "activeDurationMs": 20383,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "tokens": 0,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheWrite": 0,
+          "cacheRead": 0
+        },
+        "turns": 0,
+        "promptBytes": 0,
+        "tokensPerTurn": null,
+        "thinking": null,
+        "repairs": 0,
+        "repair": {
+          "status": "not-needed",
+          "limit": 0,
+          "used": 0,
+          "stallLimitRounds": 3,
+          "stopReason": "not-needed"
+        },
+        "checkpoint": {
+          "artifact": "level-l3-checkpoint.json",
+          "directory": "level-l3-source",
+          "sha256": "4b080450a87e0f35d0a16372697976931655b60c1bd6afe64844bbf192411390",
+          "files": 26
+        },
+        "stalled": false,
+        "regressed": false,
+        "outcome": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "durationSec": 111
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "totals": {
+      "score": 3,
+      "max": 3,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 20383,
+      "durationSec": 111,
+      "ungraded": []
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "grading",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": [],
+      "levels": {
+        "3": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        }
+      }
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7347"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

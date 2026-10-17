@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: stock alerts accept fresh load-on-open views and reject missing, premature, late duplicate, or private delivery
+ok 1 - stock alerts accept fresh load-on-open views and reject missing, premature, late duplicate, or private delivery
+  ---
+  duration_ms: 33789.4412
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 34458.6912

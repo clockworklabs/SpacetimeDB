@@ -1,0 +1,26 @@
+{
+  "deps": "stack-bench-release-deps-90fcf93d4",
+  "container": "2ee92274c1f0e018af1c240e0b275f53e755404c9b7cec163b4fb6e0fe40f545",
+  "name": "stack-bench-readiness-final-null",
+  "image": "sha256:4eba0271c1646447c063570b36b13a7e317c123e13a276c9a3e35ee176392a4f",
+  "qualified": false,
+  "args": [
+    "/opt/stack-bench/dist/commands/null-control.js",
+    "--track",
+    "ecommerce",
+    "--level",
+    "3",
+    "--recipe",
+    "ecommerce.progression-catalog",
+    "--selected-check",
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "--selected-check",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "--selected-check",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b",
+    "--selected-check",
+    "ecommerce.spec.transactional-integrity.books-balance.107a",
+    "--out",
+    "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/readiness-final-90fcf93d4/null.json"
+  ]
+}

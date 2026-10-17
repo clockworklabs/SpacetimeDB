@@ -1,0 +1,142 @@
+{
+  "qualified": false,
+  "baseImage": "sha256:fae936742c61bfa380ea21a79c49c41a157b31240bfbd3bbc5034468a5985c75",
+  "root": "D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench",
+  "inputs": [
+    {
+      "path": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "sourceSha256": "f98f82c6634cef595acfde9a6f2015c80080c47deec46acc0c67454336c2877d",
+      "imageSha256": "d845c61ad15d78a92700f5c534d756c1d6813e30ea62c0b6a7c62f8def330474"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "sourceSha256": "bb2e031664c6d2c65868ee92d91eef6cbdfc7c40ff2aa0cbcedcf079f7776c36",
+      "imageSha256": "bb2e031664c6d2c65868ee92d91eef6cbdfc7c40ff2aa0cbcedcf079f7776c36"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "sourceSha256": "9ccd8e21dbf9a635ce25c864d543f970f46d5088d063dc585a152fa1af654f12",
+      "imageSha256": "9ccd8e21dbf9a635ce25c864d543f970f46d5088d063dc585a152fa1af654f12"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "sourceSha256": "7c5784b80b5831974258c61b7a76790e2d998078377500e6a046e0f07d596bf2",
+      "imageSha256": "fcb915b4ff6594f2b4b90fbf684fc79bf3a8831bd3d79eebc2f5dfd3876dddc3"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "sourceSha256": "82d6b3bceca0d4d90671df4f3ad8b8c35ff9e247cb38ea34b5d63250bd2ef67b",
+      "imageSha256": "82d6b3bceca0d4d90671df4f3ad8b8c35ff9e247cb38ea34b5d63250bd2ef67b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "sourceSha256": "a7474d0ead61456419fac459dc6f0a226b104dd38d1c5af6255b1d44ac497af9",
+      "imageSha256": "a7474d0ead61456419fac459dc6f0a226b104dd38d1c5af6255b1d44ac497af9"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "sourceSha256": "1b6f95c6b65a08878d01beb341df19b66a99a6658fcc606835cdf758bca817ed",
+      "imageSha256": "71a5fb007af9ccf0b25969564a1331cbcfbacdd9852ba48da999d3c0d366bd33"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-triage.md",
+      "sourceSha256": "6556d070031fa4085fe5ace82aec3d613f801ceb46a7f19c4aa746cd97798a86",
+      "imageSha256": "6556d070031fa4085fe5ace82aec3d613f801ceb46a7f19c4aa746cd97798a86"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/ProgressionPanel.tsx",
+      "sourceSha256": "94fad4785ae72ab9a0ec791660210eace0ee1da7caaa4cacdfbe0e3723029351",
+      "imageSha256": "94fad4785ae72ab9a0ec791660210eace0ee1da7caaa4cacdfbe0e3723029351"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/ProgressionPanel.tsx",
+      "sourceSha256": "6ab0fa350c2411a6a3e92fceebaa115ad36d2b96f74af4cb8b2828764ca4825a",
+      "imageSha256": "6ab0fa350c2411a6a3e92fceebaa115ad36d2b96f74af4cb8b2828764ca4825a"
+    },
+    {
+      "path": "reference-apps/ecommerce/convex/client/src/ProgressionPanel.tsx",
+      "sourceSha256": "cf44eaeca23847355a6956b1c37b989ece63bf0bbfc050812d53e0dc642b79d2",
+      "imageSha256": "cf44eaeca23847355a6956b1c37b989ece63bf0bbfc050812d53e0dc642b79d2"
+    },
+    {
+      "path": "reference-apps/ecommerce/supabase/client/src/ProgressionPanel.tsx",
+      "sourceSha256": "5b0574399d78ec1d70193ff8f566a302e7bb3ffc02384fae46ecb5ee6405f8c2",
+      "imageSha256": "5b0574399d78ec1d70193ff8f566a302e7bb3ffc02384fae46ecb5ee6405f8c2"
+    },
+    {
+      "path": "reference-apps/ecommerce/spacetime/client/src/components/ProgressionWorkbench.tsx",
+      "sourceSha256": "e2d43ed8926112923f220fa3f189d92db42a2115a7737c8892cbf23a787cc54f",
+      "imageSha256": "e2d43ed8926112923f220fa3f189d92db42a2115a7737c8892cbf23a787cc54f"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/accounts.md",
+      "sourceSha256": "efb892a75a65debd138c329f61603fff564e9d056597ff11e2c7a354bc3ccfde",
+      "imageSha256": "efb892a75a65debd138c329f61603fff564e9d056597ff11e2c7a354bc3ccfde"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "sourceSha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9",
+      "imageSha256": "22b53ea154f65016c3bb184acd2eac0bde764b6dfe9e95b02a332c9a5cf0d3d9"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "sourceSha256": "b58c38ad7afd8c7ee984bdae953b26020c5189164e95c367e8a5301d03f56226",
+      "imageSha256": "b58c38ad7afd8c7ee984bdae953b26020c5189164e95c367e8a5301d03f56226"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-delivery-notifications.json",
+      "sourceSha256": "cc98e976aef955ef687c4a38b19b11fb9341267dea97926ea3a8045229778690",
+      "imageSha256": "cc98e976aef955ef687c4a38b19b11fb9341267dea97926ea3a8045229778690"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/App.tsx",
+      "sourceSha256": "496408166c715a9ac23aad94da6d657596d6477fbb6937397071e9499ef97c43",
+      "imageSha256": "496408166c715a9ac23aad94da6d657596d6477fbb6937397071e9499ef97c43"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/client/src/request.ts",
+      "sourceSha256": "b03b4554b25d8e66cc03fdc4ea27aa6522ee37b5a52738fc0f7244a5396c28b5",
+      "imageSha256": "b03b4554b25d8e66cc03fdc4ea27aa6522ee37b5a52738fc0f7244a5396c28b5"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/App.tsx",
+      "sourceSha256": "2cb7ff02d81e2c934c677be88fbf95f9b0bde2bb7d9d0eb552e1199696af0af9",
+      "imageSha256": "2cb7ff02d81e2c934c677be88fbf95f9b0bde2bb7d9d0eb552e1199696af0af9"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/client/src/request.ts",
+      "sourceSha256": "c26ff6caa6598e929d88a1eab07493b4e8a822062fe7ec9bcd98c3d9e3af8a11",
+      "imageSha256": "c26ff6caa6598e929d88a1eab07493b4e8a822062fe7ec9bcd98c3d9e3af8a11"
+    },
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sourceSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f",
+      "imageSha256": "8f5b1d59bec552eabc7ded27b9e8f23044394f758589d2f374aac0fa6af5955f"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js",
+      "sourceSha256": "c6a4d5d595a56d998d3aaf9302395786cbfb5964350393f6da76745cb54c3ed4",
+      "imageSha256": "c6a4d5d595a56d998d3aaf9302395786cbfb5964350393f6da76745cb54c3ed4"
+    },
+    {
+      "path": "src/composition/definition-compiler.ts",
+      "sourceSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92",
+      "imageSha256": "c99dbb8618227387025042b0832f921b3636604f969a4505e219713884b38a92"
+    },
+    {
+      "path": "dist/src/composition/definition-compiler.js",
+      "sourceSha256": "9f14d56b713840798b15e6e641722359a0242343c0b5fff5d2b70abdcee7b811",
+      "imageSha256": "9f14d56b713840798b15e6e641722359a0242343c0b5fff5d2b70abdcee7b811"
+    },
+    {
+      "path": "src/composition/calibration-compiler.ts",
+      "sourceSha256": "5cc45994f88303aa635aa41a83a3766720a5ba8aa771f5e4462419888333992d",
+      "imageSha256": "5cc45994f88303aa635aa41a83a3766720a5ba8aa771f5e4462419888333992d"
+    },
+    {
+      "path": "dist/src/composition/calibration-compiler.js",
+      "sourceSha256": "94f562315951aa6cbd2a6b476d431f3c1217c14fad06b15f9469b87bf82369dc",
+      "imageSha256": "94f562315951aa6cbd2a6b476d431f3c1217c14fad06b15f9469b87bf82369dc"
+    }
+  ]
+}

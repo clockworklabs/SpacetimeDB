@@ -1,0 +1,36 @@
+TAP version 13
+# Subtest: cart checks reopen catalog after authentication and reload without refreshing live observers
+    # Subtest: 4b-live
+    ok 1 - 4b-live
+      ---
+      duration_ms: 7254.7703
+      type: 'test'
+      ...
+    # Subtest: 4c-live
+    ok 2 - 4c-live
+      ---
+      duration_ms: 3211.023
+      type: 'test'
+      ...
+    # Subtest: 4c-stale
+    ok 3 - 4c-stale
+      ---
+      duration_ms: 13616.2647
+      type: 'test'
+      ...
+    1..3
+ok 1 - cart checks reopen catalog after authentication and reload without refreshing live observers
+  ---
+  duration_ms: 25297.7653
+  type: 'test'
+  ...
+# Evidence: D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\results\\diagnostics\\cart-navigation-axTMIZ; repeat: node --test --test-name-pattern="cart checks reopen" dist/tests/selected-grade.integration.js
+1..1
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 25499.0885

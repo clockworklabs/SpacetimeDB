@@ -1,0 +1,30 @@
+TAP version 13
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# transport body unavailable {"origin":"http://127.0.0.1:65452","pathSha256":"b2abef260066f9edb5a624c855af7752282e9c69b90d4ab2d7357240da393bb8","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+# Subtest: support save completes before verification reload without changing timed reloads
+ok 1 - support save completes before verification reload without changing timed reloads
+  ---
+  duration_ms: 48103.8819
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 48676.375

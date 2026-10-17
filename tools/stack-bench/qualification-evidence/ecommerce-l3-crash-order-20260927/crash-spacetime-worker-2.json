@@ -1,0 +1,121 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260927225920-4392",
+  "attempt": {
+    "id": "reference-live-spacetime-20260927225920-4392",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T22:59:20.886Z",
+    "completedAt": "2026-09-27T23:01:32.656Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "a932093018b7b438e47fed755c941d6b1ab37b067a845e03626c2cac9839366c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-spacetime",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "80f2aa8ecc14078d40c7796943cb703ca64b5eb16b9d2377e08da261513db19e"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-spacetime",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 48,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "567ab8142364f1502c70df634e71541337b6209f33e2c4440447daafb74337bb",
+      "executableSha256": "ea04b297944523962e5e61bfe60aec58907c7c5dd95b75f8be1c57e684e0f5e4",
+      "kind": "mutation",
+      "mutationSha256": "6a8297a79236045175b0a99ae1c7d8eea6674efbd2c48baa88a499bd2ecab9d3",
+      "recipe": {
+        "contentSha256": "40e7aba3f559d1e4d22b8fde2860f90127a10d092db652e1f303d2c4ca3f8d8f",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "spacetime",
+        "reference": {
+          "id": "ecommerce-reference-spacetime",
+          "sourceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+        },
+        "version": "1.4.0"
+      },
+      "sha256": "6812262e7397b3a96791daf814090c5606edb8744659e20430645cebd8d17baa"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "w2.runs/r1",
+        "durationMs": 131627,
+        "capacityWaitMs": 1188,
+        "processError": null,
+        "harnessSha256Before": "6a68ea19af11572f8bf0a13fbd548d7cbe5518eef34f8a8e1db616ac8a2b779b",
+        "harnessSha256After": "6a68ea19af11572f8bf0a13fbd548d7cbe5518eef34f8a8e1db616ac8a2b779b",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-spacetime-run241-20260927225923-489e34a0",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "outcome": "passed",
+        "mutations": {
+          "caught": 1,
+          "completed": 1,
+          "total": 1,
+          "remaining": 0
+        },
+        "score": null,
+        "criteria": null,
+        "zeroPointCriteria": null,
+        "fingerprint": null,
+        "packRuntime": null
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "6a68ea19af11572f8bf0a13fbd548d7cbe5518eef34f8a8e1db616ac8a2b779b",
+    "qualifiedCheckKeys": [
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

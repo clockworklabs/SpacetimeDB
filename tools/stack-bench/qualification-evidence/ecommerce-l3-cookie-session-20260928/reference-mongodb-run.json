@@ -1,0 +1,573 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-mongodb-run816-20260928234125-c9846678",
+  "attempt": {
+    "id": "ecommerce-mongodb-run816-20260928234125-c9846678",
+    "parentId": "reference-live-mongodb-20260928234123-29"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:41:47.886Z",
+    "completedAt": "2026-09-28T23:44:10.925Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null,
+      "version": "1.5.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "mongodb",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-mongodb-run816-20260928234125-c9846678",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "runIndex": 816,
+      "ownerPid": 79,
+      "createdAt": "2026-09-28T23:41:25.960Z",
+      "state": "released",
+      "resources": {
+        "serverUri": null,
+        "database": "app_ecom_run816",
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-688386e46587ef82-backend",
+          "id": "664e69bd757c8300ad73e136c773ff0ea5bcecd754f7110bf6c78fbc852fc204",
+          "image": "sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082",
+          "owned": true,
+          "networkMode": "f1ef6c161b19a80fe1e618662c8de15e9cb18bb638802749bbf96172007228f4",
+          "running": false,
+          "removedAt": "2026-09-28T23:44:13.389Z"
+        },
+        "buildContainer": {
+          "name": "sb-688386e46587ef82-build",
+          "id": "5dc1f866706a582ddd5c5fd1a6e1e87ee4f9dfce33fc28fbfcfeeb489fb913e5",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:664e69bd757c8300ad73e136c773ff0ea5bcecd754f7110bf6c78fbc852fc204",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T23:44:11.988Z",
+          "removedAt": "2026-09-28T23:44:12.281Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/5307944ae76e5734777d8013fd7c214999f2e80f2de402d6609f773ba400a6d4.lock.json",
+            "key": "port:7217",
+            "digest": "5307944ae76e5734777d8013fd7c214999f2e80f2de402d6609f773ba400a6d4",
+            "acquiredAt": "2026-09-28T23:41:26.064Z",
+            "releasedAt": "2026-09-28T23:44:14.460Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/3b2ad8681b87eeb99cd648f5b64a7a9d51c5c68a0826d044e37a99f366385c8c.lock.json",
+            "key": "port:7539",
+            "digest": "3b2ad8681b87eeb99cd648f5b64a7a9d51c5c68a0826d044e37a99f366385c8c",
+            "acquiredAt": "2026-09-28T23:41:26.064Z",
+            "releasedAt": "2026-09-28T23:44:14.460Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/92b6b0b1d5cc2522f4c3088becdab5c868b75142ca3ea2571e7bb8095cd1acd1.lock.json",
+            "key": "slot:ecommerce:mongodb:run816",
+            "digest": "92b6b0b1d5cc2522f4c3088becdab5c868b75142ca3ea2571e7bb8095cd1acd1",
+            "acquiredAt": "2026-09-28T23:41:26.064Z",
+            "releasedAt": "2026-09-28T23:44:14.460Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/6708a52179268b76c2ead97546c7f2e0d92790b89ab13942eeeaaa96f79c44be.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-K8jVoQ/app",
+            "digest": "6708a52179268b76c2ead97546c7f2e0d92790b89ab13942eeeaaa96f79c44be",
+            "acquiredAt": "2026-09-28T23:41:26.064Z",
+            "releasedAt": "2026-09-28T23:44:14.460Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-688386e46587ef82-network",
+          "id": "f1ef6c161b19a80fe1e618662c8de15e9cb18bb638802749bbf96172007228f4",
+          "namespaceContainerId": "664e69bd757c8300ad73e136c773ff0ea5bcecd754f7110bf6c78fbc852fc204",
+          "hostAddresses": [
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.21.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.9",
+            "10.0.0.33",
+            "10.0.0.41",
+            "10.0.0.65",
+            "10.0.0.73",
+            "10.0.0.81",
+            "10.0.0.97",
+            "10.0.0.105",
+            "10.0.0.113",
+            "10.0.0.1",
+            "10.0.0.17",
+            "10.0.0.89"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.91",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "513868097e3575450456d138761d548d36b46a2e52082e9fcb6b5335e8c2f6c2",
+          "firewallInstalledAt": "2026-09-28T23:41:31.809Z",
+          "ownAddresses": [
+            "10.0.0.90"
+          ],
+          "namespaceStartedAt": "2026-09-28T23:41:29.603877327Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-688386e46587ef82-browser",
+          "id": "247e2c006cce4fc5742373d59a4a3598f085c2ab7b00814a7caf0fea0b05ce6c",
+          "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+          "owned": true,
+          "networkMode": "container:664e69bd757c8300ad73e136c773ff0ea5bcecd754f7110bf6c78fbc852fc204",
+          "running": false,
+          "removedAt": "2026-09-28T23:44:11.436Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T23:44:14.379Z",
+      "releasedAt": "2026-09-28T23:44:14.460Z",
+      "ownership": {
+        "markerSha256": "1728834030db11f1706c4c2b570a69a40631a996f1f6adb52c7d9a6757bcc720"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [
+          3
+        ],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "graded": true,
+        "score": 2,
+        "max": 2,
+        "regression": null,
+        "selection": {
+          "schemaVersion": 3,
+          "recipe": {
+            "id": "ecommerce.progression-catalog",
+            "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+          },
+          "requested": {
+            "features": [
+              "ecommerce.feature.accounts",
+              "ecommerce.feature.cart",
+              "ecommerce.feature.catalog-discovery",
+              "ecommerce.feature.catalog-items",
+              "ecommerce.feature.checkout",
+              "ecommerce.feature.purchasing",
+              "ecommerce.feature.reviews",
+              "ecommerce.feature.warehouse-admin",
+              "ecommerce.l2.inventory-dashboard",
+              "ecommerce.l2.order-cancellation-features",
+              "ecommerce.l2.recommendations",
+              "ecommerce.l2.sales-dashboard",
+              "ecommerce.l2.stock-transfers-features",
+              "ecommerce.l3.scheduled-restocks-features",
+              "ecommerce.progression.catalog-management",
+              "ecommerce.progression.customer-profile",
+              "ecommerce.progression.faceted-search",
+              "ecommerce.progression.fulfilment-queue",
+              "ecommerce.progression.managed-support",
+              "ecommerce.progression.notification-preferences",
+              "ecommerce.progression.promotion-rules",
+              "ecommerce.progression.staff-access",
+              "ecommerce.progression.staff-roles",
+              "ecommerce.progression.stock-alerts",
+              "ecommerce.progression.support-history",
+              "ecommerce.progression.support-intake",
+              "ecommerce.progression.support-triage"
+            ],
+            "specifications": {
+              "requested": [],
+              "expected": [
+                "ecommerce.l3.deferred-access-specifications",
+                "ecommerce.l3.deferred-integrity-specifications",
+                "ecommerce.l3.server-time-specifications",
+                "ecommerce.progression.cancellation-accounting-specifications",
+                "ecommerce.progression.inventory-conservation-specifications",
+                "ecommerce.progression.operations-access-specifications",
+                "ecommerce.progression.review-access-specifications",
+                "ecommerce.spec.access-control",
+                "ecommerce.spec.concurrency-safety",
+                "ecommerce.spec.external-data-sync",
+                "ecommerce.spec.live-state",
+                "ecommerce.spec.search-ordering",
+                "ecommerce.spec.state-durability",
+                "ecommerce.spec.transactional-integrity"
+              ],
+              "observed": []
+            },
+            "checks": [
+              "ecommerce.spec.access-control.purchase-session.101a"
+            ]
+          },
+          "features": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "specifications": {
+            "requested": [],
+            "expected": [
+              "ecommerce.l3.deferred-access-specifications",
+              "ecommerce.l3.deferred-integrity-specifications",
+              "ecommerce.l3.server-time-specifications",
+              "ecommerce.progression.cancellation-accounting-specifications",
+              "ecommerce.progression.inventory-conservation-specifications",
+              "ecommerce.progression.operations-access-specifications",
+              "ecommerce.progression.review-access-specifications",
+              "ecommerce.spec.access-control",
+              "ecommerce.spec.concurrency-safety",
+              "ecommerce.spec.external-data-sync",
+              "ecommerce.spec.live-state",
+              "ecommerce.spec.search-ordering",
+              "ecommerce.spec.state-durability",
+              "ecommerce.spec.transactional-integrity"
+            ],
+            "observed": []
+          },
+          "promptPacks": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-triage"
+          ],
+          "scoredChecks": [
+            {
+              "category": "production",
+              "checkGroupId": "purchase-session",
+              "criterionId": "101a",
+              "description": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+              "executionId": "selected-source-022",
+              "featureId": 101,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-purchase-session.json",
+              "stableKey": "ecommerce.spec.access-control.purchase-session.101a",
+              "treatment": "expected"
+            }
+          ],
+          "checks": [
+            {
+              "category": "production",
+              "checkGroupId": "purchase-session",
+              "criterionId": "101a",
+              "description": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+              "executionId": "selected-source-022",
+              "featureId": 101,
+              "observations": [
+                "requested",
+                "unmentioned"
+              ],
+              "packId": "ecommerce.spec.access-control",
+              "points": 2,
+              "requiresFeatures": [
+                "ecommerce.feature.purchasing"
+              ],
+              "role": "guarantee",
+              "source": "scenarios/01-purchase-session.json",
+              "stableKey": "ecommerce.spec.access-control.purchase-session.101a",
+              "treatment": "expected"
+            }
+          ],
+          "observedChecks": [],
+          "scoredPoints": 2,
+          "taskSelectionSha256": "9b8f8f6340cf8d7ce1aff6f31faed94717c5bff321506f4f8a5dab4d40dc60e0",
+          "sha256": "7e72706c1086271315ac2fd1330c888113feca54494efe9734b9c8feeb3bfc00",
+          "attemptedChecks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "reportedChecks": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "notRun": []
+        },
+        "firstBuild": {
+          "score": 2,
+          "max": 2,
+          "regression": null,
+          "contractPass": true,
+          "outcome": {
+            "kind": "passed",
+            "phase": "grading",
+            "reason": null,
+            "appFailures": [],
+            "inconclusive": [],
+            "harnessFailures": []
+          },
+          "source": {
+            "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+            "files": 31
+          },
+          "missed": []
+        },
+        "buildCostUsd": 0,
+        "buildSessions": [
+          {
+            "sessionId": "reference-mongodb-1790638929334",
+            "costUsd": 0,
+            "durationMs": 21176,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-mongodb-1790638929334"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "contractPass": true,
+        "code": {
+          "serverLoc": 2320,
+          "serverFiles": 12,
+          "totalLoc": 4360,
+          "totalFiles": 20,
+          "runtimeDeps": 9
+        },
+        "repairCostUsd": 0,
+        "repairSessions": [],
+        "repairHistory": [],
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 21176,
+          "activeDurationMs": 21176,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "tokens": 0,
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheWrite": 0,
+          "cacheRead": 0
+        },
+        "turns": 0,
+        "promptBytes": 0,
+        "tokensPerTurn": null,
+        "thinking": null,
+        "repairs": 0,
+        "repair": {
+          "status": "not-needed",
+          "limit": 0,
+          "used": 0,
+          "stallLimitRounds": 3,
+          "stopReason": "not-needed"
+        },
+        "checkpoint": {
+          "artifact": "level-l3-checkpoint.json",
+          "directory": "level-l3-source",
+          "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+          "files": 31
+        },
+        "stalled": false,
+        "regressed": false,
+        "outcome": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "durationSec": 143
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "totals": {
+      "score": 2,
+      "max": 2,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 21176,
+      "durationSec": 143,
+      "ungraded": []
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "grading",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": [],
+      "levels": {
+        "3": {
+          "kind": "passed",
+          "phase": "grading",
+          "reason": null,
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        }
+      }
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7539"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

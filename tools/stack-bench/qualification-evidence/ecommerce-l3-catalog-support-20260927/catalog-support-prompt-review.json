@@ -1,0 +1,90 @@
+{
+  "ok": true,
+  "rows": [
+    {
+      "stack": "spacetime",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-spacetime-l1.txt",
+      "sha256": "2562896961e0189109f8bc34583a93369789a93ccade159f823951518644e3f2",
+      "supportReceipt": false
+    },
+    {
+      "stack": "postgres",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-postgres-l1.txt",
+      "sha256": "ee283416f362abf74f93a5d7d65c3875b57ac061aaab9e50ae7a6413791ead8f",
+      "supportReceipt": false
+    },
+    {
+      "stack": "mongodb",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-mongodb-l1.txt",
+      "sha256": "891877fdcf0448f338cb5833fdaa8fadf24e6baa3b144031ca5ae7dd4521d7fc",
+      "supportReceipt": false
+    },
+    {
+      "stack": "convex",
+      "level": 1,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-convex-l1.txt",
+      "sha256": "cd3e844dc7c309ea9ea9e5200c8e261cad9721f362c8e8b20ad4849c4d9f2296",
+      "supportReceipt": false
+    },
+    {
+      "stack": "spacetime",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-spacetime-l2.txt",
+      "sha256": "df711bf79eb72c02a9e245f091cdc36032e51ce3a71c3e0871fd64869791f93a",
+      "supportReceipt": true
+    },
+    {
+      "stack": "postgres",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-postgres-l2.txt",
+      "sha256": "54b21ae120fb424c4916639e9ab880dd58f96934eab1d9a9cff63a184d6a53e4",
+      "supportReceipt": true
+    },
+    {
+      "stack": "mongodb",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-mongodb-l2.txt",
+      "sha256": "7a95498c30f0ddca80b0196035dbbaa0d83e9f1f5e35969b7e72dae586a57939",
+      "supportReceipt": true
+    },
+    {
+      "stack": "convex",
+      "level": 2,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-convex-l2.txt",
+      "sha256": "7a87d182cd051c67a9c4eae3aef26a1cb97a91cfa6b797cf5a3d5bde2a6879a7",
+      "supportReceipt": true
+    },
+    {
+      "stack": "spacetime",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-spacetime-l3.txt",
+      "sha256": "cd3b3f8dc23653ef4c7f260cb4baa5f57ac8ff03d9d6c069df2b33f9498a1bda",
+      "supportReceipt": false
+    },
+    {
+      "stack": "postgres",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-postgres-l3.txt",
+      "sha256": "1214d368eef4db1720da3fefb71dcb012ee774cb51725d5c8e604165127078b4",
+      "supportReceipt": false
+    },
+    {
+      "stack": "mongodb",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-mongodb-l3.txt",
+      "sha256": "05af23ac9a280181fe5acbf3f7d2be0721111f4db3b972c514d72cda627dde09",
+      "supportReceipt": false
+    },
+    {
+      "stack": "convex",
+      "level": 3,
+      "path": "local-notes/sol6-four-stack-20260925/catalog-support-prompt-convex-l3.txt",
+      "sha256": "c774d5ae5ff31c746cdd0c537a7c3e33a10d7eccc4db9ed07ca28696e34a0579",
+      "supportReceipt": false
+    }
+  ],
+  "limits": "Scoped rendered prompt check; broad existing prompt matrix was stopped, not passed."
+}

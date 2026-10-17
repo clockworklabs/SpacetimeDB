@@ -1,0 +1,147 @@
+2026-09-26T23:04:05.229545638Z   sandbox    ... coding container is isolated from the controller and grading files
+2026-09-26T23:04:06.663108641Z   preflight  ... 22 checks passed, 2 warning(s)
+2026-09-26T23:04:10.781541757Z   preflight  ... 24 checks passed, 1 warning(s)
+2026-09-26T23:04:12.014802765Z {"containerName":"sb-47f614d8a2f08e77-build","identity":"3e3cd3b2868096c6a483202b78fd9c3a7563ba49d30277ab42df44b24bb3c185 sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455","networkMode":"container:a0465e3113af8079a8f1a8ecfbb69584166378aec9587ee48a00699f1f5821e3"}
+2026-09-26T23:04:26.745301205Z 
+2026-09-26T23:04:26.745332247Z === spacetime-regrade (spacetime) ===
+2026-09-26T23:04:26.745716234Z   app: /var/lib/docker/volumes/stack-bench-state/_data/work/spacetime-ecom-run8-ecommerce-spacetime-run8-20260926230405-2f623ecd/app
+2026-09-26T23:04:26.745749615Z   url: http://localhost:6481
+2026-09-26T23:04:26.745752716Z   recipe: L2 -> ecommerce.progression-catalog (9d06d25620b5)
+2026-09-26T23:04:26.745755086Z   scope: 1 check(s), 2 point(s)
+2026-09-26T23:04:26.745760236Z     features: ecommerce.feature.accounts, ecommerce.feature.cart, ecommerce.feature.catalog-discovery, ecommerce.feature.catalog-items, ecommerce.feature.purchasing, ecommerce.feature.warehouse-admin, ecommerce.progression.customer-profile, ecommerce.progression.notification-preferences, ecommerce.progression.promotion-rules, ecommerce.progression.staff-access, ecommerce.progression.staff-roles, ecommerce.progression.support-history, ecommerce.progression.support-intake, ecommerce.progression.support-triage
+2026-09-26T23:04:26.745770617Z     extra checks: ecommerce.spec.live-state.purchase-stock.3b
+2026-09-26T23:04:26.750088661Z   code        ... 252 server LOC in 1 files, 431 total LOC, 5 runtime deps
+2026-09-26T23:04:26.750718402Z   database    ... leased database requires runtime marker verification
+2026-09-26T23:04:28.709369170Z   stop application ... ok
+2026-09-26T23:04:30.763953105Z   reset database ... ok
+2026-09-26T23:04:38.369054846Z   restart     ... ok
+2026-09-26T23:04:45.372096820Z   stop application ... ok
+2026-09-26T23:04:47.328559626Z   reset database ... ok
+2026-09-26T23:04:54.205409827Z   restart     ... ok
+2026-09-26T23:04:54.206085083Z   db runtime  ... the application marker exists in the leased SpacetimeDB module
+2026-09-26T23:04:54.668527573Z   contract lint ... DEFERRED (19 interfaces checked during feature grading)
+2026-09-26T23:04:54.926898782Z   actions    ... all 6 present
+2026-09-26T23:04:55.570893252Z   selected-source-001 ... not selected
+2026-09-26T23:04:55.570939375Z   selected-source-002 ... not selected
+2026-09-26T23:04:55.570948035Z   selected-source-003 ... not selected
+2026-09-26T23:04:55.570951675Z   selected-source-004 ... not selected
+2026-09-26T23:04:55.570953505Z   selected-source-005 ... not selected
+2026-09-26T23:04:55.570954855Z   selected-source-006 ... not selected
+2026-09-26T23:04:55.570956106Z   selected-source-007 ... not selected
+2026-09-26T23:04:57.527353669Z   stop application ... ok
+2026-09-26T23:04:59.897281097Z   reset database ... ok
+2026-09-26T23:05:06.856159186Z   restart     ... ok
+2026-09-26T23:05:15.631268575Z   selected-source-008 ... 2/2
+2026-09-26T23:05:15.632743162Z   selected-source-009 ... not selected
+2026-09-26T23:05:15.632926111Z   selected-source-010 ... not selected
+2026-09-26T23:05:15.632939902Z   selected-source-011 ... not selected
+2026-09-26T23:05:15.632944932Z   selected-source-012 ... not selected
+2026-09-26T23:05:15.632947093Z   selected-source-013 ... not selected
+2026-09-26T23:05:15.632948843Z   selected-source-014 ... not selected
+2026-09-26T23:05:15.632950683Z   selected-source-015 ... not selected
+2026-09-26T23:05:15.632952293Z   selected-source-016 ... not selected
+2026-09-26T23:05:15.632954063Z   selected-source-017 ... not selected
+2026-09-26T23:05:15.632955713Z   selected-source-018 ... not selected
+2026-09-26T23:05:15.632957573Z   selected-source-019 ... not selected
+2026-09-26T23:05:15.632959013Z   selected-source-020 ... not selected
+2026-09-26T23:05:15.632965363Z   selected-source-021 ... not selected
+2026-09-26T23:05:15.632966924Z   selected-source-022 ... not selected
+2026-09-26T23:05:15.632968724Z   selected-source-023 ... not selected
+2026-09-26T23:05:15.632972834Z   selected-source-024 ... not selected
+2026-09-26T23:05:15.633361245Z   selected-source-025 ... not selected
+2026-09-26T23:05:15.633375105Z   selected-source-026 ... not selected
+2026-09-26T23:05:15.633376995Z   selected-source-027 ... not selected
+2026-09-26T23:05:15.633378366Z   selected-source-028 ... not selected
+2026-09-26T23:05:15.633379646Z   selected-source-029 ... not selected
+2026-09-26T23:05:15.633380836Z   selected-source-030 ... not selected
+2026-09-26T23:05:15.633381996Z   selected-source-031 ... not selected
+2026-09-26T23:05:15.633383066Z   selected-source-032 ... not selected
+2026-09-26T23:05:15.633384156Z   selected-source-033 ... not selected
+2026-09-26T23:05:15.633385226Z   selected-source-034 ... not selected
+2026-09-26T23:05:15.633386306Z   selected-source-035 ... not selected
+2026-09-26T23:05:15.633387376Z   selected-source-036 ... not selected
+2026-09-26T23:05:15.633388456Z   selected-source-037 ... not selected
+2026-09-26T23:05:15.633389606Z   selected-source-038 ... not selected
+2026-09-26T23:05:15.633390686Z   selected-source-039 ... not selected
+2026-09-26T23:05:15.633391756Z   selected-source-040 ... not selected
+2026-09-26T23:05:15.633392836Z   selected-source-041 ... not selected
+2026-09-26T23:05:15.633394286Z   selected-source-042 ... not selected
+2026-09-26T23:05:15.633416948Z   selected-source-043 ... not selected
+2026-09-26T23:05:15.633417938Z   selected-source-044 ... not selected
+2026-09-26T23:05:15.633418858Z   selected-source-045 ... not selected
+2026-09-26T23:05:15.633419708Z   selected-source-046 ... not selected
+2026-09-26T23:05:15.633420638Z   selected-source-047 ... not selected
+2026-09-26T23:05:15.633421538Z   selected-source-048 ... not selected
+2026-09-26T23:05:15.633422398Z   selected-source-049 ... not selected
+2026-09-26T23:05:15.633423278Z   selected-source-050 ... not selected
+2026-09-26T23:05:15.633424148Z   selected-source-051 ... not selected
+2026-09-26T23:05:15.633425028Z   selected-source-052 ... not selected
+2026-09-26T23:05:15.633425918Z   selected-source-053 ... not selected
+2026-09-26T23:05:15.633426808Z   selected-source-054 ... not selected
+2026-09-26T23:05:15.633427678Z   selected-source-055 ... not selected
+2026-09-26T23:05:15.633428568Z   selected-source-056 ... not selected
+2026-09-26T23:05:15.633429448Z   selected-source-057 ... not selected
+2026-09-26T23:05:15.633430358Z   selected-source-058 ... not selected
+2026-09-26T23:05:15.633431258Z   selected-source-059 ... not selected
+2026-09-26T23:05:15.633432178Z   selected-source-060 ... not selected
+2026-09-26T23:05:15.633433108Z   selected-source-061 ... not selected
+2026-09-26T23:05:15.633539104Z   selected-source-062 ... not selected
+2026-09-26T23:05:15.633544844Z   selected-source-063 ... not selected
+2026-09-26T23:05:15.633545774Z   selected-source-064 ... not selected
+2026-09-26T23:05:15.633546524Z   selected-source-065 ... not selected
+2026-09-26T23:05:15.633547284Z   selected-source-066 ... not selected
+2026-09-26T23:05:15.633547934Z   selected-source-067 ... not selected
+2026-09-26T23:05:15.633548594Z   selected-source-068 ... not selected
+2026-09-26T23:05:15.633549244Z   selected-source-069 ... not selected
+2026-09-26T23:05:15.633549874Z   selected-source-070 ... not selected
+2026-09-26T23:05:15.633550505Z   selected-source-071 ... not selected
+2026-09-26T23:05:15.633551135Z   selected-source-072 ... not selected
+2026-09-26T23:05:15.633551775Z   selected-source-073 ... not selected
+2026-09-26T23:05:15.633552415Z   selected-source-074 ... not selected
+2026-09-26T23:05:15.633553065Z   selected-source-075 ... not selected
+2026-09-26T23:05:15.633553715Z   selected-source-076 ... not selected
+2026-09-26T23:05:15.633554365Z   selected-source-077 ... not selected
+2026-09-26T23:05:15.633555005Z   selected-source-078 ... not selected
+2026-09-26T23:05:15.633555655Z   selected-source-079 ... not selected
+2026-09-26T23:05:15.633563755Z   selected-source-080 ... not selected
+2026-09-26T23:05:15.633564595Z   selected-source-081 ... not selected
+2026-09-26T23:05:15.633565275Z   selected-source-082 ... not selected
+2026-09-26T23:05:15.633565925Z   selected-source-083 ... not selected
+2026-09-26T23:05:15.633566565Z   selected-source-084 ... not selected
+2026-09-26T23:05:15.633567195Z   selected-source-085 ... not selected
+2026-09-26T23:05:15.633567835Z   selected-source-086 ... not selected
+2026-09-26T23:05:15.633568485Z   selected-source-087 ... not selected
+2026-09-26T23:05:15.633569136Z   selected-source-088 ... not selected
+2026-09-26T23:05:15.633569776Z   selected-source-089 ... not selected
+2026-09-26T23:05:15.633570426Z   selected-source-090 ... not selected
+2026-09-26T23:05:15.633571096Z   selected-source-091 ... not selected
+2026-09-26T23:05:15.633571736Z   selected-source-092 ... not selected
+2026-09-26T23:05:15.633572376Z   selected-source-093 ... not selected
+2026-09-26T23:05:15.633573016Z   selected-source-094 ... not selected
+2026-09-26T23:05:15.633573646Z   selected-source-095 ... not selected
+2026-09-26T23:05:15.633574296Z   selected-source-096 ... not selected
+2026-09-26T23:05:15.633574936Z   selected-source-097 ... not selected
+2026-09-26T23:05:15.633575586Z   selected-source-098 ... not selected
+2026-09-26T23:05:15.633576226Z   selected-source-099 ... not selected
+2026-09-26T23:05:15.633576876Z   selected-source-100 ... not selected
+2026-09-26T23:05:15.633577516Z   selected-source-101 ... not selected
+2026-09-26T23:05:15.633578156Z   selected-source-102 ... not selected
+2026-09-26T23:05:15.633578806Z   selected-source-103 ... not selected
+2026-09-26T23:05:15.633579446Z   selected-source-104 ... not selected
+2026-09-26T23:05:15.633580086Z   selected-source-105 ... not selected
+2026-09-26T23:05:15.633580726Z   selected-source-106 ... not selected
+2026-09-26T23:05:15.633581356Z   selected-source-107 ... not selected
+2026-09-26T23:05:15.633582006Z   selected-source-108 ... not selected
+2026-09-26T23:05:15.633582636Z   selected-source-109 ... not selected
+2026-09-26T23:05:15.633583286Z   selected-source-110 ... not selected
+2026-09-26T23:05:15.633637369Z   selected-source-111 ... not selected
+2026-09-26T23:05:15.633646949Z   selected-source-112 ... not selected
+2026-09-26T23:05:15.633648369Z   selected-source-113 ... not selected
+2026-09-26T23:05:15.633649399Z   selected-source-114 ... not selected
+2026-09-26T23:05:15.828518696Z   evidence write and source verification ... 39.0ms
+2026-09-26T23:05:15.828550378Z   TOTAL      ... 2/2
+2026-09-26T23:05:15.828553148Z   bundle: /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/navigation-20260926/stdb-r3-purchase/grading/bundle.json
+2026-09-26T23:05:16.160812609Z   removed the leased run container sb-47f614d8a2f08e77-browser
+2026-09-26T23:05:16.882649009Z   removed the leased run container sb-47f614d8a2f08e77-build
+2026-09-26T23:05:17.674472324Z   removed the leased run container sb-47f614d8a2f08e77-backend
+2026-09-26T23:05:18.612942800Z Saved-source regrade: passed; evidence /var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/navigation-20260926/stdb-r3-purchase

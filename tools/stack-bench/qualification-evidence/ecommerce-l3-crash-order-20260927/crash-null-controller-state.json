@@ -1,0 +1,18 @@
+{
+  "Id": "bf5cf4fb3b5086922d45f7e555106053c75575050e1c4fe830852b8cebc977ab",
+  "Image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "Name": "/stack-bench-crash-qual-null-473ca5c2d",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-27T22:56:38.073231957Z",
+    "FinishedAt": "2026-09-27T22:57:07.070161138Z"
+  }
+}

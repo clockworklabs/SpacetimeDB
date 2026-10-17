@@ -1,0 +1,230 @@
+import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { hashDirectory } from '../src/evidence/provenance.js';
+import { loadReferenceRegistry, inspectImportedReference, selectReferenceFixture,
+  prepareReferenceFixtureSource, referenceLayout, referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
+  from '../src/references/reference-fixtures.js';
+import { resolveReferenceSelection } from '../src/references/reference-selection.js';
+
+test('the reference registry binds its current fixtures and provenance', () => {
+  const registry = loadReferenceRegistry();
+  const result = validateReferenceRegistry(registry);
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(registry.fixtures.map(fixture => fixture.backend).sort(), ['convex', 'mongodb', 'postgres', 'spacetime', 'supabase']);
+  const escaped = structuredClone(registry);
+  const escapedFixture = escaped.fixtures[0];
+  assert(escapedFixture, 'the registry must contain a fixture');
+  escapedFixture.origin = { kind: 'imported' };
+  assert(validateReferenceRegistry(escaped).issues.some(issue => issue.includes('must be authored')));
+  escapedFixture.source = { basePath: 'reference-apps/old', patchPath: 'reference-apps/old.json' };
+  assert(validateReferenceRegistry(escaped).issues.some(issue =>
+    issue.includes('source overlays are not supported')));
+});
+
+test('reference validation contains malformed input and unsafe execution paths', () => {
+  assert(validateReferenceRegistry({ schemaVersion: 4, fixtures: [null] }).issues
+    .includes('fixture must be an object'));
+  assert(referenceMetadataIssues({ schemaVersion: 1, kind: 'node-api',
+    installDirectories: ['server'], server: { directory: '../server' },
+    client: { directory: 'client' } }).some(issue => issue.includes('server.directory')));
+  assert(referenceMetadataIssues({ schemaVersion: 1, kind: 'node-api',
+    installDirectories: ['server'], server: { directory: 'server' },
+    client: { directory: 'client' } }).some(issue => issue.includes('must be listed')));
+});
+
+test('reference kinds and backends come from the adapters that deploy references', () => {
+  const client = { schemaVersion: 1, installDirectories: ['.', 'client'], client: { directory: 'client' } };
+  assert.deepEqual(referenceMetadataIssues({ ...client, kind: 'convex' }), []);
+  assert.deepEqual(referenceMetadataIssues({ ...client, kind: 'supabase' }), []);
+  assert(referenceMetadataIssues({ ...client, kind: 'node-api' })
+    .includes('reference.json server.directory is unsafe or missing'));
+  assert(referenceMetadataIssues({ ...client, kind: 'stub' }).includes('reference.json kind is invalid'));
+  assert.deepEqual(referenceLayout('supabase').buildSteps({ ...client, kind: 'supabase' }),
+    [{ directory: 'client', command: 'npm', args: ['run', 'build'] }]);
+  const registry = loadReferenceRegistry();
+  const stub = structuredClone(registry);
+  const stubFixture = stub.fixtures[0];
+  assert(stubFixture, 'the registry must contain a fixture');
+  stubFixture.backend = 'stub';
+  assert(validateReferenceRegistry(stub).issues.includes(`${stubFixture.id}: invalid backend`));
+});
+
+test('a recipe-bound full fixture can serve only its declared progression action levels', () => {
+  const registry = loadReferenceRegistry();
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+    for (const [recipe, levels] of [['ecommerce.progression-catalog', [1, 2, 3, 4, 5, 6]],
+      ['ecommerce.sequential-l1', [1]], ['ecommerce.sequential-l2', [2]]] as const) {
+      for (const level of levels) {
+        const fixture = selectReferenceFixture(registry, { backend, track: 'ecommerce', level, recipe });
+        assert.equal(fixture.id, `ecommerce-reference-${backend}`);
+        assert.equal(fixture.targetPath, `reference-apps/ecommerce/${backend}`);
+      }
+    }
+  }
+
+  const invalid = structuredClone(registry);
+  const invalidFixture = invalid.fixtures[0];
+  assert(invalidFixture, 'the registry must contain a fixture');
+  invalidFixture.actionLevels = [1, 2, 2, 6];
+  const issues = validateReferenceRegistry(invalid).issues.filter(issue =>
+    issue.startsWith('ecommerce-reference-mongodb:'));
+  assert(issues.some(issue => issue.includes('unique positive integer levels')));
+  const invalidRange = structuredClone(registry);
+  const invalidRangeFixture = invalidRange.fixtures[0];
+  assert(invalidRangeFixture, 'the registry must contain a fixture');
+  invalidRangeFixture.actionLevels = [1, 5, 7];
+  assert(validateReferenceRegistry(invalidRange).issues.some(issue =>
+    issue.includes('cannot exceed the fixture level')));
+});
+
+test('default reference tooling follows the current recipe', () => {
+  const registry = loadReferenceRegistry();
+  const selection = resolveReferenceSelection(registry, {
+    backend: 'mongodb', track: 'ecommerce', level: 1,
+  });
+  assert.equal(selection.recipe, 'ecommerce.sequential-l1');
+  assert.equal(selection.fixture.id, 'ecommerce-reference-mongodb');
+
+  const l2 = resolveReferenceSelection(registry, {
+    backend: 'mongodb', track: 'ecommerce', level: 2,
+  });
+  assert.equal(l2.recipe, 'ecommerce.sequential-l2');
+  assert.equal(l2.fixture.id, 'ecommerce-reference-mongodb');
+
+  assert.throws(() => resolveReferenceSelection(registry, {
+    backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.unknown',
+  }), /exactly one/);
+});
+
+test('reference inspection rejects a symlink that the regular-file hash does not bind', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-link-'));
+  try {
+    const target = join(root, 'reference-apps', 'linked');
+    mkdirSync(join(target, 'server'), { recursive: true });
+    mkdirSync(join(target, 'client'), { recursive: true });
+    writeFileSync(join(target, 'server', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'client', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'reference.json'), JSON.stringify({
+      schemaVersion: 1, kind: 'node-api', installDirectories: ['server', 'client'],
+      server: { directory: 'server' }, client: { directory: 'client' },
+    }));
+    const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
+      id: 'linked', backend: 'mongodb', track: 'ecommerce',
+      level: 1, targetPath: 'reference-apps/linked', imported: {
+      path: 'reference-apps/linked', sourceSha256: hashDirectory(target).sha256,
+    } };
+    const link = join(target, 'unchecked-link.txt');
+    try { symlinkSync(join(target, 'server', 'package.json'), link, 'file'); }
+    catch (error) {
+      if (isFileSystemError(error) && ['EPERM', 'EACCES'].includes(error.code)) {
+        t.skip('filesystem cannot create test symlinks'); return;
+      }
+      throw error;
+    }
+    assert.equal(hashDirectory(target).sha256, fixture.imported.sourceSha256);
+    const failure = inspectImportedReference(fixture, { root }).failures[0];
+    assert(failure, 'the symlink must produce an inspection failure');
+    assert.match(failure, /unsupported filesystem entry/);
+    unlinkSync(link);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('reference builds leave source identity unchanged and exclude local output from copies', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-import-'));
+  try {
+    const target = join(root, 'reference-apps', 'example');
+    mkdirSync(join(target, 'server'), { recursive: true });
+    mkdirSync(join(target, 'client'), { recursive: true });
+    writeFileSync(join(target, 'server', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'client', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(target, 'reference.json'), JSON.stringify({ schemaVersion: 1,
+      kind: 'node-api', installDirectories: ['server', 'client'],
+      server: { directory: 'server' }, client: { directory: 'client' } }));
+    const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
+      id: 'import', backend: 'mongodb', track: 'ecommerce',
+      level: 1, targetPath: 'reference-apps/example', imported: {
+      path: 'reference-apps/example', sourceSha256: hashDirectory(target).sha256,
+    } };
+    assert.equal(inspectImportedReference(fixture, { root }).ok, true);
+
+    const generated = ['node_modules', 'client/node_modules', 'client/dist', 'server/dist'];
+    for (const directory of generated) {
+      mkdirSync(join(target, directory), { recursive: true });
+      writeFileSync(join(target, directory, 'app.js'), 'generated\n');
+    }
+    const inspection = inspectImportedReference(fixture, { root });
+    assert.equal(inspection.ok, true);
+    assert.equal(inspection.sourceSha256, fixture.imported.sourceSha256);
+    const destination = join(root, 'prepared');
+    assert.equal(prepareReferenceFixtureSource(fixture, destination, { root }).sha256,
+      fixture.imported.sourceSha256);
+    for (const directory of generated) {
+      assert.equal(existsSync(join(destination, directory)), false);
+      assert.equal(existsSync(join(target, directory)), true);
+    }
+
+    // Excluding build output must not hide source changes or relax import guards.
+    writeFileSync(join(target, 'local.ts'), 'const local = "D:/Development/private";\n');
+    const result = inspectImportedReference(fixture, { root });
+    assert.equal(result.ok, false);
+    assert(result.failures.includes('imported fixture hash does not match registry'));
+    assert(result.failures.some(failure => failure.includes('workstation absolute path')));
+    writeFileSync(join(target, '.env'), 'SECRET=must-not-import\n');
+    assert(inspectImportedReference(fixture, { root }).failures
+      .some(failure => failure.includes('forbidden local file .env')));
+    mkdirSync(join(target, 'client', 'src', 'module_bindings'), { recursive: true });
+    assert(inspectImportedReference(fixture, { root }).failures
+      .some(failure => failure.includes('forbidden generated directory client/src/module_bindings')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('authored references bind checked-in bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-authored-reference-'));
+  try {
+    const target = join(root, 'reference-apps', 'authored');
+    mkdirSync(join(target, 'server'), { recursive: true });
+    mkdirSync(join(target, 'client'), { recursive: true });
+    writeFileSync(join(target, 'server', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'client', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(target, 'reference.json'), JSON.stringify({
+      schemaVersion: 1, kind: 'node-api', installDirectories: ['server', 'client'],
+      server: { directory: 'server' }, client: { directory: 'client' },
+    }));
+    const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
+      id: 'authored', backend: 'mongodb', track: 'ecommerce', level: 2,
+      targetPath: 'reference-apps/authored', mutationManifests: [],
+      origin: { kind: 'authored', note: 'Maintained as a benchmark oracle.' },
+      imported: { path: 'reference-apps/authored', sourceSha256: hashDirectory(target).sha256 } };
+    const registry: ReferenceRegistry = { schemaVersion: 5, fixtures: [fixture] };
+
+    assert.deepEqual(validateReferenceRegistry(registry, { root }).issues, []);
+    const reused = structuredClone(fixture);
+    reused.id = 'authored-next-level';
+    reused.level = 3;
+    registry.fixtures.push(reused);
+    assert.deepEqual(validateReferenceRegistry(registry, { root }).issues, []);
+    assert.equal(inspectImportedReference(fixture, { root }).ok, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function isFileSystemError(error: unknown): error is NodeJS.ErrnoException & { code: string } {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string';
+}
