@@ -1,3 +1,4 @@
+use super::idc_actor::IdcActorSender;
 use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
@@ -44,6 +45,7 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
+    pub idc_sender: IdcActorSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -233,10 +235,11 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcActorSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
+            idc_sender,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
             start_instant: Instant::now(),
@@ -484,7 +487,9 @@ impl InstanceEnv {
                 self.schedule_row(stdb, tx, table_id, row_ptr)?;
             }
             if insert_flags.is_outbox_table {
-                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+                let msg = tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+                // The actor rechecks committed state, so a rolled-back insert is harmless.
+                let _ = self.idc_sender.send(msg);
             }
         }
 
@@ -566,13 +571,8 @@ impl InstanceEnv {
                 },
             )?;
 
-        if update_flags.has_post_write_work() {
-            if update_flags.is_scheduler_table {
-                self.schedule_row(stdb, tx, table_id, row_ptr)?;
-            }
-            if update_flags.is_outbox_table {
-                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
-            }
+        if update_flags.is_scheduler_table {
+            self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
         tx.metrics.bytes_written += buffer.len();
         tx.metrics.rows_updated += 1;
@@ -1494,7 +1494,7 @@ impl Display for GetTxError {
 impl std::error::Error for GetTxError {}
 
 #[cfg(test)]
-mod test {
+pub(super) mod test {
     use super::*;
 
     use std::{ops::Bound, sync::Arc};
@@ -1555,10 +1555,14 @@ mod test {
     }
 
     /// An `InstanceEnv` used for testing the database syscalls.
-    fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
+    pub(in crate::host) fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
+        let (_, idc_sender) = crate::host::idc_actor::channel();
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
-        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+        Ok((
+            InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
+            runtime,
+        ))
     }
 
     struct PendingDurability(tokio::sync::watch::Receiver<Option<u64>>);
@@ -1652,8 +1656,9 @@ mod test {
     fn module_http_config_disables_requests() -> Result<()> {
         let db = relational_db()?;
         let (scheduler, _) = Scheduler::open(db.clone());
+        let (_, idc_sender) = crate::host::idc_actor::channel();
         let (replica_context, _runtime) = replica_ctx(db, crate::config::ModuleHttpConfig { enabled: false })?;
-        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler);
+        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender);
         let request = st_http::Request {
             method: st_http::Method::Get,
             headers: std::iter::empty().collect(),

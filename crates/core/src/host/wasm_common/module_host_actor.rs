@@ -415,7 +415,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
-        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone(), mcc.idc_sender.clone());
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
@@ -465,13 +465,21 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> crate::host::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()
     }
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -634,6 +642,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (res, trapped) = self.common.call_scheduled_reducer(params, &mut self.instance);
         self.trapped = trapped;
         res
+    }
+
+    pub(in crate::host) fn run_idc_callback_and_cleanup(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        let (result, trapped) = self.common.run_idc_callback_and_cleanup(msg, &mut self.instance);
+        self.trapped = trapped;
+        result
     }
 }
 
@@ -1091,7 +1108,7 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResultWithTxOffset, bool) {
-        self.call_reducer_with_tx_inner(tx, params, inst, None)
+        self.call_reducer_with_tx_inner(tx, params, inst, None::<ReducerSuccessAction>)
     }
 
     pub(crate) fn call_reducer_with_success_action<I: WasmInstance>(
@@ -1099,7 +1116,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
-        on_success: ReducerSuccessAction,
+        on_success: impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         self.call_reducer_with_tx_inner(tx, params, inst, Some(on_success))
     }
@@ -1163,7 +1180,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
-        on_success: Option<ReducerSuccessAction>,
+        on_success: Option<impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>>,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
@@ -1678,6 +1695,55 @@ impl InstanceCommon {
         ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }
 
+    /// Refresh views for an internal transaction, then commit and broadcast its changes.
+    /// A failed refresh rolls back the transaction. The boolean reports whether the instance trapped.
+    pub(crate) fn refresh_views_then_commit_and_broadcast(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut impl WasmInstance,
+    ) -> (anyhow::Result<()>, bool) {
+        let timestamp = Timestamp::now();
+        let (view_result, _n_evaluated, trapped) =
+            self.call_views_with_tx(tx, self.info.database_identity, inst, timestamp);
+        let mut status = match view_result.outcome {
+            ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
+            ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
+        };
+        if trapped && matches!(status, EventStatus::Committed(_)) {
+            status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
+        }
+
+        // The commit helper returns Ok after rolling back a failed event.
+        // Preserve the view failure so callers do not mistake rollback for a successful commit.
+        let outcome = match &status {
+            EventStatus::Committed(_) => Ok(()),
+            status => Err(anyhow!("view refresh failed: {status:?}")),
+        };
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity: self.info.database_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status,
+            reducer_return_value: None,
+            // No reducer ran for this internal transaction.
+            execution_budget_used: FunctionBudget::ZERO,
+            host_execution_duration: Duration::ZERO,
+            request_id: None,
+            timer: None,
+        };
+
+        let result = self
+            .info
+            .subscriptions
+            .commit_and_broadcast_event(None, event, view_result.tx)
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
+            .and(outcome);
+        (result, trapped)
+    }
+
     /// Executes view calls and accumulate results.
     /// Returns early if any call traps or fails.
     fn execute_view_calls<I: WasmInstance>(
@@ -1730,6 +1796,14 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> (CallScheduledFunctionResult, bool) {
         crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
+    }
+
+    pub(in crate::host) fn run_idc_callback_and_cleanup<I: WasmInstance>(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+        inst: &mut I,
+    ) -> (anyhow::Result<()>, bool) {
+        crate::host::idc_actor::run_callback_and_cleanup(&self.info.clone(), msg, self, inst)
     }
 }
 

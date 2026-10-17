@@ -22,7 +22,8 @@ use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
 };
 use spacetimedb_datastore::system_tables::{
-    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+    system_tables, StModuleRow, StOutboundStreamRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_OUTBOUND_STREAM_ID,
+    ST_VIEW_SUB_ID,
 };
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
@@ -1552,6 +1553,52 @@ impl RelationalDB {
         table_id: TableId,
     ) -> Result<Vec<RowLevelSecuritySchema>, DBError> {
         Ok(tx.row_level_security_for_table_id(table_id)?)
+    }
+
+    /// Read sender streams to discover pending IDC deliveries.
+    pub fn st_outbound_streams<'a>(
+        &'a self,
+        tx: &'a Tx,
+    ) -> Result<impl Iterator<Item = Result<StOutboundStreamRow, DBError>> + 'a, DBError> {
+        Ok(self
+            .iter(tx, ST_OUTBOUND_STREAM_ID)?
+            .map(|row| StOutboundStreamRow::try_from(row).map_err(DBError::from)))
+    }
+
+    /// Find a sender stream by its durable id.
+    pub fn st_outbound_stream_by_id(
+        &self,
+        tx: &impl StateView,
+        stream_id: u64,
+    ) -> Result<Option<StOutboundStreamRow>, DBError> {
+        Ok(tx.st_outbound_stream_by_id(stream_id)?)
+    }
+
+    /// Find a pending delivery by stream and sequence.
+    pub fn outbound_msg_by_stream_seq<'a>(
+        &self,
+        tx: &'a impl StateView,
+        stream_id: u64,
+        seq: u64,
+    ) -> Result<Option<RowRef<'a>>, DBError> {
+        Ok(tx.outbound_msg_by_stream_seq(stream_id, seq)?)
+    }
+
+    /// Find the user outbox row by its message id.
+    pub fn outbox_row(
+        &self,
+        tx: &impl StateView,
+        table_id: TableId,
+        msg_id: u64,
+    ) -> Result<Option<ProductValue>, DBError> {
+        let schema = tx.schema_for_table(table_id)?;
+        let msg_column = schema
+            .primary_key
+            .ok_or_else(|| anyhow!("outbox table {table_id} has no primary key"))?;
+        Ok(tx
+            .iter_by_col_eq(table_id, msg_column, &msg_id.into())?
+            .next()
+            .map(|row| row.to_product_value()))
     }
 
     /// Returns an iterator,
