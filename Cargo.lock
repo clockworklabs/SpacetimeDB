@@ -8942,6 +8942,7 @@ dependencies = [
  "proptest",
  "serial_test",
  "smallvec",
+ "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-memory-usage",
