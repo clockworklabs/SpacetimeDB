@@ -162,8 +162,27 @@ describe('http router', async () => {
 
   it('rejects invalid path characters', () => {
     expect(() => new Router().get('/Hello', handler())).toThrow(
-      'Route paths may contain only ASCII lowercase letters, digits and `-_~/`: /Hello'
+      'Route paths may contain only ASCII lowercase letters, digits and `-_~/*`: /Hello'
     );
+  });
+
+  it('accepts a trailing wildcard and rejects a wildcard elsewhere', () => {
+    expect(() => new Router().get('/webhooks/*', handler())).not.toThrow();
+    expect(() => new Router().get('/mid*path', handler())).toThrow(
+      'Route paths may contain `*` only as the final character: /mid*path'
+    );
+  });
+
+  it('rejects a wildcard route that overlaps a static route', () => {
+    expect(() =>
+      new Router().get('/webhooks/*', handler()).get('/webhooks/github', handler())
+    ).toThrow('Route conflict for `/webhooks/github`');
+  });
+
+  it('allows a wildcard route and a covered path with another method', () => {
+    expect(() =>
+      new Router().get('/webhooks/*', handler()).post('/webhooks/github', handler())
+    ).not.toThrow();
   });
 
   it('allows distinct methods on the same path', () => {
