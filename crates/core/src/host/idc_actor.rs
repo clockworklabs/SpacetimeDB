@@ -74,6 +74,7 @@ impl IdcActorStarter {
         self,
         db: Arc<RelationalDB>,
         database_identity: Identity,
+        client: reqwest::Client,
         config: IdcConfig,
         module_host: WeakModuleHost,
     ) -> anyhow::Result<IdcActor> {
@@ -83,6 +84,7 @@ impl IdcActorStarter {
             if let Err(error) = run_idc_loop(
                 db,
                 database_identity,
+                client,
                 config,
                 module_host,
                 self.rx,
@@ -179,16 +181,17 @@ impl LoadedMessage {
 /// and retry timers wake the loop. Read each stream's next message from the database.
 /// Send acknowledgments with later messages. Idle streams do not send a separate ack.
 /// If loading a message fails, stop the actor instead of retrying the read.
+#[allow(clippy::too_many_arguments)]
 async fn run_idc_loop(
     db: Arc<RelationalDB>,
     database_identity: Identity,
+    client: reqwest::Client,
     config: IdcConfig,
     module_host: WeakModuleHost,
     mut notify_rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
     mut streams: DeliveryStreams,
     mut shutdown: mpsc::UnboundedReceiver<()>,
 ) -> anyhow::Result<()> {
-    let client = http_client();
     let mut in_flight = FuturesUnordered::new();
     let mut notifications = Vec::with_capacity(NOTIFICATION_BATCH_SIZE);
     let mut notifications_open = true;
@@ -473,7 +476,8 @@ async fn deliver_message_and_record_result(
     }
 }
 
-fn http_client() -> reqwest::Client {
+/// Create the HTTP client shared by a host controller's IDC actors.
+pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         // The local proxy handles routing. A redirect is not an IDC result.
         .redirect(reqwest::redirect::Policy::none())

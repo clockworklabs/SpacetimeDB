@@ -1,8 +1,8 @@
 //! Exercise sender delivery and cleanup with a real module host.
 //! The HTTP receiver is a stub that can delay requests or return errors.
 //! This test does not run a receiver reducer or an `on_result` callback.
-use axum::extract::{Path, Query};
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, Path, Query};
+use axum::http::{StatusCode, Version};
 use axum::routing::post;
 use axum::Router;
 use serde::Deserialize;
@@ -25,6 +25,7 @@ use spacetimedb_schema::schema::{
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule, IN_MEMORY_CONFIG};
 use std::collections::HashSet;
+use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -221,7 +222,13 @@ async fn run_actor_test(host: ModuleHost) -> anyhow::Result<()> {
         token_signer: Arc::new(keys.private),
     };
     // Use the real host to commit cleanup through the view and subscription path.
-    let actor = starter.start(db.clone(), host.info.database_identity, config, host.downgrade())?;
+    let actor = starter.start(
+        db.clone(),
+        host.info.database_identity,
+        idc_actor::http_client(),
+        config,
+        host.downgrade(),
+    )?;
     expect_delivery(&mut captured_rx, SLOW_TARGET, &slow_first).await?;
 
     // Insert more work while one request is waiting. Other streams should still
@@ -371,20 +378,26 @@ fn idc_actor_shutdown_drains_attempts_without_dispatching_more() {
 }
 
 async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
+    let client = idc_actor::http_client();
+    let mut connections = HashSet::new();
     let (requests_tx, mut requests_rx) = mpsc::unbounded_channel();
     let app = Router::new().route(
         "/v1/database/:target_db/call-from-database/:reducer",
-        post(move |Query(query): Query<DeliveryQuery>| {
-            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<StatusCode>();
-            requests_tx.send((query.seq, reply_tx)).unwrap();
-            async move { reply_rx.await.unwrap() }
-        }),
+        post(
+            move |ConnectInfo(peer): ConnectInfo<SocketAddr>, version: Version, Query(query): Query<DeliveryQuery>| {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<StatusCode>();
+                assert_eq!(version, Version::HTTP_2);
+                requests_tx.send((query.seq, reply_tx, peer)).unwrap();
+                async move { reply_rx.await.unwrap() }
+            },
+        ),
     );
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let config = IdcConfig {
         http_port: listener.local_addr()?.port(),
         token_signer: Arc::new(spacetimedb::auth::JwtKeys::generate()?.private),
     };
+    let app = app.into_make_service_with_connect_info::<SocketAddr>();
     let server = tokio::spawn(async move { axum::serve(listener, app).await });
     let _server_abort = scopeguard::guard(server.abort_handle(), |handle| handle.abort());
     let db = host.relational_db().clone();
@@ -399,6 +412,7 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
         let _actor = starter.start(
             db.clone(),
             host.info.database_identity,
+            client.clone(),
             config.clone(),
             host.downgrade(),
         )?;
@@ -413,10 +427,12 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
         let _actor = starter.start(
             db.clone(),
             host.info.database_identity,
+            client.clone(),
             config.clone(),
             host.downgrade(),
         )?;
-        let (seq, reply) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+        let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+        connections.insert(peer);
         assert_eq!(seq, first.seq);
         {
             // ModuleHost::exit signals closure through its sender and waits for
@@ -463,8 +479,20 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
 
     // Startup discovers the untouched second message without a notification.
     let (starter, notify_tx) = idc_actor::channel();
-    let _actor = starter.start(db.clone(), host.info.database_identity, config, host.downgrade())?;
-    let (seq, reply) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+    let _actor = starter.start(
+        db.clone(),
+        host.info.database_identity,
+        client,
+        config,
+        host.downgrade(),
+    )?;
+    let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+    connections.insert(peer);
+    assert_eq!(
+        connections.len(),
+        1,
+        "replacement actors must reuse the HTTP/2 connection"
+    );
     assert_eq!(seq, second.seq);
     reply.send(StatusCode::OK).unwrap();
     wait_for_ack(&db, SLOW_TARGET, second.seq).await?;

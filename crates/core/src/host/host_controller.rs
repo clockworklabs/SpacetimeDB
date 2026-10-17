@@ -223,6 +223,8 @@ pub struct HostController {
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
     /// Transport settings configured before starting database actors.
     idc_config: OnceCell<IdcConfig>,
+    /// HTTP connection pool shared by all IDC actors managed by this controller.
+    idc_client: reqwest::Client,
 }
 
 pub(crate) struct HostRuntimes {
@@ -389,6 +391,7 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             idc_config: OnceCell::new(),
+            idc_client: idc_actor::http_client(),
         }
     }
 
@@ -1234,6 +1237,8 @@ struct Host {
     view_cleanup_task: AbortHandle,
     /// Transport settings reused when starting a replacement IDC actor after a module update.
     idc_config: IdcConfig,
+    /// Shared client retained across IDC actor replacements.
+    idc_client: reqwest::Client,
     /// IDC actor for the current module. [`ModuleHost::exit`] drains it;
     /// dropping this handle aborts the task if shutdown cannot finish.
     idc_actor: IdcActor,
@@ -1498,6 +1503,7 @@ impl Host {
         let idc_actor = idc_starter.start(
             replica_ctx.relational_db().clone(),
             replica_ctx.database_identity,
+            host_controller.idc_client.clone(),
             idc_config.clone(),
             module_host.downgrade(),
         )?;
@@ -1517,6 +1523,7 @@ impl Host {
                 tx_metrics_recorder_task,
                 view_cleanup_task,
                 idc_config,
+                idc_client: host_controller.idc_client.clone(),
                 idc_actor,
             },
             bootstrap_completion,
@@ -1633,6 +1640,7 @@ impl Host {
                 self.idc_actor = idc_starter.start(
                     replica_ctx.relational_db().clone(),
                     replica_ctx.database_identity,
+                    self.idc_client.clone(),
                     self.idc_config.clone(),
                     module.downgrade(),
                 )?;
@@ -1665,6 +1673,7 @@ impl Host {
                 self.idc_actor = idc_starter.start(
                     replica_ctx.relational_db().clone(),
                     replica_ctx.database_identity,
+                    self.idc_client.clone(),
                     self.idc_config.clone(),
                     module.downgrade(),
                 )?;
