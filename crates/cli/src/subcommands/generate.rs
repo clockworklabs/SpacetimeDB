@@ -364,7 +364,7 @@ pub fn cli() -> clap::Command {
                 .long("bindings")
                 .value_parser(clap::value_parser!(BindingKind))
                 .default_value("client")
-                .help("The kind of bindings to generate (module bindings are not implemented yet)"),
+                .help("The kind of bindings to generate (module bindings support Rust and TypeScript)"),
         )
         .arg(
             Arg::new("build_options")
@@ -743,10 +743,10 @@ pub async fn run_prepared_generate_configs(
                 Language::UnrealCpp => anyhow::bail!("Unreal C++ is a client binding target"),
             };
             let files = generate_receiver_bindings(&module, lang)?;
-            if run.lang == Language::Rust
-                && let Some(name) = &run.dependency_name
-            {
-                write_remote_bindings_mod(&run.out_dir, name)?;
+            if let Some(name) = &run.dependency_name {
+                if run.lang == Language::Rust {
+                    write_remote_bindings_mod(&run.out_dir, name)?;
+                }
                 generate_dependency_module_files(files, name)
             } else {
                 files
@@ -1491,6 +1491,10 @@ mod tests {
                 result.unwrap();
                 assert!(out_dir.join("mod.rs").exists());
                 assert!(out_dir.join("receiver/mod.rs").exists());
+            } else if lang == Language::TypeScript {
+                result.unwrap();
+                assert!(out_dir.join("receiver/index.ts").exists());
+                assert!(!out_dir.join("receiver/package.json").exists());
             } else {
                 assert_eq!(
                     result.unwrap_err().to_string(),
