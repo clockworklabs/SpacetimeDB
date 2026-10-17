@@ -61,6 +61,7 @@ export interface TableToSchema<
   T extends UntypedTableSchema,
 > extends UntypedTableDef {
   accessorName: AccName;
+  isOutbox: T['isOutbox'];
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   // Declarative user-provided table-level indexes.
@@ -153,6 +154,7 @@ export function tableToSchema<
     // be used, it is stored as alias in database, hence works in query builder.
     sourceName: schema.tableName || accName,
     accessorName: accName,
+    isOutbox: schema.isOutbox,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     // Keep declarative indexes in their original shape for type-level consumers.
@@ -194,6 +196,7 @@ export class ModuleContext {
     types: [],
     rowLevelSecurity: [],
     schedules: [],
+    outboxes: [],
     procedures: [],
     views: [],
     viewPrimaryKeys: [],
@@ -234,6 +237,9 @@ export class ModuleContext {
       }
     );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    if (module.outboxes.length > 0) {
+      push({ tag: 'Outboxes', value: module.outboxes });
+    }
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',

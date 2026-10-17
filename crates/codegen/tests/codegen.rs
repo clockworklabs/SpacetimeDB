@@ -309,3 +309,44 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
         String::from_utf8_lossy(&result.stderr)
     );
 }
+
+#[test]
+fn test_codegen_typescript_receiver_bindings() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_lib::{AlgebraicType, ProductType, SpacetimeType};
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = spacetimedb_lib)]
+    struct Details {
+        nested_values: Vec<Option<String>>,
+    }
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(CaseConversionPolicy::SnakeCase);
+    let details = builder.add_type::<Details>();
+    builder.add_reducer(
+        "receivePing",
+        ProductType::from([("Note", AlgebraicType::String), ("Details", details)]),
+    );
+    builder.add_reducer("Noop", ProductType::unit());
+    let mut names = ExplicitNames::default();
+    names.insert_function("receivePing", "wire_ping");
+    builder.add_explicit_names(names);
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript).unwrap();
+    let root = &files.iter().find(|f| f.filename == "index.ts").unwrap().code;
+    assert!(root.contains("nestedValues"));
+    assert!(root.contains("\"receivePing\""));
+    assert!(root.contains("\"wire_ping\""));
+    assert!(root.contains("\"note\": \"note\""));
+    let reducer = module.reducers().find(|r| r.name.as_ref() == "wire_ping").unwrap();
+    let hash = spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    );
+    assert!(root.contains(&format!("signatureHash: {}n", hash.to_u256())));
+    assert_eq!(files.len(), 1);
+    insta::assert_snapshot!(root);
+}

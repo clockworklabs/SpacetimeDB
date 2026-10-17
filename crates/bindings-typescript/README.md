@@ -248,3 +248,51 @@ by the host in a submodule fail at runtime; ordinary helpers retain their caller
 scope. Values are private, durable database configuration for secrets and other settings.
 Database owners and authorized collaborators can read them; module code can expose
 them through its own outputs.
+
+### Inter-database communication
+
+Generate receiver bindings with `spacetime generate --bindings module --lang typescript`,
+or declare dependencies in `spacetime.json` and run `spacetime generate <sender>`.
+Dependency bindings are written to `src/remote_bindings/<dependency>/index.ts` by
+default. Import them as source modules; no receiver package dependency is needed.
+Receiver generation currently covers root-module reducers only.
+
+```ts
+import { schema, table, t } from 'spacetimedb/server';
+import gw from './remote_bindings/game_world';
+
+const pingOutbox = table(
+  { outbox: { receiver: gw.reducers.receivePing } },
+  {
+    msgId: t.u64().primaryKey().autoInc(),
+    target: gw.identity().target(),
+    note: t.string(),
+  }
+);
+// Alternatively: const pingOutbox = gw.outbox.receivePing();
+const db = schema({ pingOutbox });
+export default db;
+
+export const ping = db.reducer(
+  { to: gw.identity(), note: t.string() },
+  (ctx, { to, note }) => {
+    ctx.db.pingOutbox.insert({ msgId: 0n, target: to, note });
+  }
+);
+
+export const onPingResult = db.reducer(
+  { reactive: { onResult: pingOutbox } },
+  { row: t.rowOf(pingOutbox), result: t.result(t.unit(), t.string()) },
+  (_ctx, { row, result }) => {
+    if ('err' in result)
+      console.warn(`Ping to ${row.target} failed: ${result.err}`);
+  }
+);
+```
+
+Outboxes require one auto-incrementing `u64` primary key and one identity column
+marked `.target()`. Receiver parameters map to columns by name, independently of
+column order. Outboxes expose inserts and reads; updates, deletes, and `clear`
+are unavailable. A result callback accepts the outbox row followed by
+`Result<Unit, String>`. The host commits successful callback changes atomically
+with outbox cleanup.

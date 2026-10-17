@@ -1,3 +1,5 @@
+import type { RemoteReducer } from './remote_module';
+import { makeOutbox } from './remote_module';
 import type { ProcedureExport, ReducerExport, t } from '../server';
 import type { errors } from '../server/errors';
 import {
@@ -139,6 +141,7 @@ export type UntypedTableDef = {
   constraints: readonly ConstraintOpts<any>[];
   tableDef: RawTableDefV10;
   isEvent?: boolean;
+  isOutbox?: boolean;
 };
 
 /**
@@ -207,6 +210,7 @@ export type TableOpts<Row extends RowObj> = {
         ReturnType<typeof t.unit>
       >;
   event?: boolean;
+  outbox?: { receiver: RemoteReducer };
 };
 
 /**
@@ -235,7 +239,9 @@ type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
  * - AIO: auto-increment overflow error type (never if none)
  */
 export type Table<TableDef extends UntypedTableDef> = Prettify<
-  TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
+  true extends TableDef['isOutbox']
+    ? ReadonlyTable<TableDef> & Pick<TableMethods<TableDef>, 'insert'>
+    : TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
 >;
 
 export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
@@ -335,7 +341,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> & {
+  readonly isOutbox: Opts extends { outbox: object } ? true : false;
+} {
   const {
     name,
     public: isPublic = false,
@@ -500,7 +508,13 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       ? { scheduleAtCol, reducer: scheduled }
       : undefined;
 
+  const outbox =
+    opts.outbox &&
+    makeOutbox(opts.outbox.receiver, row, pk, !!scheduled || isEvent);
+
   return {
+    isOutbox: !!outbox as Opts extends { outbox: object } ? true : false,
+    outbox,
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,

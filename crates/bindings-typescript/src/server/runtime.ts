@@ -534,7 +534,13 @@ class ModuleHooksImpl implements ModuleHooks {
     const rootTables = Object.values(this.#schema.schemaType.tables).map(
       table => [
         table.accessorName,
-        makeTableView(this.#schema.typespace, table.tableDef),
+        makeTableView(
+          this.#schema.typespace,
+          table.tableDef,
+          hostBackend,
+          '',
+          table.isOutbox
+        ),
       ]
     );
     const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [
@@ -553,7 +559,13 @@ class ModuleHooksImpl implements ModuleHooks {
       Object.fromEntries(
         m.tables.map(({ accessorName, tableDef }) => [
           accessorName,
-          makeTableView(m.typespace, tableDef, m.namePrefix),
+          makeTableView(
+            m.typespace,
+            tableDef,
+            hostBackend,
+            m.namePrefix,
+            m.schemaTables[accessorName].isOutbox
+          ),
         ])
       ) as DbView<any>
     ));
@@ -918,7 +930,13 @@ function buildDbViewForDispatch(
 ): object {
   const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
     accessorName,
-    makeTableView(dispatch.typespace, tableDef, namePrefix),
+    makeTableView(
+      dispatch.typespace,
+      tableDef,
+      hostBackend,
+      namePrefix,
+      dispatch.schemaTables[accessorName].isOutbox
+    ),
   ]);
   const subNsEntries = dispatch.subDispatches.map(sub => [
     sub.namespace,
@@ -1155,7 +1173,8 @@ export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,
   backendOrNamePrefix: DatastoreBackend | string = hostBackend,
-  namePrefix = ''
+  namePrefix = '',
+  isOutbox = false
 ): Table<any> {
   const backend = isDatastoreBackend(backendOrNamePrefix)
     ? backendOrNamePrefix
@@ -1283,6 +1302,11 @@ export function makeTableView(
     Object.create(null),
     tableMethods
   ) as Table<any>;
+
+  if (isOutbox) {
+    delete (tableView as any).delete;
+    delete (tableView as any).clear;
+  }
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
@@ -1623,6 +1647,11 @@ export function makeTableView(
           }
         },
       } as RangedIndex<any, any>;
+    }
+
+    if (isOutbox) {
+      delete (index as any).delete;
+      delete (index as any).update;
     }
 
     // IMPORTANT: duplicate accessor handling.
