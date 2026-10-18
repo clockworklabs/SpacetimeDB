@@ -1043,7 +1043,6 @@ export type TestFoobar = __Infer<typeof TestFoobar>;
 
 export const UploadRequest = __t.object("UploadRequest", {
   fileId: __t.u128(),
-  sender: __t.option(__t.identity()),
   size: __t.u64(),
   contentType: __t.option(__t.string()),
   token: __t.option(__t.string()),

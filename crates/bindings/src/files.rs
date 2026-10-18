@@ -10,7 +10,8 @@
 //! ```ignore
 //! #[spacetimedb::reducer(allow_upload)]
 //! fn allow_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
-//!     upload.sender.ok_or("sign in to upload")?;
+//!     // As in any reducer, the sender is the caller: here, the uploader.
+//!     ctx.db.user().identity().find(ctx.sender()).ok_or("only registered users may upload")?;
 //!     Ok(())
 //! }
 //! ```

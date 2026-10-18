@@ -64,19 +64,18 @@ fn my_gifts(ctx: &ViewContext) -> Vec<ReceivedGift> {
         .collect()
 }
 
-/// Accepts uploads of up to `UPLOAD_SIZE_MAX` from signed-in clients.
+/// Accepts uploads of up to `UPLOAD_SIZE_MAX`.
 ///
 /// It runs before any bytes arrive, and the host has already chosen the file's ID,
-/// so it records the uploader as the file's owner.
+/// so it records its sender, the uploader, as the file's owner.
 #[spacetimedb::reducer(allow_upload)]
 fn allow_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
-    let owner = upload.sender.ok_or("sign in to upload")?;
     if upload.size > UPLOAD_SIZE_MAX {
         return Err(format!("uploads are limited to {UPLOAD_SIZE_MAX} bytes"));
     }
     ctx.db.file_owner().insert(FileOwner {
         file: upload.file_id,
-        owner,
+        owner: ctx.sender(),
     });
     Ok(())
 }

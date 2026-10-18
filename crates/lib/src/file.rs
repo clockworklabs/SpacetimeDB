@@ -10,7 +10,7 @@
 //! - A [`FileRef`] is a [`FileId`] plus the file's read secret.
 //!   Holding a `FileRef` is what lets a client download the file.
 
-use crate::{Hash, Identity, Timestamp};
+use crate::{Hash, Timestamp};
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, SpacetimeType};
 use std::{fmt, str::FromStr};
@@ -46,7 +46,7 @@ impl fmt::Display for FileId {
 /// Represented in SATS as the special product `{ __file_ref__: U256 }`, so that generated client code
 /// can give it its own type, with the `FileId` in the low 128 bits and the read secret in the high
 /// 128 bits. Its BSATN is the same as the `U256`'s.
-/// Like an [`Identity`]'s, its text form, used in URLs, is that `U256` in hex.
+/// Like an [`Identity`](crate::Identity)'s, its text form, used in URLs, is that `U256` in hex.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileRef {
     id: FileId,
@@ -212,18 +212,21 @@ impl FileMetadata {
 ///
 /// A module enables uploads by defining that reducer, taking one `UploadRequest`.
 /// Without one, the host refuses every upload. Clients can't call it directly.
+///
+/// It runs as a reducer called over HTTP does: the uploader connects for the call, so
+/// `client_connected` and `client_disconnected` run around it, and its sender and JWT are the
+/// uploader's. An upload authorized only by an `?upload_token=` gets a new identity, as a client
+/// that connects without an identity token does.
 #[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct UploadRequest {
     /// The ID the file will have once the upload completes.
     pub file_id: FileId,
-    /// The uploader, or `None` for uploads authorized only by a `?token=`.
-    pub sender: Option<Identity>,
     /// The size the uploader declared. The upload fails if the body is a different size.
     pub size: u64,
     /// The content type the uploader declared. Nothing verifies it.
     pub content_type: Option<String>,
-    /// The `?token=` from the upload URL, if any.
+    /// The `?upload_token=` from the upload URL, if any.
     pub token: Option<String>,
 }
 

@@ -2,10 +2,10 @@
 //!
 //! These routes sit beside the authenticated database routes rather than inside them.
 //! A download is authorized by the `FileRef` in its URL, so it needs no identity,
-//! and an upload reads its identity, if any, from the `Authorization` header itself.
+//! and an upload reads its identity from the `Authorization` header itself, or gets a new one.
 
-use crate::auth::SpacetimeAuthHeader;
-use crate::routes::database::{find_database_module, ResolvedDatabase};
+use crate::auth::{SpacetimeAuth, SpacetimeAuthHeader};
+use crate::routes::database::{find_database_module, with_connection, ResolvedDatabase};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
@@ -17,10 +17,10 @@ use serde::Deserialize;
 use spacetimedb::db::files::{self as engine_files, DatabaseFiles};
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::host::module_host::UploadedFileRecorded;
-use spacetimedb::host::ReducerOutcome;
+use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::{IdentityViaU256, StFileRow, StUploadRow, TimestampViaI64};
-use spacetimedb_lib::{FileRef, Identity, Timestamp, UploadRequest};
+use spacetimedb_lib::{ConnectionId, FileRef, Identity, Timestamp, UploadRequest};
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
@@ -141,6 +141,13 @@ fn error(status: StatusCode, message: impl Into<String>) -> ErrorResponse {
     (status, message.into()).into()
 }
 
+fn no_allow_upload() -> ErrorResponse {
+    error(
+        StatusCode::FORBIDDEN,
+        "this database doesn't accept uploads: it defines no allow_upload reducer",
+    )
+}
+
 /// The module and its database, or a response saying why there isn't one.
 async fn database_files<S: ControlStateDelegate + NodeDelegate>(
     ctx: &S,
@@ -158,7 +165,8 @@ async fn database_files<S: ControlStateDelegate + NodeDelegate>(
 #[derive(Deserialize)]
 pub struct UploadParams {
     /// A token for `allow_upload` to check, for uploads that aren't authorized by an identity.
-    token: Option<String>,
+    /// It can't be `?token=`, which every route reads as the caller's identity token.
+    upload_token: Option<String>,
 }
 
 /// `POST /v1/database/:name_or_identity/files`
@@ -170,11 +178,11 @@ pub async fn upload<S: ControlStateDelegate + NodeDelegate>(
     State(ctx): State<S>,
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     auth: SpacetimeAuthHeader,
-    Query(UploadParams { token }): Query<UploadParams>,
+    Query(UploadParams { upload_token }): Query<UploadParams>,
     headers: HeaderMap,
     body: Body,
 ) -> axum::response::Result<Response> {
-    upload_inner(ctx, database, auth, token, headers, body).await
+    upload_inner(ctx, database, auth, upload_token, headers, body).await
 }
 
 async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
@@ -197,11 +205,11 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
             _ => return Err(error(StatusCode::BAD_REQUEST, "the Content-Type can't be served back")),
         },
     };
-    let sender = auth.get().map(|auth| auth.claims.identity);
-    if sender.is_none() && token.is_none() {
+    let auth = auth.get();
+    if auth.is_none() && token.is_none() {
         return Err(error(
             StatusCode::UNAUTHORIZED,
-            "an upload needs an Authorization header or a ?token=",
+            "an upload needs an identity token or an ?upload_token=",
         ));
     }
     let idempotency_key = match headers.get(IDEMPOTENCY_KEY_HEADER) {
@@ -216,9 +224,9 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
             }
         },
     };
-    // Keys are scoped to their sender, so keyed uploads need an identity.
-    let keyed = match (idempotency_key, sender) {
-        (Some(key), Some(sender)) => Some((sender, key)),
+    // Keys are scoped to their sender, so keyed uploads need an identity the uploader can present again.
+    let keyed = match (idempotency_key, &auth) {
+        (Some(key), Some(auth)) => Some((auth.claims.identity, key)),
         (Some(_), None) => {
             return Err(error(
                 StatusCode::BAD_REQUEST,
@@ -254,30 +262,44 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         .try_begin_upload()
         .ok_or_else(|| error(StatusCode::PAYLOAD_TOO_LARGE, "too many uploads are in progress"))?;
 
+    if !module.accepts_uploads() {
+        return Err(no_allow_upload());
+    }
+    // An upload authorized only by an upload token gets a new identity, as a client that connects without
+    // an identity token does.
+    let auth = match auth {
+        Some(auth) => auth,
+        None => SpacetimeAuth::alloc(&ctx).await?,
+    };
+    let sender = auth.claims.identity;
+
     // Decide before reading the body. The file's ID is fixed now, so `allow_upload` can record it.
     let file_ref = engine_files::mint_file_ref();
     let request = UploadRequest {
         file_id: file_ref.id_unchecked(),
-        sender,
         size: declared_size,
         content_type: content_type.clone(),
         token,
     };
-    // Token-only uploads have no identity, so `allow_upload` sees the zero identity as its sender.
-    let caller = sender.unwrap_or(Identity::ZERO);
-    match module.call_allow_upload(caller, &request).await {
-        Ok(None) => {
-            return Err(error(
-                StatusCode::FORBIDDEN,
-                "this database doesn't accept uploads: it defines no allow_upload reducer",
-            ))
-        }
-        Ok(Some(result)) => match result.outcome {
-            ReducerOutcome::Committed => {}
-            ReducerOutcome::Failed(message) => return Err(error(StatusCode::FORBIDDEN, message.to_string())),
-            ReducerOutcome::BudgetExceeded => return Err(error(StatusCode::PAYMENT_REQUIRED, "out of energy")),
+    // The uploader connects for the call, as for a reducer called over HTTP, so `allow_upload` sees its JWT.
+    let outcome = with_connection(
+        module.clone(),
+        auth.into(),
+        sender,
+        async move |module: ModuleHost, sender: Identity, connection_id: ConnectionId| match module
+            .call_allow_upload(sender, connection_id, &request)
+            .await
+        {
+            Ok(None) => Err(no_allow_upload()),
+            Ok(Some(result)) => Ok(result.outcome),
+            Err(e) => Err(log_and_500(e)),
         },
-        Err(e) => return Err(log_and_500(e)),
+    )
+    .await?;
+    match outcome {
+        ReducerOutcome::Committed => {}
+        ReducerOutcome::Failed(message) => return Err(error(StatusCode::FORBIDDEN, message.to_string())),
+        ReducerOutcome::BudgetExceeded => return Err(error(StatusCode::PAYMENT_REQUIRED, "out of energy")),
     }
 
     // Receive and hash the body, then persist it.
@@ -361,7 +383,7 @@ async fn upload_inner<S: ControlStateDelegate + NodeDelegate>(
         ));
     }
     match module
-        .insert_uploaded_file(row, upload, caller)
+        .insert_uploaded_file(row, upload, sender)
         .await
         .map_err(log_and_500)?
     {

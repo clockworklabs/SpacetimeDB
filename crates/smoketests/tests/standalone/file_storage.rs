@@ -6,7 +6,7 @@ use reqwest::StatusCode;
 use spacetimedb_smoketests::{require_local_server, Smoketest};
 
 const MODULE_CODE: &str = r#"
-use spacetimedb::{FileId, FileRef, ReducerContext, Table, UploadRequest};
+use spacetimedb::{FileId, FileRef, Identity, ReducerContext, Table, UploadRequest};
 
 /// Every upload `allow_upload` accepted, by the ID the file will have.
 #[spacetimedb::table(accessor = upload_log, public)]
@@ -14,6 +14,9 @@ pub struct UploadLog {
     #[primary_key]
     file: FileId,
     size: u64,
+    sender: Identity,
+    /// Whether `allow_upload` had a JWT for its sender.
+    sender_jwt: bool,
 }
 
 #[spacetimedb::table(accessor = attachment, public)]
@@ -27,14 +30,21 @@ pub struct Attachment {
 
 #[spacetimedb::reducer(allow_upload)]
 pub fn check_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
-    upload.sender.ok_or("sign in to upload")?;
+    // The uploader is the sender, and the database never uploads.
+    if ctx.sender_auth().is_internal() {
+        return Err("an upload is never internal".into());
+    }
+    if upload.token.as_deref().is_some_and(|token| token != "letmein") {
+        return Err("wrong token".into());
+    }
     if upload.size > 1024 * 1024 {
         return Err("too large".into());
     }
     if upload.content_type.as_deref() == Some("application/x-forbidden") {
         return Err("forbidden content type".into());
     }
-    ctx.db.upload_log().insert(UploadLog { file: upload.file_id, size: upload.size });
+    let sender_jwt = ctx.sender_auth().jwt().is_some_and(|jwt| jwt.identity() == ctx.sender());
+    ctx.db.upload_log().insert(UploadLog { file: upload.file_id, size: upload.size, sender: ctx.sender(), sender_jwt });
     Ok(())
 }
 
@@ -129,6 +139,16 @@ impl<'a> Files<'a> {
         request.send().unwrap()
     }
 
+    /// Uploads with the query string `query` and no `Authorization` header.
+    fn upload_with_query(&self, body: &[u8], query: &str) -> reqwest::blocking::Response {
+        self.client
+            .post(self.url(&format!("?{query}")))
+            .header(reqwest::header::CONTENT_TYPE, "text/plain")
+            .body(body.to_vec())
+            .send()
+            .unwrap()
+    }
+
     /// Downloads without credentials: the reference in the URL is the authorization.
     fn download(&self, file_ref: &str, range: Option<&str>) -> reqwest::blocking::Response {
         let mut request = self.client.get(self.url(&format!("/{file_ref}")));
@@ -191,6 +211,15 @@ fn attachment_key(test: &Smoketest, name: &str) -> String {
         .to_owned()
 }
 
+/// The identity in a query's output.
+fn identity_in(output: &str) -> String {
+    let identity = Regex::new("0x[0-9a-f]{64}").unwrap().find(output);
+    identity
+        .unwrap_or_else(|| panic!("no identity in {output}"))
+        .as_str()
+        .to_owned()
+}
+
 fn forge(file_ref: &str) -> String {
     // Flip the first hex digit, which is in the read secret.
     let (first, rest) = file_ref.split_at(1);
@@ -224,6 +253,46 @@ fn test_file_storage() {
     // allow_upload's write committed, and only for the accepted upload.
     let log = test.sql("SELECT size FROM upload_log").unwrap();
     assert!(log.contains("12") && !log.contains("4"), "{log}");
+
+    // allow_upload runs as the uploader, with the uploader's JWT.
+    let authorized = test
+        .sql("SELECT sender, sender_jwt FROM upload_log WHERE size = 12")
+        .unwrap();
+    assert!(authorized.contains("true"), "{authorized}");
+    let uploader = identity_in(&authorized);
+
+    // An identity token in the query string authenticates the uploader, as on every route, and
+    // isn't passed to allow_upload as an upload token.
+    let identity_query = format!("token={}", test.read_token().unwrap());
+    assert_eq!(
+        files
+            .upload_with_query(b"identity in the query", &identity_query)
+            .status(),
+        StatusCode::CREATED
+    );
+    let queried = test
+        .sql("SELECT sender, sender_jwt FROM upload_log WHERE size = 21")
+        .unwrap();
+    assert!(queried.contains("true"), "{queried}");
+    assert_eq!(identity_in(&queried), uploader);
+
+    // An upload authorized only by an upload token gets a new identity and a JWT for it, as a client
+    // that connects without an identity token does, rather than the zero identity.
+    assert_eq!(
+        files.upload_with_query(b"wrong token", "upload_token=nope").status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        files.upload_with_query(b"token only", "upload_token=letmein").status(),
+        StatusCode::CREATED
+    );
+    let anonymous = test
+        .sql("SELECT sender, sender_jwt FROM upload_log WHERE size = 10")
+        .unwrap();
+    assert!(anonymous.contains("true"), "{anonymous}");
+    let anonymous = identity_in(&anonymous);
+    assert_ne!(anonymous, uploader);
+    assert_ne!(anonymous, format!("0x{}", "0".repeat(64)));
 
     // Anyone with the reference can download, including byte ranges.
     let download = files.download(&uploaded, None);

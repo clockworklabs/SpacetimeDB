@@ -908,7 +908,7 @@ pub struct SqlQueryParams {
 /// The lifecycle is detached from the request task, so once `client_connected`
 /// succeeds, `client_disconnected` still runs if the handler is dropped or
 /// `fut` returns an error.
-async fn with_connection<F, Fut, R>(
+pub(crate) async fn with_connection<F, Fut, R>(
     module: ModuleHost,
     caller_auth: ConnectionAuthCtx,
     caller_identity: Identity,

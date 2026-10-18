@@ -3513,8 +3513,6 @@ namespace SpacetimeDB
     {
         [DataMember(Name = "file_id")]
         public U128 FileId;
-        [DataMember(Name = "sender")]
-        public SpacetimeDB.Identity? Sender;
         [DataMember(Name = "size")]
         public ulong Size;
         [DataMember(Name = "content_type")]
@@ -3524,14 +3522,12 @@ namespace SpacetimeDB
 
         public UploadRequest(
             U128 FileId,
-            SpacetimeDB.Identity? Sender,
             ulong Size,
             string? ContentType,
             string? Token
         )
         {
             this.FileId = FileId;
-            this.Sender = Sender;
             this.Size = Size;
             this.ContentType = ContentType;
             this.Token = Token;

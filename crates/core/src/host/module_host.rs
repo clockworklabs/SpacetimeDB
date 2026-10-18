@@ -2515,14 +2515,23 @@ impl ModuleHost {
         res
     }
 
+    /// Whether the module defines an `#[reducer(allow_upload)]` lifecycle reducer.
+    /// Without one, it accepts no uploads.
+    pub fn accepts_uploads(&self) -> bool {
+        self.info.module_def.lifecycle_reducer(Lifecycle::AllowUpload).is_some()
+    }
+
     /// Asks the module's `#[reducer(allow_upload)]` lifecycle reducer whether to accept an upload.
     ///
     /// Returns `Ok(None)` if the module defines none, which means uploads are disabled.
     /// Clients can't call it themselves, as with any lifecycle reducer.
     /// The reducer runs like any other, so its writes commit even if the upload later fails.
+    /// The uploader must be connected as `caller_connection_id`, as for a reducer called over HTTP,
+    /// so that the reducer can read its JWT.
     pub async fn call_allow_upload(
         &self,
         caller_identity: Identity,
+        caller_connection_id: ConnectionId,
         request: &spacetimedb_lib::UploadRequest,
     ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
         let module_def = &self.info.module_def;
@@ -2535,7 +2544,7 @@ impl ModuleHost {
         let params = Self::call_reducer_params(
             owning_def,
             caller_identity,
-            None,
+            Some(caller_connection_id),
             None,
             None,
             None,
