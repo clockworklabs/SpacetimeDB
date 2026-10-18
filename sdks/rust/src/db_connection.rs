@@ -329,6 +329,34 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // Set `send_chan` to `None`, since `Self::is_active` checks that.
         *self.send_chan.lock().unwrap() = None;
 
+        /// Send a message to the WebSocket loop, returning the terminal error if the
+        /// connection can no longer send.
+        ///
+        /// Every send failure has to reach [`Self::end_connection`]: otherwise the
+        /// connection ends without `on_disconnect` running, because the run loops
+        /// treat a normal-disconnect error as a plain end of the loop.
+        ///
+        /// Note the deliberate two-step shape: `end_connection` takes the
+        /// `send_chan` lock, and `StdMutex` is not reentrant, so the lock has to be
+        /// released before calling it.
+        fn try_send(&self, msg: ws::v2::ClientMessage) -> crate::Result<()> {
+            let sent = {
+                let mut send_chan = self.send_chan.lock().unwrap();
+                match send_chan.as_mut() {
+                    Some(send_chan) => send_chan.unbounded_send(msg).is_ok(),
+                    None => false,
+                }
+            };
+            if sent {
+                Ok(())
+            } else {
+                // `None`, not `Some(Disconnected)`: this is a requested or observed
+                // closure, and the WebSocket-close path reports a clean end to
+                // `on_disconnect` in the same way.
+                Err(self.end_connection(None))
+            }
+        }
+
         match lifecycle {
             ConnectionLifecycle::Connecting => {
                 let callback_error = callback_error.unwrap_or_else(|| crate::Error::FailedToConnect {
@@ -380,13 +408,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 // Register the subscription, so we can handle related messages from the server.
                 inner.subscriptions.register_subscription(query_set_id, handle.clone());
                 if let Some(msg) = handle.start() {
-                    self.send_chan
-                        .lock()
-                        .unwrap()
-                        .as_mut()
-                        .ok_or(crate::Error::Disconnected)?
-                        .unbounded_send(ws::v2::ClientMessage::Subscribe(msg))
-                        .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
+                    self.try_send(ws::v2::ClientMessage::Subscribe(msg))?;
                 }
                 // else, the handle was already cancelled.
             }
@@ -404,13 +426,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         callback(&self.make_event_ctx(()));
                     }
                     PendingUnsubscribeResult::SendUnsubscribe(m) => {
-                        self.send_chan
-                            .lock()
-                            .unwrap()
-                            .as_mut()
-                            .ok_or(crate::Error::Disconnected)?
-                            .unbounded_send(ws::v2::ClientMessage::Unsubscribe(m))
-                            .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
+                        self.try_send(ws::v2::ClientMessage::Unsubscribe(m))?;
                     }
                 }
             }
@@ -437,13 +453,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     request_id,
                     flags,
                 });
-                self.send_chan
-                    .lock()
-                    .unwrap()
-                    .as_mut()
-                    .ok_or(crate::Error::Disconnected)?
-                    .unbounded_send(msg)
-                    .expect("Unable to send reducer call message: WS sender loop has dropped its recv channel");
+                self.try_send(msg)?;
             }
 
             // Invoke a procedure: stash its callback, then send the `CallProcedure` WS message.
@@ -466,13 +476,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     request_id,
                     flags: ws::v2::CallProcedureFlags::Default,
                 });
-                self.send_chan
-                    .lock()
-                    .unwrap()
-                    .as_mut()
-                    .ok_or(crate::Error::Disconnected)?
-                    .unbounded_send(msg)
-                    .expect("Unable to send procedure call message: WS sender loop has dropped its recv channel");
+                self.try_send(msg)?;
             }
 
             // Disconnect: close the connection.
@@ -667,7 +671,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         std::thread::spawn(move || loop {
             match this.advance_one_message_blocking() {
                 Ok(()) => (),
-                Err(e) if error_is_normal_disconnect(&e) => return,
+                Err(e) if error_is_normal_disconnect(&e) => {
+                    this.end_connection(None);
+                    return;
+                }
                 Err(e) => panic!("{e:?}"),
             }
         })
@@ -683,7 +690,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             loop {
                 match this.advance_one_message_async().await {
                     Ok(()) => (),
-                    Err(e) if error_is_normal_disconnect(&e) => return,
+                    Err(e) if error_is_normal_disconnect(&e) => {
+                        this.end_connection(None);
+                        return;
+                    }
                     Err(e) => panic!("{e:?}"),
                 }
             }
@@ -698,7 +708,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         loop {
             match this.advance_one_message_async().await {
                 Ok(()) => (),
-                Err(e) if error_is_normal_disconnect(&e) => return Ok(()),
+                Err(e) if error_is_normal_disconnect(&e) => {
+                    // A queued mutation can observe the connection closure before the
+                    // run loop sees the closed message channel (for example a reducer
+                    // queued behind `disconnect()`). Route the terminal state through
+                    // `end_connection` so `on_disconnect` runs exactly once either way.
+                    this.end_connection(None);
+                    return Ok(());
+                }
                 Err(e) => return Err(e),
             }
         }
