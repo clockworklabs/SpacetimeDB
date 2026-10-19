@@ -329,20 +329,47 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// Prompt the user for `y` or `n` from stdin.
-///
-/// Return `false` unless the input is `y`.
-pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
-    if force {
-        println!("Skipping confirmation due to --yes");
-        return Ok(true);
+/// A yes/no prompt that defaults to No unless configured otherwise.
+pub struct YesOrNo {
+    message: String,
+    force: bool,
+    default: bool,
+}
+
+impl YesOrNo {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            force: false,
+            default: false,
+        }
     }
-    let mut input = String::new();
-    print!("{prompt} [y/N]");
-    std::io::stdout().flush()?;
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-    Ok(input == "y" || input == "yes")
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+
+    /// Set the response for empty input, including EOF.
+    pub fn default(mut self, default: bool) -> Self {
+        self.default = default;
+        self
+    }
+
+    pub fn prompt(self) -> anyhow::Result<bool> {
+        if self.force {
+            println!("Skipping confirmation due to --yes");
+            return Ok(true);
+        }
+        let choices = if self.default { "Y/n" } else { "y/N" };
+        print!("{} [{choices}]", self.message);
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_lowercase();
+        // Empty input includes EOF.
+        Ok((input.is_empty() && self.default) || input == "y" || input == "yes")
+    }
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -371,14 +398,9 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    // Note: We pass `force: false` to `y_or_n` because if we're running non-interactively we want to default to "no", not yes!
+    // Non-interactive commands skip the login prompt.
     let full_login = interactive
-        && y_or_n(
-            false,
-            // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
-            // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
-            "You are not logged in. Would you like to log in with spacetimedb.com?",
-        )?;
+        && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?").prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
