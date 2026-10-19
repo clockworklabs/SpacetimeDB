@@ -247,7 +247,7 @@ impl CommittedState {
     /// TODO: Eventually this should also include index bytes
     /// once indexes are managed by the page cache.
     pub fn datastore_memory_bytes(&self) -> u64 {
-        self.datastore_page_bytes + self.storage.physical_bytes_used_by_blobs()
+        self.datastore_page_bytes + self.storage.resident_bytes_used_by_blobs()
     }
 
     /// Recomputes `datastore_page_bytes` from committed tables.

@@ -370,12 +370,18 @@ impl BlobSet {
         Ok(())
     }
 
-    /// Sums size + hash bytes of each blob in the set.
-    pub fn physical_bytes_used_by_blobs(&self) -> u64 {
+    /// Sums size + hash bytes of each resident blob in the set.
+    pub fn resident_bytes_used_by_blobs(&self) -> u64 {
         self.entries
             .read()
             .iter()
-            .map(|(_, entry)| entry.size() + std::mem::size_of::<ObjectKey>() as u64)
+            .filter_map(|(_, entry)| {
+                if let BlobEntry::Resident { blob, .. } = entry {
+                    Some(blob.size() + (ObjectKey::SIZE as u64))
+                } else {
+                    None
+                }
+            })
             .sum()
     }
 
@@ -416,7 +422,7 @@ impl MemoryUsage for BlobSet {
             + std::mem::size_of::<mem::ResidentObjects>()
             + std::mem::size_of::<TieredStorage>()
             + std::mem::size_of::<Mutex<Vec<BlobEvictionCandidate>>>()
-            + (self.physical_bytes_used_by_blobs() as usize)
+            + (self.resident_bytes_used_by_blobs() as usize)
     }
 }
 
@@ -613,7 +619,7 @@ mod tests {
                 model.values().map(|(bytes, uses)| bytes.len() as u64 * *uses as u64).sum::<u64>(),
             );
             prop_assert_eq!(
-                set.physical_bytes_used_by_blobs(),
+                set.resident_bytes_used_by_blobs(),
                 model.values().map(|(bytes, _)| (bytes.len() + BlobHash::SIZE) as u64).sum::<u64>(),
             );
             let usage_counter = set.usage_counter();
@@ -629,7 +635,7 @@ mod tests {
             }
             prop_assert_eq!(set.num_blobs(), 0);
             prop_assert_eq!(set.bytes_used_by_blobs(), 0);
-            prop_assert_eq!(set.physical_bytes_used_by_blobs(), 0);
+            prop_assert_eq!(set.resident_bytes_used_by_blobs(), 0);
         }
 
         #[test]
