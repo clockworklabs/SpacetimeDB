@@ -332,6 +332,10 @@ impl PageHandle {
         self.frame.id
     }
 
+    pub fn is_pinned(&self) -> bool {
+        Arc::strong_count(&self.frame) > 1
+    }
+
     pub fn read(&self) -> PageFrameReadGuard {
         PageFrameReadGuard {
             guard: self.frame.read(),
