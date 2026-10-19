@@ -32,7 +32,7 @@ impl std::hash::Hash for PageId {
 impl ValidAsIdentityHash for PageId {}
 
 pub struct ReservedBlob {
-    frame: BlobFrame,
+    frame: Arc<BlobFrame>,
 }
 
 #[derive(Debug)]
@@ -192,18 +192,26 @@ impl ResidentObjects {
     pub(super) fn reserve_blob(
         &self,
         size: u64,
+        hash: BlobHashWrapper,
         alloc: impl FnOnce() -> Box<[u8]>,
     ) -> Result<ReservedBlob, BudgetExceeded> {
+        // Transaction and committed blob set share this registry.
+        // Hand out an existing frame if there is one.
+        if let Some(frame) = self.blobs.lock().unwrap().get(&hash).and_then(Weak::upgrade) {
+            return Ok(ReservedBlob { frame });
+        }
         let permit = self.budget.acquire(size)?;
         let bytes = alloc();
         assert_eq!(size, bytes.len() as u64);
+        debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(&bytes));
         let hash = BlobHash::hash_from_bytes(&bytes).into();
         let frame = BlobFrame {
             hash,
             bytes,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
-        };
+        }
+        .into();
 
         Ok(ReservedBlob { frame })
     }
@@ -215,10 +223,8 @@ impl ResidentObjects {
         // frames and replace stale weak entries when a hash becomes resident again.
         if let Some(existing) = blobs.get(&key).and_then(Weak::upgrade) {
             assert_eq!(existing.hash(), frame.hash());
-            assert_eq!(&**existing, &*frame);
             return existing;
         }
-        let frame = Arc::new(frame);
         blobs.insert(key, Arc::downgrade(&frame));
         frame
     }
@@ -342,7 +348,8 @@ impl ResidentObjects {
             bytes,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
-        };
+        }
+        .into();
 
         ReservedBlob { frame }
     }

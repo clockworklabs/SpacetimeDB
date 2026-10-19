@@ -104,10 +104,6 @@ impl TieredDatabaseStorage {
         self.blobs.physical_bytes_used_by_blobs()
     }
 
-    pub fn merge_blobs_from(&self, blobs: &BlobSet) -> Result<Box<[BlobHandle]>, BlobError> {
-        self.blobs.extend_from(blobs)
-    }
-
     pub fn new_empty_blob_set(&self) -> BlobSet {
         BlobSet::new(self.cache.clone(), self.store.clone())
     }
