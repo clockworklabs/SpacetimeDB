@@ -825,24 +825,33 @@ impl PageSet {
                 continue;
             };
             let mut slot = tiered.slots[page_index.idx()].lock_ref();
-            match &*slot {
-                PageSlot::Resident {
-                    handle: page_handle,
-                    metadata,
-                    backing,
-                    eviction_policy: PageEvictionPolicy::Evictable,
-                } => {
-                    let hash = backing
-                        .map(Ok)
-                        .unwrap_or_else(|| self.manager.ensure_lower_tier_stored(page_handle))?;
-                    *slot = PageSlot::NonResident {
-                        hash,
-                        metadata: *metadata,
-                    };
-                    self.manager.evicted(candidate);
-                }
-                _ => continue,
+            let PageSlot::Resident {
+                handle: page_handle,
+                metadata,
+                backing,
+                eviction_policy: _,
+            } = &*slot
+            else {
+                continue;
+            };
+
+            // Validate that the page is still the candidate and that it is not
+            // pinned.
+            if page_handle.page_id() != candidate.id || page_handle.is_pinned() {
+                continue;
             }
+
+            let hash = match backing {
+                Some(hash) => Ok(*hash),
+                // TODO: Consider releasing the slot lock when performing I/O.
+                // Elevates the chances of creating garbage.
+                None => self.manager.ensure_lower_tier_stored(page_handle),
+            }?;
+            *slot = PageSlot::NonResident {
+                hash,
+                metadata: *metadata,
+            };
+            self.manager.evicted(candidate);
         }
 
         Ok(())
