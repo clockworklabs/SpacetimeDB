@@ -337,12 +337,28 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
         println!("Skipping confirmation due to --yes");
         return Ok(true);
     }
-    let mut input = String::new();
-    print!("{prompt} [y/N]");
-    std::io::stdout().flush()?;
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-    Ok(input == "y" || input == "yes")
+    confirm_with_default(prompt, false, std::io::stdin().lock(), std::io::stdout().lock())
+}
+
+fn confirm_with_default(
+    prompt: &str,
+    default: bool,
+    mut input: impl std::io::BufRead,
+    mut output: impl Write,
+) -> anyhow::Result<bool> {
+    let choices = if default { "Y/n" } else { "y/N" };
+    write!(output, "{prompt} [{choices}]")?;
+    output.flush()?;
+    let mut answer = String::new();
+    if input.read_line(&mut answer)? == 0 {
+        return Ok(false);
+    }
+    let answer = answer.trim().to_lowercase();
+    Ok(if answer.is_empty() {
+        default
+    } else {
+        answer == "y" || answer == "yes"
+    })
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -371,7 +387,9 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    let full_login = prompt_for_login(interactive, |prompt| y_or_n(false, prompt))?;
+    let full_login = prompt_for_login(interactive, |prompt, default| {
+        confirm_with_default(prompt, default, std::io::stdin().lock(), std::io::stdout().lock())
+    })?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
@@ -382,13 +400,19 @@ pub async fn get_login_token_or_log_in(
     }
 }
 
-fn prompt_for_login(interactive: bool, mut confirm: impl FnMut(&str) -> anyhow::Result<bool>) -> anyhow::Result<bool> {
+fn prompt_for_login(
+    interactive: bool,
+    mut confirm: impl FnMut(&str, bool) -> anyhow::Result<bool>,
+) -> anyhow::Result<bool> {
     anyhow::ensure!(
         interactive,
         "You are not logged in. Run `spacetime login` before running this command with --yes."
     );
 
-    if confirm("You are not logged in. Would you like to log in with spacetimedb.com?")? {
+    if confirm(
+        "You are not logged in. Would you like to log in with spacetimedb.com?",
+        true,
+    )? {
         return Ok(true);
     }
 
@@ -399,7 +423,8 @@ fn prompt_for_login(interactive: bool, mut confirm: impl FnMut(&str) -> anyhow::
              and you will lose access to those databases unless you saved the token with `spacetime login show --token`. \
              A lost server-issued token cannot be recovered.\n\
              We recommend logging in with spacetimedb.com, which also works with local servers.\n\
-             Continue with a server-issued identity?"
+             Continue with a server-issued identity?",
+            false
         )?,
         "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
     );
@@ -423,15 +448,40 @@ mod login_tests {
     use spacetimedb_paths::FromPathUnchecked;
 
     #[test]
+    fn login_prompt_defaults_and_explicit_answers() {
+        for default in [false, true] {
+            for (input, expected) in [
+                ("\n", default),
+                ("y\n", true),
+                ("YES\n", true),
+                ("n\n", false),
+                ("no\n", false),
+                ("invalid\n", false),
+                ("", false),
+            ] {
+                let mut output = Vec::new();
+                assert_eq!(
+                    confirm_with_default("Log in?", default, input.as_bytes(), &mut output).unwrap(),
+                    expected,
+                    "input={input:?}, default={default}"
+                );
+                let choices = if default { "[Y/n]" } else { "[y/N]" };
+                assert!(String::from_utf8(output).unwrap().ends_with(choices));
+            }
+        }
+    }
+
+    #[test]
     fn noninteractive_login_requires_explicit_login() {
-        let err = prompt_for_login(false, |_| panic!("must not prompt with --yes")).unwrap_err();
+        let err = prompt_for_login(false, |_, _| panic!("must not prompt with --yes")).unwrap_err();
         assert!(err.to_string().contains("Run `spacetime login`"));
     }
 
     #[test]
     fn web_login_does_not_prompt_for_server_issued_identity() {
         let mut prompts = 0;
-        assert!(prompt_for_login(true, |_| {
+        assert!(prompt_for_login(true, |_, default| {
+            assert!(default);
             prompts += 1;
             assert_eq!(prompts, 1);
             Ok(true)
@@ -444,11 +494,13 @@ mod login_tests {
     fn server_issued_login_requires_confirmation_after_warning() {
         for confirmed in [false, true] {
             let mut prompts = 0;
-            let result = prompt_for_login(true, |prompt| {
+            let result = prompt_for_login(true, |prompt, default| {
                 prompts += 1;
                 if prompts == 1 {
+                    assert!(default);
                     return Ok(false);
                 }
+                assert!(!default);
                 assert!(prompt.contains("WARNING:"));
                 assert!(prompt.contains("lose access"));
                 assert!(prompt.contains("spacetime login show --token"));
