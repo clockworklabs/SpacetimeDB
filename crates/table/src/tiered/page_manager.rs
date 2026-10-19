@@ -1,9 +1,11 @@
 use std::{
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock, RwLockWriteGuard};
+use parking_lot::{
+    ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard, Mutex, MutexGuard, RawMutex, RawRwLock, RwLockWriteGuard,
+};
 use spacetimedb_data_structures::object_pool::{Pool, PooledObject};
 use spacetimedb_lib::bsatn;
 use spacetimedb_memory_usage::MemoryUsage;
@@ -56,13 +58,13 @@ pub struct PageFrameWriteGuard {
     /// Write guard for the page slot.
     /// When the guard is dropped, the slot needs to be marked dirty and the
     /// page metadata updated.
-    slot_guard: ArcRwLockWriteGuard<RawRwLock, PageSlot>,
+    slot_guard: ArcMutexGuard<RawMutex, PageSlot>,
 
     /// The locks don't consume a strong count for the frame, so we keep one
     /// here to keep it pinned.
     pin: Arc<PageFrame>,
 
-    /// Needed to compute the metadata.
+    /// Needed to re-compute the metadata.
     fixed_row_size: Size,
 }
 
@@ -117,56 +119,56 @@ pub enum PageEvictionPolicy {
 /// The public API is read-only.
 #[derive(Clone, Debug)]
 pub struct PageSlotHandle {
-    slot: Arc<RwLock<PageSlot>>,
+    slot: Arc<Mutex<PageSlot>>,
 }
 
 impl PageSlotHandle {
     pub fn is_resident(&self) -> bool {
-        self.slot.read().is_resident()
+        self.slot.lock().is_resident()
     }
 
     pub fn is_absent(&self) -> bool {
-        self.slot.read().is_absent()
+        self.slot.lock().is_absent()
     }
 
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_var_len_granules: usize) -> Option<bool> {
-        self.slot.read().has_space_for_row(fixed_row_size, num_var_len_granules)
+        self.slot.lock().has_space_for_row(fixed_row_size, num_var_len_granules)
     }
 
     pub fn is_full(&self, fixed_row_size: Size) -> Option<bool> {
-        self.slot.read().is_full(fixed_row_size)
+        self.slot.lock().is_full(fixed_row_size)
     }
 
     pub fn available_var_len_granules(&self) -> Option<usize> {
-        self.slot.read().available_var_len_granules()
+        self.slot.lock().available_var_len_granules()
     }
 
     pub fn bytes_used_by_rows(&self) -> usize {
-        self.slot.read().bytes_used_by_rows()
+        self.slot.lock().bytes_used_by_rows()
     }
 
     pub fn metadata(&self) -> Option<PageMetadata> {
-        self.slot.read().metadata()
+        self.slot.lock().metadata()
     }
 
     pub fn page(&self) -> Option<PageHandle> {
-        self.slot.read().page().cloned()
+        self.slot.lock().page().cloned()
     }
 
     pub fn page_id(&self) -> Option<PageId> {
-        self.slot.read().page_id()
+        self.slot.lock().page_id()
     }
 
-    pub(super) fn write_ref(&self) -> RwLockWriteGuard<'_, PageSlot> {
-        self.slot.write()
+    pub(super) fn lock_ref(&self) -> MutexGuard<'_, PageSlot> {
+        self.slot.lock()
     }
 
-    fn write_owned(&self) -> ArcRwLockWriteGuard<RawRwLock, PageSlot> {
-        self.slot.write_arc()
+    fn lock_owned(&self) -> ArcMutexGuard<RawMutex, PageSlot> {
+        self.slot.lock_arc()
     }
 
     pub(super) fn free(&self) {
-        let mut slot = self.slot.write();
+        let mut slot = self.slot.lock();
         *slot = PageSlot::Absent;
     }
 }
@@ -178,19 +180,19 @@ impl PageSlotHandle {
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
     ) -> usize {
-        let slot = self.slot.read();
+        let slot = self.slot.lock();
         unsafe { slot.reconstruct_bytes_used_by_rows(fixed_row_size, var_len_visitor) }
     }
 
     pub fn reconstruct_num_rows(&self) -> usize {
-        self.slot.read().reconstruct_num_rows()
+        self.slot.lock().reconstruct_num_rows()
     }
 }
 
 impl MemoryUsage for PageSlotHandle {
     fn heap_usage(&self) -> usize {
         let maybe_resident = {
-            let slot = self.slot.read();
+            let slot = self.slot.lock();
             slot.page().cloned()
         };
         let refcounts = std::mem::size_of::<usize>() * 2;
@@ -360,11 +362,7 @@ impl PageHandle {
     ///
     /// The caller guarantees that the page is faulted, i.e. the slot is
     /// `PageSlot::Resident`. The slot must contain this handle's [PageFrame].
-    unsafe fn write(
-        &self,
-        slot_guard: ArcRwLockWriteGuard<RawRwLock, PageSlot>,
-        fixed_row_size: Size,
-    ) -> PageFrameWriteGuard {
+    unsafe fn write(&self, slot_guard: ArcMutexGuard<RawMutex, PageSlot>, fixed_row_size: Size) -> PageFrameWriteGuard {
         assert!(matches!(
             &*slot_guard,
             PageSlot::Resident { handle, .. }
@@ -508,7 +506,7 @@ impl PageManager {
         slot: &PageSlotHandle,
         eviction_policy: PageEvictionPolicy,
     ) -> Result<Option<PageHandle>, PageError> {
-        self.may_fault(&mut slot.write_ref(), eviction_policy)
+        self.may_fault(&mut slot.lock_ref(), eviction_policy)
     }
 
     /// Get a [PageFrameWriteGuard] for the page at the given `slot`.
@@ -525,7 +523,7 @@ impl PageManager {
         eviction_policy: PageEvictionPolicy,
         fixed_row_size: Size,
     ) -> Result<PageFrameWriteGuard, PageError> {
-        let mut slot_guard = slot.write_owned();
+        let mut slot_guard = slot.lock_owned();
         let handle = self
             .may_fault(&mut slot_guard, eviction_policy)?
             .expect("page requested for mutation to be present");
@@ -622,9 +620,9 @@ impl PageManager {
         ReservedPage { inner, metadata }: ReservedPage,
         eviction_policy: PageEvictionPolicy,
     ) -> PageSlotHandle {
-        let slot = Arc::new(RwLock::new(PageSlot::Absent));
+        let slot = Arc::new(Mutex::new(PageSlot::Absent));
         {
-            let mut slot_guard = slot.write();
+            let mut slot_guard = slot.lock();
             let frame = self.resident.redeem_page(inner);
             *slot_guard = PageSlot::Resident {
                 handle: PageHandle { frame },
@@ -650,12 +648,12 @@ impl PageManager {
         slots: &mut Vec<PageSlotHandle>,
     ) {
         for page in pages {
-            let slot = Arc::new(RwLock::new(PageSlot::Absent));
+            let slot = Arc::new(Mutex::new(PageSlot::Absent));
 
             if let Some(page) = page {
                 let metadata = page.metadata(fixed_row_size);
                 let frame = self.resident.register_page_unchecked(self.pool.clone(), page);
-                let mut slot_guard = slot.write();
+                let mut slot_guard = slot.lock();
                 *slot_guard = PageSlot::Resident {
                     handle: PageHandle { frame },
                     metadata,

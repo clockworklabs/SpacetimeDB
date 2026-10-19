@@ -824,7 +824,7 @@ impl PageSet {
             let Some(page_index) = slots.remove(&candidate.id) else {
                 continue;
             };
-            let mut slot = tiered.slots[page_index.idx()].write_ref();
+            let mut slot = tiered.slots[page_index.idx()].lock_ref();
             match &*slot {
                 PageSlot::Resident {
                     handle: page_handle,
