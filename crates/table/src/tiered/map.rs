@@ -13,7 +13,9 @@ use crate::{blob_store::BlobHash, page::Page};
 pub struct PageHash(blake3::Hash);
 
 impl PageHash {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub const SIZE: usize = blake3::OUT_LEN;
+
+    pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         self.0.as_bytes()
     }
 }
@@ -41,7 +43,7 @@ impl ValidAsIdentityHash for PageHash {}
 pub struct BlobHashWrapper(BlobHash);
 
 impl BlobHashWrapper {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8; BlobHash::SIZE] {
         &self.0.data
     }
 
@@ -84,8 +86,10 @@ pub enum ObjectKey {
 }
 
 impl ObjectKey {
+    pub const SIZE: usize = 32;
+
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         match self {
             Self::Page(hash) => hash.as_bytes(),
             Self::Blob(hash) => hash.as_bytes(),
@@ -106,6 +110,11 @@ impl ObjectKey {
         }
     }
 }
+
+const _: () = {
+    assert!(BlobHash::SIZE == PageHash::SIZE);
+    assert!(ObjectKey::SIZE == BlobHash::SIZE);
+};
 
 impl Hash for ObjectKey {
     #[inline]
