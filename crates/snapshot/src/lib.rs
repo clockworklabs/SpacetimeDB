@@ -1612,7 +1612,7 @@ pub struct ReconstructedSnapshot {
 }
 
 /// A [Path] statically known to point to either a file or a directory.
-enum FileOrDirPath<'a> {
+pub enum FileOrDirPath<'a> {
     File(&'a Path),
     Dir(&'a Path),
 }
@@ -1625,7 +1625,7 @@ impl FileOrDirPath<'_> {
     ///
     /// On Windows, only the file needs to be synced, and it's even an error to
     /// sync a directory. Passing in [Self::Dir] is thus a no-op on Windows.
-    fn sync_all(&self) -> io::Result<()> {
+    pub fn sync_all(&self) -> io::Result<()> {
         match self {
             #[cfg(target_os = "windows")]
             Self::Dir(path) => Ok(()),

@@ -45,6 +45,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
+use spacetimedb_engine::persistence::Persistence;
 use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_runtime::AbortHandle;
@@ -52,7 +53,6 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::tiered::{ByteBudget, MemoryObjectStore, TieredStorageConfig};
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -376,6 +376,7 @@ impl HostController {
         energy_monitor: Arc<impl EnergyMonitor>,
         memory_observer: Arc<dyn MemoryObserver>,
         persistence: Arc<dyn PersistenceProvider>,
+        page_pool: PagePool,
         db_cores: JobCores,
     ) -> Self {
         Self {
@@ -388,7 +389,7 @@ impl HostController {
             persistence,
             runtimes: HostRuntimes::new(Some(&data_dir), runtime_config),
             data_dir,
-            page_pool: PagePool::new(default_config.page_pool_max_size),
+            page_pool,
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             idc_config: OnceCell::new(),
@@ -1264,7 +1265,6 @@ impl Host {
             energy_monitor,
             runtimes,
             persistence,
-            page_pool,
             bsatn_rlb_pool,
             memory_observer,
             ..
@@ -1274,14 +1274,18 @@ impl Host {
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
         let tx_metrics_recorder_task = guard(tx_metrics_recorder_task, |task| task.abort());
 
+        let persistence_db = db::persistence::Database {
+            id: database.id,
+            database_identity: database.database_identity,
+            owner_identity: database.owner_identity,
+        };
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
-                None,
+                persistence.ephemeral(&persistence_db, replica_id).await?,
                 Some(tx_metrics_queue),
-                TieredStorageConfig::new_for_memory_database(page_pool.clone()),
             )?,
             db::Storage::Disk => {
                 // Replay from the local state.
@@ -1291,14 +1295,7 @@ impl Host {
                     database_identity: database.database_identity,
                     owner_identity: database.owner_identity,
                 };
-                let persistence = persistence.persistence(&persistence_db, replica_id).await?;
-                // TODO(disk-tables): Figure out where the config comes from.
-                let storage = TieredStorageConfig {
-                    page_pool: page_pool.clone(),
-                    local_object_store: Box::new(MemoryObjectStore::default()),
-                    remote_object_store: None,
-                    resident_budget: ByteBudget::unlimited(),
-                };
+                let persistence = persistence.persistent(&persistence_db, replica_id).await?;
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
@@ -1309,9 +1306,8 @@ impl Host {
                             database_identity,
                             owner_identity,
                             history,
-                            Some(persistence),
+                            persistence,
                             Some(tx_metrics_queue),
-                            storage,
                         )
                     }
                 })
@@ -1558,9 +1554,8 @@ impl Host {
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
+            Persistence::for_module_check(page_pool),
             None,
-            None,
-            TieredStorageConfig::new_for_module_check(page_pool),
         )?;
         let memory_observer: Arc<dyn MemoryObserver> = Arc::new(());
 

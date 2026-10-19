@@ -57,6 +57,7 @@ pub struct CountCreated {
 }
 
 /// A directory trie.
+#[derive(Debug)]
 pub struct DirTrie {
     /// The directory name at which the dir trie is stored.
     root: PathBuf,
