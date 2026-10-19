@@ -200,6 +200,28 @@ pub(super) fn is_parameterized_view(module: &ModuleDef, name: &Identifier) -> bo
     module.view(name).is_some_and(|view| !view.params.elements.is_empty())
 }
 
+/// Can a SQL literal express a value of this type?
+/// Matches the types the server accepts as view args, which are the types `SqlLiteral` is implemented for.
+pub(super) fn is_sql_literal_type(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Primitive(_)
+        | AlgebraicTypeUse::String
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Timestamp
+        | AlgebraicTypeUse::Uuid => true,
+        AlgebraicTypeUse::Array(elem) => matches!(**elem, AlgebraicTypeUse::Primitive(PrimitiveType::U8)),
+        _ => false,
+    }
+}
+
+/// The params of a view with args that a client can call: SQL can express all of them.
+/// `None` for a view without params, or one whose params SQL can't express.
+pub(super) fn view_call_params(view: &ViewDef) -> Option<&[(Identifier, AlgebraicTypeUse)]> {
+    let params = &view.params_for_generate.elements;
+    (!params.is_empty() && params.iter().all(|(_, ty)| is_sql_literal_type(ty))).then_some(&params[..])
+}
+
 pub(super) fn iter_unique_cols<'a>(
     typespace: &'a TypespaceForGenerate,
     schema: &'a TableSchema,

@@ -14,6 +14,7 @@ import type {
   RawTableDefV10,
 } from './autogen/types';
 import type { UntypedIndex } from './indexes';
+import type { ParamsObj } from './reducers';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
 import {
@@ -68,6 +69,10 @@ export interface TableToSchema<
   // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
   resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
   constraints: T['constraints'];
+  // Client bindings only: a view's params, set by `withViewParams`. `never` for tables.
+  viewParams?: T extends { readonly viewParams: infer Params extends ParamsObj }
+    ? Params
+    : never;
 }
 
 export function tablesToSchema<
@@ -167,6 +172,14 @@ export function tableToSchema<
     resolvedIndexes,
     tableDef,
     ...(tableDef.isEvent ? { isEvent: true } : {}),
+    ...('viewParams' in schema
+      ? {
+          viewParams: schema.viewParams as TableToSchema<
+            AccName,
+            T
+          >['viewParams'],
+        }
+      : {}),
   };
 }
 

@@ -2,8 +2,8 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
-    iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
+    is_parameterized_view, is_sql_literal_type, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables,
+    iter_types, iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
     CodegenVisibility,
 };
 use crate::CodegenOptions;
@@ -918,21 +918,6 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
         }}
 "
     )
-}
-
-/// Can a SQL literal express a value of this type?
-/// Matches the types the server accepts as view args, which are the types `SqlLiteral` is implemented for.
-fn is_sql_literal_type(ty: &AlgebraicTypeUse) -> bool {
-    match ty {
-        AlgebraicTypeUse::Primitive(_)
-        | AlgebraicTypeUse::String
-        | AlgebraicTypeUse::Identity
-        | AlgebraicTypeUse::ConnectionId
-        | AlgebraicTypeUse::Timestamp
-        | AlgebraicTypeUse::Uuid => true,
-        AlgebraicTypeUse::Array(elem) => matches!(**elem, AlgebraicTypeUse::Primitive(PrimitiveType::U8)),
-        _ => false,
-    }
 }
 
 /// Like [`implement_query_table_accessor`], but for a parameterized view:
