@@ -342,6 +342,7 @@ pub fn y_or_n(force: bool, prompt: &str, default: bool) -> anyhow::Result<bool> 
     std::io::stdout().flush()?;
     let mut input = String::new();
     if std::io::stdin().read_line(&mut input)? == 0 {
+        // Closed stdin isn't consent; don't start browser login just because the default is yes.
         return Ok(false);
     }
     let input = input.trim().to_lowercase();
