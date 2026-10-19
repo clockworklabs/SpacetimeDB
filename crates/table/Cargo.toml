@@ -47,7 +47,6 @@ foldhash.workspace = true
 hashbrown.workspace = true
 itertools.workspace = true
 parking_lot.workspace = true
-slab.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 
