@@ -416,6 +416,11 @@ pub(crate) fn build_csharp(
         "-v".into(),
         "quiet".into(),
     ]);
+    if matches!(build_path, CsharpBuildPath::Net10Aot) {
+        // Select WASM for both publishing and its implicit restore, even when the
+        // module project defaults to a managed build.
+        publish_args.extend(["-r".into(), "wasi-wasm".into()]);
+    }
     if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net8Jit) {
         publish_args.push("--no-restore".into());
         publish_args.push("--force".into());
