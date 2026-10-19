@@ -94,9 +94,9 @@ run_client() {
     local dotnet_version="$2"
     shift 2
     if [ "$dotnet_version" = "10" ]; then
-        (cd "$dir" && EXPERIMENTAL_WASM_AOT=1 dotnet run -c Debug "$@")
+        (cd "$dir" && SPACETIMEDB_WASM_AOT=1 dotnet run -c Debug "$@")
     else
-        (cd "$dir" && env -u EXPERIMENTAL_WASM_AOT dotnet run -c Debug "$@")
+        (cd "$dir" && env -u SPACETIMEDB_WASM_AOT dotnet run -c Debug "$@")
     fi
 }
 

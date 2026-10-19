@@ -70,7 +70,7 @@ Your `.csproj` must include the conditional LLVM package references:
   </ItemGroup>
 
   <!-- Required for .NET 8 AOT builds -->
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
@@ -121,11 +121,11 @@ spacetime publish --native-aot my-database-name
 }
 ```
 
-Technically all of these options just set the `EXPERIMENTAL_WASM_AOT` environment variable, but they provide different user experiences. Using `--native-aot` during `init` will create a project with a `spacetime.json` configured like Option 3 so the new project is consistently published with NativeAOT-LLVM.
+Technically all of these options just set the `SPACETIMEDB_WASM_AOT` environment variable, but they provide different user experiences. Using `--native-aot` during `init` will create a project with a `spacetime.json` configured like Option 3 so the new project is consistently published with NativeAOT-LLVM.
 
 ### `dotnet build` with NativeAOT-LLVM
 
-To use NativeAOT-LLVM, the project expects the flag `EXPERIMENTAL_WASM_AOT` to be set. When calling `spacetime publish`, this is dealt with internally. To build your project manually calling `dotnet build`, if you want to use NativeAOT-LLVM, you need to set the flag manually: `dotnet build -f net8.0 -p:EXPERIMENTAL_WASM_AOT=1`. 
+To use NativeAOT-LLVM, the project expects the flag `SPACETIMEDB_WASM_AOT` to be set. When calling `spacetime publish`, this is dealt with internally. To build your project manually calling `dotnet build`, if you want to use NativeAOT-LLVM, you need to set the flag manually: `dotnet build -f net8.0 -p:SPACETIMEDB_WASM_AOT=1`. 
 
 ---
 
@@ -309,7 +309,7 @@ NativeAOT-LLVM builds do **not** use this workload; they use the WASI SDK instea
 
 If you see "Code generation failed for method" errors:
 1. Ensure `NuGet.Config` includes the `dotnet-experimental` feed
-2. For .NET 8: Verify the `EXPERIMENTAL_WASM_AOT` condition is in your `.csproj`
+2. For .NET 8: Verify the `SPACETIMEDB_WASM_AOT` condition is in your `.csproj`
 3. For .NET 10: Verify `TargetFramework` is `net10.0`
 4. Check that `global.json` exists if .NET 10 is not your default SDK
 
