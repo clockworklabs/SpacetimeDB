@@ -125,7 +125,7 @@ Technically all of these options just set the `SPACETIMEDB_WASM_AOT` environment
 
 ### `dotnet build` with NativeAOT-LLVM
 
-To use NativeAOT-LLVM, the project expects the flag `SPACETIMEDB_WASM_AOT` to be set. When calling `spacetime publish`, this is dealt with internally. To build your project manually calling `dotnet build`, if you want to use NativeAOT-LLVM, you need to set the flag manually: `dotnet build -f net8.0 -p:SPACETIMEDB_WASM_AOT=1`. 
+For .NET 8, the project expects `SPACETIMEDB_WASM_AOT=1` to select NativeAOT-LLVM. The CLI sets this when using `--native-aot`. For a manual build, use `dotnet build -f net8.0 -p:SPACETIMEDB_WASM_AOT=1`. .NET 10 WASM builds use NativeAOT-LLVM by default and do not require this flag.
 
 ---
 

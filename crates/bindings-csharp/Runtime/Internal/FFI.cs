@@ -2,7 +2,10 @@ namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-#if SPACETIMEDB_WASM_AOT && NET10_0_OR_GREATER
+// The NuGet runtime DLL is shared by managed and WASM builds.
+// Keep the real import attributes: publishing a module to WASM
+// does not recompile this DLL.
+#if NET10_0_OR_GREATER
 using WasmImportLinkageAttribute = System.Runtime.InteropServices.WasmImportLinkageAttribute;
 #else
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]

@@ -276,23 +276,25 @@ pub(crate) fn build_csharp(
     }
 
     // Manage the SPACETIMEDB_WASM_AOT environment variable for MSBuild.
-    // - Net8Aot / Net10Aot: must SET it — the ILCompiler.LLVM.targets import in
-    //   SpacetimeDB.Runtime.targets is gated on this env var. Without it, the NativeAOT
-    //   toolchain is not activated and dotnet produces managed DLLs instead of a .wasm.
+    // Also set/clear the legacy name for existing projects and runtime packages.
+    // - Net8Aot / Net10Aot: SET it to activate .NET 8 NativeAOT and support older
+    //   .NET 10 runtime packages. New .NET 10 packages select AOT via wasi-wasm.
     // - Net8Jit: must UNSET it — prevents MSBuild from incorrectly enabling NativeAOT mode
     //   when the env var is set globally (e.g., in CI).
     match &build_path {
         CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot => {
             // SAFETY: We are single-threaded at this point and no other code is reading
-            // this environment variable concurrently.
+            // these environment variables concurrently.
             unsafe {
                 std::env::set_var("SPACETIMEDB_WASM_AOT", "1");
+                std::env::set_var("EXPERIMENTAL_WASM_AOT", "1");
             }
         }
         CsharpBuildPath::Net8Jit => {
             // SAFETY: We are single-threaded at this point.
             unsafe {
                 std::env::remove_var("SPACETIMEDB_WASM_AOT");
+                std::env::remove_var("EXPERIMENTAL_WASM_AOT");
             }
         }
     }
@@ -336,11 +338,8 @@ pub(crate) fn build_csharp(
     // ILCompiler targets from stale assets before restore has a chance to correct them.
     // Deleting the file makes dotnet re-restore with the correct environment.
     //
-    // Net10Aot does NOT need this: the ILCompiler.LLVM dependency is unconditional for
-    // net10.0 in the Runtime.csproj, so the solution-level restore already resolves it.
-    // Deleting the assets file here would force an implicit re-restore that uses the
-    // project's local NuGet.Config, which may have stale/invalid package source paths
-    // (e.g. Windows-only paths in CI on Linux), breaking the build.
+    // Net10Aot uses publish's implicit restore with an explicit wasi-wasm RID,
+    // so restore and publish evaluate the module's dependencies for the same RID.
     if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net8Jit) {
         if let Some(csproj_path) = csproj_tfms.as_ref().map(|tfms| &tfms.path) {
             remove_project_assets_recursive(csproj_path, &mut HashSet::new());
