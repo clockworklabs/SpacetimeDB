@@ -1944,7 +1944,7 @@ fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> 
 /// The configuration differs depending on the target .NET version:
 ///
 /// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
-/// package references, gated on `EXPERIMENTAL_WASM_AOT=1`.
+/// package references, gated on `SPACETIMEDB_WASM_AOT=1`.
 ///
 /// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
 /// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
@@ -1973,7 +1973,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
         } else {
             // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
             let native_aot_config = r#"
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
@@ -2488,7 +2488,7 @@ bytes.workspace = true
         std::fs::write(
             &csproj,
             r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
@@ -2504,7 +2504,7 @@ bytes.workspace = true
 
         let content = std::fs::read_to_string(csproj).unwrap();
         assert!(content
-            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'\""));
+            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'\""));
         assert!(!content.contains("&apos;"));
         let root = xmltree::Element::parse(content.as_bytes()).unwrap();
         let runtime_version = root.children.iter().find_map(|node| {

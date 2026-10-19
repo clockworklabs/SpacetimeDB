@@ -275,7 +275,7 @@ pub(crate) fn build_csharp(
         );
     }
 
-    // Manage the EXPERIMENTAL_WASM_AOT environment variable for MSBuild.
+    // Manage the SPACETIMEDB_WASM_AOT environment variable for MSBuild.
     // - Net8Aot / Net10Aot: must SET it — the ILCompiler.LLVM.targets import in
     //   SpacetimeDB.Runtime.targets is gated on this env var. Without it, the NativeAOT
     //   toolchain is not activated and dotnet produces managed DLLs instead of a .wasm.
@@ -286,13 +286,13 @@ pub(crate) fn build_csharp(
             // SAFETY: We are single-threaded at this point and no other code is reading
             // this environment variable concurrently.
             unsafe {
-                std::env::set_var("EXPERIMENTAL_WASM_AOT", "1");
+                std::env::set_var("SPACETIMEDB_WASM_AOT", "1");
             }
         }
         CsharpBuildPath::Net8Jit => {
             // SAFETY: We are single-threaded at this point.
             unsafe {
-                std::env::remove_var("EXPERIMENTAL_WASM_AOT");
+                std::env::remove_var("SPACETIMEDB_WASM_AOT");
             }
         }
     }
@@ -329,7 +329,7 @@ pub(crate) fn build_csharp(
     let config_name = if build_debug { "Debug" } else { "Release" };
 
     // For .NET 8 builds, force a re-restore by deleting any cached project.assets.json.
-    // If a prior `dotnet restore` ran without EXPERIMENTAL_WASM_AOT=1 (e.g. as part of a
+    // If a prior `dotnet restore` ran without SPACETIMEDB_WASM_AOT=1 (e.g. as part of a
     // solution restore), the cached assets won't include ILCompiler.LLVM, causing
     // `dotnet publish` to silently fall back to the net8.0 Mono wasi-experimental path.
     // Conversely, if a prior restore ran with NativeAOT enabled, the JIT path can import
