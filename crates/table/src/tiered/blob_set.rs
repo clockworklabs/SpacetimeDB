@@ -157,12 +157,13 @@ impl BlobSet {
         Ok(self.resident.usage())
     }
 
-    fn reserve(&self, bytes: &[u8]) -> Result<ReservedBlob, BlobError> {
+    fn reserve(&self, hash: BlobHashWrapper, bytes: &[u8]) -> Result<ReservedBlob, BlobError> {
+        debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(bytes));
         let size = bytes.len() as u64;
-        self.resident.reserve_blob(size, || bytes.into()).or_else(|_| {
+        self.resident.reserve_blob(size, hash, || bytes.into()).or_else(|_| {
             self.evict()?;
             self.resident
-                .reserve_blob(size, || bytes.into())
+                .reserve_blob(size, hash, || bytes.into())
                 .map_err(BlobError::from)
         })
     }
@@ -190,7 +191,7 @@ impl BlobSet {
         // Entry needs to be faulted or created. Reserve before modifying the
         // catalog. Note that this may trigger eviction, so we must release the
         // lock.
-        let reservation = self.reserve(bytes)?;
+        let reservation = self.reserve(hash, bytes)?;
         let mut entries = self.entries.write();
         match entries.entry(hash) {
             hash_map::Entry::Vacant(entry) => {
@@ -287,7 +288,7 @@ impl BlobSet {
         let handle = match blob_or_bytes {
             Ok(blob) => Ok::<_, BlobError>(blob),
             Err(bytes) => {
-                let reservation = self.reserve(&bytes)?;
+                let reservation = self.reserve(hash, &bytes)?;
                 let mut entries = self.entries.write();
                 let entry = entries
                     .get_mut(&hash)
@@ -312,33 +313,20 @@ impl BlobSet {
         Ok(handle)
     }
 
-    /// Merge the blobs in `other` with this blob set.
+    /// Fault all blobs in this set and return their pin handles.
     ///
-    /// Subject to the memory budget, all blobs in `other` will be made resident
-    /// and a [BlobHandle] will be returned for each.
+    /// This is intended to be used on a transaction's blob set during
+    /// preparation, not the entire database's blob storage.
     ///
-    /// This is used during transaction planning to insert and pin the blobs
-    /// from the transaction- into the committed-state.
-    pub fn extend_from(&self, other: &Self) -> Result<Box<[BlobHandle]>, BlobError> {
-        let mut handles = Vec::new();
-        let entries = other.entries.read();
-        for (&hash, entry) in entries.iter() {
-            match entry {
-                BlobEntry::Resident { uses, blob, .. } => {
-                    let handle = self.insert_with_uses(n_or_one(*uses), blob)?;
-                    assert_eq!(hash.as_bytes(), &handle.hash().data);
-                    handles.push(handle);
-                }
-                BlobEntry::NonResident { uses, .. } => {
-                    let bytes = other.storage.read(hash.into())?;
-                    let handle = self.insert_with_uses(n_or_one(*uses), &bytes)?;
-                    assert_eq!(hash.as_bytes(), &handle.hash().data);
-                    handles.push(handle);
-                }
-            }
-        }
-
-        Ok(handles.into())
+    /// Subject to the resident memory budget.
+    pub fn pin_all(&self) -> Result<Box<[BlobHandle]>, BlobError> {
+        let hashes: Box<[_]> = self
+            .entries
+            .read()
+            .iter()
+            .filter_map(|(&hash, entry)| (entry.uses() > 0).then_some(hash))
+            .collect();
+        hashes.into_iter().map(|hash| self.get(hash)).collect()
     }
 
     /// Apply a fallible operation to each blob in this set.
@@ -579,10 +567,6 @@ struct BlobMapEntry {
     blob: Box<[u8]>,
 }
 
-fn n_or_one(x: usize) -> NonZeroUsize {
-    NonZeroUsize::new(x).unwrap_or(NonZeroUsize::MIN)
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, sync::Arc};
@@ -699,5 +683,34 @@ mod tests {
             let _first_handle = set.insert(&first).unwrap();
             prop_assert!(matches!(set.insert(&second), Err(BlobError::MemoryLimitExceeded(_))));
         }
+    }
+
+    #[test]
+    fn preparing_blobs_consumes_budget_once() {
+        let bytes = b"prepared blob";
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: bytes.len() as u64,
+            hard_limit_bytes: bytes.len() as u64,
+        })
+        .unwrap();
+        let resident = Arc::new(ResidentObjects::new(budget));
+        let storage = Arc::new(TieredStorage::new_for_test());
+
+        let transaction = BlobSet::new(resident.clone(), storage.clone());
+        let committed = BlobSet::new(resident.clone(), storage);
+
+        // Emulate transaction prepare.
+        transaction.insert(bytes).map(drop).unwrap();
+        let pins = transaction.pin_all().unwrap();
+
+        // Emulate transaction commit.
+        // The shared [ResidentObjects] notices that it's the same object, so
+        // reuses the already-held budget permit.
+        assert!(committed.usage_counter().is_empty());
+        committed.insert(bytes).map(drop).unwrap();
+
+        assert_eq!(committed.usage_counter().get(&pins[0].hash()), Some(&1));
+        assert_eq!(resident.usage().accounted_bytes(), bytes.len() as u64);
     }
 }

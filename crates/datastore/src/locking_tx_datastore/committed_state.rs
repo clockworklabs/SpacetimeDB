@@ -578,7 +578,7 @@ impl CommittedState {
     fn prepare_merge(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
         // Prepare transaction-local blobs before planning page mutations. This
         // installs and pins their frames without publishing logical references.
-        let blobs: Box<[BlobHandle]> = self.storage.merge_blobs_from(&tx_state.blob_store)?;
+        let blobs: Box<[BlobHandle]> = tx_state.blob_store.pin_all()?;
         let mut prepared = PreparedMerge::with_pinned_blobs(blobs);
         // Skip row planning only if every modified table can be applied without
         // faults or memory-limit errors. Otherwise prepare the whole transaction
