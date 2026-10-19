@@ -2383,7 +2383,7 @@ mod tests {
             send_worker_queue,
             BsatnRowListBuilderPool::new(),
         );
-        let auth = AuthCtx::new(owner, sender.auth.claims.identity);
+        let auth = AuthCtx::new(owner, sender.auth.identity);
 
         let subscribe = ws_v1::Subscribe {
             query_strings: [sql.into()].into(),

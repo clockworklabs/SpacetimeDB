@@ -11,7 +11,7 @@ partial class Reducers
         using var writer = new BinaryWriter(stream);
 
         SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(
-            nameof(DemoProcedure),
+            "canonical_procedure",
             stream
         );
     }

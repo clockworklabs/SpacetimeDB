@@ -107,8 +107,8 @@ impl SpacetimeAuth {
 impl From<SpacetimeAuth> for ConnectionAuthCtx {
     fn from(auth: SpacetimeAuth) -> Self {
         ConnectionAuthCtx {
-            claims: auth.claims,
-            jwt_payload: auth.jwt_payload.clone(),
+            identity: auth.claims.identity,
+            jwt_payload: Some(auth.jwt_payload),
         }
     }
 }
@@ -259,8 +259,7 @@ impl<TV: TokenValidator + Send + Sync> JwtKeyAuthProvider<TV> {
 
 impl<TV: TokenValidator + Send + Sync> TokenSigner for JwtKeyAuthProvider<TV> {
     fn sign<T: Serialize>(&self, claims: &T) -> Result<String, JwtError> {
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        jsonwebtoken::encode(&header, &claims, &self.keys.private)
+        self.keys.sign(claims)
     }
 }
 
@@ -561,4 +560,34 @@ pub async fn anon_auth_middleware<S: ControlStateDelegate + NodeDelegate>(
     req.extensions_mut().insert(auth.clone());
     let resp = next.run(req).await;
     Ok((auth.into_headers(), resp))
+}
+
+/// The sending database identity verified by the IDC authentication middleware.
+#[derive(Clone, Copy)]
+pub struct IdcCallerIdentity(pub Identity);
+
+/// IDC authenticates a database, but must not expose its transport token to module code.
+pub async fn idc_auth_middleware<S: NodeDelegate>(
+    State(worker_ctx): State<S>,
+    mut req: Request,
+    next: Next,
+) -> axum::response::Result<impl IntoResponse> {
+    use crate::routes::database::ResolvedDatabase;
+    let receiver = req
+        .extensions()
+        .get::<ResolvedDatabase>()
+        .ok_or(http::StatusCode::INTERNAL_SERVER_ERROR)?
+        .0
+        .database_identity;
+    let bearer = req
+        .headers()
+        .typed_try_get::<headers::Authorization<authorization::Bearer>>()
+        .map_err(|_| http::StatusCode::UNAUTHORIZED)?
+        .ok_or(http::StatusCode::UNAUTHORIZED)?;
+    let key = jsonwebtoken::DecodingKey::from_ec_pem(worker_ctx.jwt_auth_provider().public_key_bytes())
+        .map_err(log_and_500)?;
+    let identity =
+        spacetimedb::auth::idc::verify(&key, bearer.token(), receiver).map_err(|_| http::StatusCode::UNAUTHORIZED)?;
+    req.extensions_mut().insert(IdcCallerIdentity(identity));
+    Ok(next.run(req).await)
 }

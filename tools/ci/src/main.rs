@@ -57,12 +57,20 @@ const COMMANDS: &[Command] = &[
         package: "ci-global-json-policy",
     },
     Command {
+        path: &["check-style"],
+        package: "ci-check-style",
+    },
+    Command {
         path: &["publish-checks"],
         package: "ci-publish-checks",
     },
     Command {
         path: &["typescript-test"],
         package: "ci-typescript-test",
+    },
+    Command {
+        path: &["typescript-submodules"],
+        package: "ci-typescript-submodules",
     },
     Command {
         path: &["version-upgrade-check"],

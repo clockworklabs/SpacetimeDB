@@ -44,7 +44,7 @@ partial struct MyStruct : System.IEquatable<MyStruct>, SpacetimeDB.BSATN.IStruct
             registrar.RegisterType<MyStruct>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new("x", xRW.GetAlgebraicType(registrar))
+                    new("x", xRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -68,16 +68,7 @@ partial struct MyStruct : System.IEquatable<MyStruct>, SpacetimeDB.BSATN.IStruct
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as MyStruct?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is MyStruct t && Equals(t);
     }
 
     public static bool operator ==(MyStruct this_, MyStruct that)

@@ -14,7 +14,7 @@ use crate::{
     error::TableError,
     execution_context::ExecutionContext,
     locking_tx_datastore::{
-        mut_tx::{ViewInstanceState, ViewInstanceTxState, ViewReadSets},
+        mut_tx::{ViewInstanceChange, ViewInstanceState, ViewInstanceTxState, ViewReadSets},
         state_view::ScanOrIndex,
         IterByColRangeTx,
     },
@@ -33,9 +33,9 @@ use crate::{
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
         ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_IDX,
         ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_OUTBOUND_MSG_ID,
-        ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_IDX, ST_TABLE_ACCESSOR_ID,
-        ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_IDX, ST_OUTBOX_ID, ST_OUTBOX_IDX,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX,
+        ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -399,6 +399,7 @@ impl CommittedState {
         self.create_table(ST_OUTBOUND_MSG_ID, schemas[ST_OUTBOUND_MSG_IDX].clone());
         self.create_table(ST_INBOUND_STREAM_ID, schemas[ST_INBOUND_STREAM_IDX].clone());
         self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
+        self.create_table(ST_OUTBOX_ID, schemas[ST_OUTBOX_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -556,12 +557,28 @@ impl CommittedState {
     }
 
     fn merge_view_instances(&mut self, view_instances: ViewInstanceTxState) {
-        for (call, state) in view_instances.into_changes() {
-            match state {
-                Some(state) => {
+        for (call, change) in view_instances.into_changes() {
+            match change {
+                ViewInstanceChange::Created(state) => {
                     self.view_instances.insert(call, state);
                 }
-                None => {
+                ViewInstanceChange::Updated(delta) => {
+                    let state = self
+                        .view_instances
+                        .get_mut(&call)
+                        .expect("updated view instance must have committed state");
+                    for (subscriber, count) in delta.subscriber_counts {
+                        if count == 0 {
+                            state.active_subscribers.remove(&subscriber);
+                        } else {
+                            state.active_subscribers.insert(subscriber, count);
+                        }
+                    }
+                    if let Some(last_used) = delta.last_used {
+                        state.last_used = last_used;
+                    }
+                }
+                ViewInstanceChange::Deleted => {
                     self.view_instances.remove(&call);
                 }
             }
@@ -874,6 +891,11 @@ impl CommittedState {
             TableAlterPrimaryKey(table_id, old_pk) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.primary_key = old_pk.and_then(|cl| cl.as_singleton()));
+            }
+            // A table's outbox metadata changed. Change back to the old one.
+            TableAlterOutbox(table_id, old_outbox) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.set_outbox(old_outbox);
             }
             // A table's row type was changed. Change back to the old one.
             // The row representation of old rows hasn't changed,

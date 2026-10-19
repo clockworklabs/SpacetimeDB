@@ -47,7 +47,7 @@ partial struct ViewPrimaryKeyRenamedRow
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("RenamedIdentity", RenamedIdentityRW.GetAlgebraicType(registrar))
+                        new("RenamedIdentity", RenamedIdentityRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -72,16 +72,7 @@ partial struct ViewPrimaryKeyRenamedRow
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as ViewPrimaryKeyRenamedRow?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is ViewPrimaryKeyRenamedRow t && Equals(t);
     }
 
     public static bool operator ==(ViewPrimaryKeyRenamedRow this_, ViewPrimaryKeyRenamedRow that)

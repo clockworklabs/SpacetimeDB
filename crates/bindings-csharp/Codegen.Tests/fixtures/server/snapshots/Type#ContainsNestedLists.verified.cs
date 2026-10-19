@@ -110,7 +110,7 @@ partial class ContainsNestedLists
                         new(
                             "StringListListArray",
                             StringListListArrayRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );
@@ -687,16 +687,7 @@ partial class ContainsNestedLists
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as ContainsNestedLists;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is ContainsNestedLists t && Equals(t);
     }
 
     public static bool operator ==(ContainsNestedLists? this_, ContainsNestedLists? that)

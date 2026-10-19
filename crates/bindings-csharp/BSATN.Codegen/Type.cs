@@ -470,7 +470,7 @@ public static class SpacetimeDbFieldDiscovery
         typeSyntax
             .Members.OfType<FieldDeclarationSyntax>()
             .SelectMany(f => f.Declaration.Variables)
-            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Select(v => type.GetMembers(v.Identifier.ValueText).OfType<IFieldSymbol>().Single())
             .Where(f => !f.IsStatic);
 
     public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
@@ -807,14 +807,7 @@ public abstract record BaseTypeDeclaration<M>
                 }
 
                 public override bool Equals(object? that) {
-                    if (that == null) {
-                        return false;
-                    }
-                    var that_ = that as {{FullName}}{{(Scope.IsStruct ? "?" : "")}};
-                    if (((object?)that_) == null) {
-                        return false;
-                    }
-                    return Equals(that_);
+                    return that is {{FullName}} t && Equals(t);
                 }
 
                 public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {

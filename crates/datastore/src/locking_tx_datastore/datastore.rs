@@ -39,7 +39,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
@@ -369,6 +369,15 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn alter_table_outbox_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        outbox: Option<OutboxSchema>,
+    ) -> Result<()> {
+        tx.alter_table_outbox(table_id, outbox)
     }
 
     pub fn alter_event_table_row_type_mut_tx(
@@ -1104,13 +1113,14 @@ pub(crate) mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
-        StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
-        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
-        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
-        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+        system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
+        StConstraintFields, StConstraintRow, StEventTableFields, StInboundMsgResultStatus, StInboundMsgRow,
+        StInboundStreamRow, StIndexAlgorithm, StIndexFields, StIndexRow, StOutboundMsgRow, StOutboundStreamRow,
+        StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields,
+        StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME,
+        ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID,
+        ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME,
+        ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
         ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
@@ -1118,10 +1128,12 @@ pub(crate) mod tests {
     };
     use crate::system_tables::{
         ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
-        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME,
+        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME, ST_OUTBOX_ID,
+        ST_OUTBOX_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
+    use bytes::Bytes;
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -1130,18 +1142,19 @@ pub(crate) mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
-    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, ViewId};
+    use spacetimedb_lib::{resolved_type_via_v9, Identity, ScheduleAt, TimeDuration};
+    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, TableId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;
     use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
-    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+    use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
-        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
-        SequenceSchema,
+        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
+        ScheduleSchema, SequenceSchema,
     };
     use spacetimedb_schema::table_name::TableName;
 
@@ -1447,6 +1460,7 @@ pub(crate) mod tests {
             pk,
             false,
             None,
+            None,
         )
     }
 
@@ -1585,6 +1599,7 @@ pub(crate) mod tests {
             TableRow { id: ST_OUTBOUND_MSG_ID.into(), name: ST_OUTBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]
@@ -1708,6 +1723,13 @@ pub(crate) mod tests {
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_status", ty: AlgebraicType::U8 },
             ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 4, name: "result_payload", ty: AlgebraicType::bytes() },
+
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 1, name: "remote_reducer", ty: resolved_type_via_v9::<NamespacedIdentifier>() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 2, name: "target_column", ty: ColId::get_type() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1746,6 +1768,8 @@ pub(crate) mod tests {
             IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
             IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
+            IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1798,6 +1822,8 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 29, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_outbound_msg_stream_id_seq_key", },
             ConstraintRow { constraint_id: 30, table_id: ST_INBOUND_STREAM_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_inbound_stream_sender_identity_stream_id_key", },
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
+            ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2268,6 +2294,8 @@ pub(crate) mod tests {
             IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
             IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
+            IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -3051,6 +3079,179 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_outbox_insert_records_stream_sequence() -> ResultTest<()> {
+        let mut schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::identity()),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+        schema.outbox = Some(OutboxSchema {
+            remote_reducer: ReducerName::for_test("receive"),
+            target_column: ColId(1),
+            arg_columns: vec![ColId(2)],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        });
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let target = Identity::ONE;
+
+        for msg_id in [10u64, 11] {
+            let row = to_vec(&product![msg_id, target]).unwrap();
+            let (row_ptr, insert_flags) = {
+                let (_, row_ref, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+                (row_ref.pointer(), insert_flags)
+            };
+            assert!(insert_flags.is_outbox_table);
+            tx.record_outbox_insert(table_id, row_ptr)?;
+            tx.record_outbox_insert(table_id, row_ptr)?;
+        }
+
+        let stream_rows = tx
+            .iter(ST_OUTBOUND_STREAM_ID)?
+            .map(StOutboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].outbox_table_id, table_id);
+        assert_eq!(stream_rows[0].target_identity, IdentityViaU256(target));
+        assert_eq!(stream_rows[0].next_seq, 3);
+        assert_eq!(stream_rows[0].ack_prefix, 0);
+
+        let mut outbound_rows = tx
+            .iter(ST_OUTBOUND_MSG_ID)?
+            .map(StOutboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        outbound_rows.sort_by_key(|row| row.seq);
+        assert_eq!(outbound_rows.iter().map(|row| row.seq).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
+            vec![10, 11]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inbound_idc_records_replays_and_trims_outcomes() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        // Bootstrap defers indexes until replay completes; duplicate checks require this one.
+        tx.create_index(crate::system_tables::st_inbound_msg_schema().indexes[0].clone(), true)?;
+        let sender = Identity::ONE;
+        let stream_id = 7;
+
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, stream_id)?, 0);
+        assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_none());
+
+        tx.record_inbound_idc_outcome(
+            sender,
+            stream_id,
+            1,
+            StInboundMsgResultStatus::Ok,
+            Bytes::from_static(b"ok"),
+        )?;
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, stream_id)?, 1);
+
+        let outcome = tx
+            .inbound_idc_outcome(sender, stream_id, 1)?
+            .expect("outcome should be retained for replay");
+        assert_eq!(outcome.result_status, StInboundMsgResultStatus::Ok);
+        assert_eq!(&outcome.result_payload[..], b"ok");
+        for (status, payload) in [
+            (StInboundMsgResultStatus::Ok, Bytes::from_static(b"ok")),
+            (StInboundMsgResultStatus::Err, Bytes::from_static(b"changed")),
+        ] {
+            assert!(
+                tx.record_inbound_idc_outcome(sender, stream_id, 1, status, payload)
+                    .is_err(),
+                "IDC outcomes are immutable and retries must replay the first decision ({status:?})",
+            );
+            assert_eq!(tx.inbound_idc_outcome(sender, stream_id, 1)?, Some(outcome.clone()));
+        }
+
+        tx.trim_inbound_idc_outcomes(sender, stream_id, 1)?;
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, stream_id)?, 1);
+        assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_none());
+
+        let stream_rows = tx
+            .iter(ST_INBOUND_STREAM_ID)?
+            .map(StInboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].sender_identity, IdentityViaU256(sender));
+        assert_eq!(stream_rows[0].stream_id, stream_id);
+        assert_eq!(stream_rows[0].applied_prefix, 1);
+
+        let msg_rows = tx
+            .iter(ST_INBOUND_MSG_ID)?
+            .map(StInboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert!(msg_rows.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inbound_idc_trim_range_and_repeated_acknowledgments() -> ResultTest<()> {
+        // The range scan must handle both the committed index and transaction-local rows.
+        for commit_before_trim in [false, true] {
+            let datastore = get_datastore()?;
+            let mut tx = begin_mut_tx(&datastore);
+            let sender = Identity::ONE;
+            let stream_id = 7;
+            let streams = [
+                (sender, stream_id),
+                (sender, 6),
+                (sender, 8),
+                (Identity::ZERO, stream_id),
+            ];
+            for (sender, stream_id) in streams {
+                for seq in 1..=3 {
+                    tx.record_inbound_idc_outcome(sender, stream_id, seq, StInboundMsgResultStatus::Ok, Bytes::new())?;
+                }
+            }
+            if commit_before_trim {
+                datastore.commit_mut_tx(tx)?;
+                tx = begin_mut_tx(&datastore);
+            }
+
+            // Zero acknowledges nothing; repeated or older acknowledgments are harmless.
+            tx.trim_inbound_idc_outcomes(sender, stream_id, 0)?;
+            assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_some());
+            for ack_prefix in [1, 1, 0] {
+                tx.trim_inbound_idc_outcomes(sender, stream_id, ack_prefix)?;
+                assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_none());
+                assert!(tx.inbound_idc_outcome(sender, stream_id, 2)?.is_some());
+                assert!(tx.inbound_idc_outcome(sender, stream_id, 3)?.is_some());
+            }
+
+            // Even the largest bound must stay within this sender and stream.
+            tx.trim_inbound_idc_outcomes(sender, stream_id, u64::MAX)?;
+            tx.trim_inbound_idc_outcomes(sender, stream_id, u64::MAX)?;
+            for (other_sender, other_stream) in streams {
+                let retained = (other_sender, other_stream) != (sender, stream_id);
+                for seq in 1..=3 {
+                    assert_eq!(
+                        tx.inbound_idc_outcome(other_sender, other_stream, seq)?.is_some(),
+                        retained
+                    );
+                }
+                // Trimming results must not allow an old sequence to execute again.
+                assert_eq!(tx.inbound_idc_applied_prefix(other_sender, other_stream)?, 3);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_row_level_security() -> ResultTest<()> {
         let (_, mut tx, table_id) = setup_table()?;
 
@@ -3071,6 +3272,51 @@ pub(crate) mod tests {
 
         tx.drop_row_level_security(rls.sql)?;
         assert_eq!(tx.row_level_security_for_table_id(table_id)?, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_outbox_updates_insert_flags() -> ResultTest<()> {
+        let schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::U256),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let outbox = OutboxSchema {
+            remote_reducer: ReducerName::for_test("receive"),
+            target_column: ColId(1),
+            arg_columns: vec![],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        };
+        let row = to_vec(&product![1u64, IdentityViaU256(Identity::ONE)]).unwrap();
+
+        let mut tx = begin_mut_tx(&datastore);
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(!insert_flags.is_outbox_table);
+
+        tx.alter_table_outbox(table_id, Some(outbox.clone()))?;
+        assert_eq!(tx.get_schema(table_id).unwrap().outbox, Some(outbox));
+        assert_eq!(
+            tx.schema_for_table_raw(table_id)?.outbox,
+            tx.get_schema(table_id).unwrap().outbox
+        );
+        let row = to_vec(&product![2u64, IdentityViaU256(Identity::ONE)]).unwrap();
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(insert_flags.is_outbox_table);
 
         Ok(())
     }

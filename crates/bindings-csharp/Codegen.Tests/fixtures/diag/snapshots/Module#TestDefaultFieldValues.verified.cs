@@ -117,7 +117,7 @@ partial struct TestDefaultFieldValues
                         new("DefaultF32", DefaultF32RW.GetAlgebraicType(registrar)),
                         new("DefaultF64", DefaultF64RW.GetAlgebraicType(registrar)),
                         new("DefaultEnum", DefaultEnumRW.GetAlgebraicType(registrar)),
-                        new("DefaultNull", DefaultNullRW.GetAlgebraicType(registrar))
+                        new("DefaultNull", DefaultNullRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -209,16 +209,7 @@ partial struct TestDefaultFieldValues
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestDefaultFieldValues?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestDefaultFieldValues t && Equals(t);
     }
 
     public static bool operator ==(TestDefaultFieldValues this_, TestDefaultFieldValues that)

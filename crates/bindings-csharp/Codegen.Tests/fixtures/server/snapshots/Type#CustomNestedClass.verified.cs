@@ -96,7 +96,7 @@ partial class CustomNestedClass
                         new(
                             "NestedNullableCustomRecord",
                             NestedNullableCustomRecordRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );
@@ -179,16 +179,7 @@ partial class CustomNestedClass
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as CustomNestedClass;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is CustomNestedClass t && Equals(t);
     }
 
     public static bool operator ==(CustomNestedClass? this_, CustomNestedClass? that)

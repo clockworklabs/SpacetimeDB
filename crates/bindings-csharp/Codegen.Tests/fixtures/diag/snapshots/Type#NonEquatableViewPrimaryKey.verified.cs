@@ -47,7 +47,7 @@ partial struct NonEquatableViewPrimaryKey
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("Value", ValueRW.GetAlgebraicType(registrar))
+                        new("Value", ValueRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -72,16 +72,7 @@ partial struct NonEquatableViewPrimaryKey
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as NonEquatableViewPrimaryKey?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is NonEquatableViewPrimaryKey t && Equals(t);
     }
 
     public static bool operator ==(
