@@ -48,8 +48,9 @@ impl From<ObjectStoreError> for PageError {
 impl PageError {
     pub fn is_transient(&self) -> bool {
         match self {
+            PageError::MemoryLimitExceeded(_) => true,
+
             PageError::TooManyPages
-            | PageError::MemoryLimitExceeded(_)
             | PageError::Page(_)
             | PageError::MissingPage(_)
             | PageError::MissingObject(_)
@@ -110,6 +111,8 @@ pub enum ObjectStoreError {
         computed: blake3::Hash,
     },
     #[error(transparent)]
+    StorageLimitExceeded(#[from] Box<BudgetExceeded>),
+    #[error(transparent)]
     Io(#[from] io::Error),
 }
 
@@ -119,7 +122,8 @@ impl ObjectStoreError {
             ObjectStoreError::UnknownObject(_)
             | ObjectStoreError::MissingObject(_)
             | ObjectStoreError::HashMismatch { .. } => false,
-            ObjectStoreError::Io(_) => true,
+
+            ObjectStoreError::StorageLimitExceeded(_) | ObjectStoreError::Io(_) => true,
         }
     }
 }

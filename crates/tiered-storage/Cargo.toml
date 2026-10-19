@@ -1,0 +1,14 @@
+[package]
+name = "spacetimedb-disk-table"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spacetimedb-fs-utils.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-snapshot.workspace = true
+spacetimedb-table.workspace = true
+
+[lints]
+workspace = true
