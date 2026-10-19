@@ -1946,9 +1946,8 @@ fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> 
 /// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
 /// package references, gated on `SPACETIMEDB_WASM_AOT=1`.
 ///
-/// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
-/// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
-/// by the SpacetimeDB.Runtime NuGet package.
+/// **.NET 10 AOT**: The templates already reference ILCompiler.LLVM conditionally on
+/// `RuntimeIdentifier=wasi-wasm`, so the project needs no further changes.
 ///
 /// Both paths need a NuGet.Config with the dotnet-experimental feed for ILCompiler.LLVM resolution.
 fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
@@ -1986,12 +1985,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
             }
         }
     } else {
-        // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
-        // ILCompiler.LLVM comes transitively via the SpacetimeDB.Runtime NuGet package.
-        content.replace(
-            "<TargetFramework>net8.0</TargetFramework>",
-            "<TargetFramework>net10.0</TargetFramework>",
-        )
+        content
     };
 
     std::fs::write(&csproj_path, new_content)?;
@@ -2588,29 +2582,21 @@ bytes.workspace = true
 
     #[test]
     fn test_add_native_aot_packages_does_not_duplicate_template_refs() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let csproj = temp.path().join("StdbModule.csproj");
-        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
-        let net8 = csharp_csproj_for_target(template, 8).unwrap();
-        std::fs::write(&csproj, net8).unwrap();
+        for template in [
+            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+            include_str!("../../../../templates/chat-console-cs/spacetimedb/StdbModule.csproj"),
+        ] {
+            for dotnet_major in [8, 10] {
+                let temp = tempfile::TempDir::new().unwrap();
+                let csproj = temp.path().join("StdbModule.csproj");
+                let expected = csharp_csproj_for_target(template, dotnet_major).unwrap();
+                std::fs::write(&csproj, &expected).unwrap();
 
-        add_native_aot_packages_to_csproj(temp.path(), Some(8)).unwrap();
+                add_native_aot_packages_to_csproj(temp.path(), Some(dotnet_major)).unwrap();
 
-        let content = std::fs::read_to_string(csproj).unwrap();
-        assert_eq!(
-            content
-                .matches(r#"PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#)
-                .count(),
-            1
-        );
-        assert_eq!(
-            content
-                .matches(
-                    r#"PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#
-                )
-                .count(),
-            1
-        );
+                assert_eq!(std::fs::read_to_string(csproj).unwrap(), expected);
+            }
+        }
     }
 
     #[test]
