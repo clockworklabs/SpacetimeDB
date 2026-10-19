@@ -6,6 +6,9 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 
+/// The tables Rust's module-test keeps in `files.rs`.
+const FILE_STORAGE_TABLES: [&str; 3] = ["avatar", "file_owner", "gift"];
+
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
     let module = CompiledModule::compile(module_name, CompilationMode::Debug);
     module.extract_schema_blocking()
@@ -82,6 +85,13 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
     // that the other languages cannot produce. Ignoring those steps keeps the root-level
     // schema comparison meaningful instead of disabling it wholesale.
     diff.retain(|step| step_namespace(step).is_none_or(|ns| ns.is_empty()));
+
+    // TODO: Remove this once C# and TypeScript support File Storage.
+    // Only Rust modules can store files today, so module-test's file tables exist only in Rust.
+    diff.retain(|step| match step {
+        AutoMigrateStep::AddTable((ns, name)) => !(ns.is_empty() && FILE_STORAGE_TABLES.contains(&&name[..])),
+        _ => true,
+    });
 
     assert!(
         diff.is_empty(),
