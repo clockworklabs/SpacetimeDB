@@ -35,6 +35,7 @@
           "desc": "stock restored by a direct database write sends the requested alert",
           "points": 1,
           "statedBy": "A stock request creates an alert when stock returns, including stock written outside the application.",
+          "note": "No delivery latency is stated, so a sweep that runs once a minute must pass: the alert has 75 seconds after the write plus 15 seconds on a fresh sign-in.",
           "steps": [
             {"do":"freshClient","actor":"subscriber"},
             {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
@@ -46,7 +47,7 @@
             {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
             {"do":"expectElementCount","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","equals":0},
             {"do":"dbSetStock","item":"Air Purifier","warehouse":"East","quantity":1,"settleMs":0},
-            {"do":"wait","actor":"subscriber","ms":10000},
+            {"do":"wait","actor":"subscriber","ms":75000},
             {"do":"freshClient","actor":"subscriber"},
             {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
             {"do":"click","actor":"subscriber-fresh","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
@@ -55,7 +56,7 @@
             {"do": "click", "actor": "subscriber-fresh", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notifications-toggle", "notifications-panel"]},
             {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
-            {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":10000}
+            {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":15000}
           ]
         }
       ]
