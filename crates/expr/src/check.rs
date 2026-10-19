@@ -442,7 +442,8 @@ mod tests {
                     ProductType::from([("ids", AlgebraicType::array(AlgebraicType::U32))]),
                     row(),
                 ),
-                ("f", ProductType::from([("x", AlgebraicType::F64)]), row()),
+                // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+                // ("f", ProductType::from([("x", AlgebraicType::F64)]), row()),
                 ("p", ProductType::unit(), row()),
             ],
         )
@@ -832,25 +833,26 @@ mod tests {
         }
     }
 
-    /// `-0.0` and `+0.0` are one view instance, so float args must use one zero.
-    #[test]
-    fn view_args_use_positive_zero() {
-        let tx = SchemaViewer(module_def_with_views());
-
-        for sql in [
-            "select * from f(-0.0)",
-            "select * from f(-1e-1000)",
-            "select * from f(0.0)",
-        ] {
-            let Ok(ProjectName::None(RelExpr::RelVar(relvar))) = parse_and_type_sub(sql, &tx) else {
-                panic!("expected a relvar for `{sql}`");
-            };
-            let args = relvar.view_args.expect("f takes an arg").args;
-            let [AlgebraicValue::F64(x)] = &*args.elements else {
-                panic!("expected one f64 arg for `{sql}`");
-            };
-            let x = x.into_inner();
-            assert!(x == 0.0 && x.is_sign_positive(), "`{sql}` typed its arg as {x:?}");
-        }
-    }
+    // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+    // /// `-0.0` and `+0.0` are one view instance, so float args must use one zero.
+    // #[test]
+    // fn view_args_use_positive_zero() {
+    //     let tx = SchemaViewer(module_def_with_views());
+    //
+    //     for sql in [
+    //         "select * from f(-0.0)",
+    //         "select * from f(-1e-1000)",
+    //         "select * from f(0.0)",
+    //     ] {
+    //         let Ok(ProjectName::None(RelExpr::RelVar(relvar))) = parse_and_type_sub(sql, &tx) else {
+    //             panic!("expected a relvar for `{sql}`");
+    //         };
+    //         let args = relvar.view_args.expect("f takes an arg").args;
+    //         let [AlgebraicValue::F64(x)] = &*args.elements else {
+    //             panic!("expected one f64 arg for `{sql}`");
+    //         };
+    //         let x = x.into_inner();
+    //         assert!(x == 0.0 && x.is_sign_positive(), "`{sql}` typed its arg as {x:?}");
+    //     }
+    // }
 }

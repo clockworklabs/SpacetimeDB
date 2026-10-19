@@ -1096,8 +1096,23 @@ impl<'a> ModuleValidatorV10<'a> {
             .map(|id| view_validator.validate_param_column_def(id.into()))
             .collect_all_errors();
 
-        let (return_type_for_generate, return_columns, param_columns) =
-            (return_type_for_generate, return_columns, param_columns).combine_errors()?;
+        // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+        let float_params = params
+            .elements
+            .iter()
+            .enumerate()
+            .filter(|(_, param)| param.algebraic_type.is_float())
+            .map(|(pos, param)| {
+                Err(ValidationError::ViewFloatParam {
+                    view: accessor_name.clone(),
+                    param: param.name.clone().unwrap_or_else(|| pos.to_string().into()),
+                }
+                .into())
+            })
+            .collect_all_errors::<()>();
+
+        let (return_type_for_generate, return_columns, param_columns, ()) =
+            (return_type_for_generate, return_columns, param_columns, float_params).combine_errors()?;
 
         Ok(ViewDef {
             namespace: NamespacePath::root(),
@@ -3316,6 +3331,26 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
         expect_error_matching!(result, ValidationError::ViewPrimaryKeyWithParams { view } => {
             view == &RawIdentifier::from("person_by_id")
+        });
+    }
+
+    #[test]
+    fn view_float_param_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "people_near",
+            0,
+            true,
+            true,
+            ProductType::from([("x", AlgebraicType::F64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewFloatParam { view, param } => {
+            view == &RawIdentifier::from("people_near") && param == &RawIdentifier::from("x")
         });
     }
 

@@ -99,6 +99,8 @@ pub enum ValidationError {
     ViewPrimaryKeyColumnNotFound { view: RawIdentifier, column: RawIdentifier },
     #[error("View {view} has parameters and cannot have a primary key")]
     ViewPrimaryKeyWithParams { view: RawIdentifier },
+    #[error("View {view} has a float parameter `{param}`, which views can't take yet")]
+    ViewFloatParam { view: RawIdentifier, param: RawIdentifier },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,

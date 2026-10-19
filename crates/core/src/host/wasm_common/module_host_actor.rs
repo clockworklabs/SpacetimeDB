@@ -2669,8 +2669,9 @@ mod tests {
             ("u128", AlgebraicType::U128),
             ("i256", AlgebraicType::I256),
             ("u256", AlgebraicType::U256),
-            ("f32", AlgebraicType::F32),
-            ("f64", AlgebraicType::F64),
+            // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+            // ("f32", AlgebraicType::F32),
+            // ("f64", AlgebraicType::F64),
             ("string", AlgebraicType::String),
             ("bytes", AlgebraicType::bytes()),
             ("identity", AlgebraicType::identity()),
@@ -2692,8 +2693,9 @@ mod tests {
             AlgebraicValue::U128(128.into()),
             AlgebraicValue::I256(Box::new(i256::new(-256))),
             AlgebraicValue::U256(Box::new(u256::new(256))),
-            AlgebraicValue::F32(1.5f32.into()),
-            AlgebraicValue::F64(2.5f64.into()),
+            // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+            // AlgebraicValue::F32(1.5f32.into()),
+            // AlgebraicValue::F64(2.5f64.into()),
             AlgebraicValue::String("hello".into()),
             AlgebraicValue::Bytes([1u8, 2, 3].into()),
             Identity::ONE.into(),
