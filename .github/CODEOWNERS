@@ -6,6 +6,8 @@ LICENSE @cloutiertyler @jdetter
 LICENSE.txt @cloutiertyler @jdetter
 /licenses/ @cloutiertyler @jdetter
 
+/crates/cli/src/subcommands/auth.rs @julienlavocat
+
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/commands/keynote-bench/ @joshua-spacetime @cloutiertyler @jdetter
 /tools/ci/commands/codeowners-check/ @cloutiertyler

@@ -34,6 +34,8 @@ serde.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
+tower = { version = "0.5", features = ["util"] }
 env_logger.workspace = true
 serial_test.workspace = true
 

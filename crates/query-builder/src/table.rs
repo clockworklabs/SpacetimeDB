@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::Operand;
+use crate::{LiteralValue, Operand};
 
 use super::{format_expr, BoolExpr, Query, RawQuery, RHS};
 
@@ -200,5 +200,38 @@ impl<T: HasCols> FromWhere<T> {
             format_expr(&self.expr)
         );
         RawQuery::new(sql)
+    }
+}
+
+/// A call to a view that takes arguments.
+///
+/// The server only accepts such a call as `SELECT * FROM v(...)`,
+/// so unlike a [`Table`] it can't be filtered or joined.
+pub struct ViewCall<T> {
+    view_name: TableNameStr,
+    /// The arguments, rendered as `a, b`
+    args: String,
+    _marker: PhantomData<T>,
+}
+
+impl<T> ViewCall<T> {
+    pub fn new(view_name: TableNameStr, args: impl IntoIterator<Item = LiteralValue>) -> Self {
+        Self {
+            view_name,
+            args: args.into_iter().map(|arg| arg.0).collect::<Vec<_>>().join(", "),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: HasCols> Query<T> for ViewCall<T> {
+    fn into_sql(self) -> String {
+        format!(r#"SELECT * FROM "{}"({})"#, self.view_name, self.args)
+    }
+}
+
+impl<T: HasCols> ViewCall<T> {
+    pub fn build(self) -> RawQuery<T> {
+        RawQuery::new(self.into_sql())
     }
 }

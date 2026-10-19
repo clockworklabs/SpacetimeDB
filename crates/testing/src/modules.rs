@@ -69,6 +69,10 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
+    pub fn env(&self) -> Arc<StandaloneEnv> {
+        self.env.clone()
+    }
+
     /// Publish a complete configuration through the standalone control API.
     pub async fn republish_environment(
         &self,
@@ -348,7 +352,7 @@ impl CompiledModule {
         with_runtime(move |runtime| {
             runtime.block_on(async {
                 let module = self.load_module_with_environment(config, None, environment).await;
-                let env = module.env.clone();
+                let env = module.env();
                 let db_identity = module.db_identity;
                 let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
                 finish_module_test(&env, db_identity, routine_result).await;
@@ -362,7 +366,7 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             let module = runtime.block_on(async { self.load_module(config, None).await });
-            let env = module.env.clone();
+            let env = module.env();
             let db_identity = module.db_identity;
             let func_result = std::panic::catch_unwind(AssertUnwindSafe(|| func(runtime, &module)));
             drop(module);

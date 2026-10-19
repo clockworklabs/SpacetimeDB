@@ -12,7 +12,6 @@ struct CargoMetadata {
 #[derive(Debug, Deserialize)]
 struct Package {
     name: String,
-    manifest_path: PathBuf,
     dependencies: Vec<Dependency>,
 }
 
@@ -38,15 +37,6 @@ fn get_cargo_metadata(workspace_root: &Path) -> Result<CargoMetadata> {
     }
 
     serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata output")
-}
-
-/// Gets cargo metadata and returns a mapping of crate names to their manifest paths
-pub fn get_crate_manifest_map(workspace_root: &Path) -> Result<HashMap<String, PathBuf>> {
-    Ok(get_cargo_metadata(workspace_root)?
-        .packages
-        .into_iter()
-        .map(|package| (package.name, package.manifest_path))
-        .collect())
 }
 
 /// Processes a crate to find its local publication dependencies

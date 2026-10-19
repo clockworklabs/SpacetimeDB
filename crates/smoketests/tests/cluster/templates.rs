@@ -128,7 +128,84 @@ fn init_template_with_dotnet_version(
         bail!("Project directory not created for template {}", template_id);
     }
 
+    // Check the CLI output before local SDK overrides can hide invalid dependencies.
+    // Motivated by #6298.
+    assert_portable_rust_manifests(&project_path)?;
+
     Ok((tmpdir, project_path))
+}
+
+/// Validate generated client and server manifests before rewriting SDK dependencies.
+fn assert_portable_rust_manifests(project_path: &Path) -> Result<()> {
+    for relative_manifest in ["Cargo.toml", "spacetimedb/Cargo.toml"] {
+        let manifest_path = project_path.join(relative_manifest);
+        if manifest_path.exists() {
+            assert_portable_rust_manifest(&manifest_path, project_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn assert_portable_rust_manifest(manifest_path: &Path, project_path: &Path) -> Result<()> {
+    let project_root = project_path.canonicalize()?;
+    let validate = || -> Result<()> {
+        let content = fs::read_to_string(manifest_path)?;
+        let manifest: toml::Value = content.parse()?;
+        let check_sections = |table: &toml::Value, prefix: &str| -> Result<()> {
+            for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+                let Some(dependencies) = table.get(kind).and_then(toml::Value::as_table) else {
+                    continue;
+                };
+                for (name, dependency) in dependencies {
+                    let context = format!("[{prefix}{kind}] dependency {name}");
+                    if dependency.get("workspace").and_then(toml::Value::as_bool) == Some(true) {
+                        bail!("{context}: unresolved workspace inheritance");
+                    }
+                    if let Some(path) = dependency.get("path").and_then(toml::Value::as_str) {
+                        let resolved = manifest_path
+                            .parent()
+                            .unwrap()
+                            .join(path)
+                            .canonicalize()
+                            .with_context(|| format!("{context}: cannot resolve dependency path {path:?}"))?;
+                        if !resolved.starts_with(&project_root) {
+                            bail!("{context}: dependency path {path:?} escapes the generated project");
+                        }
+                    }
+                }
+            }
+            Ok(())
+        };
+        check_sections(&manifest, "")?;
+        if let Some(targets) = manifest.get("target").and_then(toml::Value::as_table) {
+            for (selector, target) in targets {
+                check_sections(target, &format!("target.{selector}."))?;
+            }
+        }
+        Ok(())
+    };
+    validate().with_context(|| format!("Non-portable generated manifest {}", manifest_path.display()))?;
+    Ok(())
+}
+
+#[test]
+fn test_portable_rust_manifest_rejects_invalid_path() -> Result<()> {
+    let project = tempfile::tempdir()?;
+    let manifest_path = project.path().join("Cargo.toml");
+    fs::write(
+        &manifest_path,
+        r#"[dev-dependencies]
+spacetimedb = { path = "missing" }
+"#,
+    )?;
+
+    let error = assert_portable_rust_manifest(&manifest_path, project.path()).unwrap_err();
+    let message = format!("{error:#}");
+    assert!(
+        message.contains(r#"[dev-dependencies] dependency spacetimedb: cannot resolve dependency path "missing""#),
+        "{message}"
+    );
+    Ok(())
 }
 
 /// Updates dependency entries in a `Cargo.toml` to use a local path.
