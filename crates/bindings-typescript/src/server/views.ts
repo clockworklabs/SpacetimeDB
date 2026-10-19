@@ -277,7 +277,9 @@ function describeView<
       `View '${exportName}' can have at most one primaryKey() column on its returned row type; found ${primaryKeyColumns.join(', ')}`
     );
   }
-  if (primaryKeyColumns.length === 1) {
+  // A view with params doesn't get a primary key: the host rejects one, and a
+  // table's `rowType` carries its `.primaryKey()` into views that return it.
+  if (primaryKeyColumns.length === 1 && paramType.elements.length === 0) {
     ctx.moduleDef.viewPrimaryKeys.push({
       viewSourceName: exportName,
       columns: primaryKeyColumns,
