@@ -3,8 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::BudgetPermit;
-use crate::indexes::max_rows_in_page;
 use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock, RwLockWriteGuard};
 use spacetimedb_data_structures::object_pool::{Pool, PooledObject};
 use spacetimedb_lib::bsatn;
@@ -12,15 +10,15 @@ use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    indexes::PAGE_SIZE,
+    indexes::{max_rows_in_page, PAGE_SIZE},
     page::{Page, PageMetadata},
     page_pool::PagePool,
     tiered::{
         error::PageError,
-        map::PageHash,
+        map::{ObjectKey, PageHash},
         mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
         storage::TieredStorage,
-        BudgetExceeded, ByteBudget, ObjectStoreError, ResidentObjects,
+        BudgetExceeded, BudgetPermit, ByteBudget, ObjectStoreError, ResidentObjects,
     },
 };
 
@@ -51,12 +49,21 @@ impl Deref for PageFrameReadGuard {
 ///
 /// Created by [PageFrame::write].
 pub struct PageFrameWriteGuard {
-    guard: ArcRwLockWriteGuard<RawRwLock, PooledPage>,
+    // NOTE: declaration order ensures locks are released in reverse acquisition
+    // order.
+    /// Write guard for the page allocation.
+    page_guard: ArcRwLockWriteGuard<RawRwLock, PooledPage>,
+    /// Write guard for the page slot.
+    /// When the guard is dropped, the slot needs to be marked dirty and the
+    /// page metadata updated.
+    slot_guard: ArcRwLockWriteGuard<RawRwLock, PageSlot>,
+
+    /// The locks don't consume a strong count for the frame, so we keep one
+    /// here to keep it pinned.
     pin: Arc<PageFrame>,
 
-    slot: Arc<RwLock<PageSlot>>,
+    /// Needed to compute the metadata.
     fixed_row_size: Size,
-    eviction_policy: PageEvictionPolicy,
 }
 
 impl PageFrameWriteGuard {
@@ -71,42 +78,30 @@ impl Deref for PageFrameWriteGuard {
     type Target = Page;
 
     fn deref(&self) -> &Self::Target {
-        &self.guard
+        &self.page_guard
     }
 }
 
 impl DerefMut for PageFrameWriteGuard {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.guard
+        &mut self.page_guard
     }
 }
 
 impl Drop for PageFrameWriteGuard {
     fn drop(&mut self) {
-        let metadata = self.metadata(self.fixed_row_size);
-        let mut slot_guard = self.slot.write();
-        match &mut *slot_guard {
-            PageSlot::Resident {
-                handle,
-                backing,
-                metadata: cached_metadata,
-                eviction_policy: cached_eviction_policy,
-            } if Arc::ptr_eq(&handle.frame, &self.pin) => {
-                *cached_metadata = metadata;
-                *cached_eviction_policy = self.eviction_policy;
-                backing.take();
-            }
-            _ => {
-                *slot_guard = PageSlot::Resident {
-                    handle: PageHandle {
-                        frame: self.pin.clone(),
-                    },
-                    backing: None,
-                    metadata,
-                    eviction_policy: self.eviction_policy,
-                };
-            }
-        }
+        let new_metadata = self.page_guard.metadata(self.fixed_row_size);
+        let PageSlot::Resident {
+            handle: _,
+            metadata,
+            backing,
+            eviction_policy: _,
+        } = &mut *self.slot_guard
+        else {
+            unreachable!("slot lock serves as proof that page is resident")
+        };
+        *metadata = new_metadata;
+        backing.take();
     }
 }
 
@@ -162,8 +157,12 @@ impl PageSlotHandle {
         self.slot.read().page_id()
     }
 
-    pub(super) fn lock(&self) -> RwLockWriteGuard<'_, PageSlot> {
+    pub(super) fn write_ref(&self) -> RwLockWriteGuard<'_, PageSlot> {
         self.slot.write()
+    }
+
+    fn write_owned(&self) -> ArcRwLockWriteGuard<RawRwLock, PageSlot> {
+        self.slot.write_arc()
     }
 
     pub(super) fn free(&self) {
@@ -351,19 +350,33 @@ impl PageHandle {
         (hash, bytes)
     }
 
-    fn write(
+    /// Obtain a write lock for the page allocation, while holding a write lock
+    /// on the page slot.
+    ///
+    /// The method is marked unsafe to enforce stating the below safety
+    /// invariants in a comment at call sites.
+    ///
+    /// # Safety
+    ///
+    /// The caller guarantees that the page is faulted, i.e. the slot is
+    /// `PageSlot::Resident`. The slot must contain this handle's [PageFrame].
+    unsafe fn write(
         &self,
-        slot: Arc<RwLock<PageSlot>>,
+        slot_guard: ArcRwLockWriteGuard<RawRwLock, PageSlot>,
         fixed_row_size: Size,
-        eviction_policy: PageEvictionPolicy,
     ) -> PageFrameWriteGuard {
+        assert!(matches!(
+            &*slot_guard,
+            PageSlot::Resident { handle, .. }
+                if Arc::ptr_eq(&handle.frame, &self.frame)
+        ));
         PageFrameWriteGuard {
-            guard: self.frame.write(),
+            page_guard: self.frame.write(),
+            slot_guard,
+
             pin: self.frame.clone(),
 
-            slot,
             fixed_row_size,
-            eviction_policy,
         }
     }
 }
@@ -495,7 +508,7 @@ impl PageManager {
         slot: &PageSlotHandle,
         eviction_policy: PageEvictionPolicy,
     ) -> Result<Option<PageHandle>, PageError> {
-        self.may_fault(slot, eviction_policy)
+        self.may_fault(&mut slot.write_ref(), eviction_policy)
     }
 
     /// Get a [PageFrameWriteGuard] for the page at the given `slot`.
@@ -512,27 +525,29 @@ impl PageManager {
         eviction_policy: PageEvictionPolicy,
         fixed_row_size: Size,
     ) -> Result<PageFrameWriteGuard, PageError> {
+        let mut slot_guard = slot.write_owned();
         let handle = self
-            .may_fault(slot, eviction_policy)?
+            .may_fault(&mut slot_guard, eviction_policy)?
             .expect("page requested for mutation to be present");
-        Ok(handle.write(slot.slot.clone(), fixed_row_size, eviction_policy))
+        // SAFETY: We just faulted the page, so the handle contains the resident
+        // frame we want to lock.
+        Ok(unsafe { handle.write(slot_guard, fixed_row_size) })
     }
 
     fn may_fault(
         &self,
-        slot: &PageSlotHandle,
+        slot_guard: &mut PageSlot,
         eviction_policy: PageEvictionPolicy,
     ) -> Result<Option<PageHandle>, PageError> {
-        let mut slot_guard = slot.slot.write();
-        match *slot_guard {
+        match &*slot_guard {
             PageSlot::Absent => Ok(None),
             PageSlot::Resident {
-                ref handle,
+                handle,
                 eviction_policy: cached_eviction_policy,
                 ..
             } => {
                 assert_eq!(
-                    cached_eviction_policy, eviction_policy,
+                    cached_eviction_policy, &eviction_policy,
                     "eviction policy cannot be changed for resident pages"
                 );
                 // Avoid atomics contention if the page isn't evictable.
@@ -543,7 +558,7 @@ impl PageManager {
             }
             PageSlot::NonResident { hash, metadata, .. } => {
                 let reservation = self.resident.reserve_page(|| {
-                    let bytes = self.storage.read(hash.into())?;
+                    let bytes = self.storage.read(ObjectKey::from(*hash))?;
                     let page = self
                         .pool
                         .take_deserialize_from(&bytes)
@@ -555,8 +570,8 @@ impl PageManager {
                 let handle = PageHandle { frame };
                 *slot_guard = PageSlot::Resident {
                     handle: handle.clone(),
-                    metadata,
-                    backing: Some(hash),
+                    metadata: *metadata,
+                    backing: Some(*hash),
                     eviction_policy,
                 };
 
