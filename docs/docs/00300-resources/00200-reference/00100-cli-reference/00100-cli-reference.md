@@ -132,7 +132,7 @@ Publishing preserves unspecified environment values. Put an env map in spacetime
    If an organization is given, the organization member's permissions apply to the new database.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
+* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name). With all or skip-login, publishing requires a saved login token unless --anonymous is used; run `spacetime login` first.
 
   Possible values:
   - `all`:
@@ -144,7 +144,7 @@ Publishing preserves unspecified environment values. Put an env map in spacetime
   - `break-clients`:
     Skip the "this will BREAK existing clients" confirmation
   - `skip-login`:
-    Don't prompt the user to log in; act non-interactively for auth
+    Don't prompt the user to log in; fail if authentication is required and no login token is saved
   - `delete-data`:
     Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation
 
@@ -186,7 +186,7 @@ Read one published environment value
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
 * `--anonymous` — Perform this action with an anonymous identity
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
 
   Possible values: `true`, `false`
@@ -209,7 +209,7 @@ List published environment keys and values
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
 * `--anonymous` — Perform this action with an anonymous identity
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
 
   Possible values: `true`, `false`
@@ -234,7 +234,7 @@ Run `spacetime help delete` for more detailed information.
 ###### **Options:**
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -268,7 +268,7 @@ Run `spacetime help logs` for more detailed information.
   Possible values: `trace`, `debug`, `info`, `warn`, `error`, `panic`
 
 * `--level-exact` — When combined with --level, show only logs at exactly the specified level instead of that level and above.
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -290,7 +290,7 @@ Run `spacetime help call` for more detailed information.
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `--anonymous` — Perform this action with an anonymous identity
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -319,7 +319,7 @@ Run `spacetime help describe` for more detailed information.
 * `--json` — Output the schema in JSON format. Shorthand for `--format json`.
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -348,7 +348,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server to publish to
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `-c`, `--delete-data <CLEAR-DATABASE>` — When publishing to an existing database identity, first DESTROY all data associated with the module. With 'on-conflict': only when breaking schema changes occur.
 
   Possible values: `always`, `on-conflict`, `never`
@@ -390,7 +390,7 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 
   Possible values: `text`, `json`
 
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -433,7 +433,7 @@ Run `spacetime rename --help` for more detailed information.
 
 * `--to <NEW-NAME>` — The new name you would like to assign
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server on which to set the name
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -473,7 +473,7 @@ Run `spacetime help generate` for more detailed information.
 * `--include-private` — Include private tables and functions in generated code (types are always included).
 
   Default value: `false`
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 
@@ -488,7 +488,7 @@ Lists the databases attached to an identity. WARNING: This command is UNSTABLE a
 ###### **Options:**
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server from which to list databases
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 
 
@@ -648,7 +648,7 @@ Remove a saved server configuration
 
 ###### **Options:**
 
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 
 
 
@@ -664,7 +664,7 @@ Show or update a saved server's fingerprint
 
 ###### **Options:**
 
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 
 
 
@@ -695,7 +695,7 @@ Update a saved server's nickname, host name or protocol
 * `--new-name <NICKNAME>` — A new nickname to assign the server configuration
 * `--url <URL>` — A new URL to assign the server configuration
 * `--no-fingerprint` — Skip fingerprinting the server
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 
 
 
@@ -708,7 +708,7 @@ Deletes all data from all local databases
 ###### **Options:**
 
 * `--data-dir <DATA_DIR>` — The path to the server data directory to clear [default: that of the selected spacetime instance]
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 
 
 
@@ -732,7 +732,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
   Possible values: `true`, `false`
 
 * `--anonymous` — Perform this action with an anonymous identity
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes` — Run non-interactively wherever possible, answering "yes" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.
 * `--no-config` — Ignore spacetime.json configuration
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 

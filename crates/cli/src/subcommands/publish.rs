@@ -39,7 +39,7 @@ pub enum YesValue {
     Migrate,
     /// Skip the "this will BREAK existing clients" confirmation.
     BreakClients,
-    /// Don't prompt the user to log in; act non-interactively for auth.
+    /// Don't prompt the user to log in; fail if authentication is required and no login token is saved.
     SkipLogin,
     /// Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation.
     DeleteData,
@@ -307,7 +307,9 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                      more of: all, remote, migrate, break-clients, skip-login, delete-data. \
                      Multiple values can be comma-separated (--yes=migrate,break-clients) or \
                      given via repeated flags (--yes=migrate --yes=break-clients). The value \
-                     must be attached with '=' (so `--yes my-db` treats `my-db` as the database name)."
+                     must be attached with '=' (so `--yes my-db` treats `my-db` as the database name). \
+                     With all or skip-login, publishing requires a saved login token unless --anonymous is used; \
+                     run `spacetime login` first."
                 )
         )
         .arg(
