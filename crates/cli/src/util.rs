@@ -371,14 +371,7 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    // Note: We pass `force: false` to `y_or_n` because if we're running non-interactively we want to default to "no", not yes!
-    let full_login = interactive
-        && y_or_n(
-            false,
-            // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
-            // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
-            "You are not logged in. Would you like to log in with spacetimedb.com?",
-        )?;
+    let full_login = prompt_for_login(interactive, |prompt| y_or_n(false, prompt))?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
@@ -389,6 +382,30 @@ pub async fn get_login_token_or_log_in(
     }
 }
 
+fn prompt_for_login(interactive: bool, mut confirm: impl FnMut(&str) -> anyhow::Result<bool>) -> anyhow::Result<bool> {
+    anyhow::ensure!(
+        interactive,
+        "You are not logged in. Run `spacetime login` before running this command with --yes."
+    );
+
+    if confirm("You are not logged in. Would you like to log in with spacetimedb.com?")? {
+        return Ok(true);
+    }
+
+    anyhow::ensure!(
+        confirm(
+            "WARNING: Continuing without spacetimedb.com will create a server-issued identity that only works on this server.\n\
+             Databases you publish will be owned by this identity. Running `spacetime login` later will discard its token, \
+             and you will lose access to those databases unless you saved the token with `spacetime login show --token`. \
+             A lost server-issued token cannot be recovered.\n\
+             We recommend logging in with spacetimedb.com, which also works with local servers.\n\
+             Continue with a server-issued identity?"
+        )?,
+        "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
+    );
+    Ok(false)
+}
+
 pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
     let resolved_exe = std::env::current_exe().context("could not retrieve current exe")?;
     let bin_path = resolved_exe
@@ -397,4 +414,79 @@ pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
         .join(bin_name)
         .with_extension(std::env::consts::EXE_EXTENSION);
     Ok(bin_path)
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::*;
+    use spacetimedb_paths::cli::CliTomlPath;
+    use spacetimedb_paths::FromPathUnchecked;
+
+    #[test]
+    fn noninteractive_login_requires_explicit_login() {
+        let err = prompt_for_login(false, |_| panic!("must not prompt with --yes")).unwrap_err();
+        assert!(err.to_string().contains("Run `spacetime login`"));
+    }
+
+    #[test]
+    fn web_login_does_not_prompt_for_server_issued_identity() {
+        let mut prompts = 0;
+        assert!(prompt_for_login(true, |_| {
+            prompts += 1;
+            assert_eq!(prompts, 1);
+            Ok(true)
+        })
+        .unwrap());
+        assert_eq!(prompts, 1);
+    }
+
+    #[test]
+    fn server_issued_login_requires_confirmation_after_warning() {
+        for confirmed in [false, true] {
+            let mut prompts = 0;
+            let result = prompt_for_login(true, |prompt| {
+                prompts += 1;
+                if prompts == 1 {
+                    return Ok(false);
+                }
+                assert!(prompt.contains("WARNING:"));
+                assert!(prompt.contains("lose access"));
+                assert!(prompt.contains("spacetime login show --token"));
+                Ok(confirmed)
+            });
+            assert_eq!(prompts, 2);
+            if confirmed {
+                assert!(!result.unwrap());
+            } else {
+                assert!(result.unwrap_err().to_string().contains("Login cancelled"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn noninteractive_auth_without_token_fails_without_saving_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
+        let mut config = Config::new_with_localhost(path);
+        let err = get_auth_header(&mut config, false, None, false).await.unwrap_err();
+        assert!(err.to_string().contains("Run `spacetime login`"));
+        assert!(config.spacetimedb_token().is_none());
+        assert!(!tmp.path().join("config.toml").exists());
+
+        let anonymous = get_auth_header(&mut config, true, None, false).await.unwrap();
+        assert!(anonymous.to_header().is_none());
+        assert!(!tmp.path().join("config.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn noninteractive_login_reuses_saved_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
+        let mut config = Config::new_with_localhost(path);
+        config.set_spacetimedb_token("saved-token".into());
+        assert_eq!(
+            get_login_token_or_log_in(&mut config, None, false).await.unwrap(),
+            "saved-token"
+        );
+    }
 }
