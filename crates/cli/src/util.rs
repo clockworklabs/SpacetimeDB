@@ -343,6 +343,7 @@ pub fn y_or_n(force: bool, prompt: &str, default: bool) -> anyhow::Result<bool> 
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
+    // Empty input includes EOF.
     Ok((input.is_empty() && default) || input == "y" || input == "yes")
 }
 
