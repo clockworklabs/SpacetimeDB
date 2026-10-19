@@ -100,7 +100,7 @@ pub(super) async fn publish_only(
     if hostname != "localhost" && hostname != "127.0.0.1" {
         println!("You are about to publish environment values to a non-local server: {hostname}");
         anyhow::ensure!(
-            y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?")?,
+            y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?", false)?,
             "Publish aborted by user"
         );
     }

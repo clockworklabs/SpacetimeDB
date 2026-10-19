@@ -411,6 +411,7 @@ fn confirm_and_clear(
     if !y_or_n(
         skip_prompt,
         format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
+        false,
     )? {
         anyhow::bail!("Aborted.");
     }
@@ -682,7 +683,7 @@ async fn execute_publish_configs<'a>(
         };
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
-            if !y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?")? {
+            if !y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?", false)? {
                 anyhow::bail!("Publish aborted by user.");
             }
         }
@@ -932,6 +933,7 @@ async fn apply_pre_publish_if_needed(
                     && !y_or_n(
                         force_break_clients || yes.break_clients,
                         "The above changes will BREAK existing clients. Do you want to proceed?",
+                        false,
                     )?
                 {
                     println!("Aborting");

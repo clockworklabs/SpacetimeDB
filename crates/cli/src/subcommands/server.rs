@@ -271,7 +271,7 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
     let force = args.get_flag("force");
 
     if update_server_fingerprint(&mut config, Some(server)).await? {
-        if !y_or_n(force, "Continue?")? {
+        if !y_or_n(force, "Continue?", false)? {
             anyhow::bail!("Aborted");
         }
 
@@ -348,7 +348,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         }
     }
 
-    if !y_or_n(force, "Continue?")? {
+    if !y_or_n(force, "Continue?", false)? {
         anyhow::bail!("Aborted");
     }
 
@@ -367,6 +367,7 @@ async fn exec_clear(_config: Config, paths: &SpacetimePaths, args: &ArgMatches) 
         if !y_or_n(
             force,
             "Are you sure you want to delete all data from the local database?",
+            false,
         )? {
             println!("Aborting");
             return Ok(());

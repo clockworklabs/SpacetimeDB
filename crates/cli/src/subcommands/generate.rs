@@ -591,7 +591,7 @@ pub async fn run_prepared_generate_configs(
                 println!("  {}", path.to_str().unwrap());
             }
 
-            if y_or_n(force, "Are you sure you want to delete these files?")? {
+            if y_or_n(force, "Are you sure you want to delete these files?", false)? {
                 for path in files_to_delete {
                     fs::remove_file(path)?;
                 }
