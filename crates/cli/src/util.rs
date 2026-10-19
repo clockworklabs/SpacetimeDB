@@ -331,7 +331,7 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
 
 /// Prompt the user for `y` or `n` from stdin.
 ///
-/// Use `default` when the user presses Enter. Return `false` on EOF.
+/// Use `default` for empty input, including EOF.
 pub fn y_or_n(force: bool, prompt: &str, default: bool) -> anyhow::Result<bool> {
     if force {
         println!("Skipping confirmation due to --yes");
@@ -341,10 +341,7 @@ pub fn y_or_n(force: bool, prompt: &str, default: bool) -> anyhow::Result<bool> 
     print!("{prompt} [{choices}]");
     std::io::stdout().flush()?;
     let mut input = String::new();
-    if std::io::stdin().read_line(&mut input)? == 0 {
-        // EOF isn't confirmation; only pressing Enter should accept the default.
-        return Ok(false);
-    }
+    std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
     Ok((input.is_empty() && default) || input == "y" || input == "yes")
 }
