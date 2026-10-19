@@ -137,6 +137,10 @@ impl ReplicaDir {
     pub fn commit_log(&self) -> CommitLogDir {
         CommitLogDir(self.0.join("clog"))
     }
+
+    pub fn tables(&self) -> TablesDir {
+        TablesDir(self.0.join("tables"))
+    }
 }
 
 path_type! {
@@ -275,6 +279,11 @@ impl CommitLogDir {
 
 path_type!(SegmentFile: file);
 path_type!(OffsetIndexFile: file);
+
+path_type! {
+    /// The directory for disk tables. `{data-dir}/replica/$replica_id/tables`
+    TablesDir: dir
+}
 
 #[cfg(test)]
 mod tests {

@@ -8496,6 +8496,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-disk-table"
+version = "2.14.0"
+dependencies = [
+ "spacetimedb-fs-utils",
+ "spacetimedb-paths",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
+]
+
+[[package]]
 name = "spacetimedb-dst-lib"
 version = "2.16.0"
 dependencies = [

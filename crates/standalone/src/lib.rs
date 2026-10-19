@@ -84,8 +84,11 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let persistence_provider =
-            Arc::new(LocalPersistenceProvider::new(data_dir.clone()).with_durability_config(config.durability));
+        let page_pool = PagePool::new(config.db_config.page_pool_max_size);
+        let persistence_provider = Arc::new(
+            LocalPersistenceProvider::new(data_dir.clone(), page_pool.clone())
+                .with_durability_config(config.durability),
+        );
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
@@ -94,6 +97,7 @@ impl StandaloneEnv {
             energy_monitor,
             Arc::new(()),
             persistence_provider,
+            page_pool,
             db_cores,
         )
         .with_initial_environment_source(Arc::new(control_db.clone()));
