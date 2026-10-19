@@ -1,14 +1,51 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+  <!-- Evaluate after project-local framework and RID selection.
+       .NET 8 retains its existing WASM-only build behavior. -->
+  <PropertyGroup>
+    <_SpacetimeWasm>false</_SpacetimeWasm>
+    <_SpacetimeWasm Condition="'$(RuntimeIdentifier)' == 'wasi-wasm' Or $(TargetFramework.StartsWith('net8.'))">true</_SpacetimeWasm>
+    <_UseNativeAotLlvm>false</_UseNativeAotLlvm>
+    <_UseNativeAotLlvm Condition="'$(_SpacetimeWasm)' == 'true' And ($(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1')">true</_UseNativeAotLlvm>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.'))">
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_SpacetimeWasm)' == 'true'">
+    <TrimMode>full</TrimMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_UseNativeAotLlvm)' == 'true'">
+    <OutputType>Library</OutputType>
+    <NativeLib>Shared</NativeLib>
+    <DefineConstants>$(DefineConstants);SPACETIMEDB_WASM_AOT</DefineConstants>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+    <UseAppHost>false</UseAppHost>
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <WasmEnableThreads>false</WasmEnableThreads>
+    <WasmBuildNative>false</WasmBuildNative>
+    <SpacetimeNamespace>spacetime_10.0</SpacetimeNamespace>
+    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_SpacetimeWasm)' == 'true' And '$(_UseNativeAotLlvm)' != 'true'">
+    <!-- needs to be exe for initializers to be embedded correctly -->
+    <OutputType>Exe</OutputType>
+    <WasmSingleFileBundle>true</WasmSingleFileBundle>
+    <!-- conditional due to https://github.com/dotnet/runtime/issues/86186 which is not fixed in NAOT-LLVM -->
+    <DebuggerSupport>false</DebuggerSupport>
+  </PropertyGroup>
+
   <Import
       Project="$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets"
-      Condition="'$(SPACETIMEDB_WASM_AOT)' == '1' and '$(ILCompilerTargetsPath)' == '' and '$(PkgMicrosoft_DotNet_ILCompiler_LLVM)' != '' and Exists('$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets')" />
-
-  <!-- Auto-detect NativeAOT-LLVM mode for .NET 10 (no env var needed), or use SPACETIMEDB_WASM_AOT env var -->
-  <PropertyGroup>
-    <_UseNativeAotLlvm Condition="$(TargetFramework.StartsWith('net10.'))">true</_UseNativeAotLlvm>
-    <_UseNativeAotLlvm Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">true</_UseNativeAotLlvm>
-  </PropertyGroup>
+      Condition="'$(_UseNativeAotLlvm)' == 'true' and '$(ILCompilerTargetsPath)' == '' and '$(PkgMicrosoft_DotNet_ILCompiler_LLVM)' != '' and Exists('$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets')" />
 
   <!-- Override IlcLlvmTarget AFTER the ILCompiler.LLVM.targets import (which defaults to wasip2).
        SpacetimeDB's host only supports WASI Preview 1 (wasip1). -->
@@ -71,7 +108,7 @@
   </ItemGroup>
 
   <!-- Only use NativeFileReference for JIT path (non-AOT). AOT uses NativeLibrary instead. -->
-  <ItemGroup Condition="'$(_UseNativeAotLlvm)' != 'true'">
+  <ItemGroup Condition="'$(_SpacetimeWasm)' == 'true' And '$(_UseNativeAotLlvm)' != 'true'">
     <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
   </ItemGroup>
@@ -84,6 +121,9 @@
           AfterTargets="SetupProperties"
           BeforeTargets="LinkNativeLlvm">
     <PropertyGroup>
+      <!-- A module's direct LLVM package reference may be imported after us.
+           Reapply the target after all compiler targets have been evaluated. -->
+      <IlcLlvmTarget>wasm32-unknown-wasip1</IlcLlvmTarget>
       <_OriginalIlcSdkPath>$(IlcSdkPath)</_OriginalIlcSdkPath>
       <_WasiRuntimeOverlayDir>$(IntermediateOutputPath)native-hidden-no-wit\</_WasiRuntimeOverlayDir>
     </PropertyGroup>
@@ -108,7 +148,8 @@
   <!-- Executes before the errors in https://github.com/dotnet/runtime/blob/57fd56a99d4c97ac2f95fe84640f2a3f653f4dd7/src/mono/wasi/build/WasiApp.Native.targets#L41-L50. -->
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
   <!-- Required for NativeAOT-LLVM and for the .NET 8 JIT path's NativeFileReference. -->
-  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks;_InitializeWasiSdk">
+  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks;_InitializeWasiSdk"
+          Condition="'$(_SpacetimeWasm)' == 'true'">
     <PropertyGroup>
       <WasiSdkVersion Condition="$(TargetFramework.StartsWith('net10.'))">29</WasiSdkVersion>
       <WasiSdkVersion Condition="$(TargetFramework.StartsWith('net8.'))">24</WasiSdkVersion>
