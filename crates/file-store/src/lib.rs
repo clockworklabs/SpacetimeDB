@@ -245,7 +245,14 @@ impl LocalFileStore {
     }
 }
 
+/// Makes the entries in `dir`, such as an object renamed into it, durable.
+///
+/// On Windows, directories can't be opened as files and syncing one is an error,
+/// so this is a no-op there, as in the commitlog.
 fn sync_dir(dir: &Path) -> io::Result<()> {
+    if cfg!(windows) {
+        return Ok(());
+    }
     std::fs::File::open(dir)?.sync_all()
 }
 
