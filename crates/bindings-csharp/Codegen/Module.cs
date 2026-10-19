@@ -1607,13 +1607,6 @@ record ViewDeclaration
     /// </summary>
     public string GenerateDispatcherClass(uint index)
     {
-        var paramReads = string.Join(
-            "\n                        ",
-            Parameters.Select(p =>
-                $"var {p.Identifier} = {p.Identifier}{TypeUse.BsatnFieldSuffix}.Read(reader);"
-            )
-        );
-
         var makeViewDefMethod = IsAnonymous ? "MakeAnonymousViewDef" : "MakeViewDef";
 
         var interfaceName = IsAnonymous
@@ -1675,10 +1668,10 @@ record ViewDeclaration
                     return output.ToArray();            
                 """;
 
-        var invocationArgs =
-            Parameters.Length == 0
-                ? ""
-                : ", " + string.Join(", ", Parameters.Select(p => p.Identifier));
+        // Read each arg inline, as reducers do, so a param's name can't collide with a local.
+        var invocationArgs = string.Concat(
+            Parameters.Select(p => $", {p.Identifier}{TypeUse.BsatnFieldSuffix}.Read(reader)")
+        );
         return $$$"""
             sealed class {{{Name}}}ViewDispatcher : {{{interfaceName}}} {
                 {{{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Parameters)}}}
@@ -1691,7 +1684,6 @@ record ViewDeclaration
                     {{{interfaceContext}}} ctx
                 ) {
                     try {
-                        {{{paramReads}}}
                         var returnValue = {{{FullName}}}(({{{concreteContext}}})ctx{{{invocationArgs}}});
                         {{{writeOutput}}}
                     } catch (System.Exception e) {

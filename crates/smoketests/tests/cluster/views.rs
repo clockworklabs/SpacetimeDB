@@ -368,6 +368,19 @@ fn assert_view_args(test: &Smoketest) {
         );
     }
 
+    // Subscribing to all tables leaves out the views with args, which can't be queried without them.
+    let sub = test
+        .subscribe(&["SELECT * FROM *"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.call("add_item", &["3", "30"]).unwrap();
+    let projection = project_fields(sub.collect().unwrap(), "item", &["id", "value"]);
+    assert_eq!(
+        serde_json::json!(projection),
+        serde_json::json!([{"item": {"deletes": [], "inserts": [{"id": 3, "value": 30}]}}])
+    );
+
     // A second caller with the same args sees only its own rows from `mine_by_id`.
     test.new_identity().unwrap();
     test.call("add_item", &["1", "11"]).unwrap();
