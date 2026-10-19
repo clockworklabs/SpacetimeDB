@@ -561,14 +561,17 @@ impl PageSet {
     /// The new page is initially empty, but is not added to the non-full set.
     /// Callers should call [`Pages::record_page_non_full`] after operating on the new page.
     fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, PageError> {
-        let page_index = self
-            .storage
-            .tiered_mut()
-            .free_page_slots
-            .pop_first()
-            .map(Ok)
-            .unwrap_or_else(|| self.can_allocate_new_page())?;
-        let slot = self.manager.allocate(fixed_row_size, self.eviction_policy)?;
+        let free_page = self.storage.tiered_mut().free_page_slots.pop_first();
+        let page_index = free_page.map(Ok).unwrap_or_else(|| self.can_allocate_new_page())?;
+        let slot = self
+            .manager
+            .allocate(fixed_row_size, self.eviction_policy)
+            .inspect_err(|_| {
+                if free_page.is_some() {
+                    self.storage.tiered_mut().free_page_slots.insert(page_index);
+                }
+            })?;
+
         // SAFETY: The page is resident and the index is from free slots or
         // fresh.
         unsafe { self.install_page_slot(page_index, slot) };
