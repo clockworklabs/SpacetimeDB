@@ -37,10 +37,9 @@ impl MigrationArgs {
     }
 }
 
-pub(crate) struct MigrationData<'a> {
+pub(crate) struct MigrationData {
     pub(crate) tablehandle_idents: Vec<Ident>,
     pub(crate) db_view_ident: Ident,
-    pub(crate) hash: &'a HexLiteral<32>,
 }
 
 pub(crate) fn migration_impl(args: MigrationArgs, mod_: &mut syn::ItemMod) -> Result<TokenStream> {
@@ -57,7 +56,6 @@ pub(crate) fn migration_impl(args: MigrationArgs, mod_: &mut syn::ItemMod) -> Re
     let mut migration_data = MigrationData {
         tablehandle_idents: vec![],
         db_view_ident: db_view_ident.clone(),
-        hash: &args.hash,
     };
 
     let mut error: Option<syn::Error> = None;

@@ -844,7 +844,7 @@ pub(crate) fn table_impl_inner(
     mut args: TableArgs,
     vis: &syn::Visibility,
     sats_ty: sats::SatsType<'_>,
-    migration: Option<&mut MigrationData<'_>>,
+    migration: Option<&mut MigrationData>,
 ) -> syn::Result<TokenStream> {
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.accessor;
@@ -859,7 +859,7 @@ pub(crate) fn table_impl_inner(
     };
 
     let table_name_for_id = match &migration {
-        Some(migration) => &*["dropped._", migration.hash.as_hex(), ".", &table_name].concat(),
+        Some(_) => &*["dropped.", &table_name].concat(),
         None => &table_name,
     };
     let table_id_from_name_func = quote! {
