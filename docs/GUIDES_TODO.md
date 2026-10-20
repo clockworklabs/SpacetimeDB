@@ -23,7 +23,7 @@ Each guide will also get a short-format video (done later, once the written guid
 ## Social
 
 - [x] Keep usernames unique and block offensive ones
-- [ ] Build a friends or follow list
+- [x] Build a friends or follow list
 - [ ] Chat rooms and private DMs
 - [ ] Typing indicators and other short-lived signals
 - [ ] Unread counts and notifications
