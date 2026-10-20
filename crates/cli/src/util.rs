@@ -329,11 +329,11 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// A yes/no prompt that defaults to No unless configured otherwise.
+/// A yes/no prompt with a required message and explicit default.
 pub struct YesOrNo {
     message: String,
     force: bool,
-    default: bool,
+    default: Option<bool>,
 }
 
 impl YesOrNo {
@@ -341,7 +341,7 @@ impl YesOrNo {
         Self {
             message: message.into(),
             force: false,
-            default: false,
+            default: None,
         }
     }
 
@@ -352,23 +352,25 @@ impl YesOrNo {
 
     /// Set the response for empty input, including EOF.
     pub fn default(mut self, default: bool) -> Self {
-        self.default = default;
+        self.default = Some(default);
         self
     }
 
     pub fn prompt(self) -> anyhow::Result<bool> {
+        assert!(!self.message.trim().is_empty(), "YesOrNo requires a message");
+        let default = self.default.expect("YesOrNo requires an explicit default");
         if self.force {
             println!("Skipping confirmation due to --yes");
             return Ok(true);
         }
-        let choices = if self.default { "Y/n" } else { "y/N" };
+        let choices = if default { "Y/n" } else { "y/N" };
         print!("{} [{choices}]", self.message);
         std::io::stdout().flush()?;
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         let input = input.trim().to_lowercase();
         // Empty input includes EOF.
-        Ok((input.is_empty() && self.default) || input == "y" || input == "yes")
+        Ok((input.is_empty() && default) || input == "y" || input == "yes")
     }
 }
 
@@ -400,7 +402,9 @@ pub async fn get_login_token_or_log_in(
 
     // Non-interactive commands skip the login prompt.
     let full_login = interactive
-        && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?").prompt()?;
+        && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
+            .default(false)
+            .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
@@ -419,4 +423,26 @@ pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
         .join(bin_name)
         .with_extension(std::env::consts::EXE_EXTENSION);
     Ok(bin_path)
+}
+
+#[cfg(test)]
+mod yes_or_no_tests {
+    use super::YesOrNo;
+
+    #[test]
+    #[should_panic(expected = "YesOrNo requires a message")]
+    fn empty_message_is_rejected_even_when_forced() {
+        YesOrNo::new(" ").default(false).force(true).prompt().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "YesOrNo requires an explicit default")]
+    fn missing_default_is_rejected_even_when_forced() {
+        YesOrNo::new("Continue?").force(true).prompt().unwrap();
+    }
+
+    #[test]
+    fn force_overrides_explicit_default() {
+        assert!(YesOrNo::new("Continue?").default(false).force(true).prompt().unwrap());
+    }
 }

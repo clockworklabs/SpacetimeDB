@@ -102,6 +102,7 @@ pub(super) async fn publish_only(
         anyhow::ensure!(
             YesOrNo::new("Are you sure you want to proceed?")
                 .force(yes.publish_to_remote)
+                .default(false)
                 .prompt()?,
             "Publish aborted by user"
         );

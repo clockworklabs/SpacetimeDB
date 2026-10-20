@@ -593,6 +593,7 @@ pub async fn run_prepared_generate_configs(
 
             if YesOrNo::new("Are you sure you want to delete these files?")
                 .force(force)
+                .default(false)
                 .prompt()?
             {
                 for path in files_to_delete {

@@ -411,6 +411,7 @@ fn confirm_and_clear(
         name_or_identity
     ))
     .force(skip_prompt)
+    .default(false)
     .prompt()?
     {
         anyhow::bail!("Aborted.");
@@ -685,6 +686,7 @@ async fn execute_publish_configs<'a>(
             println!("You are about to publish to a non-local server: {server_address}");
             if !YesOrNo::new("Are you sure you want to proceed?")
                 .force(yes.publish_to_remote)
+                .default(false)
                 .prompt()?
             {
                 anyhow::bail!("Publish aborted by user.");
@@ -935,6 +937,7 @@ async fn apply_pre_publish_if_needed(
                 if auto.break_clients
                     && !YesOrNo::new("The above changes will BREAK existing clients. Do you want to proceed?")
                         .force(force_break_clients || yes.break_clients)
+                        .default(false)
                         .prompt()?
                 {
                     println!("Aborting");

@@ -273,7 +273,7 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
     let force = args.get_flag("force");
 
     if update_server_fingerprint(&mut config, Some(server)).await? {
-        if !YesOrNo::new("Continue?").force(force).prompt()? {
+        if !YesOrNo::new("Continue?").force(force).default(false).prompt()? {
             anyhow::bail!("Aborted");
         }
 
@@ -350,7 +350,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         }
     }
 
-    if !YesOrNo::new("Continue?").force(force).prompt()? {
+    if !YesOrNo::new("Continue?").force(force).default(false).prompt()? {
         anyhow::bail!("Aborted");
     }
 
@@ -368,6 +368,7 @@ async fn exec_clear(_config: Config, paths: &SpacetimePaths, args: &ArgMatches) 
 
         if !YesOrNo::new("Are you sure you want to delete all data from the local database?")
             .force(force)
+            .default(false)
             .prompt()?
         {
             println!("Aborting");
