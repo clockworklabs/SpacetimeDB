@@ -161,7 +161,7 @@ api-url = "http://host.docker.internal:3000"
 runtime = "runc"
 ```
 
-The `containers` table controls whether the server runs the containers attached to databases (see [`spacetime container`](/cli-reference#spacetime-container)) with Docker. Each key can be overridden by a flag to `spacetime start`, given in parentheses below. Changing these settings requires restarting the server.
+The `containers` table controls whether the server runs the containers attached to databases (see [`spacetime container`](/cli-reference#spacetime-container) and [Container Hosting](/databases/container-hosting)) with Docker. Each key can be overridden by a flag to `spacetime start`, given in parentheses below. Changing these settings requires restarting the server.
 
 #### `containers.enabled`
 
