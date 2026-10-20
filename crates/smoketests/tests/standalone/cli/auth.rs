@@ -63,8 +63,7 @@ fn cli_list_without_login_warns_before_server_issued_login() {
         .stdout(predicates::str::contains(
             "WARNING: Continuing without spacetimedb.com will create a server-issued identity",
         ))
-        .stdout(predicates::str::contains("you will lose access to those databases"))
-        .stdout(predicates::str::contains("spacetime login show --token"))
+        .stdout(predicates::str::contains("you will lose access to those databases."))
         .stdout(predicates::str::contains(
             "Continue with a server-issued identity? [y/N]",
         ))

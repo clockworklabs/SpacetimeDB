@@ -422,7 +422,7 @@ pub async fn get_login_token_or_log_in(
             YesOrNo::new(
                 "WARNING: Continuing without spacetimedb.com will create a server-issued identity that only works on this server.\n\
                  Databases you publish will be owned by this identity. Running `spacetime login` later will discard its token, \
-                 and you will lose access to those databases unless you saved the token with `spacetime login show --token`. \
+                 and you will lose access to those databases. \
                  A lost server-issued token cannot be recovered.\n\
                  We recommend logging in with spacetimedb.com, which also works with local servers.\n\
                  Continue with a server-issued identity?",
