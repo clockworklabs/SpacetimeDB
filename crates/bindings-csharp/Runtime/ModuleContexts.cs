@@ -175,8 +175,8 @@ public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextB
 {
     private readonly Local _db = new();
 
-    internal HandlerContext(Random random, Timestamp time)
-        : base(random, time) { }
+    internal HandlerContext(Identity sender, string? senderJwt, Random random, Timestamp time)
+        : base(sender, senderJwt, random, time) { }
 
     protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
 

@@ -84,6 +84,8 @@ pub fn call_call_http_handler(
     let HttpHandlerOp {
         id,
         name: _,
+        caller_identity: sender,
+        caller_jwt_payload: sender_jwt,
         timestamp,
         request_bytes,
         request_body_bytes,
@@ -93,7 +95,10 @@ pub fn call_call_http_handler(
     let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
     let request = serialize_to_js(scope, &request_bytes)?;
     let request_body = serialize_to_js(scope, &request_body_bytes)?;
-    let args = &[handler_id, timestamp, request, request_body];
+    // The sender and its JWT come last, so that modules built before HTTP handlers had a sender ignore them.
+    let sender = serialize_to_js(scope, &sender.to_u256())?;
+    let sender_jwt = serialize_to_js(scope, &Bytes::from(sender_jwt.into_boxed_bytes()))?;
+    let args = &[handler_id, timestamp, request, request_body, sender, sender_jwt];
 
     let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
     let ret = cast!(scope, ret, v8::Array, "tuple return from `__call_http_handler__`").map_err(|e| e.throw(scope))?;

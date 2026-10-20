@@ -13,7 +13,7 @@ use crate::IterBuf;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use crate::StdbRng;
 #[cfg(feature = "unstable")]
-use crate::{try_with_tx, with_tx, Timestamp, TxContext};
+use crate::{try_with_tx, with_tx, AuthCtx, Timestamp, TxContext};
 use bytes::Bytes;
 #[cfg(all(feature = "rand08", feature = "unstable"))]
 use rand08::RngCore;
@@ -108,6 +108,11 @@ pub struct HandlerContext {
     /// Read-only access to this database's environment store.
     pub env: crate::Environment,
 
+    /// The random `Identity` that the host created for this request.
+    sender: Identity,
+
+    sender_auth: AuthCtx,
+
     /// The time at which the handler was started.
     pub timestamp: Timestamp,
 
@@ -125,9 +130,11 @@ pub struct HandlerContext {
 
 #[cfg(feature = "unstable")]
 impl HandlerContext {
-    pub(crate) fn new(timestamp: Timestamp) -> Self {
+    pub(crate) fn new(sender: Identity, sender_auth: AuthCtx, timestamp: Timestamp) -> Self {
         Self {
             env: crate::Environment::default(),
+            sender,
+            sender_auth,
             timestamp,
             http: HttpClient::host(),
             #[cfg(feature = "rand08")]
@@ -135,6 +142,13 @@ impl HandlerContext {
             #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
+    }
+
+    /// The random `Identity` that the host created for this request.
+    ///
+    /// Each request has a different sender, which is also the sender of the transactions it opens.
+    pub fn sender(&self) -> Identity {
+        self.sender
     }
 
     /// Read the current module's [`Identity`].
@@ -150,12 +164,12 @@ impl HandlerContext {
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, Identity::ZERO, None, true)
+        with_tx(body, self.sender, None, &self.sender_auth)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, Identity::ZERO, None, true)
+        try_with_tx(body, self.sender, None, &self.sender_auth)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.
