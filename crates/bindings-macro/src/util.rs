@@ -166,7 +166,7 @@ impl<const BYTES: usize> Parse for HexLiteral<BYTES> {
             .filter(|_| extra.is_empty())
             .ok_or_else(|| syn::Error::new(lit.span(), format_args!("hex literal must be {BYTES} bytes")))?;
         let data = chunks
-            .map(|[hi, lo]| (char::from(hi).to_digit(16).unwrap() << 8 | char::from(lo).to_digit(16).unwrap()) as u8);
+            .map(|[hi, lo]| (char::from(hi).to_digit(16).unwrap() << 4 | char::from(lo).to_digit(16).unwrap()) as u8);
         Ok(Self { inner: lit, hex, data })
     }
 }
@@ -210,3 +210,14 @@ macro_rules! match_meta {
     };
 }
 pub(crate) use match_meta;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_literal_decodes_bytes() {
+        let lit: HexLiteral<4> = syn::parse_str("0x01a2fF10").unwrap();
+        assert_eq!(lit.data, [0x01, 0xa2, 0xff, 0x10]);
+    }
+}
