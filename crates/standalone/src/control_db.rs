@@ -1,3 +1,4 @@
+mod container;
 mod environment;
 
 use anyhow::Context;
@@ -405,7 +406,13 @@ impl ControlDb {
     }
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
-        self.delete_database_and_environment(id)
+        let database = self.get_database_by_id(id)?;
+        let deleted = self.delete_database_and_environment(id)?;
+        if let Some(database) = database {
+            // Keep the container's generation for a database republished with the same identity.
+            self.set_container(id, &database.database_identity, None)?;
+        }
+        Ok(deleted)
     }
 
     pub fn get_replicas(&self) -> Result<Vec<Replica>> {
