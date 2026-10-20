@@ -17,18 +17,19 @@ The same pattern works for any turn-based game, such as a card game or a strateg
 
 ## How it works
 
-- A public `game` table holds each game: its players, its board, whose turn it is, and when that turn times out.
+- A private `game` table holds each game: its players, its board, whose turn it is, and when that turn times out.
 - A `make_move` reducer checks that a move is legal, applies it, then gives the turn to the other player.
 - A private `turn_timer` schedule table holds one timer per game in progress. When the current turn's deadline passes, it calls the `turn_timeout` reducer.
 - Each move replaces the game's timer with a new one. If the timer fires, the player whose turn it is forfeits.
-- Clients subscribe to their own games, and show the board and a countdown.
+- A `my_games` view returns the caller's games. Clients subscribe to it, and show the board and a countdown.
 
 ## Define the tables
 
-Add two tables:
+Add two tables and a view:
 
-- `game` has one row per game. It's public, because in tic-tac-toe both players see the whole board. It has an index on each player column, so clients can subscribe to their own games cheaply.
-- `turn_timer` is the schedule table. It's private: clients read the deadline from `game` instead. Its `game_id` column is unique, so a game never has more than one timer.
+- `game` has one row per game. It's private: players read their games through the `my_games` view. It has an index on each player column, so the view can find a player's games quickly.
+- `turn_timer` is the schedule table. It's private too: clients read the deadline from their games instead. Its `game_id` column is unique, so a game never has more than one timer.
+- `my_games` is a public view that returns the caller's games, as X or as O. Keeping tables private and exposing what clients need through views is the recommended practice: see [Hide information from players](./00600-hide-information.md).
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -41,7 +42,7 @@ import { schema, table, t, SenderError, type InferSchema, type ReducerCtx } from
 const TURN_TIME_LIMIT_MICROS = 30_000_000n;
 
 const game = table(
-  { name: 'game', public: true },
+  { name: 'game' },
   {
     id: t.u64().primaryKey().autoInc(),
     playerX: t.identity().index('btree'),
@@ -71,6 +72,12 @@ const spacetimedb = schema({ game, turnTimer });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+
+export const myGames = spacetimedb.view(
+  { name: 'my_games', public: true },
+  t.array(game.rowType),
+  ctx => ctx.from.game.where(g => g.playerX.eq(ctx.sender).or(g.playerO.eq(ctx.sender)))
+);
 ```
 
 </TabItem>
@@ -84,7 +91,7 @@ public static partial class Module
     // How long each player has to make a move.
     static readonly TimeDuration TurnTimeLimit = TimeDuration.FromSeconds(30);
 
-    [SpacetimeDB.Table(Accessor = "Game", Public = true)]
+    [SpacetimeDB.Table(Accessor = "Game")]
     public partial struct Game
     {
         [SpacetimeDB.PrimaryKey]
@@ -123,6 +130,12 @@ public static partial class Module
         [SpacetimeDB.Unique]
         public ulong GameId;
     }
+
+    [SpacetimeDB.View(Accessor = "MyGames", Public = true)]
+    public static IQuery<Game> MyGames(ViewContext ctx)
+    {
+        return ctx.From.Game().Where(g => g.PlayerX.Eq(ctx.Sender).Or(g.PlayerO.Eq(ctx.Sender)));
+    }
 }
 ```
 
@@ -130,13 +143,13 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{reducer, table, Identity, ReducerContext, ScheduleAt, Table, Timestamp};
+use spacetimedb::{reducer, table, view, Identity, Query, ReducerContext, ScheduleAt, Table, Timestamp, ViewContext};
 use std::time::Duration;
 
 // How long each player has to make a move.
 const TURN_TIME_LIMIT: Duration = Duration::from_secs(30);
 
-#[table(accessor = game, public)]
+#[table(accessor = game)]
 pub struct Game {
     #[primary_key]
     #[auto_inc]
@@ -164,6 +177,12 @@ pub struct TurnTimer {
     scheduled_at: ScheduleAt,
     #[unique]
     game_id: u64,
+}
+
+#[view(accessor = my_games, public)]
+fn my_games(ctx: &ViewContext) -> impl Query<Game> {
+    let me = ctx.sender();
+    ctx.from.game().r#where(move |g| g.player_x.eq(me).or(g.player_o.eq(me)))
 }
 ```
 
@@ -197,7 +216,7 @@ struct Game {
     std::optional<Identity> winner;
 };
 SPACETIMEDB_STRUCT(Game, id, player_x, player_o, board, turn, turn_deadline, finished, winner)
-SPACETIMEDB_TABLE(Game, game, Public)
+SPACETIMEDB_TABLE(Game, game, Private)
 FIELD_PrimaryKeyAutoInc(game, id)
 FIELD_Index(game, player_x)
 FIELD_Index(game, player_o)
@@ -212,6 +231,13 @@ SPACETIMEDB_TABLE(TurnTimer, turn_timer, Private)
 FIELD_PrimaryKeyAutoInc(turn_timer, scheduled_id)
 FIELD_Unique(turn_timer, game_id)
 SPACETIMEDB_SCHEDULE(turn_timer, 1, turn_timeout)  // Column 1 is scheduled_at
+
+SPACETIMEDB_VIEW(Query<Game>, my_games, Public, ViewContext ctx) {
+    Identity me = ctx.sender();
+    return ctx.from[game].where([me](const auto& g) {
+        return g.player_x.eq(me).or_(g.player_o.eq(me));
+    });
+}
 ```
 
 </TabItem>
@@ -695,7 +721,7 @@ You don't need to handle disconnects either: a player who closes the game runs o
 
 ## Play from the client
 
-On the client, subscribe to the games the player is in, with one query for the games where they play X and one for the games where they play O. Call `make_move` when the player clicks a cell.
+On the client, subscribe to `my_games`, and call `make_move` when the player clicks a cell.
 
 Show the countdown from `turn_deadline`, and refresh it every frame in your game. The client's clock can be slightly off from the server's, so the countdown is only an estimate: the server decides when the turn ends.
 
@@ -709,14 +735,8 @@ import type { Game } from './module_bindings/types';
 const conn = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('my-game')
-  .onConnect((ctx, identity) => {
-    // Subscribe to the games this player is in.
-    ctx
-      .subscriptionBuilder()
-      .subscribe([
-        tables.game.where(g => g.playerX.eq(identity)),
-        tables.game.where(g => g.playerO.eq(identity)),
-      ]);
+  .onConnect(ctx => {
+    ctx.subscriptionBuilder().subscribe([tables.myGames]);
   })
   .build();
 
@@ -733,8 +753,8 @@ function showGame(game: Game) {
   }
 }
 
-conn.db.game.onInsert((_ctx, game) => showGame(game));
-conn.db.game.onUpdate((_ctx, _old, game) => showGame(game));
+conn.db.myGames.onInsert((_ctx, game) => showGame(game));
+conn.db.myGames.onUpdate((_ctx, _old, game) => showGame(game));
 
 // Call this when the player clicks a cell, numbered 0 to 8.
 function play(gameId: bigint, cell: number) {
@@ -754,10 +774,8 @@ var conn = DbConnection.Builder()
     .WithDatabaseName("my-game")
     .OnConnect((conn, identity, token) =>
     {
-        // Subscribe to the games this player is in.
         conn.SubscriptionBuilder()
-            .AddQuery(q => q.From.Game().Where(g => g.PlayerX.Eq(identity)))
-            .AddQuery(q => q.From.Game().Where(g => g.PlayerO.Eq(identity)))
+            .AddQuery(q => q.From.MyGames())
             .Subscribe();
     })
     .Build();
@@ -780,8 +798,8 @@ void ShowGame(Game game)
     }
 }
 
-conn.Db.Game.OnInsert += (ctx, game) => ShowGame(game);
-conn.Db.Game.OnUpdate += (ctx, oldGame, game) => ShowGame(game);
+conn.Db.MyGames.OnInsert += (ctx, game) => ShowGame(game);
+conn.Db.MyGames.OnUpdate += (ctx, oldGame, game) => ShowGame(game);
 
 // Call this when the player clicks a cell, numbered 0 to 8.
 void Play(ulong gameId, byte cell) => conn.Reducers.MakeMove(gameId, cell);
@@ -817,19 +835,17 @@ fn main() {
     let conn = DbConnection::builder()
         .with_uri("http://localhost:3000")
         .with_database_name("my-game")
-        .on_connect(|ctx, identity, _token| {
-            // Subscribe to the games this player is in.
+        .on_connect(|ctx, _identity, _token| {
             ctx.subscription_builder()
-                .add_query(move |q| q.from.game().r#where(|g| g.player_x.eq(identity)))
-                .add_query(move |q| q.from.game().r#where(|g| g.player_o.eq(identity)))
+                .add_query(|q| q.from.my_games())
                 .subscribe();
         })
         .build()
         .expect("failed to connect");
 
-    conn.db().game().on_insert(|ctx, game| show_game(game, ctx.identity()));
+    conn.db().my_games().on_insert(|ctx, game| show_game(game, ctx.identity()));
     conn.db()
-        .game()
+        .my_games()
         .on_update(|ctx, _old, game| show_game(game, ctx.identity()));
 
     // Process messages from the database on a background thread.
@@ -860,8 +876,8 @@ To handle timeouts differently:
 - **Skip the turn instead of forfeiting.** In `turn_timeout`, give the turn to the other player and call `set_turn_timer` with a new deadline, as `make_move` does. To end games where both players are gone, count each player's missed turns and end the game after a few.
 - **Use a chess clock.** Give each player a time budget for the whole game, rather than a fixed time per turn. Store each player's remaining time in `game`, subtract the time each move took, and set the timer to the current player's remaining time.
 
-In tic-tac-toe, players see the whole board, so `game` is public. For games where players must not see everything, such as card games, see [Hide information from players](./00600-hide-information.md).
+In tic-tac-toe, players see the whole board, so `my_games` returns whole games. For games where players must not see everything, such as card games, see [Hide information from players](./00600-hide-information.md).
 
-To learn more about the features used here, see [Reducers](../../00200-core-concepts/00200-functions/00300-reducers/00300-reducers.md), [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) and [Subscriptions](../../00200-core-concepts/00400-subscriptions.md).
+To learn more about the features used here, see [Reducers](../../00200-core-concepts/00200-functions/00300-reducers/00300-reducers.md), [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) and [Views](../../00200-core-concepts/00200-functions/00500-views.md).
 
 Next, you can learn to [only sync what's near the player](./00500-sync-nearby-entities.md).
