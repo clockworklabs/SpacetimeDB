@@ -1,3 +1,4 @@
+mod containers;
 mod control_db;
 pub mod subcommands;
 pub mod util;
@@ -40,8 +41,7 @@ use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
@@ -65,7 +65,12 @@ pub struct StandaloneEnv {
     _pid_file: PidFile,
     auth_provider: auth::DefaultJwtAuthProvider,
     websocket_options: WebSocketOptions,
-    containers_enabled: AtomicBool,
+    containers: OnceLock<Containers>,
+}
+
+/// How this server runs containers, once they are enabled.
+struct Containers {
+    local_clients_only: bool,
 }
 
 impl StandaloneEnv {
@@ -120,20 +125,27 @@ impl StandaloneEnv {
             _pid_file,
             auth_provider: auth_env,
             websocket_options: config.websocket,
-            containers_enabled: AtomicBool::new(false),
+            containers: OnceLock::new(),
         }))
     }
 
     /// Store the containers of databases in the control database, and answer the
     /// container API from it. Running the containers is up to the caller.
     /// Until this is called, the container API answers that containers are unsupported.
-    pub fn enable_containers(&self) {
-        self.containers_enabled.store(true, Ordering::Relaxed);
+    /// With `local_clients_only`, see [`Self::containers_for_local_clients_only`].
+    pub fn enable_containers(&self, local_clients_only: bool) {
+        let _ = self.containers.set(Containers { local_clients_only });
+    }
+
+    /// Whether only clients on this machine may attach and start containers, which the
+    /// caller enforces.
+    pub fn containers_for_local_clients_only(&self) -> bool {
+        self.containers.get().is_some_and(|c| c.local_clients_only)
     }
 
     /// The id of a database whose container is requested.
     fn container_database_id(&self, database_identity: &Identity) -> Result<u64, ContainerError> {
-        if !self.containers_enabled.load(Ordering::Relaxed) {
+        if self.containers.get().is_none() {
             return Err(ContainerError::Unsupported);
         }
         let database = self
@@ -227,7 +239,7 @@ impl NodeDelegate for StandaloneEnv {
     }
 
     async fn is_current_container(&self, claim: &ContainerClaim) -> bool {
-        if !self.containers_enabled.load(Ordering::Relaxed) {
+        if self.containers.get().is_none() {
             return false;
         }
         self.control_db.is_current_container(claim).unwrap_or_else(|e| {
@@ -481,7 +493,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             .await?;
         let stored = self.program_store.put(&program.bytes).await?;
         anyhow::ensure!(stored == program.hash, "stored reset program changed");
-        self.control_db.restart_container(database.id)?;
+        // A running container stops while the replica is replaced, and starts again under a new
+        // generation once the new replica runs, so that it never starts with the old environment.
+        let container_running = self.control_db.get_container(previous.id)?.is_some_and(|c| c.running);
+        if container_running {
+            self.control_db.set_container_running(previous.id, false)?;
+        }
         let previous_replicas = self.control_db.get_replicas_by_database(database.id)?;
         for replica in &previous_replicas {
             self.on_delete_replica(replica.id).await?;
@@ -493,6 +510,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             &previous_replicas,
         )?;
         self.on_insert_replica(&replica).await?;
+        if container_running {
+            self.control_db.set_container_running(previous.id, true)?;
+        }
         Ok(())
     }
 
@@ -611,6 +631,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Err(ContainerError::NotFound("database has no container".into()));
         }
         Ok(())
+    }
+
+    /// Standalone runs containers with a Docker daemon on its own machine, which may already
+    /// have the image.
+    fn accepts_local_container_images(&self) -> bool {
+        true
     }
 }
 

@@ -77,4 +77,25 @@ directives = [
 # Size in bytes of the memory buffer holding commit data before flushing to storage.
 # write-buffer-size = 131072
 
+[containers]
+# Whether to run the containers attached to databases with Docker: true, false,
+# or "auto", which runs them if a Docker daemon answers at startup, but lets only
+# clients on this machine attach or start them. On Linux, "auto" leaves
+# them off unless SpacetimeDB listens on every address (like 0.0.0.0) or api-url
+# is set, since containers reach the host through the Docker bridge.
+# Containers are not isolated from this machine's network.
+# --enable-containers and --disable-containers override this.
+# enabled = "auto"
+
+# The Docker Engine. Omit to use DOCKER_HOST, or else the platform's default socket.
+# docker-host = "unix:///var/run/docker.sock"
+
+# The URL containers use to reach this server. Omit to use
+# http://host.docker.internal:<listen port>. With Docker Engine on Linux, that
+# is the Docker bridge's gateway, so the server must listen where it can reach.
+# api-url = "http://host.docker.internal:3000"
+
+# The OCI runtime for containers. Omit to use the Docker daemon's default.
+# runtime = "runc"
+
 # vim: set nowritebackup: << otherwise triggers cargo-watch

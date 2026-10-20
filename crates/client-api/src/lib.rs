@@ -409,6 +409,12 @@ pub trait ControlStateWriteAccess: Send + Sync {
         database_identity: &Identity,
         running: bool,
     ) -> Result<(), ContainerError>;
+
+    /// Whether a container's image may be a local image ID, naming an image already in the
+    /// server's Docker daemon, rather than a reference pinned to a registry digest.
+    fn accepts_local_container_images(&self) -> bool {
+        false
+    }
 }
 
 /// Errors from container operations, which map onto HTTP status codes.
@@ -604,6 +610,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         running: bool,
     ) -> Result<(), ContainerError> {
         (**self).set_container_running(caller, database_identity, running).await
+    }
+
+    fn accepts_local_container_images(&self) -> bool {
+        (**self).accepts_local_container_images()
     }
 }
 

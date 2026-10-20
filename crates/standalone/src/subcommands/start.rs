@@ -2,12 +2,15 @@ use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSock
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
-use axum::extract::{DefaultBodyLimit, Extension};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, Request, State};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
@@ -20,6 +23,7 @@ use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_client_api::routes::TaskDumpRegistry;
+use spacetimedb_container_supervisor::ContainerOptions;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -93,6 +97,55 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Run in non-interactive mode (fail immediately if port is in use)"),
         )
+        .arg(
+            Arg::new("enable_containers")
+                .long("enable-containers")
+                .action(SetTrue)
+                .help(
+                    "Run the containers attached to databases with Docker, for clients on any machine. \
+                     Overrides `[containers] enabled` in config.toml, which by default runs them if Docker \
+                     answers, but lets only clients on this machine attach or start them. Containers \
+                     are not isolated from this machine's network, and the owner of any database can attach \
+                     one, so enable this only on a trusted machine.",
+                ),
+        )
+        .arg(
+            Arg::new("disable_containers")
+                .long("disable-containers")
+                .action(SetTrue)
+                .conflicts_with("enable_containers")
+                .help("Do not run containers. Overrides `[containers] enabled` in config.toml."),
+        )
+        .arg(
+            Arg::new("container_docker_host")
+                .long("container-docker-host")
+                .value_name("URL")
+                .help(
+                    "The Docker Engine for containers, e.g. unix:///var/run/docker.sock. \
+                     Defaults to DOCKER_HOST, or else the platform's default socket. \
+                     Overrides `[containers] docker-host` in config.toml.",
+                ),
+        )
+        .arg(
+            Arg::new("container_api_url")
+                .long("container-api-url")
+                .value_name("URL")
+                .help(
+                    "The URL containers use to reach this server. \
+                     Defaults to http://host.docker.internal:<listen port>. With Docker Engine on Linux, \
+                     that is the Docker bridge's gateway, so the server must not listen only on loopback. \
+                     Overrides `[containers] api-url` in config.toml.",
+                ),
+        )
+        .arg(
+            Arg::new("container_runtime")
+                .long("container-runtime")
+                .value_name("RUNTIME")
+                .help(
+                    "The OCI runtime for containers, e.g. runc. Defaults to the Docker daemon's default runtime. \
+                     Overrides `[containers] runtime` in config.toml.",
+                ),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -104,7 +157,41 @@ struct ConfigFile {
     commitlog: CommitlogConfig,
     #[serde(default)]
     websocket: WebSocketOptions,
+    #[serde(default)]
+    containers: ContainersConfig,
 }
+
+/// The `[containers]` section of `config.toml`, which the `--*-containers` and `--container-*`
+/// flags override.
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct ContainersConfig {
+    /// `true`, `false`, or `"auto"` (`None`, the default): run containers if a Docker daemon
+    /// answers, for clients on this machine only; see [`start_containers`].
+    #[serde(default, deserialize_with = "de_enabled")]
+    enabled: Option<bool>,
+    docker_host: Option<String>,
+    api_url: Option<String>,
+    runtime: Option<String>,
+}
+
+fn de_enabled<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<bool>, D::Error> {
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Enabled {
+        Bool(bool),
+        String(String),
+        Other(serde::de::IgnoredAny),
+    }
+    match <Enabled as serde::Deserialize>::deserialize(deserializer)? {
+        Enabled::Bool(enabled) => Ok(Some(enabled)),
+        Enabled::String(s) if s == "auto" => Ok(None),
+        _ => Err(serde::de::Error::custom(r#"expected true, false or "auto""#)),
+    }
+}
+
+/// How long `enabled = "auto"` waits for Docker to answer.
+const DOCKER_PING_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl ConfigFile {
     fn read(path: &ConfigToml) -> anyhow::Result<Option<Self>> {
@@ -208,11 +295,16 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     db_routes.db_reset = db_routes.db_reset.layer(DefaultBodyLimit::disable());
+    let local_only = axum::middleware::from_fn_with_state(ctx.clone(), local_container_clients_only);
+    db_routes.container_put = db_routes.container_put.route_layer(local_only.clone());
+    db_routes.container_start = db_routes.container_start.route_layer(local_only);
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
         .layer(Extension(task_dumps))
-        .with_state(ctx.clone());
+        .with_state(ctx.clone())
+        // For `local_container_clients_only`.
+        .into_make_service_with_connect_info::<SocketAddr>();
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
@@ -264,6 +356,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
     log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    start_containers(args, config.containers, &ctx, tcp.local_addr()?).await?;
 
     if let Some(pg_port) = pg_port {
         let server_addr = listen_addr.split(':').next().unwrap();
@@ -293,6 +386,114 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             .await?;
     }
 
+    Ok(())
+}
+
+/// Unless containers were enabled explicitly, refuse to attach or start containers for
+/// clients on other machines, or for web pages, whose requests browsers mark with `Origin`; see
+/// [`start_containers`].
+async fn local_container_clients_only(
+    State(ctx): State<Arc<StandaloneEnv>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let local = peer.ip().to_canonical().is_loopback() && !request.headers().contains_key(http::header::ORIGIN);
+    if ctx.containers_for_local_clients_only() && !local {
+        let message = "This server runs containers only for clients on its own machine, other than web pages, \
+                       since containers were not enabled explicitly. To let other clients attach or start \
+                       containers, restart it with --enable-containers, or with `enabled = true` in the \
+                       [containers] section of config.toml. Containers are not isolated from the server's network.";
+        return (http::StatusCode::FORBIDDEN, message).into_response();
+    }
+    next.run(request).await
+}
+
+/// Run the containers attached to databases, if the flags or `config` enable them, and log
+/// whether they run and why.
+///
+/// By default (`enabled = "auto"`), containers run if a Docker daemon answers, but only clients
+/// on this machine may attach or start them. Anyone who can reach the server can create a
+/// database, and containers are not isolated from this machine's network, so clients on other
+/// machines may do so only if containers are explicitly enabled. On Linux, Docker Engine connects
+/// containers to the host through the Docker bridge, which cannot reach loopback, so "auto" leaves
+/// containers off unless the server listens on every address or an API URL is set.
+async fn start_containers(
+    args: &ArgMatches,
+    config: ContainersConfig,
+    ctx: &Arc<StandaloneEnv>,
+    listen_addr: SocketAddr,
+) -> anyhow::Result<()> {
+    let docker_host = args
+        .get_one::<String>("container_docker_host")
+        .cloned()
+        .or(config.docker_host);
+    let api_url = args.get_one::<String>("container_api_url").cloned().or(config.api_url);
+    let enabled = if args.get_flag("enable_containers") {
+        Some((true, "--enable-containers"))
+    } else if args.get_flag("disable_containers") {
+        Some((false, "--disable-containers"))
+    } else {
+        config.enabled.map(|enabled| (enabled, "config.toml"))
+    };
+    // The PostgreSQL wire protocol server, if any, listens on the same host.
+    let loopback = listen_addr.ip().is_loopback();
+    let not_isolated = "containers are not isolated from this machine's network";
+    let enabled_message = match enabled {
+        Some((false, source)) => {
+            log::info!("Containers are disabled by {source}");
+            return Ok(());
+        }
+        Some((true, source)) if loopback => format!("Containers are enabled by {source}; {not_isolated}"),
+        Some((true, source)) => format!(
+            "Containers are enabled by {source}, though SpacetimeDB listens on {listen_addr}: any client \
+             that can reach it can create a database and run images on this machine, and {not_isolated}"
+        ),
+        None if cfg!(target_os = "linux") && !listen_addr.ip().is_unspecified() && api_url.is_none() => {
+            log::info!(
+                "Containers are disabled, since on Linux they reach the server through the Docker bridge, \
+                 and SpacetimeDB listens only on {listen_addr}. To run containers, listen on every address, \
+                 e.g. --listen-addr 0.0.0.0:{}, or set `api-url` in the [containers] section of config.toml",
+                listen_addr.port()
+            );
+            return Ok(());
+        }
+        None => match spacetimedb_container_supervisor::ping(docker_host.as_deref(), DOCKER_PING_TIMEOUT).await {
+            Ok(()) if loopback => format!("Containers are enabled, since Docker answers; {not_isolated}"),
+            Ok(()) => format!(
+                "Containers are enabled, since Docker answers, for clients on this machine: clients on other \
+                 machines cannot attach or start containers unless you pass --enable-containers; \
+                 {not_isolated}"
+            ),
+            Err(e) => {
+                log::info!("Containers are disabled: {e:#}");
+                return Ok(());
+            }
+        },
+    };
+
+    let options = ContainerOptions {
+        docker_host,
+        runtime: args.get_one::<String>("container_runtime").cloned().or(config.runtime),
+        // Quotas need overlay2 on XFS with project quotas, which few development machines have.
+        scratch_quota: false,
+        scratch_capacity: None,
+        api_url: api_url.unwrap_or_else(|| format!("http://host.docker.internal:{}", listen_addr.port())),
+        state_dir: ctx.data_dir().containers().0,
+        name_with_supervisor_id: true,
+    };
+    match spacetimedb_container_supervisor::spawn(ctx.clone(), options, None) {
+        Ok(()) => {}
+        // Unless containers were asked for, a server that cannot run them still starts.
+        Err(e) if enabled.is_none() => {
+            log::warn!("Containers are disabled: {e:#}");
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    }
+    // Unless they were enabled explicitly; enforced by `local_container_clients_only`.
+    ctx.enable_containers(enabled.is_none());
+    log::warn!("{enabled_message}");
     Ok(())
 }
 
@@ -593,6 +794,33 @@ mod tests {
                 ..<_>::default()
             }
         );
+    }
+
+    #[test]
+    fn containers_config() {
+        let config: ConfigFile = toml::from_str(include_str!("../../config.toml")).unwrap();
+        assert_eq!(config.containers.enabled, None);
+        for (value, enabled) in [(r#""auto""#, None), ("true", Some(true)), ("false", Some(false))] {
+            let config: ConfigFile = toml::from_str(&format!("[containers]\nenabled = {value}")).unwrap();
+            assert_eq!(config.containers.enabled, enabled);
+        }
+        for value in [r#""yes""#, "1"] {
+            let Err(err) = toml::from_str::<ConfigFile>(&format!("[containers]\nenabled = {value}")) else {
+                panic!("enabled = {value} parsed");
+            };
+            assert!(err.to_string().contains(r#"expected true, false or "auto""#), "{err}");
+        }
+
+        let toml = r#"
+            [containers]
+            docker-host = "unix:///docker.sock"
+            api-url = "http://host:3000"
+            runtime = "runc"
+"#;
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+        assert_eq!(config.containers.docker_host.as_deref(), Some("unix:///docker.sock"));
+        assert_eq!(config.containers.api_url.as_deref(), Some("http://host:3000"));
+        assert_eq!(config.containers.runtime.as_deref(), Some("runc"));
     }
 
     #[test]

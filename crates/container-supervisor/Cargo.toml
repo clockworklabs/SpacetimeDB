@@ -1,0 +1,25 @@
+[package]
+name = "spacetimedb-container-supervisor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Runs the containers attached to SpacetimeDB databases with Docker Engine"
+
+[dependencies]
+spacetimedb-client-api.workspace = true
+spacetimedb-core.workspace = true
+spacetimedb-datastore.workspace = true
+spacetimedb-lib.workspace = true
+
+anyhow.workspace = true
+async-trait.workspace = true
+bollard.workspace = true
+chrono = { workspace = true, features = ["std"] }
+futures.workspace = true
+log.workspace = true
+openssl.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

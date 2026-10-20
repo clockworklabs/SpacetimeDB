@@ -67,6 +67,7 @@ impl RestartPolicy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContainerSpec {
     /// An OCI image reference pinned to a manifest digest: `name@sha256:<hex>`.
+    /// Servers that accept them also take a local image ID, `sha256:<hex>`; see [`is_local_image_id`].
     pub image: String,
     /// Replaces the image's entrypoint and command when present.
     #[cfg_attr(feature = "serde", serde(default))]
@@ -83,8 +84,15 @@ pub struct ContainerSpec {
 }
 
 impl ContainerSpec {
+    /// Check the spec for a server that pulls every image from a registry.
     pub fn validate(&self) -> Result<(), String> {
-        validate_image(&self.image)?;
+        self.validate_with(false)
+    }
+
+    /// Check the spec. With `local_images`, the image may be a local image ID instead of a
+    /// reference pinned to a digest.
+    pub fn validate_with(&self, local_images: bool) -> Result<(), String> {
+        validate_image(&self.image, local_images)?;
         if let Some(command) = &self.command {
             if command.is_empty() || command.len() > MAX_COMMAND_ARGS {
                 return Err(format!("command must have 1 to {MAX_COMMAND_ARGS} arguments"));
@@ -125,18 +133,40 @@ impl ContainerSpec {
     }
 }
 
-fn validate_image(image: &str) -> Result<(), String> {
-    let err = || format!("image `{image}` must be a reference pinned to a digest, like `name@sha256:<64 hex digits>`");
+/// Whether `image` is a local image ID, `sha256:<64 hex digits>`: the ID of an image in a Docker
+/// daemon, which only a server using that daemon can run, and which is never pulled.
+pub fn is_local_image_id(image: &str) -> bool {
+    image.strip_prefix("sha256:").is_some_and(is_sha256_hex)
+}
+
+fn is_sha256_hex(hex: &str) -> bool {
+    hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn validate_image(image: &str, local_images: bool) -> Result<(), String> {
+    if is_local_image_id(image) {
+        return match local_images {
+            true => Ok(()),
+            false => Err(format!(
+                "image `{image}` is a local image ID, which this server does not run; push the image to a \
+                 registry and pass a reference pinned to a digest, like `name@sha256:<64 hex digits>`"
+            )),
+        };
+    }
+    let err = || {
+        let or_local = if local_images {
+            ", or a local image ID, like `sha256:<64 hex digits>`"
+        } else {
+            ""
+        };
+        format!("image `{image}` must be a reference pinned to a digest, like `name@sha256:<64 hex digits>`{or_local}")
+    };
     if image.len() > MAX_IMAGE_REF_BYTES {
         return Err(err());
     }
     let (name, digest) = image.split_once('@').ok_or_else(err)?;
     let hex = digest.strip_prefix("sha256:").ok_or_else(err)?;
-    if name.is_empty()
-        || name.chars().any(|c| c.is_whitespace() || c.is_control())
-        || hex.len() != 64
-        || !hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    {
+    if name.is_empty() || name.chars().any(|c| c.is_whitespace() || c.is_control()) || !is_sha256_hex(hex) {
         return Err(err());
     }
     Ok(())
@@ -214,6 +244,24 @@ mod tests {
                 ..spec()
             };
             assert!(spec.validate().is_err(), "{image}");
+        }
+    }
+
+    #[test]
+    fn accepts_local_image_ids_only_when_allowed() {
+        let local = ContainerSpec {
+            image: format!("sha256:{}", "a".repeat(64)),
+            ..spec()
+        };
+        assert!(local.validate().is_err());
+        assert_eq!(local.validate_with(true), Ok(()));
+        assert_eq!(spec().validate_with(true), Ok(()));
+        for image in ["sha256:abc", "sha256:", "agent:latest"] {
+            let spec = ContainerSpec {
+                image: image.into(),
+                ..spec()
+            };
+            assert!(spec.validate_with(true).is_err(), "{image}");
         }
     }
 

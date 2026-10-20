@@ -70,6 +70,36 @@ impl ControlDb {
         }))
     }
 
+    /// The running containers, with their databases.
+    pub fn running_containers(&self) -> Result<Vec<(Database, ContainerInfo)>> {
+        let mut running = Vec::new();
+        for key in self.db.open_tree(CONTAINER_TREE)?.iter().keys() {
+            let database_id = u64::from_be_bytes(key?.as_ref().try_into().map_err(anyhow::Error::from)?);
+            // A container set while its database was deleted can outlive it.
+            let (Some(database), Some(container)) =
+                (self.get_database_by_id(database_id)?, self.get_container(database_id)?)
+            else {
+                continue;
+            };
+            if container.running {
+                running.push((database, container));
+            }
+        }
+        Ok(running)
+    }
+
+    /// Record the state of a running container's generation. Reports for another
+    /// generation, or for a stopped container, are dropped.
+    pub fn set_container_status(&self, database_id: u64, generation: u64, state: ContainerState) -> Result<()> {
+        self.update_container(database_id, |containers, statuses, _, key| {
+            if get::<Container>(containers, key)?.is_some_and(|c| c.running && c.generation == generation) {
+                let state = state.clone();
+                put(statuses, key, &Status { generation, state })?;
+            }
+            Ok(())
+        })
+    }
+
     /// Whether `claim` names the current generation of a running container.
     pub fn is_current_container(&self, claim: &ContainerClaim) -> Result<bool> {
         let Some(database) = self.get_database_by_identity(&claim.database)? else {
@@ -129,20 +159,6 @@ impl ControlDb {
             put(containers, key, &container)?;
             statuses.remove(key)?;
             Ok(true)
-        })
-    }
-
-    /// Restart the container of a reset database under a new generation, if it is running.
-    pub fn restart_container(&self, database_id: u64) -> Result<()> {
-        self.update_container(database_id, |containers, statuses, _, key| {
-            if let Some(mut container) = get::<Container>(containers, key)?
-                && container.running
-            {
-                container.generation += 1;
-                put(containers, key, &container)?;
-                statuses.remove(key)?;
-            }
-            Ok(())
         })
     }
 
