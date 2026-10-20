@@ -30,7 +30,7 @@ Each guide will also get a short-format video (done later, once the written guid
 
 ## Common app patterns
 
-- [ ] Paginate or infinite-scroll a large table
+- [x] Paginate or infinite-scroll a large table
 - [ ] Admin and moderator roles without SpacetimeAuth
 - [ ] Admin and moderator roles with SpacetimeAuth
 - [ ] Send an email from your module
