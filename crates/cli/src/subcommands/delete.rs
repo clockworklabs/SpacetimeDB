@@ -3,7 +3,7 @@ use std::io;
 use crate::common_args;
 use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_arg};
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header, y_or_n, AuthHeader};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header, AuthHeader, YesOrNo};
 use clap::{Arg, ArgMatches};
 use http::StatusCode;
 use itertools::Itertools as _;
@@ -51,11 +51,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         format!("{} ({identity})", resolved.database)
     };
 
-    if !y_or_n(
-        force,
-        &format!("Are you sure you want to delete database {delete_target}? This action cannot be undone."),
-        false,
-    )? {
+    if !YesOrNo::new(format!(
+        "Are you sure you want to delete database {delete_target}? This action cannot be undone."
+    ))
+    .force(force)
+    .prompt()?
+    {
         println!("Aborting");
         return Ok(());
     }
@@ -73,7 +74,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !force {
                 print_database_tree_info(&confirm.database_tree).await?;
             }
-            if force || y_or_n(false, "Do you want to proceed deleting above databases?", false)? {
+            if force || YesOrNo::new("Do you want to proceed deleting above databases?").prompt()? {
                 send_request(&client, &request_path, &auth_header, Some(confirm.confirmation_token))
                     .await?
                     .error_for_status()?;

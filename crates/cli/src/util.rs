@@ -329,22 +329,47 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// Prompt the user for `y` or `n` from stdin.
-///
-/// Use `default` for empty input, including EOF.
-pub fn y_or_n(force: bool, prompt: &str, default: bool) -> anyhow::Result<bool> {
-    if force {
-        println!("Skipping confirmation due to --yes");
-        return Ok(true);
+/// A yes/no prompt that defaults to No unless configured otherwise.
+pub struct YesOrNo {
+    message: String,
+    force: bool,
+    default: bool,
+}
+
+impl YesOrNo {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            force: false,
+            default: false,
+        }
     }
-    let choices = if default { "Y/n" } else { "y/N" };
-    print!("{prompt} [{choices}]");
-    std::io::stdout().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-    // Empty input includes EOF.
-    Ok((input.is_empty() && default) || input == "y" || input == "yes")
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+
+    /// Set the response for empty input, including EOF.
+    pub fn default(mut self, default: bool) -> Self {
+        self.default = default;
+        self
+    }
+
+    pub fn prompt(self) -> anyhow::Result<bool> {
+        if self.force {
+            println!("Skipping confirmation due to --yes");
+            return Ok(true);
+        }
+        let choices = if self.default { "Y/n" } else { "y/N" };
+        print!("{} [{choices}]", self.message);
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_lowercase();
+        // Empty input includes EOF.
+        Ok((input.is_empty() && self.default) || input == "y" || input == "yes")
+    }
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -378,27 +403,24 @@ pub async fn get_login_token_or_log_in(
         "You are not logged in. Run `spacetime login` before running this command with --yes."
     );
 
-    let full_login = y_or_n(
-        false,
-        "You are not logged in. Would you like to log in with spacetimedb.com?",
-        true,
-    )?;
+    let full_login = YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
+        .default(true)
+        .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
         spacetimedb_login_and_save(config, &host, false, true).await
     } else {
         anyhow::ensure!(
-            y_or_n(
-                false,
+            YesOrNo::new(
                 "WARNING: Continuing without spacetimedb.com will create a server-issued identity that only works on this server.\n\
                  Databases you publish will be owned by this identity. Running `spacetime login` later will discard its token, \
                  and you will lose access to those databases unless you saved the token with `spacetime login show --token`. \
                  A lost server-issued token cannot be recovered.\n\
                  We recommend logging in with spacetimedb.com, which also works with local servers.\n\
                  Continue with a server-issued identity?",
-                false,
-            )?,
+            )
+            .prompt()?,
             "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
         );
         let host = Url::parse(&config.get_host_url(target_server)?)?;

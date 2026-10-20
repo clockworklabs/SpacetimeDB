@@ -24,7 +24,7 @@ use crate::spacetime_config::{
     FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
-use crate::util::{decode_identity, y_or_n};
+use crate::util::{decode_identity, YesOrNo};
 use crate::{build, common_args};
 
 /// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
@@ -408,11 +408,13 @@ fn confirm_and_clear(
         "This will DESTROY the current {} module, and ALL corresponding data.",
         name_or_identity
     );
-    if !y_or_n(
-        skip_prompt,
-        format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
-        false,
-    )? {
+    if !YesOrNo::new(format!(
+        "Are you sure you want to proceed? [deleting {}]",
+        name_or_identity
+    ))
+    .force(skip_prompt)
+    .prompt()?
+    {
         anyhow::bail!("Aborted.");
     }
 
@@ -683,7 +685,10 @@ async fn execute_publish_configs<'a>(
         };
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
-            if !y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?", false)? {
+            if !YesOrNo::new("Are you sure you want to proceed?")
+                .force(yes.publish_to_remote)
+                .prompt()?
+            {
                 anyhow::bail!("Publish aborted by user.");
             }
         }
@@ -930,11 +935,9 @@ async fn apply_pre_publish_if_needed(
                 // We only arrive here if you have not specified ClearMode::Always AND there was no
                 // conflict that required manual migration.
                 if auto.break_clients
-                    && !y_or_n(
-                        force_break_clients || yes.break_clients,
-                        "The above changes will BREAK existing clients. Do you want to proceed?",
-                        false,
-                    )?
+                    && !YesOrNo::new("The above changes will BREAK existing clients. Do you want to proceed?")
+                        .force(force_break_clients || yes.break_clients)
+                        .prompt()?
                 {
                     println!("Aborting");
                     // Early exit: return an error or a special signal. Here we bail out by returning Err.
