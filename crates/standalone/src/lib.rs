@@ -25,6 +25,7 @@ use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
+use spacetimedb_client_api::ContainerError;
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{
     DatabaseName, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
@@ -32,6 +33,7 @@ use spacetimedb_client_api_messages::name::{
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
+use spacetimedb_lib::container::{ContainerInfo, ContainerSpec};
 use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentUpdate};
 use spacetimedb_lib::Hash;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
@@ -275,6 +277,10 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
 
     async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool> {
         Ok(self.control_db.is_database_locked(database_identity)?)
+    }
+
+    async fn get_container(&self, _database_identity: &Identity) -> Result<Option<ContainerInfo>, ContainerError> {
+        Err(ContainerError::Unsupported)
     }
 }
 
@@ -541,6 +547,24 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
 
         anyhow::Ok(update_result)
+    }
+
+    async fn set_container(
+        &self,
+        _caller: &Identity,
+        _database_identity: &Identity,
+        _spec: Option<ContainerSpec>,
+    ) -> Result<(), ContainerError> {
+        Err(ContainerError::Unsupported)
+    }
+
+    async fn set_container_running(
+        &self,
+        _caller: &Identity,
+        _database_identity: &Identity,
+        _running: bool,
+    ) -> Result<(), ContainerError> {
+        Err(ContainerError::Unsupported)
     }
 }
 
