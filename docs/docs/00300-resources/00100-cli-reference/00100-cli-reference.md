@@ -132,7 +132,7 @@ Publishing preserves unspecified environment values. Put an env map in spacetime
    If an organization is given, the organization member's permissions apply to the new database.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name). With all or skip-login, publishing requires a saved login token unless --anonymous is used; run `spacetime login` first.
+* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name). With all, publishing requires a saved login token unless --anonymous is used; run `spacetime login` first.
 
   Possible values:
   - `all`:
@@ -143,8 +143,6 @@ Publishing preserves unspecified environment values. Put an env map in spacetime
     Skip migration confirmations (e.g. major version upgrade)
   - `break-clients`:
     Skip the "this will BREAK existing clients" confirmation
-  - `skip-login`:
-    Don't prompt the user to log in; fail if authentication is required and no login token is saved
   - `delete-data`:
     Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation
 
