@@ -35,14 +35,6 @@
     <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(_SpacetimeWasm)' == 'true' And '$(_UseNativeAotLlvm)' != 'true'">
-    <!-- needs to be exe for initializers to be embedded correctly -->
-    <OutputType>Exe</OutputType>
-    <WasmSingleFileBundle>true</WasmSingleFileBundle>
-    <!-- conditional due to https://github.com/dotnet/runtime/issues/86186 which is not fixed in NAOT-LLVM -->
-    <DebuggerSupport>false</DebuggerSupport>
-  </PropertyGroup>
-
   <Import
       Project="$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets"
       Condition="'$(_UseNativeAotLlvm)' == 'true' and '$(ILCompilerTargetsPath)' == '' and '$(PkgMicrosoft_DotNet_ILCompiler_LLVM)' != '' and Exists('$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets')" />

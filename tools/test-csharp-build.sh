@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Requires .NET 10, jq, and a CLI built from this checkout.
+# Requires .NET 10, .NET 8 with wasi-experimental, jq, and a CLI built from this checkout.
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cli="${SPACETIME_BIN:?Set SPACETIME_BIN to the built spacetimedb-cli}"
 work="$(mktemp -d)"
@@ -67,3 +67,14 @@ EOF
         fi
     done
 done
+
+# Exercise the .NET 8 SDK's WASI import order, not just our final property values.
+module="$work/net8/module"
+mkdir -p "$module"
+cp templates/chat-console-cs/spacetimedb/Lib.cs "$module/"
+sed 's/<TargetFramework>net10.0<\/TargetFramework>/<TargetFrameworks>net8.0;net10.0<\/TargetFrameworks>/' \
+    "$work/chat-console-cs/module/StdbModule.csproj" > "$module/StdbModule.csproj"
+cat > "$work/net8/global.json" <<'EOF'
+{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}
+EOF
+"$cli" build --module-path "$module" --dotnet-version 8
