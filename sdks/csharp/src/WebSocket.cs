@@ -4,6 +4,7 @@ using SpacetimeDB.ClientApi;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -17,7 +18,11 @@ namespace SpacetimeDB
     {
         public delegate void OpenEventHandler();
 
-        public delegate void MessageEventHandler(byte[] message, DateTime timestamp);
+        /// <param name="receivedAt">
+        /// A <see cref="Stopwatch.GetTimestamp"/> reading taken as the message came off the socket,
+        /// before it waits in any queue, so that Ping round trips don't include client-side queueing.
+        /// </param>
+        public delegate void MessageEventHandler(byte[] message, DateTime timestamp, long receivedAt);
 
         public delegate void CloseEventHandler(Exception? e);
 
@@ -350,6 +355,7 @@ namespace SpacetimeDB
                     }
 
                     var startReceive = DateTime.UtcNow;
+                    var receivedAt = Stopwatch.GetTimestamp();
                     var count = receiveResult.Count;
                     while (receiveResult.EndOfMessage == false)
                     {
@@ -378,7 +384,7 @@ namespace SpacetimeDB
                         var message = new byte[count];
                         Buffer.BlockCopy(_receiveBuffer, 0, message, 0, count);
                         // directly invoke message handling
-                        OnMessage(message, startReceive);
+                        OnMessage(message, startReceive, receivedAt);
                     }
                 }
                 catch (Exception ex)
@@ -579,7 +585,9 @@ namespace SpacetimeDB
         {
             if (socketId == _webglSocketId && OnMessage != null)
             {
-                dispatchQueue.Enqueue(() => OnMessage(message, DateTime.UtcNow));
+                // Timestamp now: the dispatch queue isn't drained until the next FrameTick.
+                var receivedAt = Stopwatch.GetTimestamp();
+                dispatchQueue.Enqueue(() => OnMessage(message, DateTime.UtcNow, receivedAt));
             }
         }
 

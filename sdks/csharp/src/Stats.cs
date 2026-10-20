@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace SpacetimeDB
 {
@@ -336,6 +337,30 @@ namespace SpacetimeDB
         /// Includes: apply time (on main thread).
         /// </summary>
         public readonly NetworkRequestTracker ApplyMessageTracker = new();
+
+        /// <summary>
+        /// A fresh snapshot of the network statistics, measured by periodically pinging the server,
+        /// or null before the first Pong arrives, after the connection closes or is lost,
+        /// and always when pinging is disabled with <c>WithPingInterval(TimeSpan.Zero)</c>.
+        ///
+        /// Pings are measured here, and are kept out of the request trackers above.
+        /// </summary>
+        public NetworkStats? Network
+        {
+            get
+            {
+                lock (NetworkTracker)
+                {
+                    return NetworkTracker.Snapshot(NetworkStatsTracker.Micros(Stopwatch.GetTimestamp()));
+                }
+            }
+        }
+
+        /// <summary>
+        /// The state behind <see cref="Network"/>. Pongs are recorded on the parse thread,
+        /// so every access must lock on it.
+        /// </summary>
+        internal readonly NetworkStatsTracker NetworkTracker = new();
 
         /// <summary>
         /// Clear all outstanding tracked requests that can no longer receive responses.
