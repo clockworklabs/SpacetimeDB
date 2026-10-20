@@ -166,6 +166,73 @@ impl ResidentPages {
     }
 }
 
+impl TieredPages {
+    fn with_eviction_retry<T>(
+        &self,
+        manager: &PageManager,
+        mut f: impl FnMut() -> Result<T, PageError>,
+    ) -> Result<T, PageError> {
+        match f() {
+            Err(PageError::MemoryLimitExceeded(_)) => {
+                self.evict(manager)?;
+                f()
+            }
+            res => res,
+        }
+    }
+
+    fn evict(&self, manager: &PageManager) -> Result<(), PageError> {
+        let mut guard = self.evictable.lock().unwrap();
+        let (candidates, slots) = &mut *guard;
+
+        manager.evictable(candidates);
+        if candidates.is_empty() {
+            return Ok(());
+        }
+
+        slots.clear();
+        slots.extend(self.slots.iter().enumerate().filter_map(|(idx, slot_handle)| {
+            let page_id = slot_handle.page_id()?;
+            Some((page_id, PageIndex(idx as _)))
+        }));
+
+        for candidate in candidates.drain(..) {
+            let Some(page_index) = slots.remove(&candidate.id) else {
+                continue;
+            };
+            let mut slot = self.slots[page_index.idx()].lock_ref();
+            let PageSlot::Resident {
+                handle: page_handle,
+                metadata,
+                backing,
+                eviction_policy: _,
+            } = &*slot
+            else {
+                continue;
+            };
+
+            // The candidate may have been pinned or replaced since discovery.
+            if page_handle.page_id() != candidate.id || page_handle.is_pinned() {
+                continue;
+            }
+
+            let hash = match backing {
+                Some(hash) => *hash,
+                // TODO: Consider releasing the slot lock when performing I/O.
+                // Elevates the chances of creating garbage.
+                None => manager.ensure_lower_tier_stored(page_handle)?,
+            };
+            *slot = PageSlot::NonResident {
+                hash,
+                metadata: *metadata,
+            };
+            manager.evicted(candidate);
+        }
+
+        Ok(())
+    }
+}
+
 pub enum PageInfo<'a> {
     Resident(&'a Page),
     Tiered(&'a PageSlotHandle),
@@ -334,11 +401,12 @@ impl PageSet {
         if let Some(resident) = self.storage.resident() {
             return Ok(resident.pages.get(index).map(PageRef::Resident));
         }
-        let Some(slot) = self.storage.tiered().slots.get(index.idx()) else {
+        let tiered = self.storage.tiered();
+        let Some(slot) = tiered.slots.get(index.idx()) else {
             return Ok(None);
         };
-        self.manager
-            .get(slot, self.eviction_policy)
+        tiered
+            .with_eviction_retry(&self.manager, || self.manager.get(slot, self.eviction_policy))
             .map(|page| page.map(PageRef::Tiered))
     }
 
@@ -372,7 +440,9 @@ impl PageSet {
                 if slot.is_absent() {
                     Ok(None)
                 } else {
-                    let mut page = self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
+                    let mut page = tiered.with_eviction_retry(&self.manager, || {
+                        self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)
+                    })?;
                     let hash = page.save_or_get_content_hash();
                     Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
                 }
@@ -400,10 +470,17 @@ impl PageSet {
             }
             return Ok(resident.pages.with_page_mut(index, fixed_row_size, f));
         }
-        let Some(slot) = self.storage.tiered().slots.get(index.idx()) else {
-            return Err(PageError::MissingPage(index));
+
+        let mut page = {
+            let tiered = self.storage.tiered();
+            let Some(slot) = tiered.slots.get(index.idx()) else {
+                return Err(PageError::MissingPage(index));
+            };
+            tiered.with_eviction_retry(&self.manager, || {
+                self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)
+            })?
         };
-        let mut page = self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)?;
+
         self.storage
             .tiered_mut()
             .non_full_pages
@@ -563,14 +640,14 @@ impl PageSet {
     fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, PageError> {
         let free_page = self.storage.tiered_mut().free_page_slots.pop_first();
         let page_index = free_page.map(Ok).unwrap_or_else(|| self.can_allocate_new_page())?;
-        let slot = self
-            .manager
-            .allocate(fixed_row_size, self.eviction_policy)
-            .inspect_err(|_| {
-                if free_page.is_some() {
-                    self.storage.tiered_mut().free_page_slots.insert(page_index);
-                }
-            })?;
+        let allocation = self.storage.tiered().with_eviction_retry(&self.manager, || {
+            self.manager.allocate(fixed_row_size, self.eviction_policy)
+        });
+        let slot = allocation.inspect_err(|_| {
+            if free_page.is_some() {
+                self.storage.tiered_mut().free_page_slots.insert(page_index);
+            }
+        })?;
 
         // SAFETY: The page is resident and the index is from free slots or
         // fresh.
@@ -786,10 +863,8 @@ impl PageSet {
         let reserved = allocator
             .pages_to_allocate()
             .map(|page_index| {
-                self.manager
-                    .reserve(fixed_row_size)
+                self.reserve_page(fixed_row_size)
                     .map(|reservation| (page_index, reservation))
-                    .map_err(PageError::from)
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
 
@@ -803,61 +878,18 @@ impl PageSet {
     }
 
     pub fn evict(&self) -> Result<(), PageError> {
-        if self.storage.resident().is_some() {
-            return Ok(());
+        match &self.storage {
+            PageStorage::Resident(_) => Ok(()),
+            PageStorage::Tiered(tiered) => tiered.evict(&self.manager),
         }
-        let tiered = self.storage.tiered();
-        let mut _guard = tiered.evictable.lock().unwrap();
-        let (candidates, slots) = &mut *_guard;
+    }
 
-        // Collect eviction candidates, returning early if there aren't any.
-        self.manager.evictable(candidates);
-        if candidates.is_empty() {
-            return Ok(());
+    fn reserve_page(&self, fixed_row_size: Size) -> Result<ReservedPage, PageError> {
+        let reserve = || self.manager.reserve(fixed_row_size).map_err(PageError::from);
+        match &self.storage {
+            PageStorage::Resident(_) => reserve(),
+            PageStorage::Tiered(tiered) => tiered.with_eviction_retry(&self.manager, reserve),
         }
-
-        // Only resident slots have a page id, so collect them now.
-        slots.clear();
-        slots.extend(tiered.slots.iter().enumerate().filter_map(|(idx, slot_handle)| {
-            let page_id = slot_handle.page_id()?;
-            Some((page_id, PageIndex(idx as _)))
-        }));
-
-        for candidate in candidates.drain(..) {
-            let Some(page_index) = slots.remove(&candidate.id) else {
-                continue;
-            };
-            let mut slot = tiered.slots[page_index.idx()].lock_ref();
-            let PageSlot::Resident {
-                handle: page_handle,
-                metadata,
-                backing,
-                eviction_policy: _,
-            } = &*slot
-            else {
-                continue;
-            };
-
-            // Validate that the page is still the candidate and that it is not
-            // pinned.
-            if page_handle.page_id() != candidate.id || page_handle.is_pinned() {
-                continue;
-            }
-
-            let hash = match backing {
-                Some(hash) => Ok(*hash),
-                // TODO: Consider releasing the slot lock when performing I/O.
-                // Elevates the chances of creating garbage.
-                None => self.manager.ensure_lower_tier_stored(page_handle),
-            }?;
-            *slot = PageSlot::NonResident {
-                hash,
-                metadata: *metadata,
-            };
-            self.manager.evicted(candidate);
-        }
-
-        Ok(())
     }
 }
 
@@ -1241,5 +1273,61 @@ impl<'a> PageAllocator<'a> {
         self.planned
             .iter()
             .filter_map(|(&index, page)| matches!(page, PlannedPage::Allocate(_)).then_some(index))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        indexes::PAGE_SIZE,
+        page_pool::PagePool,
+        tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage},
+    };
+
+    fn bounded_page_set() -> PageSet {
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: PAGE_SIZE as u64,
+            hard_limit_bytes: PAGE_SIZE as u64,
+        })
+        .unwrap();
+        let manager = PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        );
+        PageSet::new(Arc::new(manager), PageEvictionPolicy::Evictable, Size(8))
+    }
+
+    #[test]
+    fn allocation_evicts_an_unpinned_page_and_faults_it_back() {
+        let mut pages = bounded_page_set();
+        let first = pages.allocate_new_page(Size(8)).unwrap();
+
+        let second = pages.allocate_new_page(Size(8)).unwrap();
+        assert!(!pages.storage.tiered().slots[first.idx()].is_resident());
+        assert!(pages.storage.tiered().slots[second.idx()].is_resident());
+
+        pages.get_page(first).unwrap().unwrap();
+        assert!(pages.storage.tiered().slots[first.idx()].is_resident());
+        assert!(!pages.storage.tiered().slots[second.idx()].is_resident());
+    }
+
+    #[test]
+    fn pinned_page_blocks_eviction_until_the_pin_is_dropped() {
+        let mut pages = bounded_page_set();
+        let first = pages.allocate_new_page(Size(8)).unwrap();
+        let pin = pages.storage.tiered().slots[first.idx()].page().unwrap();
+
+        assert!(matches!(
+            pages.allocate_new_page(Size(8)),
+            Err(PageError::MemoryLimitExceeded(_))
+        ));
+        assert!(pages.storage.tiered().slots[first.idx()].is_resident());
+
+        drop(pin);
+        pages.allocate_new_page(Size(8)).unwrap();
+        assert!(!pages.storage.tiered().slots[first.idx()].is_resident());
     }
 }
