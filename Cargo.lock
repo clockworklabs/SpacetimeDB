@@ -8307,6 +8307,7 @@ dependencies = [
  "dialoguer",
  "dirs",
  "duct",
+ "flate2",
  "fs-err",
  "futures",
  "git2",
