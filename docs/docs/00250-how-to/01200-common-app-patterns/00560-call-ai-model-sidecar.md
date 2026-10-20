@@ -1,6 +1,6 @@
 ---
 title: Call an AI model from a sidecar
-slug: /guides/app-patterns/call-ai-model-sidecar
+slug: /how-to/app-patterns/call-ai-model-sidecar
 ---
 
 import Tabs from '@theme/Tabs';

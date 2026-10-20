@@ -1,6 +1,6 @@
 ---
-title: Build a friends or follow list
-slug: /guides/social/friends-list
+title: Send an email from your module
+slug: /how-to/app-patterns/send-email
 ---
 
 import Tabs from '@theme/Tabs';

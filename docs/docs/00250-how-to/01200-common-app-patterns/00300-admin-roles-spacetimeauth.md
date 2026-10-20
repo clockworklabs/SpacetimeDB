@@ -1,6 +1,6 @@
 ---
-title: Typing indicators and other short-lived signals
-slug: /guides/social/typing-indicators
+title: Admin and moderator roles with SpacetimeAuth
+slug: /how-to/app-patterns/admin-roles-spacetimeauth
 ---
 
 import Tabs from '@theme/Tabs';

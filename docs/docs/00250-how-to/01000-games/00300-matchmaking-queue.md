@@ -1,6 +1,6 @@
 ---
 title: Build a matchmaking queue
-slug: /guides/games/matchmaking-queue
+slug: /how-to/games/matchmaking-queue
 ---
 
 import Tabs from '@theme/Tabs';

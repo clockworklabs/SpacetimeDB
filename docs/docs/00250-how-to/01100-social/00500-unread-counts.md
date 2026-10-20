@@ -1,6 +1,6 @@
 ---
-title: Skill-based matchmaking with OpenSkill
-slug: /guides/games/skill-based-matchmaking
+title: Unread counts and notifications
+slug: /how-to/social/unread-counts
 ---
 
 import Tabs from '@theme/Tabs';

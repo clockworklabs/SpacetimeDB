@@ -1,6 +1,6 @@
 ---
 title: Run a fixed-rate game tick
-slug: /guides/games/fixed-rate-game-tick
+slug: /how-to/games/fixed-rate-game-tick
 ---
 
 import Tabs from '@theme/Tabs';

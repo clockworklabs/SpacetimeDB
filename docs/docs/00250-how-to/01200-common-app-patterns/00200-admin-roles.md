@@ -1,6 +1,6 @@
 ---
-title: Send an email from your module
-slug: /guides/app-patterns/send-email
+title: Admin and moderator roles without SpacetimeAuth
+slug: /how-to/app-patterns/admin-roles
 ---
 
 import Tabs from '@theme/Tabs';

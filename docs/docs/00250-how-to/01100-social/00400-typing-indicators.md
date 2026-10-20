@@ -1,6 +1,6 @@
 ---
-title: Make a turn-based game with turn timeouts
-slug: /guides/games/turn-based-game
+title: Typing indicators and other short-lived signals
+slug: /how-to/social/typing-indicators
 ---
 
 import Tabs from '@theme/Tabs';

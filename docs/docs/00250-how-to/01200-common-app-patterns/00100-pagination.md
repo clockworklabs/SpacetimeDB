@@ -1,6 +1,6 @@
 ---
-title: Call an external API from your module
-slug: /guides/app-patterns/call-external-api
+title: Paginate or infinite-scroll a large table
+slug: /how-to/app-patterns/pagination
 ---
 
 import Tabs from '@theme/Tabs';

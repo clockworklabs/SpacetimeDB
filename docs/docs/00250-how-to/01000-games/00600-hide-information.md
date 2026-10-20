@@ -1,6 +1,6 @@
 ---
-title: "Only sync what's near the player"
-slug: /guides/games/sync-nearby-entities
+title: Hide information from players
+slug: /how-to/games/hide-information
 ---
 
 import Tabs from '@theme/Tabs';

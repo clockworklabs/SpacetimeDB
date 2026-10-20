@@ -1,6 +1,6 @@
 ---
-title: Seed initial data on first publish
-slug: /guides/app-patterns/seed-initial-data
+title: Build a friends or follow list
+slug: /how-to/social/friends-list
 ---
 
 import Tabs from '@theme/Tabs';

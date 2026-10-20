@@ -1,6 +1,6 @@
 ---
-title: Chat rooms and private DMs
-slug: /guides/social/chat-rooms-and-dms
+title: "Only sync what's near the player"
+slug: /how-to/games/sync-nearby-entities
 ---
 
 import Tabs from '@theme/Tabs';

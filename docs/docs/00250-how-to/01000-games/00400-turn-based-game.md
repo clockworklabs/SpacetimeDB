@@ -1,6 +1,6 @@
 ---
-title: Admin and moderator roles with SpacetimeAuth
-slug: /guides/app-patterns/admin-roles-spacetimeauth
+title: Make a turn-based game with turn timeouts
+slug: /how-to/games/turn-based-game
 ---
 
 import Tabs from '@theme/Tabs';

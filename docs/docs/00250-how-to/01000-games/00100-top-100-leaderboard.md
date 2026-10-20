@@ -1,6 +1,6 @@
 ---
 title: How to make a top 100 leaderboard
-slug: /guides/games/top-100-leaderboard
+slug: /how-to/games/top-100-leaderboard
 ---
 
 import Tabs from '@theme/Tabs';

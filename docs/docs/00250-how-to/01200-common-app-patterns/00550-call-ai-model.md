@@ -1,6 +1,6 @@
 ---
 title: Call an AI model from your module
-slug: /guides/app-patterns/call-ai-model
+slug: /how-to/app-patterns/call-ai-model
 ---
 
 import Tabs from '@theme/Tabs';

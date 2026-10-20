@@ -1,6 +1,6 @@
 ---
-title: Keep usernames unique and block offensive ones
-slug: /guides/social/unique-usernames
+title: Reset a leaderboard each season
+slug: /how-to/games/seasonal-leaderboard-reset
 ---
 
 import Tabs from '@theme/Tabs';

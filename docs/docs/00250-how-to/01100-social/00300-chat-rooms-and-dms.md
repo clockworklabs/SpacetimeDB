@@ -1,6 +1,6 @@
 ---
-title: Admin and moderator roles without SpacetimeAuth
-slug: /guides/app-patterns/admin-roles
+title: Chat rooms and private DMs
+slug: /how-to/social/chat-rooms-and-dms
 ---
 
 import Tabs from '@theme/Tabs';

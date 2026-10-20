@@ -1,6 +1,6 @@
 ---
-title: Hide information from players
-slug: /guides/games/hide-information
+title: Seed initial data on first publish
+slug: /how-to/app-patterns/seed-initial-data
 ---
 
 import Tabs from '@theme/Tabs';
