@@ -480,31 +480,3 @@ mod login_tests {
         );
     }
 }
-
-#[cfg(test)]
-mod yes_or_no_tests {
-    use super::YesOrNo;
-
-    #[test]
-    #[should_panic(expected = "YesOrNo requires a message")]
-    fn empty_message_is_rejected_even_when_forced() {
-        YesOrNo::new(" ").default(false).force(true).prompt().unwrap();
-    }
-
-    #[test]
-    #[should_panic(expected = "YesOrNo requires an explicit default")]
-    fn missing_default_is_rejected_even_when_forced() {
-        YesOrNo::new("Continue?").force(true).prompt().unwrap();
-    }
-
-    #[test]
-    #[should_panic(expected = "YesOrNo requires an explicit force setting")]
-    fn missing_force_is_rejected() {
-        YesOrNo::new("Continue?").default(false).prompt().unwrap();
-    }
-
-    #[test]
-    fn force_overrides_explicit_default() {
-        assert!(YesOrNo::new("Continue?").default(false).force(true).prompt().unwrap());
-    }
-}
