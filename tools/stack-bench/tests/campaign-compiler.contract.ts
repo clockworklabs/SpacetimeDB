@@ -65,17 +65,19 @@ test('every compiled campaign records its tool policy, and the policy changes ca
   const explicit = compile({ ...value, tools: { webSearch: false, subagents: false } });
   assert.equal(explicit.contentSha256, byDefault.contentSha256);
   const searching = compile({ ...value, tools: { webSearch: true, subagents: false } });
-  const delegating = compile({ ...value, tools: { webSearch: true, subagents: true } });
-  assert.equal(new Set([byDefault, searching, delegating].map(plan => plan.contentSha256)).size, 3);
+  assert.notEqual(searching.contentSha256, byDefault.contentSha256);
+  // Subagents are refused for every agent until the audit is shown to see their work.
+  for (const tools of [{ webSearch: false, subagents: true }, { webSearch: true, subagents: true }]) {
+    assert.throws(() => compile({ ...value, tools }), /subagents cannot be on/);
+  }
   assert(searching.attempts.every(attempt => attempt.tools?.webSearch === true));
   // Claude Code runs with --bare, so a campaign cannot ask it for tools it does not have.
   const rates = Object.values((value.pricing as { models: Record<string, unknown> }).models)[0];
   const claude = { ...value, agents: [{ adapter: 'claude-code', adapterVersion: '1.17.2', model: 'claude-test' }],
     pricing: { ...(value.pricing as object), models: { 'claude-test': rates } } };
   assert.equal(validateCampaignDefinition({ ...claude, tools: { webSearch: false, subagents: false } }).tools?.webSearch, false);
-  for (const tools of [{ webSearch: true, subagents: false }, { webSearch: false, subagents: true }]) {
-    assert.throws(() => validateCampaignDefinition({ ...claude, tools }), /claude-code .*--bare/);
-  }
+  assert.throws(() => validateCampaignDefinition({ ...claude, tools: { webSearch: true, subagents: false } }),
+    /claude-code webSearch cannot be on: .*--bare/);
   for (const tools of [{ webSearch: 'yes', subagents: false }, { webSearch: true }, { webSearch: true, subagents: false, mcp: true }]) {
     assert.throws(() => validateCampaignDefinition({ ...value, tools }), /tools/);
   }

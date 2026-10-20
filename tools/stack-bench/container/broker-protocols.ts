@@ -540,6 +540,8 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
   };
 }
 
+const GEMINI_WEB_TOOLS = ['googleSearch', 'googleSearchRetrieval', 'urlContext'];
+
 // A Gemini generateContent request, checked and bounded the same way on both routes. The
 // CLI makes its own helper calls on a small model, such as titling the conversation: a
 // helper call carries only its known prompt, and no tools.
@@ -553,10 +555,15 @@ function geminiRequest(request: JsonRecord, config: BrokerConfig, helperPrompt: 
   request.generationConfig = { ...generation, maxOutputTokens: limit ?? config.maxOutputTokens };
   // The CLI cannot remove a tool, so only the file, shell and task functions, and those the tool
   // policy turns on, reach the model.
+  // Google's hosted search and URL tools are web search too.
   const allowed = antigravityTools(config.tools);
-  if (Array.isArray(request.tools)) request.tools = request.tools.map(tool => isRecord(tool)
-    && Array.isArray(tool.functionDeclarations) ? { ...tool, functionDeclarations: tool.functionDeclarations
-      .filter(declaration => isRecord(declaration) && allowed.includes(String(declaration.name))) } : tool);
+  if (Array.isArray(request.tools)) request.tools = request.tools.map(tool => {
+    if (!isRecord(tool)) return tool;
+    const kept = Object.fromEntries(Object.entries(tool)
+      .filter(([key]) => config.tools?.webSearch || !GEMINI_WEB_TOOLS.includes(key)));
+    return Array.isArray(kept.functionDeclarations) ? { ...kept, functionDeclarations: kept.functionDeclarations
+      .filter(declaration => isRecord(declaration) && allowed.includes(String(declaration.name))) } : kept;
+  }).filter(tool => !isRecord(tool) || Object.keys(tool).length > 0);
   return request;
 }
 

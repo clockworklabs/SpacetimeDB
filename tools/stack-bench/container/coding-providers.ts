@@ -136,7 +136,7 @@ export const CODING_PROVIDERS = {
     rates: claudeRatesForModel,
     validateContinuation: validateClaudeNativeSession,
     // `--bare` already leaves Claude without web or subagent tools, so a policy turning
-    // either on never reaches here.
+    // either on is refused before it reaches here.
     args: ({ model, effort, maxBudgetUsd, resumeSession, tools }) => {
       const unavailable = unavailableToolsReason('anthropic', tools);
       if (unavailable) throw new Error(unavailable);

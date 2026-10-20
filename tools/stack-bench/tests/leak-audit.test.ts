@@ -312,6 +312,15 @@ test('StackBench source online is matched on any branch, by URL, gh and git, and
     'gh api repos/clockworklabs/SpacetimeDB/contents/tools/stack-bench',
     'git fetch https://github.com/clockworklabs/SpacetimeDB pull/5766/head:pr',
     '{"query":"clockworklabs/SpacetimeDB tools/stack-bench grader"}',
+    // Mirrors serve the same files from other hosts, so the harness path counts on any host.
+    'curl https://example.com/clockworklabs/SpacetimeDB/tools/stack-bench',
+    'curl https://cdn.jsdelivr.net/gh/clockworklabs/SpacetimeDB@bradley/stackbench-test/tools/stack-bench/grader/grade.ts',
+    'curl https://raw.githack.com/clockworklabs/SpacetimeDB/master/tools/stack-bench/README.md',
+    'curl "https://sourcegraph.com/github.com/clockworklabs/SpacetimeDB@master/-/blob/tools/stack-bench/grader/grade.ts"',
+    // A search for the pull request.
+    '{"query":"clockworklabs SpacetimeDB pull 5766"}',
+    '{"query":"SpacetimeDB PR #5766 stack bench"}',
+    '{"query":"clockworklabs/SpacetimeDB pull/5766 files"}',
   ];
   for (const command of flagged) assert.equal(stackBenchSourceReferences(command).length > 0, true, command);
   const allowed = [
@@ -320,9 +329,10 @@ test('StackBench source online is matched on any branch, by URL, gh and git, and
     'git clone --depth 1 https://github.com/clockworklabs/SpacetimeDB',
     'curl https://github.com/clockworklabs/SpacetimeDB/pull/5767',
     'curl https://github.com/clockworklabs/SpacetimeDB/pull/57660',
+    'curl https://cdn.jsdelivr.net/gh/clockworklabs/SpacetimeDB@master/crates/schema/src/auto_migrate.rs',
+    '{"query":"clockworklabs SpacetimeDB pull 57660"}',
     'curl https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/main/tools/stack-bench',
     'curl https://github.com/someone/benchmarks/tree/main/tools/stack-bench',
-    'curl https://example.com/clockworklabs/SpacetimeDB/tools/stack-bench',
     'gh pr view 5766 --repo someone/other',
     '{"query":"spacetimedb auto migration add column"}',
   ];

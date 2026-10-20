@@ -311,6 +311,12 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
     assert.throws(() => validateCampaignRun(plan, attempt, { ...run, ...changedSettings },
       { buildImage: 'test-build-image' }), /does not match.*(?:providerRoute|maxOutputTokens)/);
   }
+  // A run records the tool policy it used, which must be the plan's.
+  assert.deepEqual(attempt.tools, { webSearch: false, subagents: false });
+  const recorded = { ...run, setup: { tools: attempt.tools } };
+  assert.equal(validateCampaignRun(plan, attempt, recorded, { buildImage: 'test-build-image' }), recorded);
+  assert.throws(() => validateCampaignRun(plan, attempt, { ...run, setup: { tools: { webSearch: true, subagents: false } } },
+    { buildImage: 'test-build-image' }), /does not match.*tools/);
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, mode: { id: 'dependency', version: '3.2.0' } },
     { buildImage: 'test-build-image' }), /does not match.*mode/);

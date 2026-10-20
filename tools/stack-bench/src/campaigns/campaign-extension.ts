@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import { DEFAULT_TOOL_POLICY } from '../agents/tool-policy.js';
 import { ARTIFACT_FILE, readArtifact } from '../evidence/artifacts.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { snapshotAppSource } from '../runtime/source-snapshot.js';
@@ -15,13 +16,14 @@ import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 
 type UnknownRecord = Record<string, unknown>;
 
-function key(attempt: CampaignAttemptPlan): string {
+// A parent planned before campaigns recorded a tool policy ran with the defaults.
+export function extensionAttemptKey(attempt: CampaignAttemptPlan): string {
   return canonicalDefinitionJson({
     stack: attempt.stack,
     model: attempt.model,
     agentAdapter: attempt.agentAdapter,
     repetition: attempt.repetition,
-    tools: attempt.tools ?? null,
+    tools: attempt.tools ?? DEFAULT_TOOL_POLICY,
     condition: { id: attempt.condition.id,
       guidance: attempt.condition.guidance, repair: attempt.condition.repair },
   });
@@ -57,7 +59,7 @@ export function prepareCampaignExtension(targetCampaignFile: string, parentDirec
     throw new Error('extension output must be outside the parent campaign directory');
   }
 
-  const parentAttempts = new Map(parent.state.attempts.map(attempt => [key(attempt.plan), attempt]));
+  const parentAttempts = new Map(parent.state.attempts.map(attempt => [extensionAttemptKey(attempt.plan), attempt]));
   if (parentAttempts.size !== parent.state.attempts.length) {
     throw new Error('parent campaign has ambiguous attempts for extension');
   }
@@ -66,7 +68,7 @@ export function prepareCampaignExtension(targetCampaignFile: string, parentDirec
     if (!attempt.levels.includes(fromDepth) || !attempt.levels.some(level => level > fromDepth)) {
       throw new Error(`target attempt ${attempt.id} does not continue after depth ${fromDepth}`);
     }
-    const prior = parentAttempts.get(key(attempt));
+    const prior = parentAttempts.get(extensionAttemptKey(attempt));
     if (!prior) throw new Error(`target attempt ${attempt.id} has no matching parent attempt`);
     const execution = prior.executions.at(-1);
     if (prior.status !== 'completed' || execution?.status !== 'completed') {

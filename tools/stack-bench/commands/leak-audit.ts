@@ -77,14 +77,15 @@ const classify = (path: string): string => CLASSES.find(([pattern]) => pattern.t
   ?? 'other';
 
 // StackBench's own files online: anything under tools/stack-bench in clockworklabs/SpacetimeDB,
-// on any branch, and the pull request that carries it. The rest of SpacetimeDB's source is
-// fair to read.
+// on any branch and through any host (GitHub, or a mirror such as jsDelivr or Sourcegraph), and
+// the pull request that carries it. The rest of SpacetimeDB's source is fair to read.
 export const STACKBENCH_SOURCE = 'STACKBENCH SOURCE';
 const STACKBENCH_PULL_REQUEST = '5766';
 const GITHUB_HOST = /^(?:www\.)?(?:github\.com|raw\.githubusercontent\.com|api\.github\.com|codeload\.github\.com|patch-diff\.githubusercontent\.com)$/i;
 const REPOSITORY = /clockworklabs\/spacetimedb(?:\.git)?(?![\w.-])/;
 const HARNESS_PATH = /(?:^|[^\w-])tools\/stack-bench(?![\w-])/;
 const PULL_REQUEST = new RegExp(`(?:^|/)(?:pull|pulls|issues)/${STACKBENCH_PULL_REQUEST}(?![0-9])`);
+const PULL_REQUEST_MENTION = new RegExp(`(?:\\bpulls?\\b|\\bpr\\b|#)\\s*/?\\s*${STACKBENCH_PULL_REQUEST}(?![0-9])`);
 const ANY_URL = /https?:\/\/[^\s'"`<>)\]]+/gi;
 
 const decoded = (value: string): string => {
@@ -104,12 +105,17 @@ export function stackBenchSourceReferences(text: unknown): string[] {
   for (const match of value.matchAll(ANY_URL)) {
     let url: URL;
     try { url = new URL(match[0]); } catch { continue; }
-    if (!GITHUB_HOST.test(url.hostname)) continue;
     const path = decoded(`${url.pathname}${url.search}`);
-    if (REPOSITORY.test(path) && (HARNESS_PATH.test(path) || PULL_REQUEST.test(path))) found.add(match[0]);
+    if (REPOSITORY.test(path) && (HARNESS_PATH.test(path) || (GITHUB_HOST.test(url.hostname) && PULL_REQUEST.test(path)))) {
+      found.add(match[0]);
+    }
   }
   const plain = decoded(value.replace(ANY_URL, ' '));
   if (REPOSITORY.test(plain) && HARNESS_PATH.test(plain)) found.add('clockworklabs/SpacetimeDB tools/stack-bench');
+  // A search for the pull request, such as "clockworklabs SpacetimeDB pull 5766".
+  if (/\bspacetimedb\b/.test(plain) && PULL_REQUEST_MENTION.test(plain)) {
+    found.add(`clockworklabs/SpacetimeDB#${STACKBENCH_PULL_REQUEST}`);
+  }
   if (/\bgh\s+(?:pr\s+(?:view|diff|checkout)|api)\b/.test(plain) && REPOSITORY.test(plain)
     && new RegExp(`(?:\\s|/)${STACKBENCH_PULL_REQUEST}(?![0-9])`).test(plain)) {
     found.add(`clockworklabs/SpacetimeDB#${STACKBENCH_PULL_REQUEST}`);

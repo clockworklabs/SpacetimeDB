@@ -6,6 +6,8 @@ import { CODING_PROVIDERS } from '../container/coding-providers.js';
 import { ANTIGRAVITY_SUBAGENT_TOOLS, ANTIGRAVITY_TOOLS, ANTIGRAVITY_WEB_TOOLS } from '../src/agents/antigravity-protocol.js';
 import { DEFAULT_TOOL_POLICY, toolPolicyFromEnvironment, unavailableToolsReason } from '../src/agents/tool-policy.js';
 import type { ToolPolicy } from '../src/agents/tool-policy.js';
+import { extensionAttemptKey } from '../src/campaigns/campaign-extension.js';
+import type { CampaignAttemptPlan } from '../src/campaigns/campaign-compiler.js';
 
 const POLICIES: ToolPolicy[] = [
   { webSearch: true, subagents: false }, { webSearch: false, subagents: false },
@@ -27,12 +29,27 @@ test('Claude Code keeps --bare and refuses a policy that turns on tools --bare d
   assert(off.includes('--bare'));
   assert(!off.some(arg => /tools/i.test(arg)), 'the 1.1 arguments, with no tool flags');
   for (const tools of POLICIES.filter(policy => policy.webSearch || policy.subagents)) {
-    assert.throws(() => args(tools), /--bare/);
-    assert.match(unavailableToolsReason('anthropic', tools)!, /--bare/);
+    assert.throws(() => args(tools), /cannot be on/);
   }
+  assert.match(unavailableToolsReason('anthropic', { webSearch: true, subagents: false })!, /webSearch.*--bare/);
   for (const provider of ['openai', 'xai', 'google', 'openrouter', null]) {
-    assert.equal(unavailableToolsReason(provider, { webSearch: true, subagents: true }), null);
+    assert.equal(unavailableToolsReason(provider, { webSearch: true, subagents: false }), null);
   }
+});
+
+test('subagents are refused for every agent until the audit is shown to see their work', () => {
+  for (const provider of ['anthropic', 'openai', 'xai', 'google', 'openrouter', null]) {
+    for (const webSearch of [false, true]) {
+      assert.match(unavailableToolsReason(provider, { webSearch, subagents: true })!, /subagents.*audit/);
+    }
+  }
+});
+
+test('an extension matches a parent planned before campaigns recorded a tool policy', () => {
+  const attempt = { stack: 'postgres', model: 'gpt-test', agentAdapter: 'codex', repetition: 1,
+    condition: { id: 'neutral', guidance: { mode: 'neutral' }, repair: null } } as unknown as CampaignAttemptPlan;
+  assert.equal(extensionAttemptKey(attempt), extensionAttemptKey({ ...attempt, tools: { ...DEFAULT_TOOL_POLICY } }));
+  assert.notEqual(extensionAttemptKey(attempt), extensionAttemptKey({ ...attempt, tools: { webSearch: true, subagents: false } }));
 });
 
 test('the broker passes Antigravity its web and subagent functions only when the policy turns them on', () => {
@@ -46,6 +63,14 @@ test('the broker passes Antigravity its web and subagent functions only when the
       tools: Array<{ functionDeclarations: Array<{ name: string }> }> };
     assert.deepEqual(forwarded.tools[0]!.functionDeclarations.map(declaration => declaration.name), [...ANTIGRAVITY_TOOLS,
       ...(tools?.webSearch ? ANTIGRAVITY_WEB_TOOLS : []), ...(tools?.subagents ? ANTIGRAVITY_SUBAGENT_TOOLS : [])]);
+    // Google's own search and URL tools are web search too.
+    const hosted = Buffer.from(JSON.stringify({ contents: [], tools: [{ googleSearch: {} }, { urlContext: {} },
+      { functionDeclarations: [{ name: 'view_file' }], googleSearchRetrieval: {} }] }));
+    const sent = (protocol.parseRequest(hosted, '/v1beta/models/test-model:streamGenerateContent') as {
+      tools: Array<Record<string, unknown>> }).tools;
+    assert.deepEqual(sent, tools?.webSearch
+      ? [{ googleSearch: {} }, { urlContext: {} }, { functionDeclarations: [{ name: 'view_file' }], googleSearchRetrieval: {} }]
+      : [{ functionDeclarations: [{ name: 'view_file' }] }], JSON.stringify(tools));
   }
 });
 

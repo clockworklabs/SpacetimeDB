@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
+import type { ToolPolicy } from '../agents/tool-policy.js';
 import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../evidence/artifacts.js';
 import { checkpointChecks, checkpointSchema } from '../evidence/run-checkpoints.js';
 import { checkCompletion } from '../evidence/check-completion.js';
@@ -162,6 +164,7 @@ interface CampaignValidationAttempt {
   model: string;
   providerRoute?: string;
   maxOutputTokens?: number;
+  tools?: ToolPolicy;
   guidance: string;
   levels: number[];
   agentAdapter: string;
@@ -436,6 +439,11 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   mismatch(run.model !== attempt.model, 'model');
   mismatch(run.providerRoute !== attempt.providerRoute, 'providerRoute');
   mismatch(run.maxOutputTokens !== attempt.maxOutputTokens, 'maxOutputTokens');
+  // A coding agent records the tool policy it ran with, which must be the plan's.
+  const setup = record(run.setup) ? run.setup : null;
+  const recordedTools = setup?.tools;
+  mismatch((recordedTools !== undefined || (setup && AGENT_ADAPTER_REGISTRY.get(attempt.agentAdapter)?.provider))
+    && canonicalDefinitionJson(recordedTools ?? null) !== canonicalDefinitionJson(attempt.tools ?? null), 'tools');
   mismatch(canonicalDefinitionJson(run.pricing ?? null)
     !== canonicalDefinitionJson(attempt.pricing ?? null), 'pricing');
   mismatch(run.guidance !== attempt.guidance, 'guidance');

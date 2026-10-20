@@ -166,10 +166,16 @@ tools follow the campaign's `tools` setting, which is the same for every agent:
 Both are off by default, as every agent ran in StackBench 1.1. Turning one on
 is its own condition. A campaign file may omit `tools`; compiling fills in the
 defaults, so every compiled plan records the setting and its identity covers
-it. Runs under
-different settings never share a campaign, and an extension cannot continue an
-attempt made under another setting. Each run records the setting it used in
-`setup.tools`.
+it. Runs under different settings never share a campaign, and an extension
+cannot continue an attempt made under another setting; a parent planned before
+campaigns recorded the setting counts as the defaults. Each run records the
+setting it used in `setup.tools`, and run validation refuses a run whose
+setting differs from its plan's.
+
+`subagents: true` is refused for every agent, at compile time and when a
+session starts. The contamination audit reads each agent's own event log, and
+no test yet shows a subagent's shell calls reaching it. The mappings below are
+in place for when one does.
 
 Each agent maps the setting to its own controls:
 
@@ -178,11 +184,11 @@ Each agent maps the setting to its own controls:
 | Claude Code | Not available | Not available |
 | Codex | `web_search="live"`, or `"disabled"` | `features.multi_agent` |
 | Grok Build | `web_search` and `web_fetch` allowed by name, or `--disable-web-search` | Subagent tools allowed by name, or `--no-subagents` with them left out |
-| Antigravity | The broker keeps `search_web`, `read_url_content` and `view_content_chunk`, or drops them | The broker keeps `invoke_subagent`, `manage_subagents` and `define_subagent`, or drops them |
+| Antigravity | The broker keeps `search_web`, `read_url_content` and `view_content_chunk` and Google's hosted search and URL tools, or drops them | The broker keeps `invoke_subagent`, `manage_subagents` and `define_subagent`, or drops them |
 
 Claude Code runs with `--bare`. In Claude Code 2.1.284 that mode offers only
-Bash, Edit and Read. A campaign that includes Claude Code and turns either
-setting on is refused at compile time.
+Bash, Edit and Read. A campaign that includes Claude Code and turns web search
+on is refused at compile time.
 
 The coding container reaches public HTTP and HTTPS whatever the setting, so an
 agent can always fetch from its shell.
@@ -195,10 +201,11 @@ searched is counted as unpriced, so its cost is a lower bound. OpenRouter's
 reported cost already includes search.
 
 The contamination audit treats a fetch of StackBench's own source as
-contamination. That covers a URL, `gh` call or `git` fetch naming
-`tools/stack-bench` in `clockworklabs/SpacetimeDB` on any branch, or naming
-StackBench's pull request (#5766), whether from the shell or the agent's web
-tools. It also covers any read of a local copy of `tools/stack-bench`. The rest
+contamination. That covers a URL on any host, `gh` call or `git` fetch
+naming `tools/stack-bench` in `clockworklabs/SpacetimeDB` on any branch, so
+mirrors such as jsDelivr and Sourcegraph count. It also covers a GitHub URL,
+`gh` call, `git` fetch or search naming StackBench's pull request (#5766),
+whether from the shell or the agent's web tools. It also covers any read of a local copy of `tools/stack-bench`. The rest
 of SpacetimeDB's source is open to read.
 
 ## Stack guidance

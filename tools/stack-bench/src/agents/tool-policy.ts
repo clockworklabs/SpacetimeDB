@@ -9,18 +9,19 @@ export interface ToolPolicy {
 // Off by default, as every agent ran in StackBench 1.1; turning a tool on is its own condition.
 export const DEFAULT_TOOL_POLICY: Readonly<ToolPolicy> = Object.freeze({ webSearch: false, subagents: false });
 
-// Tools a provider's agent cannot have, and why. Claude Code runs with `--bare`, which offers
-// only Bash, Edit and Read (checked on Claude Code 2.1.284 in the build image), so a policy that
-// turns either on is refused rather than recorded for a run that could not honour it.
-const UNAVAILABLE_TOOLS: Readonly<Record<string, { tools: ReadonlyArray<keyof ToolPolicy>; reason: string }>> = {
-  anthropic: { tools: ['webSearch', 'subagents'],
-    reason: 'Claude Code runs with --bare, which has no web search, web fetch or subagent tools' },
-};
-
+// Why a policy cannot run, or null. A policy that cannot be honoured is refused rather than
+// recorded for a run that differs from it. Subagents are refused for every agent: the
+// contamination audit reads each agent's own event log, and no fixture yet shows a subagent's
+// shell calls reaching it. Claude Code runs with `--bare`, which offers only Bash, Edit and Read
+// (checked on Claude Code 2.1.284 in the build image), so it has no web search either.
 export function unavailableToolsReason(provider: string | null | undefined, tools: ToolPolicy): string | null {
-  const unavailable = provider ? UNAVAILABLE_TOOLS[provider] : undefined;
-  const requested = unavailable?.tools.filter(field => tools[field]) ?? [];
-  return requested.length ? `${requested.join(' and ')} cannot be on: ${unavailable!.reason}` : null;
+  if (tools.subagents) {
+    return 'subagents cannot be on: the contamination audit is not yet shown to see subagent work';
+  }
+  if (provider === 'anthropic' && tools.webSearch) {
+    return 'webSearch cannot be on: Claude Code runs with --bare, which has no web search or fetch tools';
+  }
+  return null;
 }
 
 // The controller hands the policy to each coding session as these variables and arguments.
