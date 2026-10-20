@@ -41,7 +41,7 @@ import { ensureFreshAgyLogin } from '../src/agents/agy-login.js';
 import { agyRenewal } from './agy-renewal.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
-import { DEFAULT_TOOL_POLICY, parseToolPolicySwitch } from '../src/agents/tool-policy.js';
+import { DEFAULT_TOOL_POLICY, parseToolPolicySwitch, unavailableToolsReason } from '../src/agents/tool-policy.js';
 import type { ToolPolicy } from '../src/agents/tool-policy.js';
 
 function errorMessage(error: unknown): string {
@@ -113,6 +113,8 @@ let tools: ToolPolicy;
 try {
   tools = { webSearch: parseToolPolicySwitch(values['web-search'], DEFAULT_TOOL_POLICY.webSearch, '--web-search'),
     subagents: parseToolPolicySwitch(values.subagents, DEFAULT_TOOL_POLICY.subagents, '--subagents') };
+  const unavailable = unavailableToolsReason(provider, tools);
+  if (unavailable) throw new Error(unavailable);
 } catch (error) {
   console.error(`run-build.js: ${errorMessage(error)}`);
   process.exit(2);

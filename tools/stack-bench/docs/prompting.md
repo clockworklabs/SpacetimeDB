@@ -160,11 +160,13 @@ tools follow the campaign's `tools` setting, which is the same for every agent:
 
 | Setting | Default | Covers |
 |---|---|---|
-| `webSearch` | on | The agent's web search and page fetch tools |
+| `webSearch` | off | The agent's web search and page fetch tools |
 | `subagents` | off | Tools that start other agent sessions |
 
-A campaign file may omit `tools`; compiling fills in the defaults, so every
-compiled plan records the setting and its identity covers it. Runs under
+Both are off by default, as every agent ran in StackBench 1.1. Turning one on
+is its own condition. A campaign file may omit `tools`; compiling fills in the
+defaults, so every compiled plan records the setting and its identity covers
+it. Runs under
 different settings never share a campaign, and an extension cannot continue an
 attempt made under another setting. Each run records the setting it used in
 `setup.tools`.
@@ -173,14 +175,14 @@ Each agent maps the setting to its own controls:
 
 | Agent | Web search | Subagents |
 |---|---|---|
-| Claude Code | `WebSearch` and `WebFetch`, removed by name when off | `Task` (also named `Agent`), removed by name when off |
+| Claude Code | Not available | Not available |
 | Codex | `web_search="live"`, or `"disabled"` | `features.multi_agent` |
 | Grok Build | `web_search` and `web_fetch` allowed by name, or `--disable-web-search` | Subagent tools allowed by name, or `--no-subagents` with them left out |
 | Antigravity | The broker keeps `search_web`, `read_url_content` and `view_content_chunk`, or drops them | The broker keeps `invoke_subagent`, `manage_subagents` and `define_subagent`, or drops them |
 
 Claude Code runs with `--bare`. In Claude Code 2.1.284 that mode offers only
-Bash, Edit and Read, so Claude has no web or subagent tools whatever the
-setting.
+Bash, Edit and Read. A campaign that includes Claude Code and turns either
+setting on is refused at compile time.
 
 The coding container reaches public HTTP and HTTPS whatever the setting, so an
 agent can always fetch from its shell.

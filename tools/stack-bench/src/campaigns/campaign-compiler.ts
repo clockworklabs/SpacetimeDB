@@ -6,7 +6,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { validateProviderRoute, validateProviderOutputLimit } from '../agents/agent-adapter-contract.js';
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import type { AgentAdapterIdentity } from '../agents/agent-adapters.js';
-import { DEFAULT_TOOL_POLICY } from '../agents/tool-policy.js';
+import { DEFAULT_TOOL_POLICY, unavailableToolsReason } from '../agents/tool-policy.js';
 import type { ToolPolicy } from '../agents/tool-policy.js';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
@@ -569,6 +569,10 @@ export function validateCampaignDefinition(input: unknown,
     strict(value.tools, `${source}.tools`, TOOL_POLICY_FIELDS);
     for (const field of TOOL_POLICY_FIELDS) {
       if (typeof value.tools[field as keyof ToolPolicy] !== 'boolean') fail(`${source}.tools.${field}`, 'must be true or false');
+    }
+    for (const agent of value.agents) {
+      const reason = unavailableToolsReason(AGENT_ADAPTER_REGISTRY.get(agent.adapter).provider, value.tools);
+      if (reason) fail(`${source}.tools`, `${agent.adapter} ${reason}`);
     }
   }
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));

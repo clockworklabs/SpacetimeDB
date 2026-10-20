@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { brokerProtocol } from '../container/broker-protocols.js';
-import { CLAUDE_SUBAGENT_TOOLS, CLAUDE_WEB_TOOLS, CODING_PROVIDERS } from '../container/coding-providers.js';
+import { CODING_PROVIDERS } from '../container/coding-providers.js';
 import { ANTIGRAVITY_SUBAGENT_TOOLS, ANTIGRAVITY_TOOLS, ANTIGRAVITY_WEB_TOOLS } from '../src/agents/antigravity-protocol.js';
-import { DEFAULT_TOOL_POLICY, toolPolicyFromEnvironment } from '../src/agents/tool-policy.js';
+import { DEFAULT_TOOL_POLICY, toolPolicyFromEnvironment, unavailableToolsReason } from '../src/agents/tool-policy.js';
 import type { ToolPolicy } from '../src/agents/tool-policy.js';
 
 const POLICIES: ToolPolicy[] = [
@@ -12,21 +12,26 @@ const POLICIES: ToolPolicy[] = [
   { webSearch: true, subagents: true }, { webSearch: false, subagents: true },
 ];
 
-test('the default tool policy searches the web and starts no other agents', () => {
-  assert.deepEqual(DEFAULT_TOOL_POLICY, { webSearch: true, subagents: false });
+test('the default tool policy turns web search and subagents off, as every agent ran in 1.1', () => {
+  assert.deepEqual(DEFAULT_TOOL_POLICY, { webSearch: false, subagents: false });
   assert.deepEqual(toolPolicyFromEnvironment({}), DEFAULT_TOOL_POLICY);
   assert.deepEqual(toolPolicyFromEnvironment({ STACK_BENCH_WEB_SEARCH: 'off', STACK_BENCH_SUBAGENTS: 'on' }),
     { webSearch: false, subagents: true });
   assert.throws(() => toolPolicyFromEnvironment({ STACK_BENCH_WEB_SEARCH: 'true' }), /STACK_BENCH_WEB_SEARCH/);
 });
 
-test('Claude Code removes its web and subagent tools by name when the policy turns them off', () => {
-  for (const tools of POLICIES) {
-    const args = CODING_PROVIDERS.anthropic.args({ model: 'claude-test', effort: 'high', baseUrl: 'http://broker',
-      resumeSession: null, maxBudgetUsd: null, tools });
-    const index = args.indexOf('--disallowedTools');
-    const denied = index < 0 ? [] : args[index + 1]!.split(',');
-    assert.deepEqual(denied, [...(tools.webSearch ? [] : CLAUDE_WEB_TOOLS), ...(tools.subagents ? [] : CLAUDE_SUBAGENT_TOOLS)]);
+test('Claude Code keeps --bare and refuses a policy that turns on tools --bare does not have', () => {
+  const args = (tools: ToolPolicy) => CODING_PROVIDERS.anthropic.args({ model: 'claude-test', effort: 'high',
+    baseUrl: 'http://broker', resumeSession: null, maxBudgetUsd: null, tools });
+  const off = args({ webSearch: false, subagents: false });
+  assert(off.includes('--bare'));
+  assert(!off.some(arg => /tools/i.test(arg)), 'the 1.1 arguments, with no tool flags');
+  for (const tools of POLICIES.filter(policy => policy.webSearch || policy.subagents)) {
+    assert.throws(() => args(tools), /--bare/);
+    assert.match(unavailableToolsReason('anthropic', tools)!, /--bare/);
+  }
+  for (const provider of ['openai', 'xai', 'google', 'openrouter', null]) {
+    assert.equal(unavailableToolsReason(provider, { webSearch: true, subagents: true }), null);
   }
 });
 

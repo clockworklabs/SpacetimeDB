@@ -49,10 +49,10 @@ test('Codex web search and subagents follow the tool policy', () => {
   const settings = (webSearch: boolean, subagents: boolean) => codexArguments({ model: 'gpt-test', effort: 'high',
     baseUrl: 'http://127.0.0.1:123', resumeSession: null, tools: { webSearch, subagents } })
     .filter(arg => arg.startsWith('web_search=') || arg.startsWith('features.multi_agent='));
-  // The default searches live and starts no other agents.
+  // The default is how Codex ran in 1.1.
   assert.deepEqual(settings(DEFAULT_TOOL_POLICY.webSearch, DEFAULT_TOOL_POLICY.subagents),
-    ['web_search="live"', 'features.multi_agent=false']);
-  assert.deepEqual(settings(false, false), ['web_search="disabled"', 'features.multi_agent=false']);
+    ['web_search="disabled"', 'features.multi_agent=false']);
+  assert.deepEqual(settings(true, false), ['web_search="live"', 'features.multi_agent=false']);
   assert.deepEqual(settings(false, true), ['web_search="disabled"', 'features.multi_agent=true']);
 });
 

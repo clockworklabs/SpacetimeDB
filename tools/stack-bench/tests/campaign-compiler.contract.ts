@@ -59,15 +59,23 @@ test('every compiled campaign records its tool policy, and the policy changes ca
   const value = manifest('campaign.example.json');
   value.stacks = (value.stacks as Array<{ id: string }>).filter(stack => stack.id === 'postgres');
   const byDefault = compile(value);
-  assert.deepEqual(byDefault.definition.tools, { webSearch: true, subagents: false });
-  assert(byDefault.attempts.every(attempt => attempt.tools?.webSearch === true && attempt.tools.subagents === false));
+  assert.deepEqual(byDefault.definition.tools, { webSearch: false, subagents: false });
+  assert(byDefault.attempts.every(attempt => attempt.tools?.webSearch === false && attempt.tools.subagents === false));
   assert.deepEqual(validateCompiledCampaignPlan(byDefault), byDefault);
-  const explicit = compile({ ...value, tools: { webSearch: true, subagents: false } });
+  const explicit = compile({ ...value, tools: { webSearch: false, subagents: false } });
   assert.equal(explicit.contentSha256, byDefault.contentSha256);
-  const offline = compile({ ...value, tools: { webSearch: false, subagents: false } });
+  const searching = compile({ ...value, tools: { webSearch: true, subagents: false } });
   const delegating = compile({ ...value, tools: { webSearch: true, subagents: true } });
-  assert.equal(new Set([byDefault, offline, delegating].map(plan => plan.contentSha256)).size, 3);
-  assert(offline.attempts.every(attempt => attempt.tools?.webSearch === false));
+  assert.equal(new Set([byDefault, searching, delegating].map(plan => plan.contentSha256)).size, 3);
+  assert(searching.attempts.every(attempt => attempt.tools?.webSearch === true));
+  // Claude Code runs with --bare, so a campaign cannot ask it for tools it does not have.
+  const rates = Object.values((value.pricing as { models: Record<string, unknown> }).models)[0];
+  const claude = { ...value, agents: [{ adapter: 'claude-code', adapterVersion: '1.17.2', model: 'claude-test' }],
+    pricing: { ...(value.pricing as object), models: { 'claude-test': rates } } };
+  assert.equal(validateCampaignDefinition({ ...claude, tools: { webSearch: false, subagents: false } }).tools?.webSearch, false);
+  for (const tools of [{ webSearch: true, subagents: false }, { webSearch: false, subagents: true }]) {
+    assert.throws(() => validateCampaignDefinition({ ...claude, tools }), /claude-code .*--bare/);
+  }
   for (const tools of [{ webSearch: 'yes', subagents: false }, { webSearch: true }, { webSearch: true, subagents: false, mcp: true }]) {
     assert.throws(() => validateCampaignDefinition({ ...value, tools }), /tools/);
   }
