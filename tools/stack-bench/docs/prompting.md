@@ -153,6 +153,52 @@ Campaign files must set `productionQuality: true` on each condition to include i
 An omitted field retains the original unframed request, as does an explicit
 `productionQuality: false`. The paid examples set it explicitly.
 
+## Agent tools
+
+Every coding agent works with files and a shell. Two groups of the agent's own
+tools follow the campaign's `tools` setting, which is the same for every agent:
+
+| Setting | Default | Covers |
+|---|---|---|
+| `webSearch` | on | The agent's web search and page fetch tools |
+| `subagents` | off | Tools that start other agent sessions |
+
+A campaign file may omit `tools`; compiling fills in the defaults, so every
+compiled plan records the setting and its identity covers it. Runs under
+different settings never share a campaign, and an extension cannot continue an
+attempt made under another setting. Each run records the setting it used in
+`setup.tools`.
+
+Each agent maps the setting to its own controls:
+
+| Agent | Web search | Subagents |
+|---|---|---|
+| Claude Code | `WebSearch` and `WebFetch`, removed by name when off | `Task` (also named `Agent`), removed by name when off |
+| Codex | `web_search="live"`, or `"disabled"` | `features.multi_agent` |
+| Grok Build | `web_search` and `web_fetch` allowed by name, or `--disable-web-search` | Subagent tools allowed by name, or `--no-subagents` with them left out |
+| Antigravity | The broker keeps `search_web`, `read_url_content` and `view_content_chunk`, or drops them | The broker keeps `invoke_subagent`, `manage_subagents` and `define_subagent`, or drops them |
+
+Claude Code runs with `--bare`. In Claude Code 2.1.284 that mode offers only
+Bash, Edit and Read, so Claude has no web or subagent tools whatever the
+setting.
+
+The coding container reaches public HTTP and HTTPS whatever the setting, so an
+agent can always fetch from its shell.
+
+Providers charge each web search on top of tokens. The credential broker counts
+the searches each response reports and records them as `webSearchCalls` in the
+spend ledger, each cost receipt and the attempt's cost ledger. A request that
+offered search but did not use it is priced from its tokens. A request that
+searched is counted as unpriced, so its cost is a lower bound. OpenRouter's
+reported cost already includes search.
+
+The contamination audit treats a fetch of StackBench's own source as
+contamination. That covers a URL, `gh` call or `git` fetch naming
+`tools/stack-bench` in `clockworklabs/SpacetimeDB` on any branch, or naming
+StackBench's pull request (#5766), whether from the shell or the agent's web
+tools. It also covers any read of a local copy of `tools/stack-bench`. The rest
+of SpacetimeDB's source is open to read.
+
 ## Stack guidance
 
 Stack selection and guidance selection are separate.
