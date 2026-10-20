@@ -55,6 +55,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         "Are you sure you want to delete database {delete_target}? This action cannot be undone."
     ))
     .force(force)
+    .default(false)
     .prompt()?
     {
         println!("Aborting");
@@ -74,7 +75,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !force {
                 print_database_tree_info(&confirm.database_tree).await?;
             }
-            if force || YesOrNo::new("Do you want to proceed deleting above databases?").prompt()? {
+            if force
+                || YesOrNo::new("Do you want to proceed deleting above databases?")
+                    .default(false)
+                    .prompt()?
+            {
                 send_request(&client, &request_path, &auth_header, Some(confirm.confirmation_token))
                     .await?
                     .error_for_status()?;
