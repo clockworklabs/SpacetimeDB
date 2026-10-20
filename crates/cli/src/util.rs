@@ -329,7 +329,7 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// A yes/no prompt with a required message, force setting, and default.
+/// Prompt the user for `n` or `n` from stdin
 pub struct YesOrNo {
     message: String,
     force: Option<bool>,
