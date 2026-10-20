@@ -2178,10 +2178,11 @@ jobs:
         run: |
           spacetime start &
           disown
+          # Wait for the server to come up
+          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/v1/ping
 
       - name: Run regression tests
         run: |
-          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/v1/ping
           spacetime login --server-issued-login local
           bash sdks/csharp/tools~/run-regression-tests.sh
           # Restore global.json symlinks (we replaced them with files to work around .NET 10 SDK bug)
