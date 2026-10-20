@@ -223,6 +223,8 @@ impl ResidentObjects {
         // frames and replace stale weak entries when a hash becomes resident again.
         if let Some(existing) = blobs.get(&key).and_then(Weak::upgrade) {
             assert_eq!(existing.hash(), frame.hash());
+            assert!(Arc::ptr_eq(&existing, &frame));
+
             return existing;
         }
         blobs.insert(key, Arc::downgrade(&frame));
