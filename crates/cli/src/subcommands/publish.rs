@@ -1,3 +1,4 @@
+mod container;
 mod environment;
 #[cfg(test)]
 mod wire_tests;
@@ -95,6 +96,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("database").from_clap("name|identity").required())
         .key(Key::new("server"))
         .key(Key::new("env").config_only())
+        .key(Key::new("container").config_only())
         .key(Key::new("module_path").module_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
@@ -113,6 +115,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .exclude("env_only")
         .exclude("unset_env")
         .exclude("replace_env")
+        .exclude("no_container")
         .build(command)
         .map_err(Into::into)
 }
@@ -351,6 +354,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(SetTrue)
                 .help("Replace all environment values, deleting every unspecified key."),
         )
+        .arg(
+            Arg::new("no_container")
+                .long("no-container")
+                .action(SetTrue)
+                .help("Do not build or attach the container configured in spacetime.json."),
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
         .after_long_help("Publishing preserves unspecified environment values. Put an env map in spacetime.json in order to specify variables in config. Explicit keys which are not declared in the module are allowed. Declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources. --env-only updates an existing database's environment without publishing the module. --unset-env explicitly removes a previously published environment variable, unless the variable is declared required by the currently published module. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically against the declared module. --env selects which config file to use.")
 }
@@ -513,6 +522,7 @@ pub async fn exec_with_options(
     let yes = yes_flags_from_args(args);
     let environment_options = EnvironmentOptions::from_args(args)?;
     let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
+    let no_container = args.get_flag("no_container");
 
     execute_publish_configs(
         &mut config,
@@ -522,6 +532,7 @@ pub async fn exec_with_options(
         clear_database,
         yes,
         &environment_options,
+        no_container,
     )
     .await
 }
@@ -550,10 +561,12 @@ pub async fn exec_from_entry(
         clear_database,
         yes,
         &EnvironmentOptions::default(),
+        false,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_publish_configs<'a>(
     config: &mut Config,
     publish_configs: Vec<CommandConfig<'a>>,
@@ -562,6 +575,7 @@ async fn execute_publish_configs<'a>(
     clear_database: ClearMode,
     yes: YesFlags,
     environment_options: &EnvironmentOptions,
+    no_container: bool,
 ) -> Result<(), anyhow::Error> {
     // Execute publish for each config
     for command_config in publish_configs {
@@ -612,6 +626,21 @@ async fn execute_publish_configs<'a>(
             }
         }
         let database_host = config.get_host_url(server)?;
+        let container = if no_container {
+            None
+        } else {
+            container::Container::from_config(command_config.get_config_value("container"), config_dir).with_context(
+                || {
+                    format!(
+                        "Invalid `container` configuration for database '{}'",
+                        name_or_identity.unwrap_or_default()
+                    )
+                },
+            )?
+        };
+        if let Some(container) = &container {
+            container.check()?;
+        }
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
@@ -745,17 +774,35 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
+        let supplied_env_keys: Vec<String> = environment.values.keys().cloned().collect();
         let mut request = builder.body(program_bytes).build()?;
         request
             .headers_mut()
-            .typed_insert(SpacetimeEnvironment(environment.values));
+            .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
+        // The same publish without values, for servers that defer them (below).
+        let without_environment = if environment.values.is_empty() {
+            None
+        } else {
+            request.try_clone()
+        };
         request
             .headers_mut()
-            .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
+            .typed_insert(SpacetimeEnvironment(environment.values));
 
         let res = client.execute(request).await?;
-        let response: PublishResult = res.json_or_error().await?;
-        match response {
+        let mut response = res.json_or_error::<PublishResult>().await;
+        // SpacetimeDB Cloud does not yet take environment values when it creates or
+        // resets a database. Publish without them, then set them as `--env-only` does.
+        let mut environment_deferred = false;
+        if let Some(request) = without_environment
+            && let Err(error) = &response
+            && format!("{error:#}").contains(environment::INITIAL_ENVIRONMENT_DEFERRED)
+        {
+            println!("This server defers environment values for new databases. Publishing without them first.");
+            response = client.execute(request).await?.json_or_error().await;
+            environment_deferred = true;
+        }
+        match response? {
             PublishResult::Success {
                 domain,
                 database_identity,
@@ -775,6 +822,39 @@ async fn execute_publish_configs<'a>(
                     && let Some(domain) = domain.as_ref()
                 {
                     println!("Dashboard: https://spacetimedb.com/{}", domain.as_ref());
+                }
+
+                if environment_deferred {
+                    environment::update(
+                        &database_host,
+                        &auth_header,
+                        &database_identity.to_string(),
+                        command_config.get_config_value("env"),
+                        environment_options,
+                    )
+                    .await
+                    .context("The module is published, but setting its environment failed")?;
+                }
+
+                if let Some(container) = container {
+                    let database = domain
+                        .as_ref()
+                        .map_or_else(|| database_identity.to_string(), |d| d.to_string());
+                    container
+                        .attach(
+                            &client,
+                            &database_host,
+                            &auth_header,
+                            &database,
+                            database_identity,
+                            module_schema.environment(),
+                            &supplied_env_keys,
+                        )
+                        .await
+                        .context(
+                            "The module is published, but attaching its container failed. \
+                             Fix the problem and publish again, or publish with --no-container.",
+                        )?;
                 }
             }
             PublishResult::PermissionDenied { name } => {

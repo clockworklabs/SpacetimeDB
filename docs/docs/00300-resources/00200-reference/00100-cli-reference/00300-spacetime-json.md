@@ -40,6 +40,7 @@ These fields can appear at any level (root or child):
 | `num-replicas` | number | Yes | Number of database replicas |
 | `anonymous` | boolean | Yes | Use anonymous identity |
 | `organization` | string | Yes | Organization name or identity |
+| `container` | object | Yes | The container to run beside the database (see [Container configuration](#container-configuration)) |
 | `generate` | array | No | Generate targets (see [Generate configuration](#generate-configuration)) |
 | `children` | array | No | Child database entities (see [Children and inheritance](#children-and-inheritance)) |
 | `dev` | object | No | Dev server configuration, root-level only (see [`spacetime dev` configuration](#spacetime-dev-configuration)) |
@@ -79,6 +80,50 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
   ]
 }
 ```
+
+## Container configuration
+
+The `container` key attaches a container to the database. After publishing the module, `spacetime publish` builds the container's image if needed, attaches the container to the database, and starts it if it is stopped. If the database already has the same container, `spacetime publish` leaves it alone, so republishing without changes does not restart it, unless it had failed to start. Pass `--no-container` to skip this step. `spacetime dev` does not attach containers yet.
+
+The server must run containers. A `spacetime start` does when Docker is running, but by default only for clients on its own machine; to publish to it from another machine, start it with `--enable-containers` (see [`containers`](/cli-reference/standalone-config#containers)).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `build` | string | Directory with the Dockerfile to build, relative to `spacetime.json` |
+| `image` | string | With `build`: optionally, a registry repository to push the image to for servers on other machines, instead of uploading it to the database. Without `build`: an image pinned to a digest, like `ghcr.io/me/agent@sha256:<hex>`, or a local image ID, like `sha256:<hex>` |
+| `env-keys` | array of strings | Keys of the database environment to set in the container |
+| `command` | array of strings | Replaces the image's entrypoint and command |
+| `restart` | string | When to restart the container's command after it exits: `on-failure` (default), `always`, or `never` |
+| `cpu-millicores` | number | CPU limit, in thousandths of a CPU (default 1000) |
+| `memory-bytes` | number or string | Memory limit, in bytes or as a size like `"512MiB"` or `"1GB"` (default 1 GiB) |
+| `scratch-bytes` | number or string | Limit on the container's writable layer, including `/tmp` (default 1 GiB) |
+| `pids-max` | number | Limit on Linux tasks, including threads (default 512) |
+| `platforms` | array of strings | Platforms to build for when pushing to `image` (default `["linux/amd64", "linux/arm64"]`). Otherwise, the image is built for the server's platform |
+
+Either `build` or a pinned `image` is required. How `spacetime publish` gets the image depends on the server:
+
+- **`build` without `image`**: runs `docker build --platform <the server's platform>` and uses the image by its ID, with no registry. If neither the database nor the server's Docker daemon has the image, `spacetime publish` uploads it (`docker save`, gzipped) into the database, which keeps the current and previous image. A server on this machine shares this machine's Docker daemon, so nothing is uploaded. The server accepts images up to 256 MiB compressed, since a stored image is table data, kept in memory and in the commitlog. The image ID depends on Docker's image store (classic or containerd), so if this machine and the server use different ones, push the image to a registry instead.
+- **`build` with `image`, and the server is on another machine**: runs `docker buildx build --platform <platforms> --push` and uses the pushed image by digest. Log in to the registry with `docker login` first. The server pulls the image without credentials, so the repository must be public. For a server on this machine, `image` is not used.
+- **A pinned `image` without `build`**: uses that image as is. A local image ID is uploaded like a build, if the server lacks it.
+
+```json
+{
+  "database": "my-agent",
+  "module-path": "./spacetimedb",
+  "container": {
+    "build": "./agent",
+    "image": "ghcr.io/me/my-agent",
+    "env-keys": ["OPENAI_API_KEY"],
+    "restart": "on-failure"
+  }
+}
+```
+
+The container receives only the database environment keys listed in `env-keys`, and does not start if one of them has no value. `spacetime publish` uploads values for the keys the module declares from your shell, and values from the config's `env` map.
+
+`spacetime publish --delete-data` deletes the images stored in the database, like the rest of its data, and then uploads the image again if the server's Docker daemon lacks it.
+
+Children inherit `container` as a whole. A child can replace it, or set it to `null` to attach none. Removing `container` from the config does not detach a container that a database already has; use `spacetime container remove` for that.
 
 ## Children and inheritance
 
