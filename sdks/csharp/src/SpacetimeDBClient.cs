@@ -638,6 +638,9 @@ namespace SpacetimeDB
                         }
 
                         break;
+                    case ServerMessage.Pong:
+                        // Not handled yet.
+                        break;
                     default:
                         throw new InvalidOperationException();
                 }
@@ -1241,6 +1244,9 @@ namespace SpacetimeDB
                     {
                         Log.Warn($"Received ProcedureResult for unknown request ID: {procedureResult.RequestId}");
                     }
+                    break;
+                case ServerMessage.Pong:
+                    // Not handled yet.
                     break;
                 default:
                     throw new InvalidOperationException();
