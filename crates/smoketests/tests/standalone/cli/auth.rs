@@ -67,7 +67,12 @@ fn cli_list_without_login_warns_before_server_issued_login() {
 #[test]
 fn cli_list_without_login_rejects_yes() {
     let (root, mut command) = list_without_login();
-    command.arg("--yes").assert().failure().stdout("");
+    command
+        .arg("--yes")
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicates::str::contains("You are not logged in"));
     assert_no_login_saved(root.path());
 }
 
