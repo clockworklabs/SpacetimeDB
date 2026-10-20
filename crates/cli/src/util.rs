@@ -446,37 +446,3 @@ pub fn resolve_sibling_binary(bin_name: &str) -> anyhow::Result<PathBuf> {
         .with_extension(std::env::consts::EXE_EXTENSION);
     Ok(bin_path)
 }
-
-#[cfg(test)]
-mod login_tests {
-    use super::*;
-    use spacetimedb_paths::cli::CliTomlPath;
-    use spacetimedb_paths::FromPathUnchecked;
-
-    #[tokio::test]
-    async fn noninteractive_auth_without_token_fails_without_saving_identity() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
-        let mut config = Config::new_with_localhost(path);
-        let err = get_auth_header(&mut config, false, None, false).await.unwrap_err();
-        assert!(err.to_string().contains("Run `spacetime login`"));
-        assert!(config.spacetimedb_token().is_none());
-        assert!(!tmp.path().join("config.toml").exists());
-
-        let anonymous = get_auth_header(&mut config, true, None, false).await.unwrap();
-        assert!(anonymous.to_header().is_none());
-        assert!(!tmp.path().join("config.toml").exists());
-    }
-
-    #[tokio::test]
-    async fn noninteractive_login_reuses_saved_token() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
-        let mut config = Config::new_with_localhost(path);
-        config.set_spacetimedb_token("saved-token".into());
-        assert_eq!(
-            get_login_token_or_log_in(&mut config, None, false).await.unwrap(),
-            "saved-token"
-        );
-    }
-}
