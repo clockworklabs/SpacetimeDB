@@ -1,5 +1,8 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!-- Build settings are applied by SpacetimeDB.Runtime.targets, after the
-       consuming project has selected its framework and runtime identifier.
-       Keep this entry point for existing source-project imports. -->
+  <!-- The .NET 8 WASI SDK inspects OutputType before NuGet .targets are imported.
+       Defer until project-local TargetFramework is known, but before SDK inference. -->
+  <PropertyGroup>
+    <_SpacetimeBeforeTargetFrameworkInferenceTargets>$(BeforeTargetFrameworkInferenceTargets)</_SpacetimeBeforeTargetFrameworkInferenceTargets>
+    <BeforeTargetFrameworkInferenceTargets>$(MSBuildThisFileDirectory)SpacetimeDB.Runtime.Jit.props</BeforeTargetFrameworkInferenceTargets>
+  </PropertyGroup>
 </Project>
