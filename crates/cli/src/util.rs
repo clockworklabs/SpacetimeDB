@@ -403,11 +403,15 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    // Non-interactive commands skip the login prompt.
+    // Note: We leave `force` false because if we're running non-interactively we want to default to "no", not yes!
     let full_login = interactive
-        && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
-            .default(false)
-            .prompt()?;
+        && YesOrNo::new(
+            // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
+            // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
+            "You are not logged in. Would you like to log in with spacetimedb.com?",
+        )
+        .default(false)
+        .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
