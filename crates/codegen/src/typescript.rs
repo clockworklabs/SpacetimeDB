@@ -469,6 +469,21 @@ impl Lang for TypeScript {
         } else {
             writeln!(out, "tables: tablesSchema.schemaType.tables,");
         }
+        // `subscribeToAllTables` leaves these out, as it has no args to pass them.
+        // Emitted only when there are some, so other modules' bindings are unchanged.
+        let views_with_args: Vec<_> = iter_views(module)
+            .filter(|view| !view.params.elements.is_empty())
+            .map(|view| ts_string_literal(&view.name))
+            .chain(
+                ns_views
+                    .iter()
+                    .filter(|(_, _, view)| !view.params.elements.is_empty())
+                    .map(|(prefix, _, view)| ts_string_literal(&submodule_source_name(prefix, &view.name))),
+            )
+            .collect();
+        if !views_with_args.is_empty() {
+            writeln!(out, "viewsWithArgs: [{}],", views_with_args.join(", "));
+        }
         writeln!(out, "reducers: reducersSchema.reducersType.reducers,");
         writeln!(out, "...proceduresSchema,");
         out.dedent(1);

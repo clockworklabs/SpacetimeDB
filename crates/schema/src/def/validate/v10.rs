@@ -1096,8 +1096,23 @@ impl<'a> ModuleValidatorV10<'a> {
             .map(|id| view_validator.validate_param_column_def(id.into()))
             .collect_all_errors();
 
-        let (return_type_for_generate, return_columns, param_columns) =
-            (return_type_for_generate, return_columns, param_columns).combine_errors()?;
+        // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+        let float_params = params
+            .elements
+            .iter()
+            .enumerate()
+            .filter(|(_, param)| param.algebraic_type.is_float())
+            .map(|(pos, param)| {
+                Err(ValidationError::ViewFloatParam {
+                    view: accessor_name.clone(),
+                    param: param.name.clone().unwrap_or_else(|| pos.to_string().into()),
+                }
+                .into())
+            })
+            .collect_all_errors::<()>();
+
+        let (return_type_for_generate, return_columns, param_columns, ()) =
+            (return_type_for_generate, return_columns, param_columns, float_params).combine_errors()?;
 
         Ok(ViewDef {
             namespace: NamespacePath::root(),
@@ -1328,6 +1343,13 @@ fn attach_view_primary_keys(
             continue;
         };
 
+        // Rows from every instance of a parameterized view share one client
+        // cache, so the same key can arrive from more than one instance.
+        if !view.params.elements.is_empty() {
+            errors.push(ValidationError::ViewPrimaryKeyWithParams { view: view_source_name });
+            continue;
+        }
+
         // Match return columns by accessor/source name for the same reason. For
         // raw schemas produced from a validated `ModuleDef`, the accessor name
         // may already be canonical; in both cases it must agree with the return
@@ -1377,6 +1399,8 @@ fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut 
     for view in views.values_mut() {
         view.primary_key = match extract_view_return_product_type_ref(&view.return_type) {
             Some((_, ViewKind::Procedural)) => view.primary_key,
+            // Parameterized views don't inherit one, see `attach_view_primary_keys`.
+            Some((_, ViewKind::Query)) if !view.params.elements.is_empty() => view.primary_key,
             Some((product_type_ref, ViewKind::Query)) => view
                 .primary_key
                 .or_else(|| primary_key_for_product_type_ref(product_type_ref)),
@@ -1408,6 +1432,7 @@ mod tests {
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
+    use spacetimedb_lib::db::view::QUERY_VIEW_RETURN_TAG;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
@@ -3286,6 +3311,72 @@ mod tests {
         assert_eq!(view.accessor_name, id("PersonAtLevel2"));
         assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
         assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
+    }
+
+    #[test]
+    fn view_primary_key_with_params_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "person_by_id",
+            0,
+            true,
+            true,
+            ProductType::from([("id", AlgebraicType::U64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_view_primary_key("person_by_id", ["id"]);
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewPrimaryKeyWithParams { view } => {
+            view == &RawIdentifier::from("person_by_id")
+        });
+    }
+
+    #[test]
+    fn view_float_param_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "people_near",
+            0,
+            true,
+            true,
+            ProductType::from([("x", AlgebraicType::F64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewFloatParam { view, param } => {
+            view == &RawIdentifier::from("people_near") && param == &RawIdentifier::from("x")
+        });
+    }
+
+    #[test]
+    fn query_view_with_params_has_no_primary_key() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let person_ref = builder
+            .build_table_with_new_type("person", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .with_unique_constraint(ColId(0))
+            .with_primary_key(0)
+            .with_index_no_accessor_name(btree(0), "person_id")
+            .finish();
+        let query_type = AlgebraicType::product([(QUERY_VIEW_RETURN_TAG, AlgebraicType::Ref(person_ref))]);
+        builder.add_view("all_people", 0, true, true, ProductType::unit(), query_type.clone());
+        builder.add_view(
+            "person_by_id",
+            1,
+            true,
+            true,
+            ProductType::from([("id", AlgebraicType::U64)]),
+            query_type,
+        );
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        assert_eq!(def.view("all_people").unwrap().primary_key, Some(ColId(0)));
+        assert_eq!(def.view("person_by_id").unwrap().primary_key, None);
     }
 
     #[test]

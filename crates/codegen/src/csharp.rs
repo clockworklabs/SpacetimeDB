@@ -8,8 +8,8 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types, iter_unique_cols,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
+    collect_case, is_parameterized_view, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
+    iter_unique_cols, print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{indent_scope, CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
@@ -1344,7 +1344,9 @@ impl Lang for CsharpScope<'_> {
             writeln!(output);
             writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
             indented_block(output, |output| {
-                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility)
+                    .filter(|(name, _, _)| !is_parameterized_view(module, name))
+                {
                     let method_name = accessor_name.deref().to_case(Case::Pascal);
                     writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
                 }
@@ -1365,7 +1367,7 @@ impl Lang for CsharpScope<'_> {
                 for (_, owner, view) in module
                     .all_views_with_prefix()
                     .into_iter()
-                    .filter(|(path, _, _)| !path.is_empty())
+                    .filter(|(path, _, view)| !path.is_empty() && view.params.elements.is_empty())
                 {
                     writeln!(
                         output,

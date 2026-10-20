@@ -36,23 +36,17 @@ error: The first parameter of a view must be a context parameter: `&ViewContext`
 108 | fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
     |                                      ^^^^^^^^^^^
 
-error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:114:1
+error: The context must be the first parameter of a view: `&ViewContext` or `&AnonymousViewContext`
+   --> tests/ui/views.rs:114:48
     |
 114 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |                                                ^^^^^^^^^^^^
 
 error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
    --> tests/ui/views.rs:120:1
     |
 120 | fn view_def_no_return(_: &ViewContext) {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:138:1
-    |
-138 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0277]: the trait bound `spacetimedb::rt::ViewKind<ReducerContext>: spacetimedb::rt::ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:101:1
@@ -373,6 +367,50 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:137:1
+    |
+137 | #[view(accessor = sched_table_view, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext, {type error}) -> Vec<PlayerInfo> {sched_table_view}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `spacetimedb::rt::ViewRegistrar::<ViewContext>::register`
+   --> src/rt.rs
+    |
+    |     pub fn register<'a, A, I, T, V>(view: V)
+    |            -------- required by a bound in this associated function
+...
+    |         V: View<'a, A, T>,
+    |            ^^^^^^^^^^^^^^ required by this bound in `ViewRegistrar::<ViewContext>::register`
+    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:137:1
+    |
+137 | #[view(accessor = sched_table_view, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext, {type error}) -> Vec<PlayerInfo> {sched_table_view}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `spacetimedb::rt::ViewDispatcher::<ViewContext>::invoke`
+   --> src/rt.rs
+    |
+    |     pub fn invoke<'a, A, T, V>(view: V, ctx: ViewContext, args: &'a [u8]) -> Vec<u8>
+    |            ------ required by a bound in this associated function
+...
+    |         V: View<'a, A, T>,
+    |            ^^^^^^^^^^^^^^ required by this bound in `ViewDispatcher::<ViewContext>::invoke`
+    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0277]: the trait bound `{integer}: RHS<Player, spacetimedb::Identity>` is not satisfied
    --> tests/ui/views.rs:154:49
     |
@@ -451,6 +489,50 @@ error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the curre
     |
 197 |     ctx.from.xyz().build()
     |              ^^^ method not found in `QueryBuilder`
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:195:1
+    |
+195 | #[view(accessor = view_nonexistent_table, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> RawQuery<{type error}> {view_nonexistent_table}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `spacetimedb::rt::ViewRegistrar::<ViewContext>::register`
+   --> src/rt.rs
+    |
+    |     pub fn register<'a, A, I, T, V>(view: V)
+    |            -------- required by a bound in this associated function
+...
+    |         V: View<'a, A, T>,
+    |            ^^^^^^^^^^^^^^ required by this bound in `ViewRegistrar::<ViewContext>::register`
+    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: invalid view signature
+   --> tests/ui/views.rs:195:1
+    |
+195 | #[view(accessor = view_nonexistent_table, public)]
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
+    |
+    = help: the trait `spacetimedb::rt::View<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a ViewContext) -> RawQuery<{type error}> {view_nonexistent_table}`
+    = note:
+    = note: view signatures must match:
+    = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
+    = note: where each `Ti` implements `SpacetimeType`.
+    = note:
+note: required by a bound in `spacetimedb::rt::ViewDispatcher::<ViewContext>::invoke`
+   --> src/rt.rs
+    |
+    |     pub fn invoke<'a, A, T, V>(view: V, ctx: ViewContext, args: &'a [u8]) -> Vec<u8>
+    |            ------ required by a bound in this associated function
+...
+    |         V: View<'a, A, T>,
+    |            ^^^^^^^^^^^^^^ required by this bound in `ViewDispatcher::<ViewContext>::invoke`
+    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0609]: no field `missing_identity` on type `&Player`
    --> tests/ui/views.rs:201:74

@@ -13,6 +13,11 @@ export type RemoteModule<
     versionInfo: {
       cliVersion: CLI;
     };
+    /**
+     * Source names of the views that take arguments.
+     * `subscribeToAllTables` leaves these out, as it has no arguments to pass them.
+     */
+    viewsWithArgs?: readonly string[];
   };
 
 export type UntypedRemoteModule = RemoteModule<

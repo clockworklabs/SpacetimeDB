@@ -1053,6 +1053,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-args"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-auto-migrate"
 version = "0.1.0"
 dependencies = [
