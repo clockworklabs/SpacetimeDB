@@ -46,7 +46,7 @@ pub fn yes() -> Arg {
         .long("yes")
         .short('y')
         .action(SetTrue)
-        .help("Run non-interactively wherever possible. This will answer \"yes\" to almost all prompts, but will sometimes answer \"no\" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).")
+        .help("Run non-interactively wherever possible, answering \"yes\" to confirmation prompts. Commands requiring a login fail if no login token is saved; run `spacetime login` first.")
 }
 
 /// The `--format` arg, parsed as a [`Format`]. Callers supply their own `.help(...)`.

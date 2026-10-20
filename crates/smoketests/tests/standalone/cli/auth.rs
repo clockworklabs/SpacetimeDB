@@ -32,6 +32,50 @@ fn write_config(test: &Smoketest, config: &toml::Table) {
     fs::write(&test.config_path, raw).expect("Failed to write config");
 }
 
+fn list_without_login() -> (tempfile::TempDir, assert_cmd::Command) {
+    let root = tempfile::tempdir().expect("Failed to create tempdir");
+    let mut command = assert_cmd::Command::new(spacetimedb_guard::ensure_binaries_built());
+    command
+        .current_dir(root.path())
+        .arg("--config-path")
+        .arg(root.path().join("config.toml"))
+        .args(["list", "--no-config", "--server", "http://127.0.0.1:1"])
+        .timeout(Duration::from_secs(5));
+    (root, command)
+}
+
+fn assert_no_login_saved(root: &std::path::Path) {
+    let config = fs::read_to_string(root.join("config.toml")).expect("Failed to read config");
+    let config = config.parse::<toml::Table>().expect("Failed to parse config");
+    assert!(config.get("spacetimedb_token").is_none());
+    assert!(config.get("web_session_token").is_none());
+}
+
+#[test]
+fn cli_list_without_login_warns_before_server_issued_login() {
+    let (root, mut command) = list_without_login();
+    command
+        // Decline web login, then press Enter to reject the server-issued identity.
+        .write_stdin("n\n\n")
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains("WARNING"))
+        .stderr(predicates::str::contains("Login cancelled."));
+    assert_no_login_saved(root.path());
+}
+
+#[test]
+fn cli_list_without_login_rejects_yes() {
+    let (root, mut command) = list_without_login();
+    command
+        .arg("--yes")
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(predicates::str::contains("You are not logged in"));
+    assert_no_login_saved(root.path());
+}
+
 #[test]
 fn cli_logout_removes_cached_tokens() {
     require_server_issued_login!();

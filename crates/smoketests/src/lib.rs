@@ -1031,6 +1031,14 @@ pub fn noop(_ctx: &ReducerContext) {}
             eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
         }
 
+        // Remote runs may supply an authenticated base config. Local runs need
+        // an explicit login to the server started for this test.
+        if smoketest.read_token().is_err() {
+            smoketest
+                .spacetime(&["login", "--server-issued-login", &smoketest.server_url])
+                .expect("Failed to log in to smoketest server");
+        }
+
         if self.autopublish {
             smoketest.publish().run().expect("Failed to publish module");
         }
