@@ -368,10 +368,8 @@ impl YesOrNo {
         print!("{} [{choices}]", self.message);
         std::io::stdout().flush()?;
         let mut input = String::new();
-        anyhow::ensure!(
-            std::io::stdin().read_line(&mut input)? != 0,
-            "Unexpected EOF while reading response"
-        );
+        let num_read = std::io::stdin().read_line(&mut input)?;
+        anyhow::ensure!(num_read != 0, "Unexpected EOF while reading response");
         let input = input.trim().to_lowercase();
         if input.is_empty() {
             return Ok(default);
