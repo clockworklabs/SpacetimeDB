@@ -29,7 +29,7 @@ This compiles your module and validates its structure.
 If you're publishing your module, you don't need to run `spacetime build` separately - `spacetime publish` will automatically build your module if needed.
 :::
 
-For all build options, see the [`spacetime build` CLI reference](../../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-build).
+For all build options, see the [`spacetime build` CLI reference](../../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-build).
 
 ## Publishing Modules
 
@@ -102,7 +102,7 @@ spacetime publish <DATABASE_NAME> --delete-data
 
 ### Publishing Options
 
-For all available publishing options and flags, see the [`spacetime publish` CLI reference](../../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
+For all available publishing options and flags, see the [`spacetime publish` CLI reference](../../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
 
 ### Environment Variables
 
