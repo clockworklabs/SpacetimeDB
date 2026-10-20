@@ -72,14 +72,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         StatusCode::PRECONDITION_REQUIRED => {
             let confirm = response.json::<DatabaseDeleteConfirmationResponse>().await?;
             println!("WARNING: Deleting the database {identity} will also delete its children!");
-            if !force {
-                print_database_tree_info(&confirm.database_tree).await?;
-            }
-            if force
-                || YesOrNo::new("Do you want to proceed deleting above databases?")
-                    .force(false)
-                    .default(false)
-                    .prompt()?
+            print_database_tree_info(&confirm.database_tree).await?;
+            if YesOrNo::new("Do you want to proceed deleting above databases?")
+                .force(force)
+                .default(false)
+                .prompt()?
             {
                 send_request(&client, &request_path, &auth_header, Some(confirm.confirmation_token))
                     .await?
