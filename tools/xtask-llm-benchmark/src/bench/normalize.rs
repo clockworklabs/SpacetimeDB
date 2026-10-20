@@ -1,30 +1,5 @@
 use crate::bench::types::{LangEntry, ModeEntry, ModelEntry, Results};
 
-/// Normalize all model names in loaded results and merge duplicates.
-pub fn normalize_model_names(root: &mut Results) {
-    for lang in &mut root.languages {
-        for mode in &mut lang.modes {
-            let mut merged: Vec<ModelEntry> = Vec::new();
-            for mut model in mode.models.drain(..) {
-                let canonical = canonical_model_name(&model.name);
-                model.name = canonical;
-                if let Some(existing) = merged.iter_mut().find(|m| m.name == model.name) {
-                    // Merge tasks from duplicate into existing entry
-                    for (task_id, outcome) in model.tasks {
-                        existing.tasks.insert(task_id, outcome);
-                    }
-                    if existing.route_api_model.is_none() {
-                        existing.route_api_model = model.route_api_model;
-                    }
-                } else {
-                    merged.push(model);
-                }
-            }
-            mode.models = merged;
-        }
-    }
-}
-
 pub fn ensure_lang<'a>(root: &'a mut Results, lang: &str) -> &'a mut LangEntry {
     if let Some(i) = root.languages.iter().position(|x| x.lang == lang) {
         return &mut root.languages[i];
@@ -69,28 +44,4 @@ pub fn canonical_mode(mode: &str) -> &str {
         "none" | "no_guidelines" => "no_context",
         other => other,
     }
-}
-
-/// Normalize model names so that OpenRouter-style IDs and case variants
-/// resolve to the canonical display name from model_routes.
-pub fn canonical_model_name(name: &str) -> String {
-    use crate::llm::model_routes::default_model_routes;
-    let lower = name.to_ascii_lowercase();
-    for route in default_model_routes() {
-        // Match by openrouter model id (e.g. "anthropic/claude-sonnet-4.6")
-        if let Some(ref or) = route.openrouter_model
-            && lower == or.to_ascii_lowercase()
-        {
-            return route.display_name.to_string();
-        }
-        // Match by api model id (e.g. "claude-sonnet-4-6")
-        if lower == route.api_model.to_ascii_lowercase() {
-            return route.display_name.to_string();
-        }
-        // Match by case-insensitive display name (e.g. "claude sonnet 4.6")
-        if lower == route.display_name.to_ascii_lowercase() {
-            return route.display_name.to_string();
-        }
-    }
-    name.to_string()
 }
