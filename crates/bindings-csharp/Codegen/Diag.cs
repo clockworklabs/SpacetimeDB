@@ -231,15 +231,7 @@ internal static class ErrorDescriptor
             method => method
         );
 
-    // TODO: Remove once Views support arguments: Views must have no arguments beyond the context.
-    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewArgsUnsupported =
-        new(
-            group,
-            "Views must have no arguments beyond the context.",
-            method =>
-                $"View '{method.Identifier}' must have no arguments beyond the context. This is a temporary limitation.",
-            method => method
-        );
+    public static readonly UnusedErrorDescriptor ViewArgsUnsupported = new(group);
 
     public static readonly ErrorDescriptor<IFieldSymbol> SettingsMustBeConstCaseConversionPolicy =
         new(

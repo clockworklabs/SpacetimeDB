@@ -27,6 +27,7 @@ members = [
     "views-subscribe",
     "views-query",
     "views-callable",
+    "views-args",
     "views-count",
     "views-auto-migrate-stable",
     "views-auto-migrate-stable-updated",
