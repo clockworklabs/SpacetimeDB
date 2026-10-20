@@ -444,7 +444,7 @@ mod file_tests {
     const MODULE: &str = "sdk-test-files";
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/files-client");
 
-    fn make_test(subcommand: &str) -> Test {
+    pub(super) fn make_test(subcommand: &str) -> Test {
         super::platform_test_builder(CLIENT, Some(subcommand))
             .with_name(subcommand)
             .with_module(MODULE)
@@ -946,4 +946,6 @@ fn prepare_clients() {
     for client in prepared_clients {
         client.prepare();
     }
+    #[cfg(not(feature = "browser"))]
+    file_tests::make_test("upload-and-download").prepare();
 }
