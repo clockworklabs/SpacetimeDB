@@ -8,6 +8,13 @@ public abstract class HandlerContextBase
 {
     public Random Rng => txState.Rng;
     public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
+
+    /// <summary>
+    /// The random Identity that the host created for this request.
+    ///
+    /// Each request has a different sender, which is also the sender of the transactions it opens.
+    /// </summary>
+    public Identity Sender { get; }
     public Timestamp Timestamp => txState.Timestamp;
 
     // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
@@ -18,17 +25,19 @@ public abstract class HandlerContextBase
     protected int CounterUuid = 0;
     private readonly TransactionalContextState<HandlerTxContextBase> txState;
 
-    protected HandlerContextBase(Random random, Timestamp time)
+    protected HandlerContextBase(Identity sender, string? senderJwt, Random random, Timestamp time)
     {
+        Sender = sender;
+        var senderAuth = AuthCtx.FromJwt(senderJwt, sender);
         txState = new(
             random,
             time,
             timestamp => new Internal.TxContext(
                 CreateLocal(),
-                default,
+                Sender,
                 null,
                 timestamp,
-                AuthCtx.Anonymous,
+                senderAuth,
                 random
             ),
             inner => CreateTxContext(inner)
@@ -92,13 +101,18 @@ public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefresha
 
     public LocalBase Db => (LocalBase)Inner.Db;
     public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
+    public Identity Sender => Inner.Sender;
     public Timestamp Timestamp => Inner.Timestamp;
     public AuthCtx SenderAuth => Inner.SenderAuth;
     public Random Rng => Inner.Rng;
 }
 
-internal sealed partial class RuntimeHandlerContext(Random random, Timestamp timestamp)
-    : HandlerContextBase(random, timestamp)
+internal sealed partial class RuntimeHandlerContext(
+    Identity sender,
+    string? senderJwt,
+    Random random,
+    Timestamp timestamp
+) : HandlerContextBase(sender, senderJwt, random, timestamp)
 {
     private readonly RuntimeLocal _db = new();
 

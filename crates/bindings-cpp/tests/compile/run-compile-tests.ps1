@@ -92,7 +92,6 @@ $cases = switch ($Suite) {
             (New-CompileCase "error_http_handler_wrong_request_arg_type" "cases/http-handlers/error_http_handler_wrong_request_arg_type.cpp" "failure" "Second parameter of HTTP handler must be HttpRequest")
             (New-CompileCase "error_http_handler_no_return_type" "cases/http-handlers/error_http_handler_no_return_type.cpp" "failure" "non-void function does not return a value")
             (New-CompileCase "error_http_handler_wrong_return_type" "cases/http-handlers/error_http_handler_wrong_return_type.cpp" "failure" "no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::HttpResponse'")
-            (New-CompileCase "error_http_handler_no_sender" "cases/http-handlers/error_http_handler_no_sender.cpp" "failure" "no member named 'sender' in 'SpacetimeDB::HandlerContext'")
             (New-CompileCase "error_http_handler_no_connection_id" "cases/http-handlers/error_http_handler_no_connection_id.cpp" "failure" "no member named 'connection_id' in 'SpacetimeDB::HandlerContext'")
             (New-CompileCase "error_http_handler_no_db" "cases/http-handlers/error_http_handler_no_db.cpp" "failure" "no member named 'db' in 'SpacetimeDB::HandlerContext'")
             (New-CompileCase "error_http_router_not_a_function" "cases/http-handlers/error_http_router_not_a_function.cpp" "failure" "illegal initializer")
