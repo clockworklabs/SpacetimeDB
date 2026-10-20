@@ -350,7 +350,7 @@ impl YesOrNo {
         self
     }
 
-    /// Set the response for empty input, including EOF.
+    /// Set the response when Enter is pressed without an answer.
     pub fn default(mut self, default: bool) -> Self {
         self.default = Some(default);
         self
@@ -368,10 +368,12 @@ impl YesOrNo {
         print!("{} [{choices}]", self.message);
         std::io::stdout().flush()?;
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
+        anyhow::ensure!(
+            std::io::stdin().read_line(&mut input)? != 0,
+            "Unexpected EOF while reading response"
+        );
         let input = input.trim().to_lowercase();
         if input.is_empty() {
-            // Note that this includes EOF
             return Ok(default);
         }
         Ok(input == "y" || input == "yes")
