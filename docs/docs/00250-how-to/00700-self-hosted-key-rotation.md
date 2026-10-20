@@ -235,7 +235,7 @@ Before first run, create the external network: `docker network create caddy`.
 SpacetimeDB signs local identity tokens with an EC keypair (ES256, P-256). The keypair is read from:
 
 - `--jwt-priv-key-path` and `--jwt-pub-key-path` CLI args, or
-- `[certificate-authority]` in `config.toml` (see [Standalone Configuration](../00200-reference/00100-cli-reference/00200-standalone-config.md)).
+- `[certificate-authority]` in `config.toml` (see [Standalone Configuration](../00300-resources/00100-cli-reference/00200-standalone-config.md)).
 
 To generate compatible keys, use the canonical commands in `Quickstart Scaffold -> 1) Generate a compatible keypair`.
 
@@ -302,7 +302,7 @@ Tradeoff: more operational complexity; requires careful token handling.
 
 ### Strategy C: OIDC-backed identity (recommended for production)
 
-Use [Authentication](../../00200-core-concepts/00500-authentication.md) with an external OIDC IdP so identity is anchored to external `iss`/`sub`, and local SpacetimeDB signing-key rotation does not redefine publisher identity.
+Use [Authentication](../00200-core-concepts/00500-authentication.md) with an external OIDC IdP so identity is anchored to external `iss`/`sub`, and local SpacetimeDB signing-key rotation does not redefine publisher identity.
 
 ## Azure Key Vault example (self-hosted)
 

@@ -318,7 +318,7 @@ Every call into the module is made by someone, which decides `ctx.sender`. Each 
 - **The database itself.** Use it for [scheduled reducers](#test-scheduled-reducers), which the database calls on its own behalf. The sender is the module identity, there is no connection ID or JWT, and the reducer's context reports the call as internal.
 - **A client**, built from a JSON claims payload, not a signed token, and a connection ID. Use it for reducers that clients call, and for the client connected and client disconnected lifecycle reducers. The sender is derived from the `iss` and `sub` claims, so the same issuer and subject always give the same identity. The reducer sees the claims as it would for a real connection, including any custom claims. This tests module logic that reads claims; it does not test production JWT signature verification.
 
-The `init` [lifecycle reducer](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) is neither. On a published database its sender is the identity that owns the database, usually whoever published it, not the module identity. If your `init` ignores `ctx.sender`, either caller will do. If it reads the sender, for example to record an owner who alone may call admin reducers, call it as a client standing in for the publisher, and use that same client for the owner's calls later in the test. Calling it as the database itself would record the module identity as the owner, and the test's owner-only calls would then be refused.
+The `init` [lifecycle reducer](../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) is neither. On a published database its sender is the identity that owns the database, usually whoever published it, not the module identity. If your `init` ignores `ctx.sender`, either caller will do. If it reads the sender, for example to record an owner who alone may call admin reducers, call it as a client standing in for the publisher, and use that same client for the owner's calls later in the test. Calling it as the database itself would record the module identity as the owner, and the test's owner-only calls would then be refused.
 
 The harness does not simulate clients connecting or automatically call your initialization or connection reducers. Invoke those functions explicitly inside a test transaction when they are part of your setup, as the chat templates do.
 
@@ -439,7 +439,7 @@ test.db.user().insert(User { identity: alice, admin: true });
 
 ### Check which tokens a client may connect with
 
-A client connected reducer runs as the connecting client, so a test can check which tokens it accepts. This connect reducer accepts only tokens from your own auth provider that were issued for your application, and returning an error from it is what rejects the connection. It checks both claims: the issuer says who signed the token, and the audience says which application it was meant for. Checking only one would let a token from another provider, or one issued for another application, through. See [Restricting auth providers](../../00200-core-concepts/00500-authentication/00500-usage.md#example-restricting-auth-providers) for the full guidance.
+A client connected reducer runs as the connecting client, so a test can check which tokens it accepts. This connect reducer accepts only tokens from your own auth provider that were issued for your application, and returning an error from it is what rejects the connection. It checks both claims: the issuer says who signed the token, and the audience says which application it was meant for. Checking only one would let a token from another provider, or one issued for another application, through. See [Restricting auth providers](../00200-core-concepts/00500-authentication/00500-usage.md#example-restricting-auth-providers) for the full guidance.
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
@@ -663,7 +663,7 @@ fn rolls_the_same_dice_for_the_same_seed() {
 
 ## Test scheduled reducers
 
-The harness stores rows in [schedule tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) like any other rows, but never runs them: no timer fires during a test. To test a scheduled reducer, call it directly as the database itself, passing a row of its schedule table as the argument.
+The harness stores rows in [schedule tables](../00200-core-concepts/00300-tables/00500-schedule-tables.md) like any other rows, but never runs them: no timer fires during a test. To test a scheduled reducer, call it directly as the database itself, passing a row of its schedule table as the argument.
 
 This module takes edits more than 15 minutes old out of the live set, every five minutes:
 
@@ -806,7 +806,7 @@ fn takes_edits_more_than_15_minutes_old_out_of_the_live_set() {
 
 ## Test procedures and HTTP
 
-A [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) runs outside a transaction and opens its own, so the harness gives it a procedure context rather than wrapping it in a transaction. Create a procedure context for a caller and call the procedure with it.
+A [procedure](../00200-core-concepts/00200-functions/00400-procedures.md) runs outside a transaction and opens its own, so the harness gives it a procedure context rather than wrapping it in a transaction. Create a procedure context for a caller and call the procedure with it.
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
@@ -1075,7 +1075,7 @@ Create the hooks with `ProcedureTestHooks::new()`, add them with `after_tx_commi
 
 ## Test what clients will see
 
-A test can't subscribe, but it can check the [views](../../00200-core-concepts/00200-functions/00500-views.md) and queries that clients subscribe to. Call a view with a context for a chosen caller, and check what it returns. This makes per-user views testable: call the same view as two different clients and check that each sees only their own rows.
+A test can't subscribe, but it can check the [views](../00200-core-concepts/00200-functions/00500-views.md) and queries that clients subscribe to. Call a view with a context for a chosen caller, and check what it returns. This makes per-user views testable: call the same view as two different clients and check that each sees only their own rows.
 
 The harness builds a view context for a chosen caller, or an anonymous one for anonymous views. A view that returns rows gives them back directly. A view that returns a typed query gives back the query, which the harness runs against the committed tables.
 
@@ -1207,7 +1207,7 @@ fn shows_each_client_only_their_own_notes() {
 ### Known issues
 
 - **Range scans on indexes** ([#6299](https://github.com/clockworklabs/SpacetimeDB/issues/6299)). The test utilities bundle their own copy of the SDK runtime, so a `Range` imported from `spacetimedb/server` in module code isn't recognized as a range by the harness. An index `filter` or `delete` with a `Range` is treated as a point lookup instead: on a number column it silently matches no rows, and on a bigint-backed column, such as a timestamp, it throws `Cannot convert undefined to a BigInt`. The silent case can make a test of range deletion pass when nothing was deleted. A published database is unaffected.
-- **Event table rows written outside a reducer transaction persist.** [Event table](../../00200-core-concepts/00300-tables/00550-event-tables.md) rows inserted inside `withReducerTx` are deleted when the transaction commits, as on a published database. Rows inserted directly through the harness's `test.db`, or by a procedure's `withTx`, stay in the table.
+- **Event table rows written outside a reducer transaction persist.** [Event table](../00200-core-concepts/00300-tables/00550-event-tables.md) rows inserted inside `withReducerTx` are deleted when the transaction commits, as on a published database. Rows inserted directly through the harness's `test.db`, or by a procedure's `withTx`, stay in the table.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -1224,4 +1224,4 @@ fn shows_each_client_only_their_own_notes() {
 
 - [Rust chat module tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-rs/spacetimedb/src/lib.rs): table registration, independent databases, authenticated reducer calls, procedures, typed queries, and HTTP mocks.
 - [TypeScript chat module tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-react-ts/spacetimedb/src/index.test.ts): connection lifecycle, validation failures, caller identity, and timestamps.
-- Learn how [reducers](../../00200-core-concepts/00200-functions/00300-reducers/00300-reducers.md) handle [errors](../../00200-core-concepts/00200-functions/00300-reducers/00600-error-handling.md), which tests can check for.
+- Learn how [reducers](../00200-core-concepts/00200-functions/00300-reducers/00300-reducers.md) handle [errors](../00200-core-concepts/00200-functions/00300-reducers/00600-error-handling.md), which tests can check for.
