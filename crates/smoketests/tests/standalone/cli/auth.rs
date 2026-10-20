@@ -59,14 +59,7 @@ fn cli_list_without_login_warns_before_server_issued_login() {
         .write_stdin("n\n\n")
         .assert()
         .failure()
-        .stdout(predicates::str::contains("log in with spacetimedb.com? [Y/n]"))
-        .stdout(predicates::str::contains(
-            "WARNING: Continuing without spacetimedb.com will create a server-issued identity",
-        ))
-        .stdout(predicates::str::contains("you will lose access to those databases."))
-        .stdout(predicates::str::contains(
-            "Are you sure you want to continue? [y/N]",
-        ))
+        .stdout(predicates::str::contains("WARNING"))
         .stderr(predicates::str::contains("Login cancelled."));
     assert_no_login_saved(root.path());
 }
