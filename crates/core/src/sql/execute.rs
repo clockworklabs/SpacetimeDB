@@ -149,6 +149,9 @@ fn run_inner<I: WasmInstance>(
             if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
                 return Err(anyhow!("Database environment variables can only be changed by publishing").into());
             }
+            if stmt.table_id() == spacetimedb_datastore::system_tables::ST_CONTAINER_IMAGE_ID {
+                return Err(anyhow!("Container images can only be changed by publishing").into());
+            }
 
             // Evaluate the mutation
             let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;

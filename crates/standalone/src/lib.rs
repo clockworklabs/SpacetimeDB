@@ -70,6 +70,7 @@ pub struct StandaloneEnv {
 
 /// How this server runs containers, once they are enabled.
 struct Containers {
+    docker_host: Option<String>,
     local_clients_only: bool,
 }
 
@@ -130,24 +131,29 @@ impl StandaloneEnv {
     }
 
     /// Store the containers of databases in the control database, and answer the
-    /// container API from it. Running the containers is up to the caller.
-    /// Until this is called, the container API answers that containers are unsupported.
-    /// With `local_clients_only`, see [`Self::containers_for_local_clients_only`].
-    pub fn enable_containers(&self, local_clients_only: bool) {
-        let _ = self.containers.set(Containers { local_clients_only });
+    /// container API from it and from the Docker Engine at `docker_host`. Running the containers
+    /// is up to the caller. Until this is called, the container API answers that containers are
+    /// unsupported. With `local_clients_only`, see [`Self::containers_for_local_clients_only`].
+    pub fn enable_containers(&self, docker_host: Option<String>, local_clients_only: bool) {
+        let _ = self.containers.set(Containers {
+            docker_host,
+            local_clients_only,
+        });
     }
 
-    /// Whether only clients on this machine may attach and start containers, which the
+    /// Whether only clients on this machine may attach, start and upload containers, which the
     /// caller enforces.
     pub fn containers_for_local_clients_only(&self) -> bool {
         self.containers.get().is_some_and(|c| c.local_clients_only)
     }
 
+    fn containers(&self) -> Result<&Containers, ContainerError> {
+        self.containers.get().ok_or(ContainerError::Unsupported)
+    }
+
     /// The id of a database whose container is requested.
     fn container_database_id(&self, database_identity: &Identity) -> Result<u64, ContainerError> {
-        if self.containers.get().is_none() {
-            return Err(ContainerError::Unsupported);
-        }
+        self.containers()?;
         let database = self
             .control_db
             .get_database_by_identity(database_identity)
@@ -246,6 +252,16 @@ impl NodeDelegate for StandaloneEnv {
             log::error!("failed to read the container of database {}: {e:#}", claim.database);
             false
         })
+    }
+
+    async fn container_platform(&self) -> Result<String, ContainerError> {
+        let docker_host = self.containers()?.docker_host.as_deref();
+        Ok(spacetimedb_container_supervisor::platform(docker_host).await?)
+    }
+
+    async fn has_container_image(&self, image_id: &str) -> Result<bool, ContainerError> {
+        let docker_host = self.containers()?.docker_host.as_deref();
+        Ok(spacetimedb_container_supervisor::has_image(docker_host, image_id).await?)
     }
 }
 
@@ -631,12 +647,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Err(ContainerError::NotFound("database has no container".into()));
         }
         Ok(())
-    }
-
-    /// Standalone runs containers with a Docker daemon on its own machine, which may already
-    /// have the image.
-    fn accepts_local_container_images(&self) -> bool {
-        true
     }
 }
 

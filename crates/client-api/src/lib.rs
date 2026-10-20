@@ -19,7 +19,7 @@ use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::container::{ContainerInfo, ContainerSpec};
+use spacetimedb_lib::container::{ContainerInfo, ContainerSpec, MAX_IMAGE_BYTES};
 use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentUpdate};
 use spacetimedb_lib::{Hash, ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
@@ -68,6 +68,23 @@ pub trait NodeDelegate: Send + Sync {
     /// Whether `claim` names the currently assigned generation of a database's container.
     /// Servers without container hosting must return `false`.
     async fn is_current_container(&self, claim: &ContainerClaim) -> bool;
+
+    /// The platform this node runs containers on, like `linux/arm64`.
+    async fn container_platform(&self) -> Result<String, ContainerError> {
+        Err(ContainerError::Unsupported)
+    }
+
+    /// Whether this node's Docker daemon has the image with the local image ID `image_id`, for any
+    /// database to use. Only a server whose daemon holds no other tenants' images, like Standalone
+    /// with the user's own daemon, should say so; others rely on the images databases store.
+    async fn has_container_image(&self, _image_id: &str) -> Result<bool, ContainerError> {
+        Ok(false)
+    }
+
+    /// The largest image `database` stores, at most [`MAX_IMAGE_BYTES`].
+    async fn max_container_image_bytes(&self, _database: &Database) -> Result<u64, ContainerError> {
+        Ok(MAX_IMAGE_BYTES)
+    }
 }
 
 /// Predicate on the [NodeDelegate::GetLeaderHostError].
@@ -409,12 +426,6 @@ pub trait ControlStateWriteAccess: Send + Sync {
         database_identity: &Identity,
         running: bool,
     ) -> Result<(), ContainerError>;
-
-    /// Whether a container's image may be a local image ID, naming an image already in the
-    /// server's Docker daemon, rather than a reference pinned to a registry digest.
-    fn accepts_local_container_images(&self) -> bool {
-        false
-    }
 }
 
 /// Errors from container operations, which map onto HTTP status codes.
@@ -611,10 +622,6 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     ) -> Result<(), ContainerError> {
         (**self).set_container_running(caller, database_identity, running).await
     }
-
-    fn accepts_local_container_images(&self) -> bool {
-        (**self).accepts_local_container_images()
-    }
 }
 
 #[async_trait]
@@ -644,6 +651,18 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     async fn is_current_container(&self, claim: &ContainerClaim) -> bool {
         (**self).is_current_container(claim).await
+    }
+
+    async fn container_platform(&self) -> Result<String, ContainerError> {
+        (**self).container_platform().await
+    }
+
+    async fn has_container_image(&self, image_id: &str) -> Result<bool, ContainerError> {
+        (**self).has_container_image(image_id).await
+    }
+
+    async fn max_container_image_bytes(&self, database: &Database) -> Result<u64, ContainerError> {
+        (**self).max_container_image_bytes(database).await
     }
 }
 

@@ -7,6 +7,9 @@ pub const MAX_COMMAND_ARGS: usize = 256;
 pub const MAX_COMMAND_BYTES: usize = 64 * 1024;
 pub const MAX_PORTS: usize = 16;
 pub const MAX_PORT_NAME_BYTES: usize = 63;
+/// The largest image a server stores in a database: the gzipped output of `docker save`.
+/// Stored images are table data, which lives in memory and goes into the commitlog.
+pub const MAX_IMAGE_BYTES: u64 = 256 << 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -134,7 +137,7 @@ impl ContainerSpec {
 }
 
 /// Whether `image` is a local image ID, `sha256:<64 hex digits>`: the ID of an image in a Docker
-/// daemon, which only a server using that daemon can run, and which is never pulled.
+/// daemon, which a server runs if its daemon has it or the database stores it, and never pulls.
 pub fn is_local_image_id(image: &str) -> bool {
     image.strip_prefix("sha256:").is_some_and(is_sha256_hex)
 }
@@ -211,6 +214,17 @@ pub struct ContainerInfo {
     pub generation: u64,
     /// The last state reported for `generation`, if any.
     pub state: Option<ContainerState>,
+}
+
+/// The response to `GET /database/:name_or_identity/container/platform`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ContainerPlatform {
+    /// The platform the database's container runs on, like `linux/arm64`, which images stored in
+    /// the database must be built for.
+    pub platform: String,
+    /// The largest image the database stores; see [`MAX_IMAGE_BYTES`].
+    pub max_image_bytes: u64,
 }
 
 #[cfg(test)]
