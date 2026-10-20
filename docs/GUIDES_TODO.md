@@ -15,7 +15,7 @@ Each guide will also get a short-format video (done later, once the written guid
 - [x] Run a fixed-rate game tick
 - [x] Build a matchmaking queue
 - [x] Skill-based matchmaking with OpenSkill
-- [ ] Make a turn-based game with turn timeouts
+- [x] Make a turn-based game with turn timeouts
 - [ ] Only sync what's near the player
 - [ ] Hide information from players
 - [ ] Reset a leaderboard each season
