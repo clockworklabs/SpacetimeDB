@@ -30,6 +30,8 @@ namespace SpacetimeDB
         bool automaticReconnect;
         (TimeSpan Min, TimeSpan Max) reconnectDelays = (ReconnectPolicy.DefaultMinDelay, ReconnectPolicy.DefaultMaxDelay);
         Func<Task<string>>? tokenProvider;
+        TimeSpan pingInterval = NetworkStatsTracker.DefaultPingInterval;
+        TimeSpan pingTimeout = NetworkStatsTracker.DefaultPingTimeout;
 
         public DbConnection Build()
         {
@@ -42,6 +44,7 @@ namespace SpacetimeDB
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithDatabaseName() first.");
             }
             conn.ConfigureReconnect(automaticReconnect, tokenProvider, reconnectDelays.Min, reconnectDelays.Max);
+            conn.ConfigurePings(pingInterval, pingTimeout);
             conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light, confirmedReads);
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
@@ -110,6 +113,49 @@ namespace SpacetimeDB
             return this;
         }
 
+        /// <summary>
+        /// Sets how often the connection pings the server to measure network statistics,
+        /// exposed as <c>conn.stats.Network</c>. Defaults to 1 second.
+        ///
+        /// The first Ping is sent as soon as the connection is established, then one every
+        /// <paramref name="interval"/>, checked on each <c>FrameTick()</c>.
+        /// <see cref="TimeSpan.Zero"/> disables periodic pinging: <c>conn.stats.Network</c> then stays
+        /// null unless an explicit <c>conn.Ping()</c> is answered.
+        /// </summary>
+        public DbConnectionBuilder<DbConnection> WithPingInterval(TimeSpan interval)
+        {
+            if (interval < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(interval), "Ping interval must not be negative.");
+            }
+            pingInterval = interval;
+            return this;
+        }
+
+#if UNITY_WEBGL
+        /// <summary>
+        /// Sets how long the periodic Pings may go unanswered before the connection is treated as lost.
+        /// Defaults to 10 seconds. Only WebGL builds have this setting: the browser's WebSocket can't
+        /// detect a silently failed network itself.
+        ///
+        /// Once the oldest unanswered Ping is older than this timeout (or than four RFC 6298
+        /// retransmission timeouts, if that is longer) and at least one Ping has been sent since it,
+        /// the connection is closed as lost: it reconnects if automatic reconnect is enabled,
+        /// and disconnects with an error otherwise. The check runs once per Ping interval,
+        /// so detection can take up to one interval longer than the timeout.
+        /// It is off when periodic pinging is disabled.
+        /// </summary>
+        public DbConnectionBuilder<DbConnection> WithPingTimeout(TimeSpan timeout)
+        {
+            if (timeout <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout), "Ping timeout must be positive.");
+            }
+            pingTimeout = timeout;
+            return this;
+        }
+#endif
+
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
         public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
@@ -158,6 +204,7 @@ namespace SpacetimeDB
         internal void AddOnConnectError(Action<Exception, NextReconnect?> cb);
         internal void AddOnDisconnect(Action<Exception?, NextReconnect?> cb);
         internal void ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay);
+        internal void ConfigurePings(TimeSpan interval, TimeSpan timeout);
         bool IsReconnecting { get; }
         internal bool AutomaticReconnectEnabled { get; }
 
@@ -265,9 +312,39 @@ namespace SpacetimeDB
 
         private readonly ProcedureCallbacks procedureCallbacks = new();
 
+        // Pings: periodic ones on a timer driven by FrameTick, and on-demand ones from Ping().
+        private TimeSpan pingInterval = NetworkStatsTracker.DefaultPingInterval;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private TimeSpan pingTimeout = NetworkStatsTracker.DefaultPingTimeout;
+#endif
+        private long nextPingAt;
+        private uint lastPingRequestId;
+        private readonly ConcurrentDictionary<uint, PendingPing> pendingPings = new();
+
+        private sealed class PendingPing
+        {
+            public readonly long SentAt;
+            public readonly TaskCompletionSource<PingResult> Result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public PendingPing(long sentAt) => SentAt = sentAt;
+        }
+
         private void FailPendingOperations(Exception error)
         {
             stats.ClearRequestsAwaitingResponse();
+
+            // Network stats describe one socket. Callers have already bumped socketGeneration,
+            // so HandlePong can't record a late Pong from the old socket after this reset.
+            lock (stats.NetworkTracker)
+            {
+                stats.NetworkTracker.Reset();
+            }
+            foreach (var (requestId, _) in pendingPings.ToArray())
+            {
+                if (pendingPings.TryRemove(requestId, out var pending))
+                {
+                    pending.Result.TrySetException(new OperationCanceledException("Connection closed before the Pong arrived."));
+                }
+            }
 
             foreach (var (requestId, _) in waitingOneOffQueries.ToArray())
             {
@@ -348,6 +425,11 @@ namespace SpacetimeDB
             /// The timestamp the message came off the wire.
             /// </summary>
             public DateTime timestamp;
+
+            /// <summary>
+            /// The <see cref="Stopwatch.GetTimestamp"/> reading taken as the message came off the wire.
+            /// </summary>
+            public long receivedAt;
 
             /// <summary>
             /// The ID assigned by the message parsing queue tracker.
@@ -520,7 +602,7 @@ namespace SpacetimeDB
                     {
                         continue;
                     }
-                    ParsedMessage parsedMessage;
+                    ParsedMessage? parsedMessage;
                     try
                     {
                         parsedMessage = message.action != null
@@ -531,7 +613,10 @@ namespace SpacetimeDB
                     {
                         parsedMessage = new ParsedMessage { error = e, generation = message.generation };
                     }
-                    _applyQueue.Add(parsedMessage, _parseCancellationToken);
+                    if (parsedMessage is ParsedMessage parsed)
+                    {
+                        _applyQueue.Add(parsed, _parseCancellationToken);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -556,10 +641,18 @@ namespace SpacetimeDB
 #endif
             }
 
-            ParsedMessage ParseMessage(UnparsedMessage unparsed)
+            // Returns null for a message that has nothing to apply on the main thread.
+            ParsedMessage? ParseMessage(UnparsedMessage unparsed)
             {
                 var dbOps = ParsedDatabaseUpdate.New();
                 var message = CompressionHelpers.DecompressDecodeMessage(unparsed.bytes);
+                if (message is ServerMessage.Pong(var pong))
+                {
+                    // Pongs are measured by stats.Network, so they're kept out of the request trackers.
+                    stats.ParseMessageQueueTracker.RemoveRequestAwaitingResponse(unparsed.parseQueueTrackerId);
+                    HandlePong(pong, unparsed.receivedAt, unparsed.generation);
+                    return null;
+                }
                 var trackerMetadata = TrackerMetadataForMessage(message);
 
                 stats.ParseMessageQueueTracker.FinishTrackingRequest(unparsed.parseQueueTrackerId, trackerMetadata);
@@ -638,9 +731,6 @@ namespace SpacetimeDB
                         }
 
                         break;
-                    case ServerMessage.Pong:
-                        // Not handled yet.
-                        break;
                     default:
                         throw new InvalidOperationException();
                 }
@@ -712,11 +802,19 @@ namespace SpacetimeDB
             reconnectMaxDelay = maxDelay;
         }
 
+        void IDbConnection.ConfigurePings(TimeSpan interval, TimeSpan timeout)
+        {
+            pingInterval = interval;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            pingTimeout = timeout;
+#endif
+        }
+
         private WebSocket CreateWebSocket()
         {
             var socket = SocketFactory();
             var generation = socketGeneration;
-            socket.OnMessage += (bytes, timestamp) => EnqueueMessage(bytes, timestamp, generation);
+            socket.OnMessage += (bytes, timestamp, receivedAt) => EnqueueMessage(bytes, timestamp, receivedAt, generation);
             socket.OnClose += error => EnqueueSocketAction(() => HandleSocketFailure(error), generation);
             socket.OnConnectError += error => EnqueueSocketAction(() => HandleSocketFailure(error), generation);
             socket.OnSendError += error => EnqueueSocketAction(() =>
@@ -727,7 +825,7 @@ namespace SpacetimeDB
             return socket;
         }
 
-        private void EnqueueMessage(byte[] bytes, DateTime timestamp, int generation)
+        private void EnqueueMessage(byte[] bytes, DateTime timestamp, long receivedAt, int generation)
         {
             if (isClosing || generation != socketGeneration)
             {
@@ -737,6 +835,7 @@ namespace SpacetimeDB
             {
                 bytes = bytes,
                 timestamp = timestamp,
+                receivedAt = receivedAt,
                 generation = generation,
                 parseQueueTrackerId = stats.ParseMessageQueueTracker.StartTrackingRequest()
             });
@@ -824,6 +923,10 @@ namespace SpacetimeDB
             connectionEstablished = true;
             reconnectAttempt = 0;
             reconnectAt = null;
+            if (pingInterval > TimeSpan.Zero && CanPing)
+            {
+                SendPeriodicPing();
+            }
             try
             {
                 var callback = reconnect ? onAutomaticReconnect : onConnect;
@@ -1245,9 +1348,6 @@ namespace SpacetimeDB
                         Log.Warn($"Received ProcedureResult for unknown request ID: {procedureResult.RequestId}");
                     }
                     break;
-                case ServerMessage.Pong:
-                    // Not handled yet.
-                    break;
                 default:
                     throw new InvalidOperationException();
             }
@@ -1258,7 +1358,7 @@ namespace SpacetimeDB
         // Note: this method is called from unit tests.
         internal void OnMessageReceived(byte[] bytes, DateTime timestamp)
         {
-            EnqueueMessage(bytes, timestamp, socketGeneration);
+            EnqueueMessage(bytes, timestamp, Stopwatch.GetTimestamp(), socketGeneration);
         }
 
         void IDbConnection.InternalCallReducer<T>(T args)
@@ -1438,7 +1538,107 @@ namespace SpacetimeDB
             {
                 ApplyMessage(parsedMessage);
             }
+            TickPings();
             TickReconnect();
+        }
+
+        /// <summary>
+        /// Send a single Ping now, and complete with the timings from its Pong.
+        ///
+        /// Its sample also feeds <c>stats.Network</c>, exactly like the periodic Pings,
+        /// and this works even when periodic pinging is disabled with <c>WithPingInterval(TimeSpan.Zero)</c>.
+        /// Like a one-off query, the task completes on a background thread, without waiting for <c>FrameTick()</c>.
+        ///
+        /// Fails immediately if the connection isn't established, and fails if the connection closes
+        /// before the Pong arrives. With periodic pinging disabled, unanswered Pings never close the
+        /// connection, so on a silently failed network this waits until the socket closes.
+        /// </summary>
+        public Task<PingResult> Ping()
+        {
+            if (!CanPing)
+            {
+                return Task.FromException<PingResult>(new InvalidOperationException("Not connected to server."));
+            }
+            var requestId = ++lastPingRequestId;
+            // Register before sending, as the Pong is handled on the parse thread.
+            var pending = new PendingPing(Stopwatch.GetTimestamp());
+            pendingPings[requestId] = pending;
+            SendPing(requestId, pending.SentAt);
+            return pending.Result.Task;
+        }
+
+        // Pings may only be sent once InitialConnection has arrived.
+        private bool CanPing => connectionEstablished && IsActive;
+
+        // Each ClientMessage goes out in its own WebSocket message, so this Ping isn't batched with others.
+        private void SendPing(uint requestId, long sentAt)
+        {
+            var sentUs = NetworkStatsTracker.Micros(sentAt);
+            lock (stats.NetworkTracker)
+            {
+                stats.NetworkTracker.RecordPing(sentUs);
+            }
+            webSocket!.Send(new ClientMessage.Ping(new ClientApi.Ping(requestId, sentUs)));
+        }
+
+        private void SendPeriodicPing()
+        {
+            var sentAt = Stopwatch.GetTimestamp();
+            SendPing(++lastPingRequestId, sentAt);
+            nextPingAt = sentAt + (long)(pingInterval.TotalSeconds * Stopwatch.Frequency);
+        }
+
+        private void TickPings()
+        {
+            if (pingInterval <= TimeSpan.Zero || !CanPing || Stopwatch.GetTimestamp() < nextPingAt)
+            {
+                return;
+            }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // The browser's WebSocket has no dead-connection check of its own. A silently failed network
+            // leaves it open with nothing arriving, so the only sign is Pings going unanswered.
+            bool unresponsive;
+            double waitedUs;
+            lock (stats.NetworkTracker)
+            {
+                var nowUs = NetworkStatsTracker.Micros(Stopwatch.GetTimestamp());
+                unresponsive = stats.NetworkTracker.IsUnresponsive(nowUs, pingTimeout.TotalMilliseconds * 1000);
+                waitedUs = stats.NetworkTracker.PongWaitUs(nowUs);
+            }
+            if (unresponsive)
+            {
+                var waitedMs = Math.Round(waitedUs / 1000);
+                Log.Warn($"No Pong for {waitedMs} ms; closing the connection.");
+                HandleSocketFailure(new SpacetimeDBException($"Connection unresponsive: no Pong for {waitedMs} ms."));
+                return;
+            }
+#endif
+            SendPeriodicPing();
+        }
+
+        // Called on the parse thread, so that Ping() completes without waiting for FrameTick.
+        private void HandlePong(Pong pong, long receivedAt, int generation)
+        {
+            var nowUs = NetworkStatsTracker.Micros(receivedAt);
+            lock (stats.NetworkTracker)
+            {
+                // FailPendingOperations resets the stats under this lock after socketGeneration changes,
+                // so checking it here keeps a Pong from a replaced socket out of its successor's stats.
+                if (isClosing || generation != socketGeneration)
+                {
+                    return;
+                }
+                stats.NetworkTracker.RecordPong(nowUs, pong.ClientSendTime,
+                    pong.ServerReceiveTime.MicrosecondsSinceUnixEpoch, pong.ServerHoldDuration.Microseconds);
+            }
+            if (pendingPings.TryRemove(pong.RequestId, out var pending))
+            {
+                var roundTrip = NetworkStatsTracker.ToTimeSpan(Math.Max(0, (double)nowUs - pong.ClientSendTime));
+                var serverHold = NetworkStatsTracker.ToTimeSpan(pong.ServerHoldDuration.Microseconds);
+                var rtt = roundTrip > serverHold ? roundTrip - serverHold : TimeSpan.Zero;
+                pending.Result.TrySetResult(new PingResult(rtt, roundTrip, serverHold, pong.ServerReceiveTime,
+                    pending.SentAt, receivedAt));
+            }
         }
 
         void IDbConnection.Unsubscribe(QuerySetId queryId)
