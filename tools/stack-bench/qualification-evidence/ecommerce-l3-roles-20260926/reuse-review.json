@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "fefedf853480d500b60d26377366be2f02c8e525",
+  "changedBehavior": {
+    "roleChecks": "621d targets another account before and after demotion. Self-edit refusal cannot substitute for revocation. Useful-action and unchanged-state controls remain. 621b is unchanged.",
+    "references": "PostgreSQL and MongoDB list administrators as well as staff, report the seeded admin role, and preserve staff access on demotion. Their complete selected L3 coverage is replaced because reference source identity changed.",
+    "checker": "Recognize the existing documented staff-role-account- ID prefix. No app prompt or production grader code changes.",
+    "admission": "Qualification invokes the existing Docker publication probe before its baseline and before parallel workers. The helper body is unchanged; only its export and qualification caller change. A failed admission cannot produce grades; successful admission leaves the measured app and grader unchanged.",
+    "capture": "Pending-body diagnostics retain only safe request metadata. Mutation workers retain grader stderr in their existing private grade directory. Privacy actors wait within the existing action budget for started HTTP writes and pending bodies before ordinary reload/application-return. Fault, crash, reconnect and non-privacy reload paths remain unchanged. No request retry, domain exemption, missing-body suppression, or observation-window extension."
+  },
+  "validation": {
+    "passwordControl": "Mongo group 4 originally caught signin-skips-password-verification off assertion because the returning actor signin form did not appear in 5s. The other 24 controls completed. A fresh one-check normal reference-plus-mutation run passed 1/1 and caught all three password defects. Its full password scenario replaces that scenario only in the derived Mongo composition; original failed evidence remains. Root cause of the transient form timeout is unproved; no retry or grading policy was changed.",
+    "roles": "Four references passed all four role checks (7/7); 18 selected defects caught; null failed all four.",
+    "remaining": "New PostgreSQL and MongoDB evidence replaces all remaining selected L3 checks and applicable registered defects. Unchanged SpacetimeDB/Convex/null coverage is retained only when unchangedQualificationChecks validates it.",
+    "savedApp": "The unchanged saved Convex r1 L2 app passed the corrected 621d, 2/2. Historical scores remain unchanged.",
+    "admission": {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/qualification-port-control.json",
+      "sha256": "55b5fa7f6bab79b8888469f5206d494c95612d89b558425389e9df3db663dd14",
+      "command": "node qualification-evidence/ecommerce-l3-roles-20260926/qualification-port-control.mjs",
+      "scriptSha256": "27236c301e84c026a5f07fc3036c8cdf2758efd4d83ee9338858c5a353192c86"
+    },
+    "mongoBaselineDerivation": {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-remaining-reference.derivation.json",
+      "sha256": "af67f097bbc405c8a433591e692832d276ef8e70855c61d81bf24c9d0abf77ed"
+    },
+    "mongoMutationDerivation": {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/mongodb-remaining-composed.derivation.json",
+      "sha256": "19cef6e4208f8c3defadbfb4402a795d9564ee8997b97d11d571bc77f6a99110"
+    },
+    "checker": {
+      "path": "qualification-evidence/ecommerce-l3-roles-20260926/scenario-checker-e2e.json",
+      "sha256": "a6373f3b52971a02f653789a4f3f973eb41e629258d14be7446cde3b37d75132"
+    },
+    "capture": {
+      "before": {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/reload-race-before.json",
+        "sha256": "3199420b8e6d09da3de4d47af6d0fb76f41d0b93b5c5cde2c16b44ead5ab44b3"
+      },
+      "after": {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/capture-e2e.json",
+        "sha256": "4a0aaa66d43879701e244542690db0a676a695672f6ac9de9fd34c05c4116d5b"
+      },
+      "reload": {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/reload-race-after.json",
+        "sha256": "410abefd94ecc2786edd4da25b8a537cca2792927b1fd44ce90e9f9912da17fb"
+      },
+      "pending": {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/pending-body-e2e.json",
+        "sha256": "19ab19b6930033f5e18aa20a84066c8c1d7c03bc45a948e8258df142ec897105"
+      },
+      "result": "27 real Chromium checks passed. Clean, leaking, delayed-header and stalled PUT responses use the normal click/reload/privacy assertion flow. Before the fix clean and leaking captures became inconclusive; delayed leaks and stalled requests could pass incorrectly. After the fix clean passes, leak fails, stalled is inconclusive. The PostgreSQL reference passes 5/5 and catches all three profile defects on the fixed runtime."
+    },
+    "captureReuse": "Only 110a,620b,612b,613b combine privacy actors and ordinary reload. The new guard waits for observation already required by those checks; it changes no predicate, canary, public contract or fault action. Focused browser controls prove pre-header and pending-body behavior. PG620b has a direct real-app failure and gets new evidence; prior measured sibling/reference/defect results remain valid with this explicit executable review. Role checks do not use privacy reload. Unselected and unchanged reference behavior is reused; no full qualification is claimed from the targeted run alone.",
+    "postgresProjection": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-reference.json.derivation.json",
+        "sha256": "83f088c983ab993392539ad674133ed4632c85950b93b7abaaf33cba15e6015d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/postgres-without-profile-mutation.json.derivation.json",
+        "sha256": "8f407fe1f091f588d730001ab6809846f880f184a6907ee45445c64156dec165"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "path": "src/references/reference-live.ts",
+      "lineEndings": "lf",
+      "sha256": "adc42ff2ebf951b6d6601e0c16c75256518d467ebf77275ff45165cd7bcd73d7"
+    },
+    {
+      "path": "src/runtime/run-resource-selection.ts",
+      "lineEndings": "lf",
+      "sha256": "cd851276ca86addf6420f974bbdefc16910ff2557ff04ac593e32aab22d35d38"
+    },
+    {
+      "path": "commands/check-scenarios.ts",
+      "lineEndings": "lf",
+      "sha256": "f0330242891b49e74a24b96ed9681417429132896a6ece582119e4e553b1784b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "lineEndings": "lf",
+      "sha256": "1e8d3425a9819ae93aa0205d7057af2034f54ed755fb402b7680bda55f35274e"
+    },
+    {
+      "path": "reference-apps/ecommerce/postgres/server/src/progression.ts",
+      "lineEndings": "lf",
+      "sha256": "79c4194f099a028bc459bf92f720113d96948d4ad8b608b530fd438bca963823"
+    },
+    {
+      "path": "reference-apps/ecommerce/mongodb/server/src/progression.ts",
+      "lineEndings": "lf",
+      "sha256": "13d41ba87caf4b30e811ec39c02beb7a7ccde5220294b9190ca3ad5db64b38f0"
+    },
+    {
+      "path": "grader/grade.ts",
+      "lineEndings": "lf",
+      "sha256": "1a567406d86c96ba4a8d17535e14727a1a8d425d0244f6481c0e3142801df467"
+    },
+    {
+      "path": "grader/transport-frames.ts",
+      "lineEndings": "lf",
+      "sha256": "d87b823f65c18004dd8abf3f1778b3d05186aa27be61f1b1d4a6a0af18572dc5"
+    },
+    {
+      "path": "grader/mutation-test.ts",
+      "lineEndings": "lf",
+      "sha256": "0244c19a77ee826c0a8c2a89fc1c1ccbe6e173f08b1372f5f40e495b26bba6ab"
+    },
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "lineEndings": "lf",
+      "sha256": "155d861eb9033875926e73af05e14e0eeab8f4c9d62937f92ff00fcd00ed3aa4"
+    },
+    {
+      "path": "tests/transport-cache.integration.ts",
+      "lineEndings": "lf",
+      "sha256": "4bbf4196a00a806c63cf14e0915a654b527c6f51943d9a31e90f446c49c7414e"
+    }
+  ],
+  "limits": "No Supabase, sequential, or L6 qualification. No historical campaign is relabelled. Different runtime evidence remains in separate artifacts; the PostgreSQL projection excludes the entire profile scenario. Unknown original Mongo signin timeout remains recorded. Incomplete capture still cannot establish absence."
+}

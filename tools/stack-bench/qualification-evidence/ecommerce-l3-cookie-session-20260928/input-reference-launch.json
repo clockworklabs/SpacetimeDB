@@ -1,0 +1,319 @@
+{
+  "scope": {
+    "candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+    "check": "ecommerce.spec.access-control.purchase-session.101a",
+    "rows": [
+      {
+        "backend": "spacetime",
+        "slot": 800,
+        "ports": [
+          7273,
+          4110
+        ],
+        "locks": [
+          "listener:http://127.0.0.1:4110",
+          "slot:ecommerce:spacetime:run800",
+          "port:7273",
+          "port:4110"
+        ]
+      },
+      {
+        "backend": "postgres",
+        "slot": 808,
+        "ports": [
+          7381,
+          7109
+        ],
+        "locks": [
+          "slot:ecommerce:postgres:run808",
+          "port:7381",
+          "port:7109"
+        ]
+      },
+      {
+        "backend": "mongodb",
+        "slot": 816,
+        "ports": [
+          7539,
+          7217
+        ],
+        "locks": [
+          "slot:ecommerce:mongodb:run816",
+          "port:7539",
+          "port:7217"
+        ]
+      },
+      {
+        "backend": "convex",
+        "slot": 824,
+        "ports": [
+          7747,
+          7825,
+          14034
+        ],
+        "locks": [
+          "listener:http://127.0.0.1:14034",
+          "slot:ecommerce:convex:run824",
+          "port:7747",
+          "port:7825",
+          "port:14034"
+        ]
+      }
+    ],
+    "ports": [
+      7273,
+      4110,
+      7381,
+      7109,
+      7539,
+      7217,
+      7747,
+      7825,
+      14034
+    ],
+    "locks": [
+      "listener:http://127.0.0.1:4110",
+      "slot:ecommerce:spacetime:run800",
+      "port:7273",
+      "port:4110",
+      "slot:ecommerce:postgres:run808",
+      "port:7381",
+      "port:7109",
+      "slot:ecommerce:mongodb:run816",
+      "port:7539",
+      "port:7217",
+      "listener:http://127.0.0.1:14034",
+      "slot:ecommerce:convex:run824",
+      "port:7747",
+      "port:7825",
+      "port:14034"
+    ]
+  },
+  "started": [
+    {
+      "at": "2026-09-28T23:41:16.7865160Z",
+      "id": "559ceb82f109afd9771867127fc541e154f4cb6af9746a59af2d3a26da3edc8b",
+      "name": "stack-bench-cookie-reference-spacetime-0ab41064a"
+    },
+    {
+      "at": "2026-09-28T23:41:17.5249487Z",
+      "id": "d5d8cb4bcf78083ec18b8388f37ffc70800cf9955963c07d36871921fe8bc47a",
+      "name": "stack-bench-cookie-reference-postgres-0ab41064a"
+    },
+    {
+      "at": "2026-09-28T23:41:18.4432912Z",
+      "id": "e8ed104f69b1be4d88a41963d19067434da18201bd911f562a3ac8a4a04f77ee",
+      "name": "stack-bench-cookie-reference-mongodb-0ab41064a"
+    },
+    {
+      "at": "2026-09-28T23:41:19.6830228Z",
+      "id": "c8a5e70715bc66c3843d3aaee34cbbe6fa167b9e62c347f0c8ee6e062bea4449",
+      "name": "stack-bench-cookie-reference-convex-0ab41064a"
+    },
+    {
+      "at": "2026-09-28T23:41:20.4227145Z",
+      "id": "1095e1492057b57b621ec3fb6ddc61d7836c649c312f924fb7c1d7cb506fd7ce",
+      "name": "stack-bench-cookie-reference-null-0ab41064a"
+    }
+  ],
+  "output": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference",
+  "admission": {
+    "occupied": "[]",
+    "linux": "[]",
+    "windows": "[]"
+  },
+  "modelCallsExpected": 0,
+  "commands": [
+    {
+      "slot": 800,
+      "backend": "spacetime",
+      "args": [
+        "qualify-reference",
+        "--backend",
+        "spacetime",
+        "--track",
+        "ecommerce",
+        "--level",
+        "3",
+        "--recipe",
+        "ecommerce.progression-catalog",
+        "--feature-catalog",
+        "progression/ecommerce.json",
+        "--repetitions",
+        "1",
+        "--run-index",
+        "800",
+        "--timeout-minutes",
+        "60",
+        "--selected-check",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "--out",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/spacetime-reference.json"
+      ],
+      "name": "stack-bench-cookie-reference-spacetime-0ab41064a"
+    },
+    {
+      "slot": 808,
+      "backend": "postgres",
+      "args": [
+        "qualify-reference",
+        "--backend",
+        "postgres",
+        "--track",
+        "ecommerce",
+        "--level",
+        "3",
+        "--recipe",
+        "ecommerce.progression-catalog",
+        "--feature-catalog",
+        "progression/ecommerce.json",
+        "--repetitions",
+        "1",
+        "--run-index",
+        "808",
+        "--timeout-minutes",
+        "60",
+        "--selected-check",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "--out",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/postgres-reference.json"
+      ],
+      "name": "stack-bench-cookie-reference-postgres-0ab41064a"
+    },
+    {
+      "slot": 816,
+      "backend": "mongodb",
+      "args": [
+        "qualify-reference",
+        "--backend",
+        "mongodb",
+        "--track",
+        "ecommerce",
+        "--level",
+        "3",
+        "--recipe",
+        "ecommerce.progression-catalog",
+        "--feature-catalog",
+        "progression/ecommerce.json",
+        "--repetitions",
+        "1",
+        "--run-index",
+        "816",
+        "--timeout-minutes",
+        "60",
+        "--selected-check",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "--out",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/mongodb-reference.json"
+      ],
+      "name": "stack-bench-cookie-reference-mongodb-0ab41064a"
+    },
+    {
+      "slot": 824,
+      "backend": "convex",
+      "args": [
+        "qualify-reference",
+        "--backend",
+        "convex",
+        "--track",
+        "ecommerce",
+        "--level",
+        "3",
+        "--recipe",
+        "ecommerce.progression-catalog",
+        "--feature-catalog",
+        "progression/ecommerce.json",
+        "--repetitions",
+        "1",
+        "--run-index",
+        "824",
+        "--timeout-minutes",
+        "60",
+        "--selected-check",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "--out",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/convex-reference.json"
+      ],
+      "name": "stack-bench-cookie-reference-convex-0ab41064a"
+    },
+    {
+      "backend": "null",
+      "args": [
+        "qualify-null",
+        "--track",
+        "ecommerce",
+        "--level",
+        "3",
+        "--recipe",
+        "ecommerce.progression-catalog",
+        "--selected-check",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "--out",
+        "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/cookie-session-0ab41064a-reference/null.json"
+      ],
+      "name": "stack-bench-cookie-reference-null-0ab41064a"
+    }
+  ],
+  "qualified": false,
+  "inputsSha256": "93e7fb015821348de16f11b4e33c1465d024431e9e79f330acbec0d069b47b57",
+  "at": "2026-09-28T23:41:16.1738027Z",
+  "candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+  "launcherSha256": "eec4559e7ee0071d5053db5aef822ba33f5604b612360ea81a7278f2aebc83e4",
+  "commonArgs": [
+    "run",
+    "-d",
+    "--init",
+    "--network",
+    "host",
+    "--read-only",
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges:true",
+    "--tmpfs",
+    "/tmp:size=1g,mode=1777",
+    "-w",
+    "/var/lib/docker/volumes/stack-bench-state/_data/results",
+    "-v",
+    "/var/run/docker.sock:/var/run/docker.sock",
+    "-v",
+    "stack-bench-state:/var/lib/docker/volumes/stack-bench-state/_data",
+    "-v",
+    "stack-bench-release-deps-a6edb1cfe2:/opt/stack-bench-release-deps:ro",
+    "-e",
+    "STACK_BENCH_APPLIANCE=1",
+    "-e",
+    "STACK_BENCH_BUILD_IMAGE=sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+    "-e",
+    "STACK_BENCH_SUPERVISOR_DIR=/var/lib/docker/volumes/stack-bench-state/_data/controller-home/supervisor",
+    "-e",
+    "STDB_PACKAGE=/opt/stack-bench-release-deps/bindings-typescript",
+    "-e",
+    "STACK_BENCH_RUNTIME_DIR=/var/lib/docker/volumes/stack-bench-state/_data/controller-home/runtime",
+    "-e",
+    "STACK_BENCH_LINUX_CLI=/opt/stack-bench-release-deps/spacetimedb-cli",
+    "-e",
+    "STACK_BENCH_STATE_ROOT=/var/lib/docker/volumes/stack-bench-state/_data",
+    "-e",
+    "STACK_BENCH_RESULTS_DIR=/var/lib/docker/volumes/stack-bench-state/_data/results",
+    "-e",
+    "STACK_BENCH_IMAGE=sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+    "-e",
+    "STACK_BENCH_WORK_DIR=/var/lib/docker/volumes/stack-bench-state/_data/work",
+    "-e",
+    "SPACETIME_BIN=/opt/stack-bench-release-deps/spacetimedb-cli",
+    "-e",
+    "STACK_BENCH_NPM_REGISTRY=http://127.0.0.1:4873/",
+    "-e",
+    "STACK_BENCH_RESOURCE_LOCK_DIR=/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks",
+    "-e",
+    "HOME=/var/lib/docker/volumes/stack-bench-state/_data/controller-home",
+    "-e",
+    "STACK_BENCH_CONTROLLER_IMAGE=sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+    "-e",
+    "STACK_BENCH_CONTROLLER_IMAGE_ID=sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+    "-e",
+    "STACK_BENCH_RELEASE_DEPS_VOLUME=stack-bench-release-deps-a6edb1cfe2"
+  ],
+  "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c"
+}

@@ -101,8 +101,8 @@ Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (rep
 
 ## Identity
 
-- **Identity**: A long-lived, globally unique identifier for a user.
-- **ConnectionId**: Identifies a specific client connection.
+- **Identity**: A long-lived, globally unique identifier for a user, derived from the token's issuer and subject claims. The same token yields the same identity on every connection.
+- **ConnectionId**: Identifies one client connection. A new connection gets a new connection ID; a disconnect ends the connection, not the identity.
 - Always use `ctx.sender` / `ctx.Sender` / `ctx.sender()` for authorization.
 
 SpacetimeDB works with many OIDC providers, including SpacetimeAuth (built-in), Auth0, Clerk, Keycloak, Google, and GitHub.

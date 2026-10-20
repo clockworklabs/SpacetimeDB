@@ -1,0 +1,401 @@
+{
+  "rerun": "STACK_BENCH_NAMED_INPUT_EVIDENCE=<file> node --test --test-name-pattern=\"named action inputs wait\" dist/tests/review-owner.integration.js",
+  "fixture": "Browser row renders before a held HTTP input response; registered actions use real HTTP writes.",
+  "evidence": [
+    {
+      "mode": "primary",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "action": "cancel",
+          "accepted": true,
+          "status": 200,
+          "responseContract": "http",
+          "refusalKind": null,
+          "applicationRejected": false
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596874740,
+          "completedAtMs": 1790596874902,
+          "durationMs": 162,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/api/orders/9007199254740993/cancel",
+          "authorization": "Bearer other"
+        }
+      ]
+    },
+    {
+      "mode": "override",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "transport-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "action": "cancel",
+          "accepted": true,
+          "status": 200,
+          "responseContract": "http",
+          "refusalKind": null,
+          "applicationRejected": false
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596874993,
+          "completedAtMs": 1790596875131,
+          "durationMs": 138,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/api/orders/9007199254740993/cancel",
+          "authorization": "Bearer other"
+        }
+      ]
+    },
+    {
+      "mode": "concurrent",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callConcurrently",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "concurrency-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "action": "cancel",
+          "fired": 1,
+          "ms": 5,
+          "outcomes": [
+            {
+              "status": 200,
+              "ok": true,
+              "applicationRejected": false,
+              "refusalKind": null,
+              "responseContract": "http",
+              "complete": true,
+              "text": "",
+              "transport": "response",
+              "name": "other",
+              "requestIndex": 1,
+              "action": "cancel",
+              "values": {
+                "orderId": "9007199254740993"
+              },
+              "delayMs": 0,
+              "scheduledAtMs": 1790596875336,
+              "dispatched": true,
+              "startedAtMs": 1790596875337,
+              "completedAtMs": 1790596875341,
+              "durationMs": 4
+            }
+          ],
+          "responses": 1,
+          "transportErrors": 0,
+          "timeouts": 0,
+          "cancelled": 0,
+          "timingScope": "client request dispatch through response; not server execution overlap"
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596875196,
+          "completedAtMs": 1790596875345,
+          "durationMs": 149,
+          "deadlineMs": 120000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      "requests": [
+        {
+          "path": "/api/orders/9007199254740993/cancel",
+          "authorization": "Bearer other"
+        }
+      ]
+    },
+    {
+      "mode": "alongside",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callConcurrently",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "concurrency-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "action": "cancel",
+          "fired": 2,
+          "ms": 6,
+          "outcomes": [
+            {
+              "status": 200,
+              "ok": true,
+              "applicationRejected": false,
+              "refusalKind": null,
+              "responseContract": "http",
+              "complete": true,
+              "text": "",
+              "transport": "response",
+              "name": "other",
+              "requestIndex": 1,
+              "action": "cancel",
+              "values": {},
+              "delayMs": 0,
+              "scheduledAtMs": 1790596875550,
+              "dispatched": true,
+              "startedAtMs": 1790596875550,
+              "completedAtMs": 1790596875555,
+              "durationMs": 5
+            },
+            {
+              "status": 200,
+              "ok": true,
+              "applicationRejected": false,
+              "refusalKind": null,
+              "responseContract": "http",
+              "complete": true,
+              "text": "",
+              "transport": "response",
+              "name": "other",
+              "requestIndex": 2,
+              "action": "cancel",
+              "values": {
+                "orderId": "9007199254740993"
+              },
+              "delayMs": 0,
+              "scheduledAtMs": 1790596875551,
+              "dispatched": true,
+              "startedAtMs": 1790596875551,
+              "completedAtMs": 1790596875556,
+              "durationMs": 5
+            }
+          ],
+          "responses": 2,
+          "transportErrors": 0,
+          "timeouts": 0,
+          "cancelled": 0,
+          "timingScope": "client request dispatch through response; not server execution overlap"
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596875412,
+          "completedAtMs": 1790596875560,
+          "durationMs": 148,
+          "deadlineMs": 120000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      "requests": [
+        {
+          "path": "/control",
+          "authorization": "Bearer other"
+        },
+        {
+          "path": "/api/orders/9007199254740993/cancel",
+          "authorization": "Bearer other"
+        }
+      ]
+    },
+    {
+      "mode": "missing",
+      "expected": "failed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596875623,
+          "completedAtMs": 1790596875926,
+          "durationMs": 303,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "malformed",
+      "expected": "failed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "data-cancel-input for the cancel action is not valid",
+        "finding": {
+          "kind": "interface-invalid",
+          "fields": {
+            "action": "cancel",
+            "attribute": "data-cancel-input",
+            "detail": "not JSON"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596875986,
+          "completedAtMs": 1790596876114,
+          "durationMs": 128,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "late",
+      "expected": "failed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596876180,
+          "completedAtMs": 1790596876481,
+          "durationMs": 301,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "cancelled",
+      "expected": "inconclusive",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "inconclusive",
+        "type": "transport-evidence",
+        "code": "cancelled",
+        "phase": "execute",
+        "summary": "fixture cancellation",
+        "finding": null,
+        "observation": null,
+        "expected": null,
+        "retryable": true,
+        "timing": {
+          "startedAtMs": 1790596876567,
+          "completedAtMs": 1790596876649,
+          "durationMs": 82,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    }
+  ]
+}

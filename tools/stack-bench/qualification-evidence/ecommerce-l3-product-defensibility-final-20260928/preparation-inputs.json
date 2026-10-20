@@ -1,0 +1,58 @@
+{
+  "candidate": "3926fa8ae1ac948b61f2320c8cd7ae462f991a93",
+  "scopeFinalized": true,
+  "baseCommit": "7120c8caaef1c4ddbab0aca2904010925fb7804d",
+  "baseImage": "sha256:0103aa732cf7e2064bf3e6744842aad751543fe83b0f565ecb5398b1f4a68979",
+  "dependencyVolume": "stack-bench-release-deps-3943a8eaab",
+  "qualified": false,
+  "modelCalls": 0,
+  "checks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "expectedRetainedChecks": 107,
+  "expectedMutations": {
+    "spacetime": 6,
+    "postgres": 6,
+    "mongodb": 5,
+    "convex": 4
+  },
+  "slots": {
+    "spacetime": 640,
+    "postgres": 648,
+    "mongodb": 656,
+    "convex": 664
+  },
+  "mutationWorkers": 3,
+  "overlaySources": [
+    "dashboard/dashboard-views.ts",
+    "dashboard/public/views/attempt.ts",
+    "docs/check-categories.md",
+    "docs/dependency-graph.html",
+    "docs/grading-coverage.md",
+    "docs/prompting.md",
+    "grader/mutations/convex-ecommerce.json",
+    "grader/mutations/mongodb-ecommerce.json",
+    "grader/mutations/postgres-ecommerce.json",
+    "grader/mutations/spacetime-ecommerce.json",
+    "grader/mutations/supabase-ecommerce.json",
+    "src/actions/actor-transport-action-executors.ts",
+    "src/actions/browser-action-executors.ts",
+    "src/actions/named-action-executors.ts",
+    "tracks/ecommerce/composition/packs/feature-accounts.json",
+    "tracks/ecommerce/composition/packs/spec-access-control.json",
+    "tracks/ecommerce/composition/packs/spec-live-state.json",
+    "tracks/ecommerce/composition/recipes/sequential-l1.json",
+    "tracks/ecommerce/composition/recipes/sequential-l2.json",
+    "tracks/ecommerce/composition/recipes/sequential-l3.json",
+    "tracks/ecommerce/contracts/application-interface.md",
+    "tracks/ecommerce/progression/ecommerce.json",
+    "tracks/ecommerce/scenarios/02-server-actions.json",
+    "src/composition/calibration-compiler.ts"
+  ],
+  "calibrationMode": "Diagnostic overlay only; clear evidence and reuse in image copies, preserve tracked calibration and historical bytes.",
+  "pending": "Root scope review and frozen diagnostic build required. No paid work authorized by this diagnostic input."
+}

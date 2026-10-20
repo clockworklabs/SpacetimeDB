@@ -152,7 +152,9 @@ Calls made while disconnected fail immediately. Pending reducer and procedure pr
 
 ## Gotchas
 
-- **`useTable` rows are `readonly`.** Copy before sorting/mutating, or it fails to type-check:
+- **Subscription rows have no presentation order.** A server view's array order does not
+  define client cache iteration order. `useTable` rows are `readonly`; a sorted copy can
+  express the application's display order:
   `const [rows] = useTable(tables.message); const sorted = [...rows].sort(...)`.
-- **bigint in JSX.** ids/counts from `t.u64()`/`t.i64()` columns are `bigint`, which React
-  cannot render. Wrap it: `{Number(row.id)}` or `{String(count)}`.
+- **64-bit display values.** `{String(row.id)}` preserves the full `bigint` value.
+  Conversion to `Number` can lose precision outside JavaScript's safe integer range.

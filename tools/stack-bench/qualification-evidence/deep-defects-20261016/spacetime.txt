@@ -1,0 +1,34 @@
+== spacetime reference (dependency L6, selected deep scenarios)
+  TOTAL 50/50  $0  0 repair(s)  1442s
+CAUGHT               reorder-rule-replayable-by-customer — expected ecommerce.spec.access-control.automatic-reorder-access.502c
+CAUGHT               delivery-clock-advances-cancelled-orders — expected ecommerce.l3.order-delivery.order-delivery.305a
+CAUGHT               delivery-scheduled-an-hour-after-shipment — expected ecommerce.l3.order-delivery.order-delivery.303a
+CAUGHT               reorder-threshold-requires-stock-below — expected ecommerce.progression.automatic-reorder.automatic-reorder.502a
+CAUGHT               return-button-shown-for-pending-order — expected ecommerce.returns-pricing.cancellation-and-return.3e
+CAUGHT               recommendations-blend-latest-store-order — expected ecommerce.spec.access-control.recommendation-profile-isolation.403b
+CAUGHT               activity-history-shows-viewer-as-actor — expected ecommerce.progression.staff-activity.staff-activity.624a
+CAUGHT               cart-inactivity-timeout-fifty-minutes — expected ecommerce.l3.cart-expiration.cart-expiration.304a
+CAUGHT               support-refund-leaves-order-status — expected ecommerce.progression.support-refunds.support-refunds-resolution.615a
+CAUGHT               cart-restore-drops-unavailable-items-silently — expected ecommerce.progression.cart-recovery.cart-recovery.503b
+CAUGHT               reorder-dedupe-checks-wrong-status — expected ecommerce.spec.transactional-integrity.automatic-reorder-deduplication.502b
+CAUGHT               support-order-link-requires-staff — expected ecommerce.progression.order-support.order-support-owned.614a
+CAUGHT               promotion-report-uses-pre-discount-revenue — expected ecommerce.progression.promotion-reporting.promotion-report-revenue.622b
+CAUGHT               support-refund-allowed-for-case-owner — expected ecommerce.spec.access-control.support-refund-access.615c
+CAUGHT               notifications-view-missing-owner-filter — expected ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               cart-restore-warning-shown-after-full-restore — expected ecommerce.progression.cart-recovery.cart-recovery.503a
+CAUGHT               recommendations-capped-at-highest-price-paid — expected ecommerce.progression.personalized-recommendations.personalized-recommendations.403a
+CAUGHT               support-order-link-skips-order-owner-check — expected ecommerce.spec.access-control.order-support-ownership.614b
+CAUGHT               recommendation-dismissals-shared-across-customers — expected ecommerce.spec.access-control.recommendation-feedback-privacy.504b
+CAUGHT               promotion-redemption-counted-on-apply — expected ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a
+CAUGHT               activity-history-open-to-customers — expected ecommerce.spec.access-control.staff-activity-privacy.624b
+CAUGHT               support-refund-repeats-full-payout — expected ecommerce.spec.transactional-integrity.support-refund-accounting.615b
+== spacetime level 3 reference
+  TOTAL 176/176  $0  0 repair(s)  3114s
+
+== spacetime round 2: reference on the affected deep scenarios
+  TOTAL 20/20  $0  0 repair(s)  765s
+CAUGHT               startup-replays-completed-shipments — expected ecommerce.l3.deferred-integrity.exactly-once.312a
+CAUGHT               delivery-notification-preference-inverted — expected ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a, ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               cart-deadlines-rearmed-at-startup — expected ecommerce.l3.deferred-durability.restart-survival.316a
+CAUGHT               delivery-due-time-kept-in-memory — expected ecommerce.l3.deferred-durability.restart-survival.315a
+CAUGHT               recommendations-held-after-dismissal — expected ecommerce.progression.recommendation-feedback.recommendation-feedback.504a, ecommerce.spec.access-control.recommendation-feedback-privacy.504b

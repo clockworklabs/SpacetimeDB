@@ -1,0 +1,1270 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "approved": true,
+  "reviewer": "root",
+  "candidateCommit": "fae0df803d79b2068c725d46d77b3d6bab05b17e",
+  "image": "sha256:eae464547eeab8f04f012cc188b61835b549080e7de3473cb2736395854fd194",
+  "baseCommit": "a9da55ac4c",
+  "replacedChecks": [
+    "ecommerce.progression.managed-support.managed-support.613c",
+    "ecommerce.progression.support-history.support-history.612c",
+    "ecommerce.spec.access-control.managed-support-privacy.613b",
+    "ecommerce.spec.access-control.support-history-logout.612d",
+    "ecommerce.spec.access-control.support-history-privacy.612b",
+    "ecommerce.spec.live-state.managed-support.613a",
+    "ecommerce.spec.state-durability.support-history-reload.612a",
+    "ecommerce.spec.access-control.signed-out-purchase.3a",
+    "ecommerce.operations-access.fulfilment-queue.1c",
+    "ecommerce.returns-pricing.refund-accounting.203a",
+    "ecommerce.returns-pricing.cancellation-and-return.3a",
+    "ecommerce.returns-pricing.cancellation-and-return.3b",
+    "ecommerce.operations-access.operator-authorization.201c",
+    "ecommerce.inventory-operations.stock-conservation.202d",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.l3.deferred-integrity.exactly-once.311a",
+    "ecommerce.inventory-operations.shipping-accounting.202e"
+  ],
+  "reusedChecks": [
+    "ecommerce.feature.accounts.accounts.1a",
+    "ecommerce.feature.accounts.accounts.1b",
+    "ecommerce.spec.access-control.account-password.1c",
+    "ecommerce.feature.accounts.accounts.1d",
+    "ecommerce.feature.cart-checkout.cart.4a",
+    "ecommerce.feature.cart-checkout.cart.4d",
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.feature.catalog.catalog-search.2d",
+    "ecommerce.feature.catalog.catalog-values.2a",
+    "ecommerce.feature.purchasing.purchase-order.3c",
+    "ecommerce.feature.reviews.reviews.6a",
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.operational-views.5c",
+    "ecommerce.inventory-operations.operational-views.5d",
+    "ecommerce.inventory-operations.operational-views.5e",
+    "ecommerce.inventory-operations.operational-views.5f",
+    "ecommerce.inventory-operations.stock-conservation.202b",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+    "ecommerce.l3.server-time.server-time.312a",
+    "ecommerce.operations-access.fulfilment-queue.1b",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.progression.catalog-management.catalog-management.622a",
+    "ecommerce.progression.catalog-management.catalog-management.622b",
+    "ecommerce.progression.customer-profile.customer-profile.620c",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.progression.notification-preferences.notification-preferences.630c",
+    "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+    "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+    "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+    "ecommerce.progression.staff-access.staff-access.601a",
+    "ecommerce.progression.staff-roles.staff-roles.621c",
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "ecommerce.progression.support-intake.support-intake.610a",
+    "ecommerce.progression.support-triage.support-assignment.611a",
+    "ecommerce.progression.support-triage.support-priority.611b",
+    "ecommerce.progression.support-triage.support-status.611c",
+    "ecommerce.spec.access-control.account-disclosure.110a",
+    "ecommerce.spec.access-control.cart-boundary.109a",
+    "ecommerce.spec.access-control.cart-boundary.109b",
+    "ecommerce.spec.access-control.customer-profile-privacy.620b",
+    "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+    "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+    "ecommerce.spec.access-control.order-ownership.106a",
+    "ecommerce.spec.access-control.promotion-management-boundary.620b",
+    "ecommerce.spec.access-control.purchase-attribution.102a",
+    "ecommerce.spec.access-control.purchase-session.101a",
+    "ecommerce.spec.access-control.review-eligibility.108a",
+    "ecommerce.spec.access-control.review-eligibility.108b",
+    "ecommerce.spec.access-control.staff-area-boundary.601b",
+    "ecommerce.spec.access-control.staff-role-boundary.621b",
+    "ecommerce.spec.access-control.staff-role-revocation.621d",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.concurrency-safety.last-unit.201a",
+    "ecommerce.spec.concurrency-safety.last-unit.201b",
+    "ecommerce.spec.concurrency-safety.last-unit.201c",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.external-data-sync.external-stock.901a",
+    "ecommerce.spec.external-data-sync.external-stock.901d",
+    "ecommerce.spec.live-state.fulfilment-queue.1a",
+    "ecommerce.spec.live-state.inventory-dashboard.5a",
+    "ecommerce.spec.live-state.open-list.902a",
+    "ecommerce.spec.live-state.purchase-stock.3b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.live-state.rating.6c",
+    "ecommerce.spec.live-state.sales-dashboard.5b",
+    "ecommerce.spec.live-state.shared-cart.4c",
+    "ecommerce.spec.live-state.warehouse-stock.7c",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.account-state-recovery.105a",
+    "ecommerce.spec.state-durability.account-state-recovery.105b",
+    "ecommerce.spec.state-durability.cart-reload.4b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.state-durability.customer-profile-reload.620a",
+    "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+    "ecommerce.spec.state-durability.session-reload.1e",
+    "ecommerce.spec.state-durability.staff-role-reload.621a",
+    "ecommerce.spec.transactional-integrity.books-balance.107a",
+    "ecommerce.spec.transactional-integrity.books-balance.107b",
+    "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+    "ecommerce.spec.transactional-integrity.server-price.104a",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+    "ecommerce.spec.transactional-integrity.unique-review.6b"
+  ],
+  "executableEquivalences": [
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "886fac0911a8f4b872a1d4d2ca4582141105fe826c66619c0e6043e2e475c52f",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "e5cd484f2e8457b01ee551e3070a22b99b8693899d5f887d7b5893b1c2b44abd",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "696b6b426115e51aa5f83778e4d674ec0485f296c980b85c38c748415febe65b",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2ff2b06d57793eca77bac97e3a2f3ec53016a8bd1888b47a3441d9e4737b13f1",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "5964d725ceda174d12f4a9cdbb6a5df9d7d05d36b5081ab017d8a61de7d644cb",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "a7caa0fe59d3b5aaa4715fcedffb3d15072adfed778e96a6c1414ac47a2ee2d9",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "1f0545921fdd8e193175641155f990802ec5ecef338f93b80b41512df239f974",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "002d93c40992f477d8c1da7b00845cdfe04864eeef35fe8d6b0d81bb880a7239",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "0554fd6a0a173b4ff9b9dca1468dd1f8f32c11319888882b5eaa96004dd45086",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "99f7ce3c13b11bf3c7fdc742656a0a482742814826a51bc2db36a19a178132a7",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "a624ae4170d100a9133db5ed2ac3686a6be63153564eedd333c1cdae11c4c817",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "7797b69093145170dc055c05838039a3c2d9a086c3fe56f0192f439c2292701e",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "3438bd353df49fcc6b2f1f6a0c9bd38d7fd247e984372cb8b08b6d33b4d4cf9d",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "a94eb7fe1415d45004c9a997775a0b2bd903929eb39afd86a97414b02a2f7c17",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "250040d4ccfb1203a388f1bb82845965b69e694352a783369049a9627c2cdf9b",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "681c4c9ad83791152dcc2b62f4fbffe6d16e1112044691f98a2a57d6cb433c90",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "5c4518ed1ef285e1db42d91212f24021b1b51406728731595c101e7e788dcb3e",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "b03aecea221b88a1a6a24e0eccd5a3be67e1e96cb18b5ea39149a0c65be2f24f",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "d6702c2baacb2f309f7f126ec460088af6a58b1f78535c3483fce25a3fcbf322",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "7cdf1c72945c7f788402f694eb4fd8fa2cba3a290e37f6b0f26a9a99b095b33b",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "4b46451fb20b3a671ede495806c4b1c666876cd0facff1c27731381975bcfca2",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "de4841f80ff5c46197c77fbb682e637d70ea1b3bdfa5211aa3f31bb7da320c8a",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "fb61656ae25e83c392250e57a58a7f569bcd42b0da179e8c13811298daca7db0",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "e389913df8ba45c65425b9744763cb70201a27c7c11be878ec7c691b3d46c146",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "2df97cad66798f1b4c13a1609f139f2da5d867ac8bcc1d4964824067129801a7",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "ecfc53d7c99ad94e1a23974086dd3fcf652fd37242c506da34e33cbd620cf378",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "d4c0809aafc67533354df5d58f51fd584036fa6f35898899179aceb7ee137d96",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "8deb9e80d0f224397863c6a03213f192ac67098ea51afc4637ab13f946b4af11",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "c288f07a496f7e61d26d52cd986a0e3653787da165d05cac649428ed7154742a",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "b0eb79bfd49e7880a794b5e3aa5fcb304a355e62a1b157832b1e4ee22b833c28",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "46eccfd5d77a3ef2d9fe33afe9147fc888a874f54073e9e40db74042e9569154",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "6191bbb0d9c34539a5ff2ae10f23d36c78b993eb32f4f50153ddb4f5b01deb5f",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "c3362f25defd5fd69124efba09fe9aefd3ad20063395dba0cf8453f60efa532a",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "14054c6f1dc3395f434d7bf14c9ee0011c3133e282f8c644a219602a0ad86b9e",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "4f0da393bff7e0e6ab140bdd5bf7d3d65f042eb0ce24fc090393bda52364d068",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "f3231de2128af1baebb75f960c84c8f34516fe03d75da88c35a60bf9cc9dc6bb",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "e6f5baa5245213d640622d7e503e8f53a4eb5df3d9c6a7f3b489ba3d26a76fa0",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "1bbd60c1dd63a81c5ca9e03f4fb70b58d2c969f3ab550dddb613b662bad90712",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "f0c376de1594b0486f6294ec13ac689cacf1cfb992306f6db017fd7cb99bdb08",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "84b6669ce7b306b84290cf93819ab8efef20b0b72021c7bf5ca5fc92c8bc04b8",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "4fad8810881387954160b6533c3d795e52343b1718894bdd3fe82634585b786b",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "f2815c4d4dab37fb035dbcc475080d2c5844ef119e04502854cda5923ff1c4dd",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "4fbc90c64aab09ab7d44dfb65dad19fce7ce91b420da74853a409eff84f43df4",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "38051552ed07cdf0e3594f85ad38b9d004b07eb915c7077c382c8ed3140bf353",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "fromExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "f39586aca0ad8838a16a9c5c0c2f7ccd37887bcc1faa1923732f4a4792d525af",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "cce97ff28ca73f93113a217de3ded0172f93fdaa2448152de0b0def67669242f",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "fromExecutableSha256": "ddecd3ccfdb15943cad69d1c6437c91a85282f65b049f9599c7c75501d526236",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "9a9883b5648b7e3a1d7a8fa40203f7b467920c2acfc30d44c632d6004911c7ce",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "053d2dc8a058f96278d815037d286d9c1aeacb965bc03f96c1fe5084a3a67323",
+      "toExecutableSha256": "e8a208a656a8e7e3babd2238c80f54388039cedc320d79eb4b4d14e596113653"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "f39586aca0ad8838a16a9c5c0c2f7ccd37887bcc1faa1923732f4a4792d525af",
+      "toExecutableSha256": "be3e44fb37c7fcc33df41a2cc023a760d0d00303b055289dec94f4fb46a8f118"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "cce97ff28ca73f93113a217de3ded0172f93fdaa2448152de0b0def67669242f",
+      "toExecutableSha256": "c4106533e227658871ee3b77c91db9291989bf1f07699486d09cfd7948eed8c6"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "ddecd3ccfdb15943cad69d1c6437c91a85282f65b049f9599c7c75501d526236",
+      "toExecutableSha256": "eefe248eb365669fd2299bbe67a0e1736925d78ada0ee4fcb23305c1b229ae99"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "9a9883b5648b7e3a1d7a8fa40203f7b467920c2acfc30d44c632d6004911c7ce",
+      "toExecutableSha256": "a5e26b2d222f500ed4e9af1be2af250f636952edc603614265468a4677d61801"
+    }
+  ],
+  "contractTextEquivalences": [
+    {
+      "fromTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "7bf9bc25b7a7e52449c380b51be539f6db344f4904f26d9c1424fed136384234",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "4373d05c598352b585c93cf44003904e320fdf6772ea75b5d77b24d49430017e",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "fceac36a2300719e7ffc43fb4ec4965fbb3303c2190d27c9a0e18bc66d775c24",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    },
+    {
+      "fromTaskSha256": "6075b7ec8c3ef69e9ba736f1b7cb905df57078ace75ecec3d735e48fb7796c4e",
+      "toTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d"
+    }
+  ],
+  "controls": [
+    {
+      "group": "support",
+      "kind": "reference",
+      "stack": "spacetime",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-spacetime.json",
+        "sha256": "81d25ea91def32c4e6a8b4c5936f8ac1a719f239ef344e4f11f80e224e3ffa6d"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "5a5e90c1827b1a833410b300cc53c20d3fba6ca8170c5fc8bec240a0aff5098c",
+      "mutations": null
+    },
+    {
+      "group": "support",
+      "kind": "reference",
+      "stack": "postgres",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-postgres.json",
+        "sha256": "e1e4d86925d8abe9c574a7cc29020a70824d85fc6347d734fc69cbc00ee2ff70"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "9d789495a5b2f111643f9bd2a3c9e264597424ce57127f70d964a88f694f56ce",
+      "mutations": null
+    },
+    {
+      "group": "support",
+      "kind": "reference",
+      "stack": "mongodb",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-mongodb.json",
+        "sha256": "3fd63750d357435540e5a989404cdce9c51351f4a4c5a4b92bd9dd0b68b03425"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "67a53dcfac75e436c2599c2dfd95db55139f45c584827aae09fed1206b8a1a1f",
+      "mutations": null
+    },
+    {
+      "group": "support",
+      "kind": "reference",
+      "stack": "convex",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/reference-convex.json",
+        "sha256": "27dda27a3702382a491c609fc0f82343d9e7ce8bd4d9a0cddb3832b8b09316d1"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "fd9f80a0778d42b4246e9ed070ab3477697ebc650b7edd41a766a0daf900c6e7",
+      "mutations": null
+    },
+    {
+      "group": "support",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-spacetime.json",
+        "sha256": "ab5a24025ee66a4b5c927d00183e2883d0f061951a0fc2959228669cb20dc192"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "c5433f4890b482d4d8d21809693afb2161bc06a018a7252e87bc7f22d054415c",
+      "mutations": 8
+    },
+    {
+      "group": "support",
+      "kind": "mutation",
+      "stack": "postgres",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-postgres.json",
+        "sha256": "bc9a7bf6da8d4a487ee72359e1b8d3abf810f352089bdabd6b92427c6f436d5b"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "623b3966e5b25aa2b4b0123c51337c11e6bb0d4da8f12bda984c11d2f4ac736c",
+      "mutations": 7
+    },
+    {
+      "group": "support",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-mongodb.json",
+        "sha256": "ef3f81491fc63938171cf308706104ebbb0255ac210077bf7aee754a3ea76c76"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "fff568a5d977fcd648ffe463a5fd92dad772b5de0a44227a4a089088ae5c1e1c",
+      "mutations": 7
+    },
+    {
+      "group": "support",
+      "kind": "mutation",
+      "stack": "convex",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/mutation-convex.json",
+        "sha256": "e9d8e817cc13235d52ee17de71c47392fbd2c3d2a5852e379930816d5785ad6a"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "6db9356327c0b3a7ba7db0dfbda24204898c7f8fefaab281eb5b7377671946ff",
+      "mutations": 5
+    },
+    {
+      "group": "support",
+      "kind": "null",
+      "stack": null,
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/reports/null.json",
+        "sha256": "dd17c93c64cb5fcea2271f1d929bc29d3cfbd124a84855b6ec307647beaa19ba"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/inputs.json",
+        "sha256": "4fd863e99ba4229bf27e54a9a156d68cc3efe01134593fc0e90d7736ba6eb9a3"
+      },
+      "scopeSha256": "d0dfbdd098aaebb5e4c8e6a211cec5bb2c4200d71d6e176466bfd04234a1cfac",
+      "mutations": null
+    },
+    {
+      "group": "purchase",
+      "kind": "reference",
+      "stack": "spacetime",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-spacetime.json",
+        "sha256": "a8a0656d95d1186ae6ee69699f2ac9c714835f212214c6ed91a98fb0f666e86e"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "7139f8d652c7315e3ffa49d2e01eb4dc381f3049828e17bacb678e0b24c8ee34",
+      "mutations": null
+    },
+    {
+      "group": "purchase",
+      "kind": "reference",
+      "stack": "postgres",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-postgres.json",
+        "sha256": "1c53670f7260aee677388d480e5a359f64ba11eeeb1b9baeb94aa74d0c039043"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "adc6d0c30eee82c256384715b3022f6603f65a19f1cbfaa395a55f211afe24be",
+      "mutations": null
+    },
+    {
+      "group": "purchase",
+      "kind": "reference",
+      "stack": "mongodb",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-mongodb.json",
+        "sha256": "8fc6f9c175a9ff2967814e8d3bab04bd9e4ec4c35c7e600e2de0ae73bc8e98f2"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "235966f4467a62c28a3d54ffc8038f59ecb3c6c490d59e4d2131cec78f65d329",
+      "mutations": null
+    },
+    {
+      "group": "purchase",
+      "kind": "reference",
+      "stack": "convex",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/reference-convex.json",
+        "sha256": "3855e5b08ed97993511f573fad8510b0421e862fb30a72f8c16323f5219ca639"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "fc974a7d69c728af17933c40e931ed37e1d0fe676e8cea1304d5cb0f5a92fe7c",
+      "mutations": null
+    },
+    {
+      "group": "purchase",
+      "kind": "null",
+      "stack": "null",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/null.json",
+        "sha256": "72abee8cfad634aa70db07065af17d20958d3a40f078f68944c0ba304923587e"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "5fbe2fb9d4415e384ac6fbe8831126083cf28b6d21a20932596ba46e6fa517ba",
+      "mutations": null
+    },
+    {
+      "group": "purchase",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-spacetime.json",
+        "sha256": "4e343487a371ef0c207a3205c48937da5e20ca39c5bb36100cf9bdff36add639"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "fc293bb0b55e23b1e65903b5a5fb38fc60ad676422bf81e6d54362f1f826a9d2",
+      "mutations": 1
+    },
+    {
+      "group": "purchase",
+      "kind": "mutation",
+      "stack": "postgres",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-postgres.json",
+        "sha256": "c836807b6e7c8d8bb34f669bf375c6d51d0e4f4351102bcd8697c002446dd785"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "0576ebda536a46291e67896bb475a226b22bb0ee6e27e9a106446e96b3cdeb09",
+      "mutations": 1
+    },
+    {
+      "group": "purchase",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-mongodb.json",
+        "sha256": "0b6daf7c4bbffd21243cfddb6c24cfd47eae57758d0c09b71852fa85ddc3639a"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "b3f00c078d081d8c7b04b0a22c7558a6918ef9dd2158d8e4da9a4f498682ab25",
+      "mutations": 1
+    },
+    {
+      "group": "purchase",
+      "kind": "mutation",
+      "stack": "convex",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/reports/mutation-convex.json",
+        "sha256": "fb11e2105ce1fce8909205b5b56c72fc4ac72de7a903b0520100fdec9bfdacd7"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/inputs.json",
+        "sha256": "86cd6a09949312f277045e4da89ced476d8cdd76d9cb8be8fb21487e4d208084"
+      },
+      "scopeSha256": "f4534f55c086cf81e17e15be3c8418f9a628002cd0c6d8055805fd55c136ab15",
+      "mutations": 1
+    },
+    {
+      "group": "status",
+      "kind": "reference",
+      "stack": "spacetime",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-spacetime.json",
+        "sha256": "b3142f88a49fe816774126d642dd517e571691a9480f2d4e3b8fe76c79f5966b"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "ed4b5d2bdc7fa0f5db08291bcb013f9d17f7d4cff4c8354a8d074f3a10bea79f",
+      "mutations": null
+    },
+    {
+      "group": "status",
+      "kind": "reference",
+      "stack": "postgres",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-postgres.json",
+        "sha256": "cdcc56c8a5ec57de4082782a62697b0ca2ad36f9747c6ab82127f44590cfb38f"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "9221f705e3bfdfb3be4698d7e80f216af513e71eb02bd8bb790d53e51f2e1604",
+      "mutations": null
+    },
+    {
+      "group": "status",
+      "kind": "reference",
+      "stack": "mongodb",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-mongodb.json",
+        "sha256": "8e8ea7a980187f5e68fb28d1c783317e11f67a6478e2fb16c008ef23b6ee6513"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "f1711d1f443dc85e6f72a2cb2b13d10a3ce6b9183d65cfb6b17c9720ddc808fd",
+      "mutations": null
+    },
+    {
+      "group": "status",
+      "kind": "reference",
+      "stack": "convex",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/reference-convex.json",
+        "sha256": "4d53cb258feaf82e52ccb35488906614eb8bdeb2037e0955867accc90faa632e"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "4e98c69da767470d65076bfc96172c76a568c076ec28f6013a373edb0e305be9",
+      "mutations": null
+    },
+    {
+      "group": "status",
+      "kind": "null",
+      "stack": "null",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/null.json",
+        "sha256": "e938e80f05ddaf650c42a818106c52287ebf89de82b63942d5e4844d2adde621"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "58a6863b900a2a8668388312722727780e969983086097e68388e5d504726e8d",
+      "mutations": null
+    },
+    {
+      "group": "status",
+      "kind": "mutation",
+      "stack": "spacetime",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-spacetime.json",
+        "sha256": "9ea3e68814e74ad9df0213dfd96dee4606a82f15c4a41b0834dc91275a90632d"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "86c03faa2a2b2e227ba87b50e221908a816e5af249ef62875d45bc1fd98afd3d",
+      "mutations": 16
+    },
+    {
+      "group": "status",
+      "kind": "mutation",
+      "stack": "postgres",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-postgres.json",
+        "sha256": "98a53c11bd02afe960d74f615b6e49774930369326c84a280efc15f442ad4f52"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "01d3fc8003205b56d33f3a71bc5beb3e5ce6777b3c77c5fe7922510515f2ddf3",
+      "mutations": 18
+    },
+    {
+      "group": "status",
+      "kind": "mutation",
+      "stack": "mongodb",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-mongodb.json",
+        "sha256": "0d2c3ac83377997b98c91d00c2e5cdb77c23e6e1f9b277d72d47aadc0ad689e2"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "6647a00fa318b945d0adbd189879a22dbd46cf7e7a5c075429586c5e7cf39570",
+      "mutations": 17
+    },
+    {
+      "group": "status",
+      "kind": "mutation",
+      "stack": "convex",
+      "report": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/reports/mutation-convex.json",
+        "sha256": "dbbaff87baebda385e5d74f64004b2d7483e1a32207519ff69344d78e8b6febc"
+      },
+      "snapshot": {
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/inputs.json",
+        "sha256": "ab0a239d7bf75b2fafcc19b5c94fc5cb957d67689b46695e23c4ffa953928ff1"
+      },
+      "scopeSha256": "2429c9b276a4aa5fb92f008b33f8a7c5495c9e3b3b260eb1f474b7ff5b645281",
+      "mutations": 15
+    }
+  ],
+  "sourceReview": {
+    "path": "qualification-evidence/ecommerce-l3-combined-20260929/source-runtime-review.json",
+    "sha256": "818fe238f4e5ac0aa256ce2745e3cba310237c16d862d7b454fa89ce720e895d"
+  },
+  "taskTextReview": {
+    "baselineTaskSha256": "9114e01fdb7cbd8051afcca71bb816060a8081ec5d940538af5e306ad6555b8f",
+    "finalTaskSha256": "cf3892a37fdd5dfcb816d5784d8383c2ea528e312fa954c9f1e06cb6df95cd4d",
+    "changedContractIds": [
+      "ecommerce.l2.order-cancellation-hooks",
+      "ecommerce.progression.fulfilment-queue-hooks"
+    ],
+    "exactInsertion": "The visible `order-status` text may have whitespace, a middle dot (`·`), or a bullet (`•`)\nbefore or after the state name. Do not add other words or state names to this element.\n",
+    "retainedSourcesValidatedToBaseline": 137,
+    "priorApprovedEquivalenceEvidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-reconnect-97218b8d39/reuse-review.json",
+        "sha256": "2bc7bc26b2db46f44bb6b5fa813e33abfbd094d59be1792c8dfc49c8e4d7c205"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-20260925/reuse-review.json",
+        "sha256": "6b6d38c12c209104c5cf28379d6d2d9bbdf660ee34bfa55f68dd14d2393757cb"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-model-selection-20260925/reuse-review.json",
+        "sha256": "35bd9c773773771a88765de396d6011e83d026da18cf9dd599451cf9be2d613d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-stock-view-20260925/reuse-review.json",
+        "sha256": "1b001bf2d26382cda924677486826b5e0e6d35c89f38044b6871906bae52f654"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-stack-isolation-20260925/reuse-review.json",
+        "sha256": "25ec523075fb8d5d434af25a98bdc3d593d0ad37596e913ab7f5c97d2fe63db3"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-candidate-641c6e86/reuse-review.json",
+        "sha256": "02afe5d3568f72d25fc0b75452d174ed8641479302d6587f3b71cdfca8c3d252"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-notifications-20260926/reuse-review.json",
+        "sha256": "8f2b117c96b7ab51d3a6b5c1fa658d48d2b7e88461be55a2ac22025e82629779"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-capture-20260926/reuse-review.json",
+        "sha256": "985d8d2a042ac8100282779b61165f158f291d64e6e6e73790e8f81a3084b1d6"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-roles-20260926/reuse-review.json",
+        "sha256": "309eb4561883fb5b5aef7b325df5213415119badefb9ede80faac27d098c3edc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-get-catalog-20260926/reuse-review.json",
+        "sha256": "ea00b6c16e7af57646620505e1d6a7d951f3042162d028d38592f23f602148f9"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-navigation-20260927/reuse-review.json",
+        "sha256": "7644993c32de6e345f35e3e5d70a2c9ddb1236e95be4f334112a83b6a2bb7612"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/reuse-review.json",
+        "sha256": "605b1ae602a553b22424a359f140114b8927e53aa1f223817e785cd7a128772f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/reuse-review.json",
+        "sha256": "10de7ef82ebb482891265082f5042f0527ace74db30082bf2fdd6023d50f1711"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-module-layout-20260927/reuse-review.json",
+        "sha256": "64b6b3922586c6c2e545824f41cca99740d1ddf23050b5095fe640a27756e14c"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-count-observation-20260927/reuse-review.json",
+        "sha256": "3df09f4839565d141926c5e41942ad5a47c89647489d0403bcbf41ed7a92835c"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-20260927/reuse-review.json",
+        "sha256": "1613ba05650d0e6119dd5677eec6f78ef3ef8e650a0d49d1aa044d6ce0869625"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-catalog-support-20260927/reuse-review.json",
+        "sha256": "ec2311e282e0baae5bec4a42177a89d126ed755a99fc037d78296f312988f964"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-final-20260927/reuse-review.json",
+        "sha256": "8304ea726c56381853bd05c56a7ae92799f1162efcd91ec89dce73054530b47f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-entry-navigation-20260927/reuse-review.json",
+        "sha256": "3b8dbf6b8cd3c69a309d84387cd559d12a451a59a9626f6a513a58d6f62a862b"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-audit-fixes-ea80500/reuse-review.json",
+        "sha256": "539e0631e201cb264f7d9ab8036aae25b2136828ad9e76f9b1bd4f4451dcd768"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-interface-20260927/reuse-review.json",
+        "sha256": "d004fcc619d75c19bbac9e00ce56d084e574280046d7a56e96e31bfeace2186d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/reuse-review.json",
+        "sha256": "ca2b58ea53231a9a824499adac9fc8c30df6097fb8dec8163d0b44c4f5619805"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149fec-reuse-review-draft.md",
+        "sha256": "5b84a51573e67e50ead9f953e0842e1752c62221c727ec3c9c1550034a687c1b"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/8b202-reuse-review-draft.md",
+        "sha256": "dd200b59d5efc83b7199e3e7333c660f112d6d12b0b7056cea25d74ee76c893a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/f7d1-reuse-delta-review.json",
+        "sha256": "fce8853c7a93f5775e333e742a97b6a9d6a94d547a4519a3cafe422d05b736aa"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/c033-reuse-delta-review.json",
+        "sha256": "42fee6ef886aa6ef33f3af3eeb38b113153225d98c088049a41ff5883633d335"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/149fec-reuse-delta-review.json",
+        "sha256": "964c659bfdbd951620718f49a0dd06fbca92f6db92ef97be34a1d8667a39dc55"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/native-103b-audit.json",
+        "sha256": "4df7e280dd517175f4966e440c077f9de1107e711d9378c80bfa212c5f5ff327"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-signup-writes-20260928/completion.json",
+        "sha256": "12f43e5b95f7b6720d3ebf8d160095913482ac5ec8410b84f407519516b690ea"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-name-contract-20260928/reuse-review.json",
+        "sha256": "66ace66d9211c7d442a9a3549c0a6928db61af94ad182c290aed60c5d15435e1"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-restored-navigation-20260928/reuse-review.json",
+        "sha256": "7b9ba485516ba6675bd8d8371a2f269ce0589c1efa7e09755b629c17a02dd5d1"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-faceted-ranking-20260928/reuse-review.json",
+        "sha256": "91e6cb0704b95df5c5cb82eda031eadfa1fab35f52bc85ccad1b20119fd450d0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-checkout-readiness-20260928/reuse-review.json",
+        "sha256": "74fb2563bf4c751c1592d16e7224b8733e5f849a4666a0f6fe2c64896737d7d5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-click-classifier-20260928/reuse-review.json",
+        "sha256": "833a12cea7a31ddaabcc75efdbc8bfbac869e07b4182d24f280e05e0eb534176"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-product-defensibility-final-20260928/reuse-review.json",
+        "sha256": "40758c75e770b1d4d37e825f11e37da0db5c9ed11902a68b11b2d1f2afc5329a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-probe-removal-20260928/reuse-review.json",
+        "sha256": "94056f53fadc5ee9459c6e2c8b4494d693d2c36cff9d1a63a3d08f2a3609c11e"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-cookie-session-20260928/reuse-review.json",
+        "sha256": "f3c312b2ac3dbeca2ca87e8b73f14b944b353dbbe6bbe9e9223adfa7ac58be1e"
+      }
+    ]
+  },
+  "rationale": "Fresh support navigation, signed-out purchase, and opt-in order-status controls replace 17 check slices. The other 95 checks retain their scenario/setup/selection/fixture dependencies under normal slice validation. Executable equivalences require root review of opt-in awaitWrites, unchanged default dbExpectPurchaseCount, opt-in statusText, and support-only scenario JSON. Status contract wording is reviewed only for fixed reference controls, not model prompt equivalence or historical grades.",
+  "limits": "Draft only. Root must review task-text equivalences, executable mappings, original artifact hashes, and the final normal slice validation. No calibration or historical grade is changed. This promotion does not change historical grades or qualify L6 or sequential recipes.",
+  "validation": {
+    "oldChecks": 112,
+    "freshChecks": 17,
+    "retainedChecks": 95,
+    "retainedSlices": 137,
+    "freshSlices": 27,
+    "supportDefects": 27,
+    "purchaseDefects": 4,
+    "statusDefects": 66,
+    "normalCoverage": true,
+    "normalSliceValidator": true,
+    "fullCoverage": true,
+    "controls": [
+      {
+        "group": "support",
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/support/control-proof.json",
+        "sha256": "1121dd3af6c79f67c5d7143389203f5a68ebae136a123d8e289db34f29bf6a73",
+        "originalControlSha256": "3f8c5926e4f5526f370f3205ce64647642997693a9c1f3c1dbc4319b380360c1"
+      },
+      {
+        "group": "purchase",
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/purchase/control-proof.json",
+        "sha256": "a6b6f6a9847b6c3512c2971224053ccea0573afe4d72a2cf22f8fb519a6dd723",
+        "originalControlSha256": "5a045a19ceb3121040528de143f130c21001e391b8133327a849aaf7ee1f5a1a"
+      },
+      {
+        "group": "status",
+        "path": "qualification-evidence/ecommerce-l3-combined-20260929/status/control-proof.json",
+        "sha256": "4f9852b4a93d800300d1b6fff05e424c2b56bd366a9f9745c2763f707a7dd1c7",
+        "originalControlSha256": "3cde3511632b052b3b6b22687401cc961065a73cd3250b5bab8517fa3a3c13f6"
+      }
+    ],
+    "preservedFiles": {
+      "path": "qualification-evidence\\ecommerce-l3-combined-20260929\\preserved-files.json",
+      "sha256": "3389173a228d0b94f1fc307f3e7edfec10d4c90a0f465d6f41b6ed4ef453b59b"
+    }
+  }
+}

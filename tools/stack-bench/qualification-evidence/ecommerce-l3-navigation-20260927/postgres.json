@@ -1,0 +1,718 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-postgres-20260926231213-31",
+  "attempt": {
+    "id": "reference-live-postgres-20260926231213-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-26T23:12:13.870Z",
+    "completedAt": "2026-09-27T00:29:58.325Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "45f7f8ac22d4c9815d5626c2913ca3a5591e05f9153c4a62e8cf38d2dc8f6c36"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "75126cbaf0f40378dc701a07fdf20e4a1b2052442c3b86f891f4dbc2d73787f3"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-postgres",
+      "sha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "2ec4dee3fdb27ae8cc5df27e252d99de11a63522112c80e9cc4dd1de82f5d8d5"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-postgres",
+    "fixtureSha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 21,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "c74191d08bf0a7be1fad7d293a20d2c99c10b928d5fef836bec412b167d47a9b",
+      "executableSha256": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "kind": "mutation",
+      "mutationSha256": "f2eb1b5c3092fab17143bce02bfb3a0f387c1d30fb76a3ab76d6a3b474c2f1ca",
+      "recipe": {
+        "contentSha256": "75126cbaf0f40378dc701a07fdf20e4a1b2052442c3b86f891f4dbc2d73787f3",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "postgres",
+        "reference": {
+          "id": "ecommerce-reference-postgres",
+          "sourceSha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3"
+        },
+        "version": "1.6.0"
+      },
+      "sha256": "f748444c312110c1cb36cacdae7f04cb4df018fa48b9fcc256a1e1bd49b7513e"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "postgres.runs/r1-workers",
+        "durationMs": 4661676,
+        "processError": null,
+        "harnessSha256Before": "6be6f7b8e143fa384d257f2d4af465daa8ad0f37a811ad45c6566443dc0a9e64",
+        "harnessSha256After": "6be6f7b8e143fa384d257f2d4af465daa8ad0f37a811ad45c6566443dc0a9e64",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-postgres-20260926231213-31",
+        "score": "124/124",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 79,
+        "zeroPointCriteria": 0,
+        "fingerprint": "f0c1d2b616f854be05283980cc856cc29796fc69c56649489b8163dc569df506",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.cart",
+              "checkCount": 1,
+              "setupRuntimeMs": 1244,
+              "criterionRuntimeMs": 6254,
+              "measuredRuntimeMs": 7498,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 42000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.catalog-discovery",
+              "checkCount": 2,
+              "setupRuntimeMs": 430,
+              "criterionRuntimeMs": 1615,
+              "measuredRuntimeMs": 2045,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.checkout",
+              "checkCount": 1,
+              "setupRuntimeMs": 1244,
+              "criterionRuntimeMs": 20160,
+              "measuredRuntimeMs": 21404,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 42000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.purchasing",
+              "checkCount": 1,
+              "setupRuntimeMs": 666,
+              "criterionRuntimeMs": 1138,
+              "measuredRuntimeMs": 1804,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.reviews",
+              "checkCount": 1,
+              "setupRuntimeMs": 2184,
+              "criterionRuntimeMs": 385,
+              "measuredRuntimeMs": 2569,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 22000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 1387,
+              "criterionRuntimeMs": 4318,
+              "measuredRuntimeMs": 5705,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.inventory-dashboard",
+              "checkCount": 1,
+              "setupRuntimeMs": 4086,
+              "criterionRuntimeMs": 10,
+              "measuredRuntimeMs": 4096,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.order-cancellation-features",
+              "checkCount": 2,
+              "setupRuntimeMs": 1884,
+              "criterionRuntimeMs": 11246,
+              "measuredRuntimeMs": 13130,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.recommendations",
+              "checkCount": 1,
+              "setupRuntimeMs": 590,
+              "criterionRuntimeMs": 5193,
+              "measuredRuntimeMs": 5783,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.sales-dashboard",
+              "checkCount": 2,
+              "setupRuntimeMs": 2890,
+              "criterionRuntimeMs": 5136,
+              "measuredRuntimeMs": 8026,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.stock-transfers-features",
+              "checkCount": 1,
+              "setupRuntimeMs": 764,
+              "criterionRuntimeMs": 1074,
+              "measuredRuntimeMs": 1838,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l3.scheduled-restocks-features",
+              "checkCount": 2,
+              "setupRuntimeMs": 1677,
+              "criterionRuntimeMs": 67209,
+              "measuredRuntimeMs": 68886,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 150000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.cancellation-accounting-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 1611,
+              "criterionRuntimeMs": 9722,
+              "measuredRuntimeMs": 11333,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.catalog-management",
+              "checkCount": 2,
+              "setupRuntimeMs": 3733,
+              "criterionRuntimeMs": 36,
+              "measuredRuntimeMs": 3769,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.customer-profile",
+              "checkCount": 1,
+              "setupRuntimeMs": 1900,
+              "criterionRuntimeMs": 5085,
+              "measuredRuntimeMs": 6985,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.faceted-search",
+              "checkCount": 2,
+              "setupRuntimeMs": 42926,
+              "criterionRuntimeMs": 25727,
+              "measuredRuntimeMs": 68653,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 141000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.fulfilment-queue",
+              "checkCount": 2,
+              "setupRuntimeMs": 2403,
+              "criterionRuntimeMs": 26710,
+              "measuredRuntimeMs": 29113,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 76000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.inventory-conservation-specifications",
+              "checkCount": 4,
+              "setupRuntimeMs": 5816,
+              "criterionRuntimeMs": 74948,
+              "measuredRuntimeMs": 80764,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 338000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.notification-preferences",
+              "checkCount": 1,
+              "setupRuntimeMs": 2237,
+              "criterionRuntimeMs": 5092,
+              "measuredRuntimeMs": 7329,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 40000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "checkCount": 3,
+              "setupRuntimeMs": 11886,
+              "criterionRuntimeMs": 43662,
+              "measuredRuntimeMs": 55548,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 138000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.review-access-specifications",
+              "checkCount": 2,
+              "setupRuntimeMs": 7569,
+              "criterionRuntimeMs": 10475,
+              "measuredRuntimeMs": 18044,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 82000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.stock-alerts",
+              "checkCount": 1,
+              "setupRuntimeMs": 25931,
+              "criterionRuntimeMs": 12178,
+              "measuredRuntimeMs": 38109,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 12,
+              "setupRuntimeMs": 74453,
+              "criterionRuntimeMs": 180156,
+              "measuredRuntimeMs": 254609,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "checkCount": 6,
+              "setupRuntimeMs": 30138,
+              "criterionRuntimeMs": 67166,
+              "measuredRuntimeMs": 97304,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 270000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.external-data-sync",
+              "checkCount": 2,
+              "setupRuntimeMs": 505,
+              "criterionRuntimeMs": 10414,
+              "measuredRuntimeMs": 10919,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 105000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.live-state",
+              "checkCount": 9,
+              "setupRuntimeMs": 25583,
+              "criterionRuntimeMs": 3472,
+              "measuredRuntimeMs": 29055,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 184000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.search-ordering",
+              "checkCount": 1,
+              "setupRuntimeMs": 21297,
+              "criterionRuntimeMs": 5251,
+              "measuredRuntimeMs": 26548,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 7,
+              "setupRuntimeMs": 26645,
+              "criterionRuntimeMs": 43552,
+              "measuredRuntimeMs": 70197,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 7,
+              "setupRuntimeMs": 367407,
+              "criterionRuntimeMs": 302180,
+              "measuredRuntimeMs": 669587,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 128,
+          "total": 128
+        },
+        "baselineDurationMs": 2119775,
+        "baselineOutput": "postgres.runs/r1",
+        "baselineHarnessSha256Before": "6be6f7b8e143fa384d257f2d4af465daa8ad0f37a811ad45c6566443dc0a9e64",
+        "baselineHarnessSha256After": "6be6f7b8e143fa384d257f2d4af465daa8ad0f37a811ad45c6566443dc0a9e64",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 34,
+            "artifact": "postgres.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "shipping-counts-sale-twice",
+              "purchase-stock-change-is-not-broadcast--01-buying",
+              "reload-hydrates-an-empty-cart",
+              "unauthenticated-direct-purchase-uses-default-account",
+              "backend-restart-discards-account-carts",
+              "review-route-skips-purchase-eligibility",
+              "oversell-no-row-lock",
+              "reconnect-does-not-send-current-catalog",
+              "cancel-does-not-restore-stock-feature",
+              "cancel-restores-stock-but-keeps-pending-status",
+              "customer-can-cancel-foreign-order-1-1",
+              "purchases-do-not-affect-best-sellers",
+              "progression-profile-address-is-discarded",
+              "progression-catalog-variants-are-discarded",
+              "stock-alert-delivery-is-suppressed",
+              "progression-faceted-filter-ignores-category",
+              "progression-due-restock-does-not-run",
+              "progression-checkout-leaves-cart-lines",
+              "progression-review-conflict-is-not-updated",
+              "progression-shipping-keeps-order-pending",
+              "progression-catalog-ranking-is-reversed",
+              "progression-restock-adds-wrong-quantity",
+              "direct-review-access-is-not-checked",
+              "category-totals-render-as-session-deltas",
+              "purchase-does-not-broadcast-fulfilment-queue",
+              "transfer-overdraft-guard-skips-bulk-transfers",
+              "checkout-crash-sibling-stock",
+              "review-script-reject-all",
+              "review-owner-reject-all",
+              "restock-admin-claim-commits-then-refuses",
+              "direct-purchase-price-commits-then-refuses",
+              "order-history-is-always-empty",
+              "checkout-rejects-all-price-control",
+              "opposing-transfer-rejected",
+              "mixed-history-lost-transfer",
+              "mixed-history-reject-valid-write",
+              "checkout-empty-replay-creates-order",
+              "checkout-clears-cart-without-order",
+              "catalog-discards-product-writes",
+              "shipping-claim-commits-then-refuses",
+              "cancel-claim-commits-then-refuses",
+              "signout-keeps-session",
+              "signup-accepts-admin-claim"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "postgres.runs/r1-workers/w1.stdout.log",
+              "stderr": "postgres.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 35,
+            "artifact": "postgres.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "purchase-does-not-broadcast-ranking",
+              "restock-race-records-wrong-order-total",
+              "signed-out-visitors-do-not-see-reviews",
+              "direct-purchase-is-attributed-to-previous-account",
+              "offline-event-clears-account-state",
+              "only-shipped-orders-earn-review-eligibility",
+              "purchase-read-write-loses-concurrent-stock",
+              "open-review-list-ignores-live-update",
+              "cancellation-accounting-loses-stock-restoration",
+              "operator-authorization-allows-customer-transfer",
+              "transfer-debits-source-without-crediting-existing-destination",
+              "queue-warehouse-reports-west",
+              "progression-profile-reads-another-account",
+              "progression-notification-preferences-do-not-save",
+              "stock-alert-is-sent-after-every-restock",
+              "active-search-uses-purchase-ranking",
+              "progression-cancelled-restock-still-runs",
+              "progression-cart-update-uses-wrong-room",
+              "progression-revenue-double-counts-orders",
+              "progression-concurrent-cart-line-does-not-increment",
+              "progression-catalog-search-requires-exact-name",
+              "progression-cart-add-uses-another-account",
+              "authorized-restock-does-not-change-stock",
+              "profile-summary-ignores-saved-address",
+              "admin-state-change-is-not-broadcast",
+              "transfer-does-not-publish-warehouse-totals",
+              "checkout-crash-durability",
+              "review-owner-trust-username",
+              "tampered-session-can-purchase",
+              "restock-rejects-administrator-control",
+              "direct-purchase-rejects-all",
+              "checkout-trusts-submitted-price",
+              "checkout-missing-sibling-line",
+              "overlapping-cart-add-ignored",
+              "mixed-history-wrong-price",
+              "mixed-history-repeat-cancel",
+              "checkout-rejects-every-request",
+              "revenue-aggregation-truncates-order-population",
+              "catalog-rejects-all-product-writes",
+              "shipping-rejects-every-request",
+              "cancel-rejects-every-request",
+              "query-like-password-bypasses-signin",
+              "admin-boundary-rejects-all-signups"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "postgres.runs/r1-workers/w2.stdout.log",
+              "stderr": "postgres.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 36,
+            "artifact": "postgres.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "signed-out-purchase-uses-default-account",
+              "direct-purchase-order-total-is-offset",
+              "review-average-update-is-not-broadcast",
+              "direct-purchase-uses-constant-price",
+              "purchase-does-not-decrement-warehouse-stock",
+              "cart-update-accepts-negative-quantity",
+              "external-stock-polling-disabled",
+              "open-review-list-renders-each-review-twice",
+              "cancel-does-not-restore-stock-fresh-client",
+              "customer-can-ship-order-direct-1-1",
+              "recommendations-ignore-pending-purchases",
+              "transfer-overwrites-concurrent-purchase-with-stale-stock",
+              "progression-catalog-product-name-is-not-published",
+              "progression-notifications-leak-across-accounts",
+              "progression-stock-alerts-leak-across-accounts",
+              "progression-pagination-always-shows-first-page",
+              "progression-cart-line-does-not-increment",
+              "progression-order-history-ignores-owner",
+              "progression-cancelled-orders-remain-in-revenue",
+              "progression-concurrent-checkout-leaves-cart-lines",
+              "progression-staff-can-restock-directly",
+              "restock-overwrites-instead-of-increments",
+              "low-stock-threshold-is-two-units",
+              "notification-sync-flips-saved-toggle",
+              "admin-sockets-do-not-join-admin-room",
+              "checkout-crash-integrity",
+              "review-script-unsafe-render",
+              "review-owner-deny-after-write",
+              "restock-trusts-submitted-admin-role",
+              "direct-purchase-trusts-submitted-price",
+              "order-cache-survives-account-switch",
+              "checkout-commits-then-refuses-price",
+              "opposing-transfer-ignored",
+              "overlapping-cart-add-rejected",
+              "mixed-history-ignored-write",
+              "mixed-history-wrong-owner",
+              "checkout-replay-loses-prior-order",
+              "catalog-truncates-created-population",
+              "shipping-trusts-submitted-staff-role",
+              "cancel-trusts-submitted-owner",
+              "purchase-trusts-cross-origin-cookie",
+              "purchase-session-rejects-returning-login"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "postgres.runs/r1-workers/w3.stdout.log",
+              "stderr": "postgres.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "6be6f7b8e143fa384d257f2d4af465daa8ad0f37a811ad45c6566443dc0a9e64",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.cart-checkout.cart.4a",
+      "ecommerce.feature.cart-checkout.cart.4d",
+      "ecommerce.feature.catalog.catalog-ranking.2b",
+      "ecommerce.feature.catalog.catalog-search.2d",
+      "ecommerce.feature.purchasing.purchase-order.3c",
+      "ecommerce.feature.reviews.reviews.6a",
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.inventory-operations.operational-views.5c",
+      "ecommerce.inventory-operations.operational-views.5d",
+      "ecommerce.inventory-operations.operational-views.5e",
+      "ecommerce.inventory-operations.operational-views.5f",
+      "ecommerce.inventory-operations.shipping-accounting.202e",
+      "ecommerce.inventory-operations.stock-conservation.202b",
+      "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.stock-conservation.202f",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+      "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+      "ecommerce.operations-access.fulfilment-queue.1b",
+      "ecommerce.operations-access.fulfilment-queue.1c",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.operations-access.operator-authorization.201c",
+      "ecommerce.operations-access.order-owner.204a",
+      "ecommerce.progression.catalog-management.catalog-management.622a",
+      "ecommerce.progression.catalog-management.catalog-management.622b",
+      "ecommerce.progression.customer-profile.customer-profile.620c",
+      "ecommerce.progression.faceted-search.faceted-search.401a",
+      "ecommerce.progression.faceted-search.faceted-search.402a",
+      "ecommerce.progression.notification-preferences.notification-preferences.630c",
+      "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+      "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.returns-pricing.cancellation-and-return.3a",
+      "ecommerce.returns-pricing.cancellation-and-return.3b",
+      "ecommerce.returns-pricing.refund-accounting.203a",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.review-eligibility.108a",
+      "ecommerce.spec.access-control.review-eligibility.108b",
+      "ecommerce.spec.access-control.signed-out-purchase.3a",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.external-data-sync.external-stock.901a",
+      "ecommerce.spec.external-data-sync.external-stock.901d",
+      "ecommerce.spec.live-state.fulfilment-queue.1a",
+      "ecommerce.spec.live-state.inventory-dashboard.5a",
+      "ecommerce.spec.live-state.open-list.902a",
+      "ecommerce.spec.live-state.purchase-stock.3b",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.spec.live-state.rating.6c",
+      "ecommerce.spec.live-state.sales-dashboard.5b",
+      "ecommerce.spec.live-state.shared-cart.4c",
+      "ecommerce.spec.live-state.warehouse-stock.7c",
+      "ecommerce.spec.search-ordering.search-ordering.402b",
+      "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "ecommerce.spec.state-durability.cart-reload.4b",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+      "ecommerce.spec.transactional-integrity.unique-review.6b"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

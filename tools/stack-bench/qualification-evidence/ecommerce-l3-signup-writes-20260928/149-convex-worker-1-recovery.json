@@ -1,0 +1,79 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "recovery",
+  "id": "ecommerce-convex-run424-20260928050027-a15c35e4-recovery",
+  "attempt": {
+    "id": "ecommerce-convex-run424-20260928050027-a15c35e4-recovery",
+    "parentId": "ecommerce-convex-run424-20260928050027-a15c35e4"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:02:41.294Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-convex-run424-20260928050027-a15c35e4",
+    "backend": "convex",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "a9f5cd408940fdde7817533d9df0396afc704e73024b320df7385e94335ae94c",
+        "name": "sb-e7867116907fb331-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "listener:http://127.0.0.1:13634",
+          "released": true
+        },
+        {
+          "key": "port:13634",
+          "released": true
+        },
+        {
+          "key": "port:7347",
+          "released": true
+        },
+        {
+          "key": "port:7425",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:convex:run424",
+          "released": true
+        },
+        {
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-convex-JH3LdK/app",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "a7d6f3bb6f83b997979ed08d89f0f28e6d68da3303bd43c78d2590f0281e764f"
+  }
+}

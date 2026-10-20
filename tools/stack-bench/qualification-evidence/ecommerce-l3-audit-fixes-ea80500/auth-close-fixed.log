@@ -1,0 +1,131 @@
+TAP version 13
+# Subtest: SpacetimeDB catalog replay preserves the caller and never retries a sent write
+ok 1 - SpacetimeDB catalog replay preserves the caller and never retries a sent write
+  ---
+  duration_ms: 15256.6081
+  type: 'test'
+  ...
+# Subtest: SpacetimeDB auth receipts remain valid only for one complete credential call
+    # Subtest: accepted
+    ok 1 - accepted
+      ---
+      duration_ms: 258.7339
+      type: 'test'
+      ...
+    # Subtest: refused
+    ok 2 - refused
+      ---
+      duration_ms: 199.9995
+      type: 'test'
+      ...
+    # Subtest: renamed
+    ok 3 - renamed
+      ---
+      duration_ms: 213.7514
+      type: 'test'
+      ...
+    # Subtest: scalar-fields
+    ok 4 - scalar-fields
+      ---
+      duration_ms: 275.7589
+      type: 'test'
+      ...
+    # Subtest: missing-claim
+    ok 5 - missing-claim
+      ---
+      duration_ms: 215.8157
+      type: 'test'
+      ...
+    # Subtest: reload-after-receipt
+    ok 6 - reload-after-receipt
+      ---
+      duration_ms: 228.1215
+      type: 'test'
+      ...
+    # Subtest: http-reload
+    ok 7 - http-reload
+      ---
+      duration_ms: 229.1569
+      type: 'test'
+      ...
+    # Subtest: lost-receipt
+    ok 8 - lost-receipt
+      ---
+      duration_ms: 227.248
+      type: 'test'
+      ...
+    # Subtest: reconnected-second
+    ok 9 - reconnected-second
+      ---
+      duration_ms: 242.8643
+      type: 'test'
+      ...
+    # Subtest: second-after-receipt
+    ok 10 - second-after-receipt
+      ---
+      duration_ms: 228.4116
+      type: 'test'
+      ...
+    # Subtest: second-then-submit-error
+    ok 11 - second-then-submit-error
+      ---
+      duration_ms: 213.5876
+      type: 'test'
+      ...
+    # Subtest: malformed-outbound
+    ok 12 - malformed-outbound
+      ---
+      duration_ms: 213.1722
+      type: 'test'
+      ...
+    # Subtest: malformed-inbound
+    ok 13 - malformed-inbound
+      ---
+      duration_ms: 214.2574
+      type: 'test'
+      ...
+    # Subtest: wrong-module
+    ok 14 - wrong-module
+      ---
+      duration_ms: 213.7291
+      type: 'test'
+      ...
+    # Subtest: foreign-target
+    ok 15 - foreign-target
+      ---
+      duration_ms: 509.458
+      type: 'test'
+      ...
+    # Subtest: unsupported-protocol
+    ok 16 - unsupported-protocol
+      ---
+      duration_ms: 214.3789
+      type: 'test'
+      ...
+    # Subtest: unsupported-schema
+    ok 17 - unsupported-schema
+      ---
+      duration_ms: 229.509
+      type: 'test'
+      ...
+    # Subtest: app-proxy
+    ok 18 - app-proxy
+      ---
+      duration_ms: 198.7998
+      type: 'test'
+      ...
+    1..18
+ok 2 - SpacetimeDB auth receipts remain valid only for one complete credential call
+  ---
+  duration_ms: 4540.9999
+  type: 'test'
+  ...
+1..2
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 20492.7162

@@ -1,0 +1,167 @@
+TAP version 13
+# Subtest: SpacetimeDB auth receipts remain valid only for one complete credential call
+    # Subtest: accepted
+    ok 1 - accepted
+      ---
+      duration_ms: 340.2362
+      type: 'test'
+      ...
+    # Subtest: localhost
+    ok 2 - localhost
+      ---
+      duration_ms: 535.8697
+      type: 'test'
+      ...
+    # Subtest: refused
+    ok 3 - refused
+      ---
+      duration_ms: 217.0167
+      type: 'test'
+      ...
+    # Subtest: renamed
+    ok 4 - renamed
+      ---
+      duration_ms: 234.439
+      type: 'test'
+      ...
+    # Subtest: scalar-fields
+    ok 5 - scalar-fields
+      ---
+      duration_ms: 228.9832
+      type: 'test'
+      ...
+    # Subtest: u64-fields
+    ok 6 - u64-fields
+      ---
+      duration_ms: 231.1455
+      type: 'test'
+      ...
+    # Subtest: optional-some
+    ok 7 - optional-some
+      ---
+      duration_ms: 233.6929
+      type: 'test'
+      ...
+    # Subtest: optional-none
+    ok 8 - optional-none
+      ---
+      duration_ms: 232.4384
+      type: 'test'
+      ...
+    # Subtest: enum-fields
+    ok 9 - enum-fields
+      ---
+      duration_ms: 248.5272
+      type: 'test'
+      ...
+    # Subtest: type-changing-fields
+    ok 10 - type-changing-fields
+      ---
+      duration_ms: 725.1817
+      type: 'test'
+      ...
+    # Subtest: nonmatching-credentials
+    ok 11 - nonmatching-credentials
+      ---
+      duration_ms: 214.6237
+      type: 'test'
+      ...
+    # Subtest: missing-claim
+    ok 12 - missing-claim
+      ---
+      duration_ms: 244.8645
+      type: 'test'
+      ...
+    # Subtest: reload-after-receipt
+    ok 13 - reload-after-receipt
+      ---
+      duration_ms: 229.907
+      type: 'test'
+      ...
+    # Subtest: http-reload
+    ok 14 - http-reload
+      ---
+      duration_ms: 245.612
+      type: 'test'
+      ...
+    # Subtest: lost-receipt
+    ok 15 - lost-receipt
+      ---
+      duration_ms: 231.136
+      type: 'test'
+      ...
+    # Subtest: reconnected-second
+    ok 16 - reconnected-second
+      ---
+      duration_ms: 266.5369
+      type: 'test'
+      ...
+    # Subtest: second-after-receipt
+    ok 17 - second-after-receipt
+      ---
+      duration_ms: 230.0219
+      type: 'test'
+      ...
+    # Subtest: second-then-submit-error
+    ok 18 - second-then-submit-error
+      ---
+      duration_ms: 219.1736
+      type: 'test'
+      ...
+    # Subtest: malformed-outbound
+    ok 19 - malformed-outbound
+      ---
+      duration_ms: 229.9939
+      type: 'test'
+      ...
+    # Subtest: malformed-inbound
+    ok 20 - malformed-inbound
+      ---
+      duration_ms: 231.5608
+      type: 'test'
+      ...
+    # Subtest: wrong-module
+    ok 21 - wrong-module
+      ---
+      duration_ms: 229.0158
+      type: 'test'
+      ...
+    # Subtest: foreign-target
+    ok 22 - foreign-target
+      ---
+      duration_ms: 522.023
+      type: 'test'
+      ...
+    # Subtest: unsupported-protocol
+    ok 23 - unsupported-protocol
+      ---
+      duration_ms: 279.5161
+      type: 'test'
+      ...
+    # Subtest: unsupported-schema
+    ok 24 - unsupported-schema
+      ---
+      duration_ms: 217.9541
+      type: 'test'
+      ...
+    # Subtest: app-proxy
+    ok 25 - app-proxy
+      ---
+      duration_ms: 215.3386
+      type: 'test'
+      ...
+    1..25
+ok 1 - SpacetimeDB auth receipts remain valid only for one complete credential call
+  ---
+  duration_ms: 7290.1121
+  type: 'test'
+  ...
+1..1
+# tests 26
+# suites 0
+# pass 26
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8073.2873

@@ -1,0 +1,48 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "contract_lint",
+  "id": "recovery-test-grade-bundle-l1-contract-lint",
+  "attempt": {
+    "id": "recovery-test-grade-bundle-l1-contract-lint",
+    "parentId": "recovery-test-grade-bundle-l1"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T22:56:49.429Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "aac9ad40b1f3c5781e8807d942a36c47df8687fd71c31f2b42e5a2fcdb61176e"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "label": "recovery-test",
+    "url": "http://127.0.0.1:50382",
+    "level": 1,
+    "selectedHooks": null,
+    "pass": true,
+    "harness": false,
+    "unmeasured": false,
+    "counts": {
+      "lintable": 1,
+      "pass": 1,
+      "fail": 0,
+      "blocked": 0,
+      "scenario": 0
+    },
+    "results": [
+      {
+        "id": "app-title",
+        "status": "PASS"
+      }
+    ]
+  }
+}

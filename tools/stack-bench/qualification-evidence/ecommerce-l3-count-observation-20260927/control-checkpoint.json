@@ -1,0 +1,177 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "mutation_control",
+  "id": "mutation-2026-09-27T06-40-52-833Z",
+  "attempt": {
+    "id": "mutation-2026-09-27T06-40-52-833Z",
+    "parentId": "ecommerce-postgres-run30-20260927063929-ae75289a"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T06:40:52.834Z",
+    "completedAt": "2026-09-27T06:41:26.958Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "5f00bbeed208a69d4c632a2cb81710b64877e312e50177f03094405928f0c325"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56"
+    },
+    "fixture": {
+      "id": "source-under-mutation",
+      "sha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3"
+    },
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 34124,
+    "app": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-2I1t9B/app",
+    "mutations": "/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-postgres-2I1t9B/selected-mutations.json",
+    "fixtureSha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3",
+    "spec": [
+      "../tracks/ecommerce/scenarios/02-strengthened.json"
+    ],
+    "backend": "postgres",
+    "track": "ecommerce",
+    "shard": {
+      "index": 0,
+      "count": 1,
+      "mutationIds": [
+        "transfer-debits-source-without-crediting-existing-destination"
+      ]
+    },
+    "ok": true,
+    "baseline": {
+      "sourceBundle": {
+        "path": "../postgres-transfer-control.runs/r1/first-build-l3-grading/bundle.json",
+        "sha256": "54c60fec3a715fdeae621f03d5054b903ca61402bc599c5828eb3c6ed91c50ea"
+      },
+      "total": 5,
+      "max": 5,
+      "scenarios": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "identitySha256": "0f9b05fd7a3888cdac4ab46675f8caef54414a8397587c54fc12db2e30ed3145",
+          "total": 5,
+          "max": 5
+        }
+      ]
+    },
+    "summary": {
+      "caught": 1,
+      "completed": 1,
+      "total": 1,
+      "remaining": 0
+    },
+    "results": [
+      {
+        "id": "transfer-debits-source-without-crediting-existing-destination",
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "targets": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "status": "CAUGHT",
+        "targetKeys": [
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.operations-access.operator-authorization.201a"
+        ],
+        "targetMissing": [],
+        "targetHarnessFailures": [],
+        "targetInconclusive": [],
+        "targetSurvived": [],
+        "targetOffAssertion": [],
+        "collateral": [],
+        "collateralHarnessFailures": [],
+        "collateralInconclusive": [],
+        "setupFailures": [],
+        "missing": [],
+        "regressions": [
+          {
+            "feature": 2,
+            "criterion": "2a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Headphones in West control reads 40, expected exactly 50",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "expected": true
+          },
+          {
+            "feature": 201,
+            "criterion": "201a",
+            "passed": false,
+            "measured": true,
+            "applicationFailure": true,
+            "outcomeKind": "app_failure",
+            "status": "failed",
+            "phase": "assertion",
+            "detail": "the stored stock for Headphones in West control reads 40, expected exactly 65",
+            "failedAction": "dbExpectStock",
+            "key": "ecommerce.operations-access.operator-authorization.201a",
+            "expected": true
+          }
+        ]
+      }
+    ],
+    "checkpoint": {
+      "schemaVersion": 1,
+      "engineSha256": "5f00bbeed208a69d4c632a2cb81710b64877e312e50177f03094405928f0c325",
+      "recipeSha256": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56",
+      "fixtureSha256": "3172a8bf5dfceee8a3a5f1cc5b26d358ea2cb8f6dba00eb285cf4105adbb15b3",
+      "calibrationSha256": "70246aafac6c1bdaeaebafb53fc5c020a3fb5ffe3dfc5219326d7ef2d3fe2515",
+      "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 3,
+      "trackSha256": "4cb7c36c1c0074e62dc108af966a3f48eeebe51dbbb441431a7b38d573735b42",
+      "shard": {
+        "index": 0,
+        "count": 1,
+        "mutationIds": [
+          "transfer-debits-source-without-crediting-existing-destination"
+        ]
+      },
+      "groups": [
+        {
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "scenarioSha256": "d74f01f1962887ede0311c0ccf1af4e3229592230cfc6e2ccc1868258cb35756",
+          "mutationSha256": "07b1e927af3e6f4c7c92c241ef482c583e9903b0d77fa98a899cfbe6c8fb0807",
+          "selectionSha256": "721cedac7f8322ae0d934bb3cff788fa6dc1177967c552d657bafb97a0ffd780",
+          "identitySha256": "0f9b05fd7a3888cdac4ab46675f8caef54414a8397587c54fc12db2e30ed3145",
+          "mutationIds": [
+            "transfer-debits-source-without-crediting-existing-destination"
+          ]
+        }
+      ],
+      "status": "complete",
+      "maxRuntimeMinutes": 20,
+      "updatedAt": "2026-09-27T06:41:26.958Z"
+    },
+    "gradeReports": [
+      {
+        "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+        "mutationId": "transfer-debits-source-without-crediting-existing-destination",
+        "status": "returned",
+        "report": {
+          "path": "../postgres-transfer-control.runs/r1/mutation-control.json.grades/invocation-wXtd7t/grade.json",
+          "sha256": "7da02a037eb19c113785200375f45f89282f3fa9ddce240b3fdc7dbfc2ffe0c7"
+        }
+      }
+    ],
+    "priorMutationControl": null
+  }
+}

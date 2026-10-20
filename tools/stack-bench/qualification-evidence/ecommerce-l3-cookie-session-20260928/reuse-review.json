@@ -1,0 +1,560 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "approved": true,
+  "reviewer": "Root: source/caller, positive/defect/null, identity, isolation and reuse review",
+  "baseCommit": "3cfc3972b4b26f3b5439c53bcefb88c2e6e1e04d",
+  "candidateCommit": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+  "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+  "replacedChecks": [
+    "ecommerce.spec.access-control.purchase-session.101a"
+  ],
+  "reusedChecks": [
+    "ecommerce.feature.accounts.accounts.1a",
+    "ecommerce.feature.accounts.accounts.1b",
+    "ecommerce.spec.access-control.account-password.1c",
+    "ecommerce.feature.accounts.accounts.1d",
+    "ecommerce.feature.cart-checkout.cart.4a",
+    "ecommerce.feature.cart-checkout.cart.4d",
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.feature.catalog.catalog-search.2d",
+    "ecommerce.feature.catalog.catalog-values.2a",
+    "ecommerce.feature.purchasing.purchase-order.3c",
+    "ecommerce.feature.reviews.reviews.6a",
+    "ecommerce.feature.warehouse-admin.admin-write.103a",
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.operational-views.5c",
+    "ecommerce.inventory-operations.operational-views.5d",
+    "ecommerce.inventory-operations.operational-views.5e",
+    "ecommerce.inventory-operations.operational-views.5f",
+    "ecommerce.inventory-operations.shipping-accounting.202e",
+    "ecommerce.inventory-operations.stock-conservation.202b",
+    "ecommerce.inventory-operations.stock-conservation.202d",
+    "ecommerce.inventory-operations.stock-conservation.202f",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+    "ecommerce.l3.deferred-integrity.exactly-once.311a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+    "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+    "ecommerce.l3.server-time.server-time.312a",
+    "ecommerce.operations-access.fulfilment-queue.1b",
+    "ecommerce.operations-access.fulfilment-queue.1c",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.operations-access.operator-authorization.201c",
+    "ecommerce.operations-access.order-owner.204a",
+    "ecommerce.progression.catalog-management.catalog-management.622a",
+    "ecommerce.progression.catalog-management.catalog-management.622b",
+    "ecommerce.progression.customer-profile.customer-profile.620c",
+    "ecommerce.progression.faceted-search.faceted-search.401a",
+    "ecommerce.progression.faceted-search.faceted-search.402a",
+    "ecommerce.progression.managed-support.managed-support.613c",
+    "ecommerce.progression.notification-preferences.notification-preferences.630c",
+    "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+    "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+    "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
+    "ecommerce.progression.staff-access.staff-access.601a",
+    "ecommerce.progression.staff-roles.staff-roles.621c",
+    "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+    "ecommerce.progression.support-history.support-history.612c",
+    "ecommerce.progression.support-intake.support-intake.610a",
+    "ecommerce.progression.support-triage.support-assignment.611a",
+    "ecommerce.progression.support-triage.support-priority.611b",
+    "ecommerce.progression.support-triage.support-status.611c",
+    "ecommerce.returns-pricing.cancellation-and-return.3a",
+    "ecommerce.returns-pricing.cancellation-and-return.3b",
+    "ecommerce.returns-pricing.refund-accounting.203a",
+    "ecommerce.spec.access-control.account-disclosure.110a",
+    "ecommerce.spec.access-control.cart-boundary.109a",
+    "ecommerce.spec.access-control.cart-boundary.109b",
+    "ecommerce.spec.access-control.customer-profile-privacy.620b",
+    "ecommerce.spec.access-control.fulfilment-area-boundary.1d",
+    "ecommerce.spec.access-control.managed-support-privacy.613b",
+    "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+    "ecommerce.spec.access-control.order-ownership.106a",
+    "ecommerce.spec.access-control.promotion-management-boundary.620b",
+    "ecommerce.spec.access-control.purchase-attribution.102a",
+    "ecommerce.spec.access-control.review-eligibility.108a",
+    "ecommerce.spec.access-control.review-eligibility.108b",
+    "ecommerce.spec.access-control.signed-out-purchase.3a",
+    "ecommerce.spec.access-control.staff-area-boundary.601b",
+    "ecommerce.spec.access-control.staff-role-boundary.621b",
+    "ecommerce.spec.access-control.staff-role-revocation.621d",
+    "ecommerce.spec.access-control.stock-alert-privacy.631b",
+    "ecommerce.spec.access-control.support-history-logout.612d",
+    "ecommerce.spec.access-control.support-history-privacy.612b",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+    "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+    "ecommerce.spec.concurrency-safety.last-unit.201a",
+    "ecommerce.spec.concurrency-safety.last-unit.201b",
+    "ecommerce.spec.concurrency-safety.last-unit.201c",
+    "ecommerce.spec.concurrency-safety.restock-race.202a",
+    "ecommerce.spec.external-data-sync.external-stock.901a",
+    "ecommerce.spec.external-data-sync.external-stock.901d",
+    "ecommerce.spec.live-state.fulfilment-queue.1a",
+    "ecommerce.spec.live-state.inventory-dashboard.5a",
+    "ecommerce.spec.live-state.managed-support.613a",
+    "ecommerce.spec.live-state.open-list.902a",
+    "ecommerce.spec.live-state.purchase-stock.3b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.live-state.rating.6c",
+    "ecommerce.spec.live-state.sales-dashboard.5b",
+    "ecommerce.spec.live-state.shared-cart.4c",
+    "ecommerce.spec.live-state.warehouse-stock.7c",
+    "ecommerce.spec.search-ordering.search-ordering.402b",
+    "ecommerce.spec.state-durability.account-state-recovery.105a",
+    "ecommerce.spec.state-durability.account-state-recovery.105b",
+    "ecommerce.spec.state-durability.cart-reload.4b",
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+    "ecommerce.spec.state-durability.customer-profile-reload.620a",
+    "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+    "ecommerce.spec.state-durability.session-reload.1e",
+    "ecommerce.spec.state-durability.staff-role-reload.621a",
+    "ecommerce.spec.state-durability.support-history-reload.612a",
+    "ecommerce.spec.transactional-integrity.books-balance.107a",
+    "ecommerce.spec.transactional-integrity.books-balance.107b",
+    "ecommerce.spec.transactional-integrity.catalog-volume.622c",
+    "ecommerce.spec.transactional-integrity.server-price.104a",
+    "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+    "ecommerce.spec.transactional-integrity.unique-review.6b"
+  ],
+  "executableEquivalences": [
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "35aae46625a93294cbbb86ce390bb30c7233d9c77b74a45aa3b9d77c22ba3dda",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "e633875905d5687bd802522ca38ebb08e9de913bbbd4117312514876b12ca12d",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "63da80fc5e3f532dcc0fbff286a772cc9529d03a6af78283660235489dd60fc2",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "942facbd1cc3a4b5f60f2d0a8e63567fbd64b558ed6bd834d0214b87bfa0875c",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "cedbb03345ed4dd616d4a89c24b0743d841fc7a9f4a76f86a73edec1587f544a",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "886fac0911a8f4b872a1d4d2ca4582141105fe826c66619c0e6043e2e475c52f",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "e5cd484f2e8457b01ee551e3070a22b99b8693899d5f887d7b5893b1c2b44abd",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "696b6b426115e51aa5f83778e4d674ec0485f296c980b85c38c748415febe65b",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2ff2b06d57793eca77bac97e3a2f3ec53016a8bd1888b47a3441d9e4737b13f1",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "5964d725ceda174d12f4a9cdbb6a5df9d7d05d36b5081ab017d8a61de7d644cb",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "a7caa0fe59d3b5aaa4715fcedffb3d15072adfed778e96a6c1414ac47a2ee2d9",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "1f0545921fdd8e193175641155f990802ec5ecef338f93b80b41512df239f974",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "002d93c40992f477d8c1da7b00845cdfe04864eeef35fe8d6b0d81bb880a7239",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "0554fd6a0a173b4ff9b9dca1468dd1f8f32c11319888882b5eaa96004dd45086",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "99f7ce3c13b11bf3c7fdc742656a0a482742814826a51bc2db36a19a178132a7",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "a624ae4170d100a9133db5ed2ac3686a6be63153564eedd333c1cdae11c4c817",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "7797b69093145170dc055c05838039a3c2d9a086c3fe56f0192f439c2292701e",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "3438bd353df49fcc6b2f1f6a0c9bd38d7fd247e984372cb8b08b6d33b4d4cf9d",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "f0057d3fac793b9c81507bb9683bd48e2c39374ecd999efc3a075ff484fa1f1a",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "a94eb7fe1415d45004c9a997775a0b2bd903929eb39afd86a97414b02a2f7c17",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "250040d4ccfb1203a388f1bb82845965b69e694352a783369049a9627c2cdf9b",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "681c4c9ad83791152dcc2b62f4fbffe6d16e1112044691f98a2a57d6cb433c90",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "5c4518ed1ef285e1db42d91212f24021b1b51406728731595c101e7e788dcb3e",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "b03aecea221b88a1a6a24e0eccd5a3be67e1e96cb18b5ea39149a0c65be2f24f",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "d6702c2baacb2f309f7f126ec460088af6a58b1f78535c3483fce25a3fcbf322",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "7cdf1c72945c7f788402f694eb4fd8fa2cba3a290e37f6b0f26a9a99b095b33b",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "4b46451fb20b3a671ede495806c4b1c666876cd0facff1c27731381975bcfca2",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "de4841f80ff5c46197c77fbb682e637d70ea1b3bdfa5211aa3f31bb7da320c8a",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "fb61656ae25e83c392250e57a58a7f569bcd42b0da179e8c13811298daca7db0",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "e389913df8ba45c65425b9744763cb70201a27c7c11be878ec7c691b3d46c146",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "2df97cad66798f1b4c13a1609f139f2da5d867ac8bcc1d4964824067129801a7",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "ecfc53d7c99ad94e1a23974086dd3fcf652fd37242c506da34e33cbd620cf378",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "d4c0809aafc67533354df5d58f51fd584036fa6f35898899179aceb7ee137d96",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "8deb9e80d0f224397863c6a03213f192ac67098ea51afc4637ab13f946b4af11",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "74f541437a6f5c5491e48ae5101d29232374cabf385592c0ec2b8f1a151a1664",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "2de35ae016e9f7591af3eb6d568c91c3b70d2a69cf3c3223bd17ca276e0683d0",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "9cfb85e6075233de7c971baeb9457de69606fe686ad8d5c7b3feb7fcf7d79691",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "417f30cf02168f00a818b169165be924b23bf4d5e8c9a9a09f8105ffd83329f3",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "c288f07a496f7e61d26d52cd986a0e3653787da165d05cac649428ed7154742a",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "b0eb79bfd49e7880a794b5e3aa5fcb304a355e62a1b157832b1e4ee22b833c28",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "46eccfd5d77a3ef2d9fe33afe9147fc888a874f54073e9e40db74042e9569154",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "6191bbb0d9c34539a5ff2ae10f23d36c78b993eb32f4f50153ddb4f5b01deb5f",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "c3362f25defd5fd69124efba09fe9aefd3ad20063395dba0cf8453f60efa532a",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "14054c6f1dc3395f434d7bf14c9ee0011c3133e282f8c644a219602a0ad86b9e",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "4f0da393bff7e0e6ab140bdd5bf7d3d65f042eb0ce24fc090393bda52364d068",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "f3231de2128af1baebb75f960c84c8f34516fe03d75da88c35a60bf9cc9dc6bb",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "e6f5baa5245213d640622d7e503e8f53a4eb5df3d9c6a7f3b489ba3d26a76fa0",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "1bbd60c1dd63a81c5ca9e03f4fb70b58d2c969f3ab550dddb613b662bad90712",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "f0c376de1594b0486f6294ec13ac689cacf1cfb992306f6db017fd7cb99bdb08",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "84b6669ce7b306b84290cf93819ab8efef20b0b72021c7bf5ca5fc92c8bc04b8",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "4fad8810881387954160b6533c3d795e52343b1718894bdd3fe82634585b786b",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "f2815c4d4dab37fb035dbcc475080d2c5844ef119e04502854cda5923ff1c4dd",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "4fbc90c64aab09ab7d44dfb65dad19fce7ce91b420da74853a409eff84f43df4",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "38051552ed07cdf0e3594f85ad38b9d004b07eb915c7077c382c8ed3140bf353",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "8add68d768f605b031351411beb5959982e18e6ae07d65ef365a4deabe5afccf",
+      "toExecutableSha256": "815b32f97e52310edd083537ce6548cfd91e5999990b3e465f805bea6e88901a"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "978d665ed6472b5e7eb1e23523bdc297de69ed793efed954d865b93c9f22bb8e",
+      "toExecutableSha256": "26085505ef0f06c41960958fbe7fd3b7ca79ba469d8a68134837d974a77c8cfc"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d",
+      "toExecutableSha256": "baaf571bd7a61739509471dd6ffa1eee36021c818c72f3b91e061df330c92327"
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "fromExecutableSha256": "74103e8cebf0c2be4d99549b476292208f7e0634ed8f5414d33e581373e219ee",
+      "toExecutableSha256": "e000aea329ae4603e8f4cc2aa3b52ae2f20a14e9f09c4ade7d240559c5070375"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "37c8afb878472261cb875ae4b96daf6e11fc0d33ccc5717c8caacdd480fb4d0c",
+      "toExecutableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5"
+    }
+  ],
+  "rationale": "The only new runtime change after the reviewed probe removal accepts RFC 6265 cookie name/value syntax in the existing tampered-session eligibility guard. Its two callers are named-action-executors session-control and tampered-session. The only ecommerce scenario selecting either mode is 01-purchase-session.json, sole check 101a. The remaining 111 check definitions, setups, source dependencies, references, mutations and policy remain bound to their original snapshots. Existing probe-removal review is retained unchanged. This is fixed-reference qualification reuse, not model-run or grade reuse.",
+  "sourceBindings": [
+    {
+      "status": "M",
+      "file": "src/actions/named-action-runtime.ts",
+      "beforeSha256": "ac07b4a58300830569b652d9501a78a99d9d649c98a33d1e86d71b575669bdf1",
+      "afterSha256": "85c4b50d94d30e84b8c5ebfa5655e2c7ea973f822d4f909b1509e4e61c9377f9",
+      "emittedSha256": "dbf8e11151abe3fea39c9c93d3780b9d5e81a642eb8f0423d5068b97eed2159e",
+      "mapSha256": "15bcf7d65ebdd18df5c8013458f6c1a3fef5067b7c679614ef61e67f9189ce5f"
+    }
+  ],
+  "limits": "Qualified cookie-format scope at the frozen candidate only. This does not change historical model outcomes, establish full product readiness, qualify later support/navigation changes, or authorize another paid study.",
+  "validation": {
+    "retainedChecks": 111,
+    "retainedSlices": 128,
+    "requiredFreshCheck": "ecommerce.spec.access-control.purchase-session.101a",
+    "expectedDefects": {
+      "spacetime": 4,
+      "postgres": 6,
+      "mongodb": 7,
+      "convex": 4
+    },
+    "controlsVerification": {
+      "path": "qualification-evidence/ecommerce-l3-cookie-session-20260928/controls-verification.json",
+      "sha256": "d210b13db33a8c1bc4cf2c46962e8a67040603d2bda04ce7607ee2a8bd481f6f"
+    },
+    "completed": {
+      "positiveReferences": 4,
+      "deliberateDefects": 21,
+      "nullChecks": 1,
+      "leases": 8
+    },
+    "preservedFiles": {
+      "path": "qualification-evidence/ecommerce-l3-cookie-session-20260928/preserved-files.json",
+      "sha256": "72251b668ba146fbab4282e1f4dfdc149f3b20eeddd1231495c039b5e63d23fa"
+    },
+    "normalSliceValidator": {
+      "entries": 137,
+      "checks": 112,
+      "fresh": 1,
+      "reused": 111
+    }
+  },
+  "sourceDiff": "diff --git a/tools/stack-bench/src/actions/named-action-runtime.ts b/tools/stack-bench/src/actions/named-action-runtime.ts\nindex f3451562ea..74b1e830ca 100644\n--- a/tools/stack-bench/src/actions/named-action-runtime.ts\n+++ b/tools/stack-bench/src/actions/named-action-runtime.ts\n@@ -173,7 +173,8 @@ export function tamperedSessionCredentials(headers: HeaderRecord, actor: string)\n   const auth = Object.entries(headers).filter(([key]) => AUTH_HEADER.test(key) || /^cookie$/i.test(key));\n   const [key, value] = auth[0] ?? [];\n   const bearer = key?.toLowerCase() === 'authorization' && /^Bearer [A-Za-z0-9._~-]+$/i.test(value ?? '');\n-  const cookie = key?.toLowerCase() === 'cookie' && /^[A-Za-z0-9_-]+=[A-Za-z0-9._~-]+$/.test(value ?? '')\n+  // RFC 6265 token name and unquoted cookie-octets; no separators or empty credential.\n+  const cookie = key?.toLowerCase() === 'cookie' && /^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+=[\\x21\\x23-\\x2B\\x2D-\\x3A\\x3C-\\x5B\\x5D-\\x7E]+$/.test(value ?? '')\n     && !Object.keys(headers).some(name => /csrf|xsrf/i.test(name)) && !/csrf|xsrf/i.test(value!.split('=')[0]!);\n   if (auth.length !== 1 || (!bearer && !cookie)) {\n     inconclusive('replay-unavailable', { actor, detail: 'tampering requires one bearer token or one session cookie without CSRF ambiguity' });\n"
+}

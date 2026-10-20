@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "c497f1f7e04bfd0a1f6c43355fe31d9e78f99f29",
+  "change": "Native authentication replay accepts an app-chosen same-origin proxy prefix before the exact leased database subscription suffix. Previously only the empty prefix and /db were accepted.",
+  "reuse": "Registered direct-path controls retain identical behavior. The old empty-prefix and /db cases are subsets of the new suffix match. Only authentication replay opts into app proxies; repeatFormWrite remains direct-only. No scenario, prompt, points, schema codec, state assertion or capture rule changes. Retain all existing reference, mutation and null reports; update only SpacetimeDB executable equivalence targets.",
+  "guards": [
+    "same application origin including port and protocol",
+    "exact leased database subscription suffix",
+    "identified native socket and unique successful handshake",
+    "accepted BSATN protocol",
+    "schema-derived credentials and matching native request/reply",
+    "stored-state assertion and useful positive write"
+  ],
+  "source": {
+    "path": "src/stacks/backends/spacetime-browser-session.ts",
+    "lineEndings": "lf",
+    "sha256": "00db65051e9f03680b85c1a85ffb6807b65df8780c993eba7052a4d25ea672cb"
+  },
+  "scopeImpact": [
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "previous": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "current": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "changed": false
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "previous": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "current": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "changed": false
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "previous": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3",
+      "current": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "previous": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "current": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "changed": false
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "previous": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "current": "1a8941f59d196881ffe4c3d1d035aceb164b5ff83a9c35e96100177a0bfa83f1",
+      "changed": false
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "previous": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "current": "a1d74e6434de57bc61f49d18b6ed2064fdb0e1a55792914d1cea2f472b8141db",
+      "changed": false
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "previous": "3f0d624c4ce27a49d2b60e658904cc6e80641e1ff7ca867d58f20102ab0ba8a3",
+      "current": "6a4796ee97f299f89c0746e295d66bb1899969380ecdbe44342f4059ae3aab91",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "previous": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "current": "bfedb58f737d692ebe86fd02a867be8bed4bbbdc53f24cd2303fe44833feb447",
+      "changed": false
+    },
+    {
+      "kind": "null",
+      "stack": null,
+      "previous": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "current": "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804",
+      "changed": false
+    }
+  ],
+  "validation": {
+    "nativeControls": "Nested /nested/stdb/ proxy: correct app passes 103a/103b; role-trusting app passes 103a and fails 103b at stock 103 versus 102. Both use native WebSocket receipts; sources unchanged and leases released.",
+    "savedApp": "Original SpacetimeDB r2 L2 source with /stdb/ proxy passes selected 101a and 103b, 4/4. Zero model calls and clean recovery. This diagnostic does not change its original invalid classification.",
+    "commands": [
+      "npm run typecheck",
+      "npm run build",
+      "node --test --test-name-pattern=\"real browser credential patch\" dist/tests/auth-request-patch.test.js"
+    ],
+    "evidence": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/native-controls.json",
+        "sha256": "c13170d815e4648b3bba087a1f035c050420a248f2a5064036eb0baa9425e60b"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/native-correct-grade.json",
+        "sha256": "a2731831b99872c7dfd6dbd9d9f63d6232b827daddacbeb315c8d51251b9cb8a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/native-defective-grade.json",
+        "sha256": "48480fdbe3d3b2a7079140bbda91fbfd4a5bd3d1e2b94229a99d05f5844f7bce"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/saved-app-101a.json",
+        "sha256": "22b7131d606a4b8a083357f1aa7bb08c1c3b4b9be3f724b594af450d2ea73cb7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/saved-app-103b.json",
+        "sha256": "f0787e86801060b206abd3eb9471c67de8b850d92f5ad1504d04b6165f0daa05"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/saved-app-bundle.json",
+        "sha256": "bdb0a576997709036f377690193712e00772f226209c2a3a02fdb71429a80051"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-auth-proxy-20260927/saved-app-regrade.json",
+        "sha256": "0f87deb7d8ed528bf5780832789d594be5c7c0ab867f41c99c85f0604c65e042"
+      }
+    ],
+    "repeatability": "Diagnostic inputs, launch scripts, failed fixture iterations and raw state are retained under local-notes/sol6-four-stack-20260925/auth-proxy-controls* and state-volume results/diagnostics/auth-proxy-c497f1f. Native controls report exact source, scenario, plan and image hashes; saved-app-regrade.json identifies its immutable source and selected checks."
+  },
+  "limits": "Four-stack dependency L1-L3 only. A URL suffix alone does not prove a forwarding target; native schema, request/reply and stored-state evidence remain required. This review does not qualify other transports or stack support. Historical results stay unchanged. Normal calibration and immutable controller checks are required."
+}

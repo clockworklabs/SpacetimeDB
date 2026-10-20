@@ -1,0 +1,4569 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "grade",
+  "id": "grade-66c8f080-196e-4f",
+  "attempt": {
+    "id": "grade-66c8f080-196e-4f",
+    "parentId": "mutation-2026-09-28T04-58-54-230Z"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T05:00:02.791Z",
+    "completedAt": "2026-09-28T05:00:39.751Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+    },
+    "fixture": {
+      "id": "ecommerce.operations",
+      "sha256": "d06444b72dc94fe1ef5e08867d875e1f3bbaa5cd82c35a3558f399c1fcb5ceae"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "ae3a0b216bc06c917b0a3489993a2f1ea2362dbec2c1a754cfb2119fd4f3d5e4"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "postgres",
+      "sha256": null
+    },
+    "packs": [
+      {
+        "id": "ecommerce.feature.accounts",
+        "sha256": "df539bbe2bec914c98dc3fc47552b98daece8ea63613948012506a50508b9744"
+      },
+      {
+        "id": "ecommerce.feature.bundle-checkout",
+        "sha256": "2905f7ee7d8ae6d1086d2194649242b68ef871d10ec60e1bc0382baf5cb6e7df"
+      },
+      {
+        "id": "ecommerce.feature.bundle-returns",
+        "sha256": "c0f9424066d11efd12bf2c88ec3607ac1152ba5b1e34d7fe598529c03035e352"
+      },
+      {
+        "id": "ecommerce.feature.cart",
+        "sha256": "217d2a7af92bc0551e17c12376b15668431619cc42f919f9d5a0a709f11eba78"
+      },
+      {
+        "id": "ecommerce.feature.catalog-discovery",
+        "sha256": "9aeea0db86cdacc386e5a26fed12b5604d674047c57c792e9aac3a5eabf14b42"
+      },
+      {
+        "id": "ecommerce.feature.catalog-items",
+        "sha256": "fce1929f7932d508f463793be463896fbb13ad6da2b7c57e0838188579f7a95f"
+      },
+      {
+        "id": "ecommerce.feature.checkout",
+        "sha256": "660aaf39db20b4fd6e405948b45f816c6733a2be37b8190b989a4d18c59eb214"
+      },
+      {
+        "id": "ecommerce.feature.product-bundles",
+        "sha256": "e768568827d4febae15fe2ec1d25410d86f78ada77debf9cb047d70fe3fdb12c"
+      },
+      {
+        "id": "ecommerce.feature.purchasing",
+        "sha256": "d21746b5e7246b1771ee9f72d0cc66ef2c2cc9573485ffc839f6ca4b1b01ddff"
+      },
+      {
+        "id": "ecommerce.feature.reviews",
+        "sha256": "385771e4c68dbc7afbc0d68af897d698a66f744f50e4f580a813db580cf4615c"
+      },
+      {
+        "id": "ecommerce.feature.split-tender-refunds",
+        "sha256": "8d12162887644dc6bca1fbcccfd06ebd679bd8017b9234cc5632e6a1f508eba8"
+      },
+      {
+        "id": "ecommerce.feature.store-credit",
+        "sha256": "f252e74cb95d87a6a7cec629d59bc7a37cac133e6abee255738ff9a1fca50fcd"
+      },
+      {
+        "id": "ecommerce.feature.subscriptions",
+        "sha256": "31bbe7f11ac99af6eeeeadcd62c49bc635bb20384a6b5e3724b8ba9124530799"
+      },
+      {
+        "id": "ecommerce.feature.warehouse-admin",
+        "sha256": "9230ca4ddfe048fd3903f3b90aee16a4711c6d53fbe37478917b16a6e550d66d"
+      },
+      {
+        "id": "ecommerce.l2.inventory-dashboard",
+        "sha256": "98d6ac14b32e61e976377df4687a13d6a780a0e96d2e49a05ce2a386e4588778"
+      },
+      {
+        "id": "ecommerce.l2.order-cancellation-features",
+        "sha256": "21f8663b36ea0871493903776ed32fae619183dc5fc0f74a8c1a5e8bc932f561"
+      },
+      {
+        "id": "ecommerce.l2.price-history-features",
+        "sha256": "786b9f48b9670aa9cb02a439b7eda2feff11c5163a4d49939c892d604206e924"
+      },
+      {
+        "id": "ecommerce.l2.recommendations",
+        "sha256": "a21e16ece7b0c4c6e2f0871428af4e4311ae5a91c46174a7ad644b6b93f2c18b"
+      },
+      {
+        "id": "ecommerce.l2.sales-dashboard",
+        "sha256": "5e9b1693dcea799edd672e276257a87ad6d7d88099d60be072e952e22e75ca77"
+      },
+      {
+        "id": "ecommerce.l2.stock-transfers-features",
+        "sha256": "fa9514e71b90d38623ede3aa4108cb8a53ca72ed95fc69858733ad38da7235ad"
+      },
+      {
+        "id": "ecommerce.l3.cart-expiration-features",
+        "sha256": "38029c5ea6d34974b155ef66c311dc500fcece1f82746cffa57ec5f0695f6a5d"
+      },
+      {
+        "id": "ecommerce.l3.deferred-access-specifications",
+        "sha256": "cc47732a893439472253b8e209d653959966ca7be20ef0616ab24f8695096814"
+      },
+      {
+        "id": "ecommerce.l3.deferred-durability-specifications",
+        "sha256": "e12ab68b5d10e4860fec384d8365054f178a67124423ec69eb10d59b956e6e7e"
+      },
+      {
+        "id": "ecommerce.l3.deferred-integrity-specifications",
+        "sha256": "1a3d27f25be0b41f87afff3412b6f2c93617a68306309f471e0120d1ea359056"
+      },
+      {
+        "id": "ecommerce.l3.order-delivery-features",
+        "sha256": "7f86ba1b2a2791ba38ba6abeeee6078b061bdf03ea951647d79a74f6fe435b95"
+      },
+      {
+        "id": "ecommerce.l3.order-returns-features",
+        "sha256": "cd5dc23d3c7514df91d0a54d92d97e7604e6828b1a287d0c79c714724cdc2206"
+      },
+      {
+        "id": "ecommerce.l3.reservations-features",
+        "sha256": "972b14948d5dea26cadab3567fc5bbd2c42d4feed5c428c004117b723acecd12"
+      },
+      {
+        "id": "ecommerce.l3.scheduled-restocks-features",
+        "sha256": "305c2cf78bc84c63b20cb3e5531760174355128332a365d741dbbd0d64c938cb"
+      },
+      {
+        "id": "ecommerce.l3.server-time-specifications",
+        "sha256": "75ad830a0023bf1fe8022695f0776854d75cdbd87f5120a25312c7de33bf57c9"
+      },
+      {
+        "id": "ecommerce.progression.automatic-reorder",
+        "sha256": "a1d14fcb9cd6c9e96b71d2bacdd4865badaeda913ba9cb3cb5fab8f1eb8497e7"
+      },
+      {
+        "id": "ecommerce.progression.cancellation-accounting-specifications",
+        "sha256": "29b290a1356e63a9d2e937c7f92ad540403b27ebcef94df15451d12e59ac86cc"
+      },
+      {
+        "id": "ecommerce.progression.cancellation-queue-specifications",
+        "sha256": "cf3f68e3ba88bf533f3c315671f1bb0917a0dc745306f9046a9a2f4a52621e35"
+      },
+      {
+        "id": "ecommerce.progression.cart-recovery",
+        "sha256": "ca6d95040f5b81478546b9afedcc428114e795ced11b8364eb2542c258aec794"
+      },
+      {
+        "id": "ecommerce.progression.catalog-management",
+        "sha256": "f12e7e37d031f470683ff74671b22c1de08eb8f7fe0e9cf03cbcfb4604dd2f06"
+      },
+      {
+        "id": "ecommerce.progression.customer-profile",
+        "sha256": "731eeced13c1053432560d4149d2de29fa2cd2b0051759d705cb36e92ad16bb3"
+      },
+      {
+        "id": "ecommerce.progression.delivery-notifications",
+        "sha256": "60b58c4327d74f710f94ffc0deae1b51ef40ca1d2146e45b8e02d1b28e1146bc"
+      },
+      {
+        "id": "ecommerce.progression.faceted-search",
+        "sha256": "5a967859348f967bdc43e0e2490289a859f568e4e8d809c21d5f4404d85e4dd7"
+      },
+      {
+        "id": "ecommerce.progression.fulfilment-queue",
+        "sha256": "811eeb166f261e32b5338e118b0851aa1ffeb06b3107dafb6861057e11004db4"
+      },
+      {
+        "id": "ecommerce.progression.inventory-conservation-specifications",
+        "sha256": "039e62b9d4dd69f2ba4f1b9eebee58e54d0aa141e65da440d789a2e5a4b652e7"
+      },
+      {
+        "id": "ecommerce.progression.managed-support",
+        "sha256": "6546f37be296605cad2e06bbe71d0cf014d1025a5a4b3b8997f4c38cf6329841"
+      },
+      {
+        "id": "ecommerce.progression.notification-preferences",
+        "sha256": "e8423fe1a2a615a1f2b5bd7073e9cc7040c8d2e2eadc0ef466d50e5d21aaf134"
+      },
+      {
+        "id": "ecommerce.progression.operations-access-specifications",
+        "sha256": "9a425f56c33b27a08bec1c0ea24f168408352f540e8e4dda5bbe9d25dd0ac288"
+      },
+      {
+        "id": "ecommerce.progression.order-support",
+        "sha256": "1e1a1722adc4c72fdbf31aa34261b73975df53ffab27b28134d71b09ada1b27f"
+      },
+      {
+        "id": "ecommerce.progression.payment-records",
+        "sha256": "f9203b2def92ee787077b88ae9e31425c03cff7b43a039823c160bc69303cc3f"
+      },
+      {
+        "id": "ecommerce.progression.personalized-recommendations",
+        "sha256": "fafda848a453566e61af3513659a8884979ae49218e490830774bb4c25f7b383"
+      },
+      {
+        "id": "ecommerce.progression.price-accounting-specifications",
+        "sha256": "f49fa571d5e63617537742620e92e95a9671ee87f52fd1abc15c2daaf2a6a195"
+      },
+      {
+        "id": "ecommerce.progression.price-history-specifications",
+        "sha256": "5882d2b0daee49ff6f3b8b6aace9fd63f6dca52b18f4dc72f8329e59ffcb9664"
+      },
+      {
+        "id": "ecommerce.progression.promotion-checkout",
+        "sha256": "ead1c8b0ab75a29bc55eaf71ceb216f881655ce20321dc0e36ee8e72271383a9"
+      },
+      {
+        "id": "ecommerce.progression.promotion-reporting",
+        "sha256": "a0c28a936e0929584ccf418dbbe5f53ba6b6beccd33a5a8255bbfb334a3ddca8"
+      },
+      {
+        "id": "ecommerce.progression.promotion-rules",
+        "sha256": "4275d81b85379c0030abd92208b732f616a53a2bad8054e0ee6c7f745488105c"
+      },
+      {
+        "id": "ecommerce.progression.recommendation-feedback",
+        "sha256": "e7e703471cb30e8caf6acf89e3a0ad089dcde8d9320ceaf4fba7132add4007e5"
+      },
+      {
+        "id": "ecommerce.progression.review-access-specifications",
+        "sha256": "d89b6e559244faed30648f2ebdb462913c0b882c614ffe51821c1eb446e66d55"
+      },
+      {
+        "id": "ecommerce.progression.staff-access",
+        "sha256": "440a036f482be11c4954abbb478693a995aea0fe0843f1959a641f3ab6733539"
+      },
+      {
+        "id": "ecommerce.progression.staff-activity",
+        "sha256": "129e48d11c4b24ae94d45350ffc93e190265dd69eb7948fc34c24c49b438db2e"
+      },
+      {
+        "id": "ecommerce.progression.staff-roles",
+        "sha256": "341efe45e33b4e2fd94a19036034963393b6f9d3749c63faf0bbff0415d0ead8"
+      },
+      {
+        "id": "ecommerce.progression.stock-alerts",
+        "sha256": "837f8fcb2c0c023704372810efdc8532246df2b795b94b8503f9d17dae415db9"
+      },
+      {
+        "id": "ecommerce.progression.support-history",
+        "sha256": "23d9dd3e5132a88f3ed0d1c65afac0f6ca769f886b6fb531718831358699b90a"
+      },
+      {
+        "id": "ecommerce.progression.support-intake",
+        "sha256": "6458979c3421deb9916903854a1889580b122813500e3437c475fd3bf73d7721"
+      },
+      {
+        "id": "ecommerce.progression.support-refunds",
+        "sha256": "fd05f39442798d4bae9e96c65230268bd80be46f40a57007ede06d02d5a28e7c"
+      },
+      {
+        "id": "ecommerce.progression.support-triage",
+        "sha256": "2c90c09870de8922db55a9fd8a1b07553c60fd3aebc679f3e4ff1649c752df85"
+      },
+      {
+        "id": "ecommerce.spec.access-control",
+        "sha256": "a2eef326cd1e28ecb5e96970ba1afcff8b3a62dfbf90f5986c59e4ff380d01f4"
+      },
+      {
+        "id": "ecommerce.spec.bundle-integrity",
+        "sha256": "e0ca540f434e643c5ddbe7fb204fe1edad39376c719d48d4d544caef559595f9"
+      },
+      {
+        "id": "ecommerce.spec.concurrency-safety",
+        "sha256": "60c1b80d464438e20fb7c379cde3de09cae5810230c77195b21c01c78626f91d"
+      },
+      {
+        "id": "ecommerce.spec.external-data-sync",
+        "sha256": "505b40f2e652dbe2d230e6f73b4892c1d01c69f9a12eea865be33676b93fb7b2"
+      },
+      {
+        "id": "ecommerce.spec.live-state",
+        "sha256": "3a309333b465eaa377a324bf214c6cf33733ace855570d1ad5ee01300d588596"
+      },
+      {
+        "id": "ecommerce.spec.search-ordering",
+        "sha256": "f33275ca6a9593135c94170bd262203eaf65d980e6f810c393f6d07a28bffa50"
+      },
+      {
+        "id": "ecommerce.spec.split-tender-refunds",
+        "sha256": "91ca0be0e80ea7d001cdd9a2959c7b2c00be3b87aeb5dc06c7db8b9d179ead8c"
+      },
+      {
+        "id": "ecommerce.spec.state-durability",
+        "sha256": "df7c5808d25201493e6eafd46e37091a5f3b9d8f70f2c6ac708d59395137019d"
+      },
+      {
+        "id": "ecommerce.spec.store-credit",
+        "sha256": "4d858d568aabb314ad118b3e2b5003e43710585fdbf4a85b71b9971ca636843c"
+      },
+      {
+        "id": "ecommerce.spec.subscriptions",
+        "sha256": "7dac820cfeec043b619d468be0c6b0d7e022093851e7884ad573a80aeeb468f2"
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity",
+        "sha256": "71c8b69723a3e4e9c6ae023674535eb9675b1c008b264a453019d0bcdf9af146"
+      }
+    ]
+  },
+  "payload": {
+    "definitionSchemaVersion": 1,
+    "recipeRelease": {
+      "checks": [
+        {
+          "category": "feature",
+          "checkGroupId": "cart",
+          "criterionId": "4a",
+          "description": "adding the same item twice raises its quantity instead of adding a second line",
+          "executionId": "selected-source-068",
+          "featureId": 4,
+          "packId": "ecommerce.feature.cart",
+          "points": 1,
+          "role": "feature",
+          "source": "scenarios/progression-cart-checkout.json",
+          "stableKey": "ecommerce.feature.cart-checkout.cart.4a",
+          "stablePackId": "ecommerce.feature.cart-checkout"
+        },
+        {
+          "category": "feature",
+          "checkGroupId": "cart",
+          "criterionId": "4d",
+          "description": "checkout creates one order, reduces stock, and empties the cart",
+          "executionId": "selected-source-068",
+          "featureId": 4,
+          "packId": "ecommerce.feature.checkout",
+          "points": 2,
+          "role": "feature",
+          "source": "scenarios/progression-cart-checkout.json",
+          "stableKey": "ecommerce.feature.cart-checkout.cart.4d",
+          "stablePackId": "ecommerce.feature.cart-checkout"
+        }
+      ],
+      "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474",
+      "executionId": "selected-source-068",
+      "executionSha256": "163f9b95837b275a6a39307ec3a7a4dcb88ec468020f9b28907f5a9fad4991ac",
+      "id": "ecommerce.progression-catalog",
+      "meaningSha256": "c756119732d718f92aed1c55e8e9716954b548e7bf02b4354bddd119da87bdf9",
+      "recipeReleaseSchemaVersion": 3,
+      "selection": {
+        "alias": "L3",
+        "selection": {
+          "path": "composition/dependency.json",
+          "sha256": "e73002df8a7a42e612f2bd1ee5de1f9db2d6c13cb9c819e405a5f2512eca3048"
+        }
+      },
+      "sourceManifestSha256": "58bb88632677560533b8d098828b44c06dfc39f5c78f8b3da1e7bbb8d9286b91",
+      "track": "ecommerce"
+    },
+    "recipeTask": {
+      "schemaVersion": 3,
+      "recipe": {
+        "id": "ecommerce.progression-catalog",
+        "contentSha256": "439b9fd1aa7a4e34a92058f0995e02c1ee68b1a4806ee60591f77fc2cb587474"
+      },
+      "selection": {
+        "sha256": "7e9ec560f41c518c9b42fff7440a393478268c8adda7801748c88e188a0a0f55",
+        "requested": {
+          "features": [],
+          "specifications": {
+            "requested": [],
+            "expected": [],
+            "observed": []
+          },
+          "checks": []
+        },
+        "promptPacks": [
+          "ecommerce.feature.accounts",
+          "ecommerce.feature.bundle-checkout",
+          "ecommerce.feature.bundle-returns",
+          "ecommerce.feature.cart",
+          "ecommerce.feature.catalog-discovery",
+          "ecommerce.feature.catalog-items",
+          "ecommerce.feature.checkout",
+          "ecommerce.feature.product-bundles",
+          "ecommerce.feature.purchasing",
+          "ecommerce.feature.reviews",
+          "ecommerce.feature.split-tender-refunds",
+          "ecommerce.feature.store-credit",
+          "ecommerce.feature.subscriptions",
+          "ecommerce.feature.warehouse-admin",
+          "ecommerce.l2.inventory-dashboard",
+          "ecommerce.l2.order-cancellation-features",
+          "ecommerce.l2.price-history-features",
+          "ecommerce.l2.recommendations",
+          "ecommerce.l2.sales-dashboard",
+          "ecommerce.l2.stock-transfers-features",
+          "ecommerce.l3.cart-expiration-features",
+          "ecommerce.l3.order-delivery-features",
+          "ecommerce.l3.order-returns-features",
+          "ecommerce.l3.reservations-features",
+          "ecommerce.l3.scheduled-restocks-features",
+          "ecommerce.progression.automatic-reorder",
+          "ecommerce.progression.cart-recovery",
+          "ecommerce.progression.catalog-management",
+          "ecommerce.progression.customer-profile",
+          "ecommerce.progression.delivery-notifications",
+          "ecommerce.progression.faceted-search",
+          "ecommerce.progression.fulfilment-queue",
+          "ecommerce.progression.managed-support",
+          "ecommerce.progression.notification-preferences",
+          "ecommerce.progression.order-support",
+          "ecommerce.progression.payment-records",
+          "ecommerce.progression.personalized-recommendations",
+          "ecommerce.progression.promotion-checkout",
+          "ecommerce.progression.promotion-reporting",
+          "ecommerce.progression.promotion-rules",
+          "ecommerce.progression.recommendation-feedback",
+          "ecommerce.progression.staff-access",
+          "ecommerce.progression.staff-activity",
+          "ecommerce.progression.staff-roles",
+          "ecommerce.progression.stock-alerts",
+          "ecommerce.progression.support-history",
+          "ecommerce.progression.support-intake",
+          "ecommerce.progression.support-refunds",
+          "ecommerce.progression.support-triage"
+        ],
+        "resolved": {
+          "features": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.bundle-checkout",
+            "ecommerce.feature.bundle-returns",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.product-bundles",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.split-tender-refunds",
+            "ecommerce.feature.store-credit",
+            "ecommerce.feature.subscriptions",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.price-history-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.cart-expiration-features",
+            "ecommerce.l3.order-delivery-features",
+            "ecommerce.l3.order-returns-features",
+            "ecommerce.l3.reservations-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.automatic-reorder",
+            "ecommerce.progression.cart-recovery",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.delivery-notifications",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.order-support",
+            "ecommerce.progression.payment-records",
+            "ecommerce.progression.personalized-recommendations",
+            "ecommerce.progression.promotion-checkout",
+            "ecommerce.progression.promotion-reporting",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.recommendation-feedback",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-activity",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-refunds",
+            "ecommerce.progression.support-triage"
+          ],
+          "specifications": {
+            "requested": [],
+            "expected": [],
+            "observed": []
+          },
+          "promptPacks": [
+            "ecommerce.feature.accounts",
+            "ecommerce.feature.bundle-checkout",
+            "ecommerce.feature.bundle-returns",
+            "ecommerce.feature.cart",
+            "ecommerce.feature.catalog-discovery",
+            "ecommerce.feature.catalog-items",
+            "ecommerce.feature.checkout",
+            "ecommerce.feature.product-bundles",
+            "ecommerce.feature.purchasing",
+            "ecommerce.feature.reviews",
+            "ecommerce.feature.split-tender-refunds",
+            "ecommerce.feature.store-credit",
+            "ecommerce.feature.subscriptions",
+            "ecommerce.feature.warehouse-admin",
+            "ecommerce.l2.inventory-dashboard",
+            "ecommerce.l2.order-cancellation-features",
+            "ecommerce.l2.price-history-features",
+            "ecommerce.l2.recommendations",
+            "ecommerce.l2.sales-dashboard",
+            "ecommerce.l2.stock-transfers-features",
+            "ecommerce.l3.cart-expiration-features",
+            "ecommerce.l3.order-delivery-features",
+            "ecommerce.l3.order-returns-features",
+            "ecommerce.l3.reservations-features",
+            "ecommerce.l3.scheduled-restocks-features",
+            "ecommerce.progression.automatic-reorder",
+            "ecommerce.progression.cart-recovery",
+            "ecommerce.progression.catalog-management",
+            "ecommerce.progression.customer-profile",
+            "ecommerce.progression.delivery-notifications",
+            "ecommerce.progression.faceted-search",
+            "ecommerce.progression.fulfilment-queue",
+            "ecommerce.progression.managed-support",
+            "ecommerce.progression.notification-preferences",
+            "ecommerce.progression.order-support",
+            "ecommerce.progression.payment-records",
+            "ecommerce.progression.personalized-recommendations",
+            "ecommerce.progression.promotion-checkout",
+            "ecommerce.progression.promotion-reporting",
+            "ecommerce.progression.promotion-rules",
+            "ecommerce.progression.recommendation-feedback",
+            "ecommerce.progression.staff-access",
+            "ecommerce.progression.staff-activity",
+            "ecommerce.progression.staff-roles",
+            "ecommerce.progression.stock-alerts",
+            "ecommerce.progression.support-history",
+            "ecommerce.progression.support-intake",
+            "ecommerce.progression.support-refunds",
+            "ecommerce.progression.support-triage"
+          ],
+          "taskSelectionSha256": "781cd68262ef8863cecd099df39b31a34cf674c33c729daab5d2700ffcf429eb"
+        },
+        "scoredChecks": [
+          "ecommerce.feature.accounts.accounts.1a",
+          "ecommerce.feature.accounts.accounts.1b",
+          "ecommerce.feature.accounts.accounts.1c",
+          "ecommerce.feature.accounts.accounts.1d",
+          "ecommerce.feature.warehouse-admin.admin-write.103a",
+          "ecommerce.feature.catalog.catalog-ranking.2b",
+          "ecommerce.feature.catalog.catalog-search.2d",
+          "ecommerce.feature.catalog.catalog-values.2a",
+          "ecommerce.feature.reviews.reviews.6a",
+          "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+          "ecommerce.operations-access.fulfilment-queue.1c",
+          "ecommerce.returns-pricing.price-history.4b",
+          "ecommerce.inventory-operations.operational-views.5e",
+          "ecommerce.inventory-operations.operational-views.5d",
+          "ecommerce.inventory-operations.operational-views.5f",
+          "ecommerce.inventory-operations.operational-views.5c",
+          "ecommerce.returns-pricing.cancellation-and-return.3a",
+          "ecommerce.returns-pricing.cancellation-and-return.3b",
+          "ecommerce.operations-access.fulfilment-queue.1b",
+          "ecommerce.inventory-operations.warehouse-transfer.2a",
+          "ecommerce.l3.cart-expiration.cart-expiration.304a",
+          "ecommerce.l3.order-delivery.order-delivery.303a",
+          "ecommerce.l3.order-delivery.order-delivery.305a",
+          "ecommerce.l3.reservations.reservations.301a",
+          "ecommerce.l3.reservations.reservations.305a",
+          "ecommerce.l3.reservations.reservations.306a",
+          "ecommerce.l3.reservations.reservations.307a",
+          "ecommerce.l3.reservations.reservations.308a",
+          "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a",
+          "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+          "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+          "ecommerce.progression.automatic-reorder.automatic-reorder.502a",
+          "ecommerce.feature.bundle-checkout.bundle-checkout.741a",
+          "ecommerce.feature.bundle-returns.bundle-returns.742a",
+          "ecommerce.feature.cart-checkout.cart.4a",
+          "ecommerce.feature.cart-checkout.cart.4d",
+          "ecommerce.progression.cart-recovery.cart-recovery.503a",
+          "ecommerce.progression.cart-recovery.cart-recovery.503b",
+          "ecommerce.progression.catalog-management.catalog-management.622a",
+          "ecommerce.progression.catalog-management.catalog-management.622b",
+          "ecommerce.progression.payment-records.payment-records.623a",
+          "ecommerce.progression.customer-profile.customer-profile.620c",
+          "ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a",
+          "ecommerce.progression.faceted-search.faceted-search.401a",
+          "ecommerce.progression.faceted-search.faceted-search.402a",
+          "ecommerce.progression.managed-support.managed-support.613c",
+          "ecommerce.progression.notification-preferences.notification-preferences.630c",
+          "ecommerce.returns-pricing.cancellation-and-return.3e",
+          "ecommerce.returns-pricing.cancellation-and-return.3f",
+          "ecommerce.returns-pricing.cancellation-and-return.3c",
+          "ecommerce.progression.order-support.order-support-owned.614a",
+          "ecommerce.progression.personalized-recommendations.personalized-recommendations.403a",
+          "ecommerce.feature.product-bundles.product-bundles.740a",
+          "ecommerce.progression.promotion-checkout.promotion-checkout-active.621a",
+          "ecommerce.progression.promotion-checkout.promotion-checkout-expired.621b",
+          "ecommerce.progression.promotion-checkout.promotion-checkout-exhausted.621c",
+          "ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a",
+          "ecommerce.progression.promotion-reporting.promotion-report-revenue.622b",
+          "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+          "ecommerce.feature.purchasing.purchase-order.3c",
+          "ecommerce.progression.recommendation-feedback.recommendation-feedback.504a",
+          "ecommerce.feature.split-tender-refunds.split-tender-refunds-751.751a",
+          "ecommerce.progression.staff-access.staff-access.601a",
+          "ecommerce.progression.staff-activity.staff-activity.624a",
+          "ecommerce.progression.staff-roles.staff-roles.621c",
+          "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+          "ecommerce.feature.store-credit.store-credit-750.750a",
+          "ecommerce.feature.subscriptions.subscriptions-760.760a",
+          "ecommerce.progression.support-history.support-history.612c",
+          "ecommerce.progression.support-intake.support-intake.610a",
+          "ecommerce.progression.support-refunds.support-refunds-resolution.615a",
+          "ecommerce.feature.split-tender-refunds.return-refund-interaction.757a",
+          "ecommerce.feature.split-tender-refunds.return-refund-interaction.757b",
+          "ecommerce.progression.support-triage.support-assignment.611a",
+          "ecommerce.progression.support-triage.support-priority.611b",
+          "ecommerce.progression.support-triage.support-status.611c"
+        ],
+        "observedChecks": []
+      },
+      "task": {
+        "mode": "fresh",
+        "sha256": "aa0a4209ad4c19f9a4a2fab1c1e26922b10797df290188de11e2ce710e0e9e5e",
+        "requirementSha256": "057631f5a6c136f07c95d7c4e2992fddb4185c21e853ad9bc4d6499ada31619c",
+        "contractSha256": "e35683d5df6b9848bf26c8763bca01addf20aba4ddeef3df90ac6d0b51f0a10a"
+      }
+    },
+    "label": null,
+    "url": "http://localhost:6981",
+    "level": 3,
+    "runId": "66c8f080-196e-4f",
+    "total": 2,
+    "max": 3,
+    "features": [
+      {
+        "id": 4,
+        "name": "Account cart and checkout",
+        "score": 2,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "4a",
+            "desc": "adding the same item twice raises its quantity instead of adding a second line",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "quantity",
+              "summary": "the cart-quantity control reads 1, expected exactly 2 in the entry matching \"Headphones\"",
+              "finding": {
+                "kind": "number-mismatch",
+                "fields": {
+                  "control": "cart-quantity",
+                  "observed": 1,
+                  "expected": {
+                    "equals": 2
+                  },
+                  "scopeText": "Headphones"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790571607943,
+                "completedAtMs": 1790571619015,
+                "durationMs": 11072
+              },
+              "actions": [
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571607943,
+                      "completedAtMs": 1790571607982,
+                      "durationMs": 39,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "wait",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "timing-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "waitedMs": 800
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571607982,
+                      "completedAtMs": 1790571608784,
+                      "durationMs": 802,
+                      "deadlineMs": 360000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571608784,
+                      "completedAtMs": 1790571613790,
+                      "durationMs": 5006,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "catalog-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571613790,
+                      "completedAtMs": 1790571613847,
+                      "durationMs": 57,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571613847,
+                      "completedAtMs": 1790571613914,
+                      "durationMs": 67,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571613914,
+                      "completedAtMs": 1790571613927,
+                      "durationMs": 13,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571613928,
+                      "completedAtMs": 1790571614001,
+                      "durationMs": 73,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571614001,
+                      "completedAtMs": 1790571614012,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "quantity",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the cart-quantity control reads 1, expected exactly 2 in the entry matching \"Headphones\"",
+                    "finding": {
+                      "kind": "number-mismatch",
+                      "fields": {
+                        "control": "cart-quantity",
+                        "observed": 1,
+                        "expected": {
+                          "equals": 2
+                        },
+                        "scopeText": "Headphones"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571614012,
+                      "completedAtMs": 1790571619014,
+                      "durationMs": 5002,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "user-content"
+              ]
+            },
+            "statedBy": "Adding an existing cart item increases its quantity.",
+            "stableKey": "ecommerce.feature.cart-checkout.cart.4a"
+          },
+          {
+            "id": "4d",
+            "desc": "checkout creates one order, reduces stock, and empties the cart",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790571619016,
+                "completedAtMs": 1790571639307,
+                "durationMs": 20291
+              },
+              "actions": [
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "value": 100
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571619016,
+                      "completedAtMs": 1790571619042,
+                      "durationMs": 26,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "cart-checkout66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "2b40d8527a3183a676f26fe0d28d2ad003df4e8b00b6b1bad0dfdd2125a7ef22"
+                      },
+                      "recordedAtMs": 1790571619194,
+                      "key": "normal-before"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571619042,
+                      "completedAtMs": 1790571619194,
+                      "durationMs": 152,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571619194,
+                      "completedAtMs": 1790571619246,
+                      "durationMs": 52,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571619246,
+                      "completedAtMs": 1790571624252,
+                      "durationMs": 5006,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "catalog-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624252,
+                      "completedAtMs": 1790571624315,
+                      "durationMs": 63,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624315,
+                      "completedAtMs": 1790571624383,
+                      "durationMs": 68,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624383,
+                      "completedAtMs": 1790571624411,
+                      "durationMs": 28,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624411,
+                      "completedAtMs": 1790571624486,
+                      "durationMs": 75,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624486,
+                      "completedAtMs": 1790571624498,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "cart-checkout66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [
+                          {
+                            "itemId": "4",
+                            "quantity": 1
+                          },
+                          {
+                            "itemId": "3",
+                            "quantity": 1
+                          }
+                        ],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "2b40d8527a3183a676f26fe0d28d2ad003df4e8b00b6b1bad0dfdd2125a7ef22"
+                      },
+                      "recordedAtMs": 1790571624669,
+                      "key": "normal-prepared"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624498,
+                      "completedAtMs": 1790571624669,
+                      "durationMs": 171,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "checkout-submit"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624669,
+                      "completedAtMs": 1790571624733,
+                      "durationMs": 64,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "cart-checkout66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": []
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "2b40d8527a3183a676f26fe0d28d2ad003df4e8b00b6b1bad0dfdd2125a7ef22"
+                      },
+                      "differences": [],
+                      "before": "normal-before",
+                      "prepared": "normal-prepared"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624733,
+                      "completedAtMs": 1790571624935,
+                      "durationMs": 202,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571624935,
+                      "completedAtMs": 1790571627501,
+                      "durationMs": 2566,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "cart-checkout66c8f080-196e-4ff4"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571627501,
+                      "completedAtMs": 1790571627544,
+                      "durationMs": 43,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571627544,
+                      "completedAtMs": 1790571628551,
+                      "durationMs": 1007,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571628551,
+                      "completedAtMs": 1790571628602,
+                      "durationMs": 51,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571628602,
+                      "completedAtMs": 1790571628614,
+                      "durationMs": 12,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571628614,
+                      "completedAtMs": 1790571628674,
+                      "durationMs": 60,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "value": 0
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571628674,
+                      "completedAtMs": 1790571628719,
+                      "durationMs": 45,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571628719,
+                      "completedAtMs": 1790571629025,
+                      "durationMs": 306,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "catalog-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571629026,
+                      "completedAtMs": 1790571629098,
+                      "durationMs": 72,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "value": 99
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571629098,
+                      "completedAtMs": 1790571629135,
+                      "durationMs": 37,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectNumber",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "value": 99
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571629135,
+                      "completedAtMs": 1790571629178,
+                      "durationMs": 43,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571629179,
+                      "completedAtMs": 1790571630189,
+                      "durationMs": 1010,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "orders-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630189,
+                      "completedAtMs": 1790571630211,
+                      "durationMs": 22,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "orders-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630211,
+                      "completedAtMs": 1790571630336,
+                      "durationMs": 125,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630336,
+                      "completedAtMs": 1790571630358,
+                      "durationMs": 22,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630359,
+                      "completedAtMs": 1790571630630,
+                      "durationMs": 271,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "catalog-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630630,
+                      "completedAtMs": 1790571630709,
+                      "durationMs": 79,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "cart-checkout66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": []
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "2b40d8527a3183a676f26fe0d28d2ad003df4e8b00b6b1bad0dfdd2125a7ef22"
+                      },
+                      "recordedAtMs": 1790571630890,
+                      "key": "claim-before"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630709,
+                      "completedAtMs": 1790571630890,
+                      "durationMs": 181,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630890,
+                      "completedAtMs": 1790571630970,
+                      "durationMs": 80,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "overlay-close"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571630971,
+                      "completedAtMs": 1790571635976,
+                      "durationMs": 5005,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "catalog-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571635976,
+                      "completedAtMs": 1790571636030,
+                      "durationMs": 54,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636030,
+                      "completedAtMs": 1790571636096,
+                      "durationMs": 66,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636097,
+                      "completedAtMs": 1790571636127,
+                      "durationMs": 30,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636127,
+                      "completedAtMs": 1790571636240,
+                      "durationMs": 113,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636241,
+                      "completedAtMs": 1790571636253,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "cart-checkout66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [
+                          {
+                            "itemId": "4",
+                            "quantity": 1
+                          },
+                          {
+                            "itemId": "3",
+                            "quantity": 1
+                          }
+                        ],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": []
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "2b40d8527a3183a676f26fe0d28d2ad003df4e8b00b6b1bad0dfdd2125a7ef22"
+                      },
+                      "recordedAtMs": 1790571636424,
+                      "key": "claim-prepared"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636253,
+                      "completedAtMs": 1790571636424,
+                      "durationMs": 171,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callAction",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "checkout",
+                      "accepted": true,
+                      "status": 200,
+                      "responseContract": "http",
+                      "refusalKind": null,
+                      "applicationRejected": false
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636425,
+                      "completedAtMs": 1790571636503,
+                      "durationMs": 78,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectActionOutcome",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "transport-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "checkout",
+                      "outcome": "completed",
+                      "status": 200,
+                      "classification": "verified"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636503,
+                      "completedAtMs": 1790571636503,
+                      "durationMs": 0,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content",
+                      "network-address"
+                    ]
+                  }
+                },
+                {
+                  "actor": "checkout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "cart-checkout66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [],
+                        "stock": [],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": []
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": []
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": []
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": false
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "2b40d8527a3183a676f26fe0d28d2ad003df4e8b00b6b1bad0dfdd2125a7ef22"
+                      },
+                      "differences": [],
+                      "before": "claim-before",
+                      "prepared": "claim-prepared",
+                      "response": {
+                        "action": "checkout",
+                        "ok": true,
+                        "applicationRejected": false,
+                        "refusalKind": null,
+                        "responseContract": "http",
+                        "complete": true,
+                        "accepted": true,
+                        "status": 200,
+                        "url": "http://localhost:6981/api/checkout",
+                        "method": "POST",
+                        "operation": {
+                          "reducer": "checkout",
+                          "path": "/api/checkout",
+                          "method": "POST"
+                        },
+                        "requestFingerprint": "cfa505abb14d6201c0ed1fb23dbf38cbde6c3d5bc37f1fd5211c54f03ff8d4ed"
+                      }
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636503,
+                      "completedAtMs": 1790571636680,
+                      "durationMs": 177,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "raceCheckout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signUp",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "checkout-overlap66c8f080-196e-4ff4",
+                      "authenticationPath": "local-form",
+                      "signedUp": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571636680,
+                      "completedAtMs": 1790571637193,
+                      "durationMs": 513,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "raceAdd",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "checkout-overlap66c8f080-196e-4ff4",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571637193,
+                      "completedAtMs": 1790571638249,
+                      "durationMs": 1056,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "checkout-overlap66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [],
+                        "stock": [
+                          {
+                            "itemId": "1",
+                            "warehouseId": "1",
+                            "quantity": 60
+                          },
+                          {
+                            "itemId": "1",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "2",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "2",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "3",
+                            "warehouseId": "2",
+                            "quantity": 30
+                          },
+                          {
+                            "itemId": "4",
+                            "warehouseId": "2",
+                            "quantity": 45
+                          },
+                          {
+                            "itemId": "5",
+                            "warehouseId": "1",
+                            "quantity": 80
+                          },
+                          {
+                            "itemId": "5",
+                            "warehouseId": "2",
+                            "quantity": 20
+                          },
+                          {
+                            "itemId": "6",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "6",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "7",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "8",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "8",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "9",
+                            "warehouseId": "1",
+                            "quantity": 70
+                          },
+                          {
+                            "itemId": "9",
+                            "warehouseId": "2",
+                            "quantity": 30
+                          },
+                          {
+                            "itemId": "10",
+                            "warehouseId": "1",
+                            "quantity": 90
+                          },
+                          {
+                            "itemId": "10",
+                            "warehouseId": "2",
+                            "quantity": 10
+                          },
+                          {
+                            "itemId": "11",
+                            "warehouseId": "1",
+                            "quantity": 2
+                          },
+                          {
+                            "itemId": "11",
+                            "warehouseId": "2",
+                            "quantity": 1
+                          },
+                          {
+                            "itemId": "12",
+                            "warehouseId": "1",
+                            "quantity": 0
+                          },
+                          {
+                            "itemId": "12",
+                            "warehouseId": "2",
+                            "quantity": 0
+                          },
+                          {
+                            "itemId": "13",
+                            "warehouseId": "1",
+                            "quantity": 60
+                          },
+                          {
+                            "itemId": "13",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "7",
+                            "warehouseId": "1",
+                            "quantity": 58
+                          },
+                          {
+                            "itemId": "4",
+                            "warehouseId": "1",
+                            "quantity": 53
+                          },
+                          {
+                            "itemId": "3",
+                            "warehouseId": "1",
+                            "quantity": 68
+                          }
+                        ],
+                        "reservations": [],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": true
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "795b1b33e5443ea190e688d473a9d44f1104c23f9a5267196f9ca6db0a7c36d6"
+                      },
+                      "recordedAtMs": 1790571638467,
+                      "key": "overlap-before"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638249,
+                      "completedAtMs": 1790571638467,
+                      "durationMs": 218,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "raceCheckout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638467,
+                      "completedAtMs": 1790571638528,
+                      "durationMs": 61,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "raceCheckout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "add-to-cart"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638528,
+                      "completedAtMs": 1790571638590,
+                      "durationMs": 62,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "raceCheckout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "current-user",
+                      "visible": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638590,
+                      "completedAtMs": 1790571638610,
+                      "durationMs": 20,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "raceCheckout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "cart-toggle"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638610,
+                      "completedAtMs": 1790571638707,
+                      "durationMs": 97,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "raceCheckout",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638707,
+                      "completedAtMs": 1790571638723,
+                      "durationMs": 16,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbRecordCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "checkout-overlap66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [
+                          {
+                            "itemId": "4",
+                            "quantity": 1
+                          }
+                        ],
+                        "stock": [
+                          {
+                            "itemId": "1",
+                            "warehouseId": "1",
+                            "quantity": 60
+                          },
+                          {
+                            "itemId": "1",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "2",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "2",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "3",
+                            "warehouseId": "2",
+                            "quantity": 30
+                          },
+                          {
+                            "itemId": "4",
+                            "warehouseId": "2",
+                            "quantity": 45
+                          },
+                          {
+                            "itemId": "5",
+                            "warehouseId": "1",
+                            "quantity": 80
+                          },
+                          {
+                            "itemId": "5",
+                            "warehouseId": "2",
+                            "quantity": 20
+                          },
+                          {
+                            "itemId": "6",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "6",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "7",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "8",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "8",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "9",
+                            "warehouseId": "1",
+                            "quantity": 70
+                          },
+                          {
+                            "itemId": "9",
+                            "warehouseId": "2",
+                            "quantity": 30
+                          },
+                          {
+                            "itemId": "10",
+                            "warehouseId": "1",
+                            "quantity": 90
+                          },
+                          {
+                            "itemId": "10",
+                            "warehouseId": "2",
+                            "quantity": 10
+                          },
+                          {
+                            "itemId": "11",
+                            "warehouseId": "1",
+                            "quantity": 2
+                          },
+                          {
+                            "itemId": "11",
+                            "warehouseId": "2",
+                            "quantity": 1
+                          },
+                          {
+                            "itemId": "12",
+                            "warehouseId": "1",
+                            "quantity": 0
+                          },
+                          {
+                            "itemId": "12",
+                            "warehouseId": "2",
+                            "quantity": 0
+                          },
+                          {
+                            "itemId": "13",
+                            "warehouseId": "1",
+                            "quantity": 60
+                          },
+                          {
+                            "itemId": "13",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "7",
+                            "warehouseId": "1",
+                            "quantity": 58
+                          },
+                          {
+                            "itemId": "3",
+                            "warehouseId": "1",
+                            "quantity": 68
+                          },
+                          {
+                            "itemId": "4",
+                            "warehouseId": "1",
+                            "quantity": 52
+                          }
+                        ],
+                        "reservations": [
+                          {
+                            "itemId": "4",
+                            "warehouseId": "1",
+                            "quantity": 1
+                          }
+                        ],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": true
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "795b1b33e5443ea190e688d473a9d44f1104c23f9a5267196f9ca6db0a7c36d6"
+                      },
+                      "recordedAtMs": 1790571638926,
+                      "key": "overlap-prepared"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638723,
+                      "completedAtMs": 1790571638926,
+                      "durationMs": 203,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "raceAdd",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "catalog-link",
+                      "visible": "item-list"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638926,
+                      "completedAtMs": 1790571638979,
+                      "durationMs": 53,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "callConcurrently",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "concurrency-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "action": "checkout",
+                      "fired": 2,
+                      "ms": 58,
+                      "outcomes": [
+                        {
+                          "status": 200,
+                          "ok": true,
+                          "applicationRejected": false,
+                          "refusalKind": null,
+                          "responseContract": "http",
+                          "complete": true,
+                          "text": "",
+                          "transport": "response",
+                          "name": "raceCheckout",
+                          "requestIndex": 1,
+                          "action": "checkout",
+                          "values": {},
+                          "delayMs": 0,
+                          "scheduledAtMs": 1790571639017,
+                          "dispatched": true,
+                          "startedAtMs": 1790571639018,
+                          "completedAtMs": 1790571639073,
+                          "durationMs": 55
+                        },
+                        {
+                          "status": 200,
+                          "ok": true,
+                          "applicationRejected": false,
+                          "refusalKind": null,
+                          "responseContract": "http",
+                          "complete": true,
+                          "text": "",
+                          "transport": "response",
+                          "name": "raceAdd",
+                          "requestIndex": 2,
+                          "action": "cart-add",
+                          "values": {
+                            "itemId": 3
+                          },
+                          "delayMs": 0,
+                          "scheduledAtMs": 1790571639019,
+                          "dispatched": true,
+                          "startedAtMs": 1790571639019,
+                          "completedAtMs": 1790571639075,
+                          "durationMs": 56
+                        }
+                      ],
+                      "responses": 2,
+                      "transportErrors": 0,
+                      "timeouts": 0,
+                      "cancelled": 0,
+                      "timingScope": "client request dispatch through response; not server execution overlap"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571638979,
+                      "completedAtMs": 1790571639077,
+                      "durationMs": 98,
+                      "deadlineMs": 120000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expectCallOutcomes",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "concurrency-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "accepted": 2,
+                      "fired": 2,
+                      "outcomes": [
+                        {
+                          "status": 200,
+                          "ok": true,
+                          "applicationRejected": false,
+                          "refusalKind": null,
+                          "responseContract": "http",
+                          "complete": true,
+                          "text": "",
+                          "transport": "response",
+                          "name": "raceCheckout",
+                          "requestIndex": 1,
+                          "action": "checkout",
+                          "values": {},
+                          "delayMs": 0,
+                          "scheduledAtMs": 1790571639017,
+                          "dispatched": true,
+                          "startedAtMs": 1790571639018,
+                          "completedAtMs": 1790571639073,
+                          "durationMs": 55
+                        },
+                        {
+                          "status": 200,
+                          "ok": true,
+                          "applicationRejected": false,
+                          "refusalKind": null,
+                          "responseContract": "http",
+                          "complete": true,
+                          "text": "",
+                          "transport": "response",
+                          "name": "raceAdd",
+                          "requestIndex": 2,
+                          "action": "cart-add",
+                          "values": {
+                            "itemId": 3
+                          },
+                          "delayMs": 0,
+                          "scheduledAtMs": 1790571639019,
+                          "dispatched": true,
+                          "startedAtMs": 1790571639019,
+                          "completedAtMs": 1790571639075,
+                          "durationMs": 56
+                        }
+                      ]
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571639077,
+                      "completedAtMs": 1790571639078,
+                      "durationMs": 1,
+                      "deadlineMs": 120000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": null,
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "dbExpectCheckout",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "database-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "state": {
+                        "accountId": "checkout-overlap66c8f080-196e-4ff4",
+                        "itemId": "4",
+                        "priceMinor": 4200,
+                        "cart": [
+                          {
+                            "itemId": "3",
+                            "quantity": 1
+                          }
+                        ],
+                        "stock": [
+                          {
+                            "itemId": "1",
+                            "warehouseId": "1",
+                            "quantity": 60
+                          },
+                          {
+                            "itemId": "1",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "2",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "2",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "3",
+                            "warehouseId": "2",
+                            "quantity": 30
+                          },
+                          {
+                            "itemId": "4",
+                            "warehouseId": "2",
+                            "quantity": 45
+                          },
+                          {
+                            "itemId": "5",
+                            "warehouseId": "1",
+                            "quantity": 80
+                          },
+                          {
+                            "itemId": "5",
+                            "warehouseId": "2",
+                            "quantity": 20
+                          },
+                          {
+                            "itemId": "6",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "6",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "7",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "8",
+                            "warehouseId": "1",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "8",
+                            "warehouseId": "2",
+                            "quantity": 50
+                          },
+                          {
+                            "itemId": "9",
+                            "warehouseId": "1",
+                            "quantity": 70
+                          },
+                          {
+                            "itemId": "9",
+                            "warehouseId": "2",
+                            "quantity": 30
+                          },
+                          {
+                            "itemId": "10",
+                            "warehouseId": "1",
+                            "quantity": 90
+                          },
+                          {
+                            "itemId": "10",
+                            "warehouseId": "2",
+                            "quantity": 10
+                          },
+                          {
+                            "itemId": "11",
+                            "warehouseId": "1",
+                            "quantity": 2
+                          },
+                          {
+                            "itemId": "11",
+                            "warehouseId": "2",
+                            "quantity": 1
+                          },
+                          {
+                            "itemId": "12",
+                            "warehouseId": "1",
+                            "quantity": 0
+                          },
+                          {
+                            "itemId": "12",
+                            "warehouseId": "2",
+                            "quantity": 0
+                          },
+                          {
+                            "itemId": "13",
+                            "warehouseId": "1",
+                            "quantity": 60
+                          },
+                          {
+                            "itemId": "13",
+                            "warehouseId": "2",
+                            "quantity": 40
+                          },
+                          {
+                            "itemId": "7",
+                            "warehouseId": "1",
+                            "quantity": 58
+                          },
+                          {
+                            "itemId": "4",
+                            "warehouseId": "1",
+                            "quantity": 52
+                          },
+                          {
+                            "itemId": "3",
+                            "warehouseId": "1",
+                            "quantity": 67
+                          }
+                        ],
+                        "reservations": [
+                          {
+                            "itemId": "3",
+                            "warehouseId": "1",
+                            "quantity": 1
+                          }
+                        ],
+                        "orders": [
+                          {
+                            "id": "1",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2",
+                            "accountId": "cart-checkout66c8f080-196e-4ff4",
+                            "totalMinor": 10600,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "3",
+                                "quantity": 1,
+                                "priceMinor": 6400,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              },
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "id": "3",
+                            "accountId": "checkout-overlap66c8f080-196e-4ff4",
+                            "totalMinor": 4200,
+                            "refundedMinor": 0,
+                            "status": "pending",
+                            "lines": [
+                              {
+                                "itemId": "4",
+                                "quantity": 1,
+                                "priceMinor": 4200,
+                                "allocations": [
+                                  {
+                                    "warehouseId": "1",
+                                    "quantity": 1
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ],
+                        "payments": [],
+                        "orphanOrderLines": 0,
+                        "orphanAllocations": 0
+                      },
+                      "scope": "orders",
+                      "storage": {
+                        "kind": "order-data",
+                        "cart": true,
+                        "warehouses": true
+                      },
+                      "catalog": [
+                        {
+                          "itemId": "1",
+                          "name": "Air Purifier",
+                          "priceMinor": 18900
+                        },
+                        {
+                          "itemId": "2",
+                          "name": "Bluetooth Speaker",
+                          "priceMinor": 7950
+                        },
+                        {
+                          "itemId": "3",
+                          "name": "Coffee Grinder",
+                          "priceMinor": 6400
+                        },
+                        {
+                          "itemId": "4",
+                          "name": "Desk Lamp",
+                          "priceMinor": 4200
+                        },
+                        {
+                          "itemId": "5",
+                          "name": "Espresso Machine",
+                          "priceMinor": 44900
+                        },
+                        {
+                          "itemId": "6",
+                          "name": "Gaming Mouse",
+                          "priceMinor": 5900
+                        },
+                        {
+                          "itemId": "7",
+                          "name": "Headphones",
+                          "priceMinor": 19900
+                        },
+                        {
+                          "itemId": "8",
+                          "name": "Induction Cooktop",
+                          "priceMinor": 32900
+                        },
+                        {
+                          "itemId": "9",
+                          "name": "Keyboard",
+                          "priceMinor": 8900
+                        },
+                        {
+                          "itemId": "10",
+                          "name": "Laptop Stand",
+                          "priceMinor": 2900
+                        },
+                        {
+                          "itemId": "11",
+                          "name": "Mirrorless Camera",
+                          "priceMinor": 129900
+                        },
+                        {
+                          "itemId": "12",
+                          "name": "USB Cable",
+                          "priceMinor": 6500
+                        },
+                        {
+                          "itemId": "13",
+                          "name": "Webcam",
+                          "priceMinor": 6900
+                        }
+                      ],
+                      "schemaSha256": {
+                        "contract": "9d94c482c786f2e4a5d986e2cf99926ee01ab5b9943f7df4c33b6e516c88e1ca",
+                        "selection": "795b1b33e5443ea190e688d473a9d44f1104c23f9a5267196f9ca6db0a7c36d6"
+                      },
+                      "differences": [],
+                      "before": "overlap-before",
+                      "prepared": "overlap-prepared"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790571639078,
+                      "completedAtMs": 1790571639307,
+                      "durationMs": 229,
+                      "deadlineMs": 90000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "network-address",
+                "user-content"
+              ]
+            },
+            "statedBy": "Checkout creates one order, reduces stock, and empties the cart.",
+            "serverCheck": "verified",
+            "stableKey": "ecommerce.feature.cart-checkout.cart.4d"
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790571606106,
+            "completedAtMs": 1790571607939,
+            "durationMs": 1833
+          },
+          "actions": [
+            {
+              "actor": "quantity",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signUp",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "cart-quantity66c8f080-196e-4ff4",
+                  "authenticationPath": "local-form",
+                  "signedUp": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571606109,
+                  "completedAtMs": 1790571607315,
+                  "durationMs": 1206,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "checkout",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signUp",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "cart-checkout66c8f080-196e-4ff4",
+                  "authenticationPath": "local-form",
+                  "signedUp": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571607315,
+                  "completedAtMs": 1790571607807,
+                  "durationMs": 492,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "quantity",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571607807,
+                  "completedAtMs": 1790571607897,
+                  "durationMs": 90,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "checkout",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": false,
+                  "testid": "catalog-link",
+                  "visible": "item-list"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790571607897,
+                  "completedAtMs": 1790571607939,
+                  "durationMs": 42,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        },
+        "verified": [
+          "checkout: server accepted action \"checkout\" (HTTP 200)"
+        ]
+      }
+    ],
+    "selection": {
+      "sha256": "9983c83e224a2e861e29cde5d2c0f00e09cf895853e600b7960d0698fe06d83e",
+      "checks": [
+        {
+          "stableKey": "ecommerce.feature.cart-checkout.cart.4a",
+          "packId": "ecommerce.feature.cart",
+          "checkGroupId": "cart",
+          "featureId": 4,
+          "criterionId": "4a",
+          "description": "adding the same item twice raises its quantity instead of adding a second line",
+          "points": 1
+        },
+        {
+          "stableKey": "ecommerce.feature.cart-checkout.cart.4d",
+          "packId": "ecommerce.feature.checkout",
+          "checkGroupId": "cart",
+          "featureId": 4,
+          "criterionId": "4d",
+          "description": "checkout creates one order, reduces stock, and empties the cart",
+          "points": 2
+        }
+      ]
+    },
+    "packRuntime": {
+      "schemaVersion": 1,
+      "metric": "pack-check-wall-clock-sum-v1",
+      "packs": [
+        {
+          "id": "ecommerce.feature.cart",
+          "checkCount": 1,
+          "setupRuntimeMs": 1833,
+          "criterionRuntimeMs": 11072,
+          "measuredRuntimeMs": 12905
+        },
+        {
+          "id": "ecommerce.feature.checkout",
+          "checkCount": 1,
+          "setupRuntimeMs": 1833,
+          "criterionRuntimeMs": 20291,
+          "measuredRuntimeMs": 22124
+        }
+      ]
+    },
+    "inconclusive": []
+  }
+}

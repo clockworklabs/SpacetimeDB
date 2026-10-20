@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 1,
+  "candidate": "3926fa8ae1ac948b61f2320c8cd7ae462f991a93",
+  "baseCommit": "7120c8caaef1c4ddbab0aca2904010925fb7804d",
+  "baseImage": "sha256:0103aa732cf7e2064bf3e6744842aad751543fe83b0f565ecb5398b1f4a68979",
+  "dependencyVolume": "stack-bench-release-deps-3943a8eaab",
+  "qualified": false,
+  "modelCalls": 0,
+  "calibrationMode": "Diagnostic overlay only; clear evidence and reuse in image copies, preserve tracked calibration and historical bytes.",
+  "checks": [
+    "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+    "ecommerce.inventory-operations.warehouse-transfer.2a",
+    "ecommerce.operations-access.operator-authorization.201a",
+    "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+    "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+  ],
+  "preparationInputsSha256": "15e3ff88b8ac9f6d1a9a2d7cf187e8c8c209e05682d8c1e1ddb3536bb99aa212",
+  "preparationScriptSha256": "ac6f51e2aa9fe62938474f04dc0e4bea08c1e81a0d0cacd267ca92e799191b1c",
+  "launcherSha256": "633d5c5724bdfef307bf56da877b0ace15b19e06a6f16ad71c705035894a922c",
+  "reviewedScopeSha256": "db3eab63368c2f4d2d3f35d71d5df5355fdc3d8bce506148c45d6d7f4d4be9fa",
+  "scopeSha256": "b0849e37fc5e1b44a112602e465c716dc72ed6b09d3ba1772616f25af1f6e492",
+  "recipeSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+  "changes": [
+    {
+      "status": "M",
+      "file": "tools/stack-bench/dashboard/dashboard-views.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/dashboard/public/views/attempt.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/docs/check-categories.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/docs/dependency-graph.html"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/docs/grading-coverage.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/docs/prompting.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/grader/mutations/convex-ecommerce.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/grader/mutations/mongodb-ecommerce.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/grader/mutations/postgres-ecommerce.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/grader/mutations/spacetime-ecommerce.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/grader/mutations/supabase-ecommerce.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/actor-transport-action-executors.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/browser-action-executors.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/actions/named-action-executors.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/src/composition/calibration-compiler.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/actor-transport-action-executors.test.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/dashboard/check-evidence.test.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/dashboard/view-clarity.test.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/dependency-mode.test.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/item-navigation.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/qualification-slices.test.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tests/selected-grade.integration.ts"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/calibrations/dependency-l3.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/calibrations/sequential-l1.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/calibrations/sequential-l2.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/packs/feature-accounts.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/packs/spec-access-control.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/packs/spec-live-state.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/recipes/sequential-l1.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/recipes/sequential-l2.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/composition/recipes/sequential-l3.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/contracts/application-interface.md"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/progression/ecommerce.json"
+    },
+    {
+      "status": "M",
+      "file": "tools/stack-bench/tracks/ecommerce/scenarios/02-server-actions.json"
+    }
+  ],
+  "files": [
+    {
+      "path": "dashboard/dashboard-views.ts",
+      "sourceSha256": "5b257410c2dbee564abdeee97ddb25a270039be9325d1bdce290b72220b7343e",
+      "sha256": "5b257410c2dbee564abdeee97ddb25a270039be9325d1bdce290b72220b7343e"
+    },
+    {
+      "path": "dashboard/public/views/attempt.ts",
+      "sourceSha256": "156452020e1eb0c6a79e31e94db06bbfc42340cab12925687b813e7a7ef7c208",
+      "sha256": "156452020e1eb0c6a79e31e94db06bbfc42340cab12925687b813e7a7ef7c208"
+    },
+    {
+      "path": "docs/check-categories.md",
+      "sourceSha256": "3122085557abbf590f8d20c477c9bbdbdf2b42859415d8ff67404bd00b17a0f7",
+      "sha256": "3122085557abbf590f8d20c477c9bbdbdf2b42859415d8ff67404bd00b17a0f7"
+    },
+    {
+      "path": "docs/dependency-graph.html",
+      "sourceSha256": "8581b1106bf37401fa4b7a18ea1ccab2248c8acd64c940f33df21b0dfd7b85cf",
+      "sha256": "8581b1106bf37401fa4b7a18ea1ccab2248c8acd64c940f33df21b0dfd7b85cf"
+    },
+    {
+      "path": "docs/grading-coverage.md",
+      "sourceSha256": "df3c9f16fee130293087a617871763f2c819a0d917fc164125093381f861f61f",
+      "sha256": "df3c9f16fee130293087a617871763f2c819a0d917fc164125093381f861f61f"
+    },
+    {
+      "path": "docs/prompting.md",
+      "sourceSha256": "5dd1fc2d78b50dc3e4dc3d87c29caef586b9da8858e2957421025d3596dcc397",
+      "sha256": "5dd1fc2d78b50dc3e4dc3d87c29caef586b9da8858e2957421025d3596dcc397"
+    },
+    {
+      "path": "grader/mutations/convex-ecommerce.json",
+      "sourceSha256": "13b26c47cb482ed3e1ff4338d603e1d524c20bfbffe2cf4ee8d746c413b7efeb",
+      "sha256": "13b26c47cb482ed3e1ff4338d603e1d524c20bfbffe2cf4ee8d746c413b7efeb"
+    },
+    {
+      "path": "grader/mutations/mongodb-ecommerce.json",
+      "sourceSha256": "c34fb587384594e4b4367231e1bd322cbfa5d01d849661959b5ec8e7b609f75a",
+      "sha256": "c34fb587384594e4b4367231e1bd322cbfa5d01d849661959b5ec8e7b609f75a"
+    },
+    {
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "sourceSha256": "ce0c0c10dad084ed5c694c0db8afa40cb3ae101484c24fe64eda07ad2563f37e",
+      "sha256": "ce0c0c10dad084ed5c694c0db8afa40cb3ae101484c24fe64eda07ad2563f37e"
+    },
+    {
+      "path": "grader/mutations/spacetime-ecommerce.json",
+      "sourceSha256": "5d37f436793c4311671c50578e84b3656a1124c76cba1625b6c7a9b5d48b1dbb",
+      "sha256": "5d37f436793c4311671c50578e84b3656a1124c76cba1625b6c7a9b5d48b1dbb"
+    },
+    {
+      "path": "grader/mutations/supabase-ecommerce.json",
+      "sourceSha256": "b8178557798596192e6c13575c3f023d0310330cb29fec0ee98ffede21dabe94",
+      "sha256": "b8178557798596192e6c13575c3f023d0310330cb29fec0ee98ffede21dabe94"
+    },
+    {
+      "path": "src/actions/actor-transport-action-executors.ts",
+      "sourceSha256": "480ad7c9d5b8f7d7a74c5f6cc8ed7008bacee6471ae9c87589e48c3fcaeae16b",
+      "sha256": "480ad7c9d5b8f7d7a74c5f6cc8ed7008bacee6471ae9c87589e48c3fcaeae16b"
+    },
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sourceSha256": "8df1c226378afd4f13a5b7cf34c78234cebb63776d055e662f0308f2f4994b88",
+      "sha256": "8df1c226378afd4f13a5b7cf34c78234cebb63776d055e662f0308f2f4994b88"
+    },
+    {
+      "path": "src/actions/named-action-executors.ts",
+      "sourceSha256": "ab438b911fe5e81c953195ab1eb4611cd61bd6a2bd360f4bd6108bd614de0279",
+      "sha256": "ab438b911fe5e81c953195ab1eb4611cd61bd6a2bd360f4bd6108bd614de0279"
+    },
+    {
+      "path": "src/composition/calibration-compiler.ts",
+      "sourceSha256": "8e7227b058642ec804cbd8ecccde190e91f725790f2a76c59dd33bdbfc449d72",
+      "sha256": "8e7227b058642ec804cbd8ecccde190e91f725790f2a76c59dd33bdbfc449d72"
+    },
+    {
+      "path": "tracks/ecommerce/composition/packs/feature-accounts.json",
+      "sourceSha256": "e1b78c1111493730adc54f105ac379ebc4224f81eaf7a60f3d15721968aea4b8",
+      "sha256": "e1b78c1111493730adc54f105ac379ebc4224f81eaf7a60f3d15721968aea4b8"
+    },
+    {
+      "path": "tracks/ecommerce/composition/packs/spec-access-control.json",
+      "sourceSha256": "bf3e1e5d2824f39d68658ca06d92cb1a32af24c45ad01d20336277d62f2043b0",
+      "sha256": "bf3e1e5d2824f39d68658ca06d92cb1a32af24c45ad01d20336277d62f2043b0"
+    },
+    {
+      "path": "tracks/ecommerce/composition/packs/spec-live-state.json",
+      "sourceSha256": "de648e07fac2a2e51c77c4678075748079e7e39aa3c738b9d361637e42bae918",
+      "sha256": "de648e07fac2a2e51c77c4678075748079e7e39aa3c738b9d361637e42bae918"
+    },
+    {
+      "path": "tracks/ecommerce/composition/recipes/sequential-l1.json",
+      "sourceSha256": "4cbbcd81cfb574cf3089dd7085fbb3a6838135c68cfcbb14a80e524b9f9dc55c",
+      "sha256": "4cbbcd81cfb574cf3089dd7085fbb3a6838135c68cfcbb14a80e524b9f9dc55c"
+    },
+    {
+      "path": "tracks/ecommerce/composition/recipes/sequential-l2.json",
+      "sourceSha256": "622c20b4596a3086e473582d2e41bf82cf2841efcf6e106dd1956c850f671d58",
+      "sha256": "622c20b4596a3086e473582d2e41bf82cf2841efcf6e106dd1956c850f671d58"
+    },
+    {
+      "path": "tracks/ecommerce/composition/recipes/sequential-l3.json",
+      "sourceSha256": "aca9d7257b0b9f82a4f3f491a1edec5e06c7aa7246753bf28240c2a1716bbdbf",
+      "sha256": "aca9d7257b0b9f82a4f3f491a1edec5e06c7aa7246753bf28240c2a1716bbdbf"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/application-interface.md",
+      "sourceSha256": "be928a861d930150d7eff911e7606044618470cc8d8b270e6cabe42217442b4a",
+      "sha256": "be928a861d930150d7eff911e7606044618470cc8d8b270e6cabe42217442b4a"
+    },
+    {
+      "path": "tracks/ecommerce/progression/ecommerce.json",
+      "sourceSha256": "6f63d912f3d1fa6cfe76c93296ea842d0624f0188ab910db7997d72b8fed0c45",
+      "sha256": "6f63d912f3d1fa6cfe76c93296ea842d0624f0188ab910db7997d72b8fed0c45"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "sourceSha256": "c7e591a8923812b1649ccc2a9a1a9b4ae0e53de58ef4f44ee1bc09cb973a07e6",
+      "sha256": "c7e591a8923812b1649ccc2a9a1a9b4ae0e53de58ef4f44ee1bc09cb973a07e6"
+    },
+    {
+      "path": "dist/dashboard/dashboard-views.js",
+      "sourceSha256": "2e8269a51b25762acf62e831920a2cdf4b7914cf25e4cfe42f1c7ed6cd7d4698",
+      "sha256": "2e8269a51b25762acf62e831920a2cdf4b7914cf25e4cfe42f1c7ed6cd7d4698"
+    },
+    {
+      "path": "dist/dashboard/dashboard-views.js.map",
+      "sourceSha256": "31c5c87b83453cdfc4686517c1323a50494b16fdb182db51e3b4beb08ae5bdb6",
+      "sha256": "31c5c87b83453cdfc4686517c1323a50494b16fdb182db51e3b4beb08ae5bdb6"
+    },
+    {
+      "path": "dist/dashboard/public/views/attempt.js",
+      "sourceSha256": "f800a1756fd11dc3c32b31b1ce1b6c8f7f02c089d4b406322063580c218d8c9b",
+      "sha256": "f800a1756fd11dc3c32b31b1ce1b6c8f7f02c089d4b406322063580c218d8c9b"
+    },
+    {
+      "path": "dist/dashboard/public/views/attempt.js.map",
+      "sourceSha256": "8144a05d417fdae74039aa32986164400c3b5318f085c514188b5c6c3a84a761",
+      "sha256": "8144a05d417fdae74039aa32986164400c3b5318f085c514188b5c6c3a84a761"
+    },
+    {
+      "path": "dist/src/actions/actor-transport-action-executors.js",
+      "sourceSha256": "d42c4be0bab39d3e164d0dfc9342d5b45205252a82152eab9d7c12ca92e7b1ef",
+      "sha256": "d42c4be0bab39d3e164d0dfc9342d5b45205252a82152eab9d7c12ca92e7b1ef"
+    },
+    {
+      "path": "dist/src/actions/actor-transport-action-executors.js.map",
+      "sourceSha256": "4fd7453d563e1ab29ddeba8fe967fb90f2d365145ee301025782e56db60f3aa7",
+      "sha256": "4fd7453d563e1ab29ddeba8fe967fb90f2d365145ee301025782e56db60f3aa7"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js",
+      "sourceSha256": "b1d2bbc063070799f6373ab1f919a28a5f9ee8b48dbae52c8f1fcd66a40638e4",
+      "sha256": "b1d2bbc063070799f6373ab1f919a28a5f9ee8b48dbae52c8f1fcd66a40638e4"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js.map",
+      "sourceSha256": "d02477f1fffde58e585c9d00de4b9b3c79cbd078e1f9557d2a1feb5919a88bb5",
+      "sha256": "d02477f1fffde58e585c9d00de4b9b3c79cbd078e1f9557d2a1feb5919a88bb5"
+    },
+    {
+      "path": "dist/src/actions/named-action-executors.js",
+      "sourceSha256": "54eae654171920640f77a3a6e5e93baea88a5e3bd62683eadcccd3c56cda3743",
+      "sha256": "54eae654171920640f77a3a6e5e93baea88a5e3bd62683eadcccd3c56cda3743"
+    },
+    {
+      "path": "dist/src/actions/named-action-executors.js.map",
+      "sourceSha256": "91eda45fcb6ab307a9c40dfca4f6d4316fa73acbc1dca4f254e2b5ac1e826016",
+      "sha256": "91eda45fcb6ab307a9c40dfca4f6d4316fa73acbc1dca4f254e2b5ac1e826016"
+    },
+    {
+      "path": "dist/src/composition/calibration-compiler.js",
+      "sourceSha256": "8478bab271bbabe06146c5014c123e588624458650defe732579fc259ffe8424",
+      "sha256": "8478bab271bbabe06146c5014c123e588624458650defe732579fc259ffe8424"
+    },
+    {
+      "path": "dist/src/composition/calibration-compiler.js.map",
+      "sourceSha256": "597d86c73f067a3232833f1c6d8e0f8a9824e327ce1439c0a88b018ec86c8b77",
+      "sha256": "597d86c73f067a3232833f1c6d8e0f8a9824e327ce1439c0a88b018ec86c8b77"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json",
+      "sourceSha256": "674bb0688be7762b7e1cb5eb503de09f86bf879a04a3499cfc7ed4db920b800a",
+      "sha256": "65ca4e8f3658aff5eed7cfb2689b611e945994e98a46b2a609fe78828806aa3c"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/sequential-l1.json",
+      "sourceSha256": "4b0140145c41a1056bd8fd814b15cd9781df6a859878c8f6cfa15e830c90b333",
+      "sha256": "a1345f926948c4d0506c2a3c2a15fe4c2836fbbe2121cf5871426d3762b57c01"
+    },
+    {
+      "path": "tracks/ecommerce/composition/calibrations/sequential-l2.json",
+      "sourceSha256": "ab43e0856cfca79db0d6f347aff291d63d253f61f37b907c096f604f377e533d",
+      "sha256": "5a96ae963d587ebd94d27e263f8171101aacd9f545053f2349f82136a81bcd91"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "container": "055cf873085e869ac916f2af5030d013b9a8bb5bbae21a407a568157b000b56d",
+  "image": "sha256:27f518fee1ff17cb6827ddb4f2cb30705c6b725a0b82410616ac8e001ed83b87",
+  "exitCode": 1,
+  "files": [
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-launch.json",
+      "sha256": "51f7f89fb9e2283d02a87b2ab136610a22e3927b05edd689d0b62ec6bfb7093e"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-probe.mjs",
+      "sha256": "57084bedd252c6b3e259a75d935c6d74921236e6efdf50c81b546f5e9ddecfe3"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-probe.json",
+      "sha256": "09e2171097cfc96f5d3e7aab69663ea8ce0736401bd7db11525ee9f73faae75c"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-controller.json",
+      "sha256": "c696cb11fdac1e48b6a0fddf8bd4728a67ea9386dbd6f272534751df70f7c538"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-stdout.log",
+      "sha256": "fbe32c6b6bd12fc100b08be871b9ef7d4ac32b29aa6c541d90c363231a3fe827"
+    },
+    {
+      "path": "local-notes/sol6-four-stack-20260925/response-loss-real-vite-green-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "cause": "Chromium crashpad could not create its database under the read-only default HOME; probe did not reach grading",
+  "paidCalls": 0
+}

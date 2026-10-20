@@ -1,0 +1,16 @@
+{
+  "container": "23222fcea24bed888270eda844988da22af48b398ac815420c2f13d472bd841e",
+  "name": "stack-bench-convex-refusal-r1-after",
+  "image": "sha256:30cd4486206669d551bf112e59bcbd9dd1419a543fbd0c8b07f19513ceeca6b0",
+  "args": [
+    "run",
+    "--grade-from",
+    "/var/lib/docker/volumes/stack-bench-state/_data/results/campaigns/job-993215036f6fc527cbeb47060ff33051eece01a71626acb5b352662084479cb0/attempts/sol6-norepair-four-stack-12-abb64ef60-r1-c1-a1-convex/execution-1",
+    "--grade-level",
+    "2",
+    "--check",
+    "ecommerce.spec.access-control.purchase-session.101a",
+    "--out",
+    "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/convex-refusal-20260927/after"
+  ]
+}

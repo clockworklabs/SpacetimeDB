@@ -1,0 +1,161 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "backend_lease_evidence",
+  "id": "ecommerce-mongodb-run816-20260928234957-ad451ae2-backend-lease",
+  "attempt": {
+    "id": "ecommerce-mongodb-run816-20260928234957-ad451ae2-backend-lease",
+    "parentId": "ecommerce-mongodb-run816-20260928234957-ad451ae2"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:49:57.545Z",
+    "completedAt": "2026-09-28T23:57:30.510Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "version": 1,
+    "runId": "ecommerce-mongodb-run816-20260928234957-ad451ae2",
+    "backend": "mongodb",
+    "track": "ecommerce",
+    "runIndex": 816,
+    "ownerPid": 80,
+    "createdAt": "2026-09-28T23:49:57.545Z",
+    "stoppedAt": "2026-09-28T23:57:30.440Z",
+    "releasedAt": "2026-09-28T23:57:30.504Z",
+    "state": "released",
+    "resources": {
+      "serverUri": null,
+      "database": "app_ecom_run816",
+      "module": null,
+      "dataDir": null,
+      "container": {
+        "name": "sb-fa931b47414ce3b4-backend",
+        "id": "d4d472737797d8aec7213dfd2e4f27456a3d90a4fb991fd7fa267a268f430e33",
+        "image": "sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082",
+        "owned": true,
+        "networkMode": "b29faeb78297efd44913d3e1806c4aca945abaf5d6079826ef8142c14591c09b",
+        "running": false,
+        "removedAt": "2026-09-28T23:57:29.595Z"
+      },
+      "buildContainer": {
+        "name": "sb-fa931b47414ce3b4-build",
+        "id": "176185d03b51dd092f67fa68b37eff195f70eeb160b27ec0046e341a14db5535",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "owned": true,
+        "running": false,
+        "networkMode": "container:d4d472737797d8aec7213dfd2e4f27456a3d90a4fb991fd7fa267a268f430e33",
+        "resourceLimits": {
+          "cpuCount": 2,
+          "memoryBytes": 4294967296,
+          "memorySwapBytes": 4294967296,
+          "pids": 512
+        },
+        "workspaceHandedBackAt": "2026-09-28T23:57:28.376Z",
+        "removedAt": "2026-09-28T23:57:28.603Z"
+      },
+      "locks": [
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/5307944ae76e5734777d8013fd7c214999f2e80f2de402d6609f773ba400a6d4.lock.json",
+          "key": "port:7217",
+          "digest": "5307944ae76e5734777d8013fd7c214999f2e80f2de402d6609f773ba400a6d4",
+          "acquiredAt": "2026-09-28T23:49:57.639Z",
+          "releasedAt": "2026-09-28T23:57:30.503Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/3b2ad8681b87eeb99cd648f5b64a7a9d51c5c68a0826d044e37a99f366385c8c.lock.json",
+          "key": "port:7539",
+          "digest": "3b2ad8681b87eeb99cd648f5b64a7a9d51c5c68a0826d044e37a99f366385c8c",
+          "acquiredAt": "2026-09-28T23:49:57.639Z",
+          "releasedAt": "2026-09-28T23:57:30.504Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/92b6b0b1d5cc2522f4c3088becdab5c868b75142ca3ea2571e7bb8095cd1acd1.lock.json",
+          "key": "slot:ecommerce:mongodb:run816",
+          "digest": "92b6b0b1d5cc2522f4c3088becdab5c868b75142ca3ea2571e7bb8095cd1acd1",
+          "acquiredAt": "2026-09-28T23:49:57.639Z",
+          "releasedAt": "2026-09-28T23:57:30.504Z"
+        },
+        {
+          "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d50070748a17385e7eb4959838ea24f68a7be0de153270ef6c5752b32e5f6b42.lock.json",
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-N1k5y1/app",
+          "digest": "d50070748a17385e7eb4959838ea24f68a7be0de153270ef6c5752b32e5f6b42",
+          "acquiredAt": "2026-09-28T23:49:57.639Z",
+          "releasedAt": "2026-09-28T23:57:30.504Z"
+        }
+      ],
+      "launchedProcess": null,
+      "listenerProcesses": [],
+      "network": {
+        "name": "sb-fa931b47414ce3b4-network",
+        "id": "b29faeb78297efd44913d3e1806c4aca945abaf5d6079826ef8142c14591c09b",
+        "namespaceContainerId": "d4d472737797d8aec7213dfd2e4f27456a3d90a4fb991fd7fa267a268f430e33",
+        "hostAddresses": [
+          "127.0.0.1",
+          "192.168.65.6",
+          "192.168.65.3",
+          "10.0.0.49",
+          "172.30.0.1",
+          "10.0.0.25",
+          "10.0.0.57",
+          "10.254.0.1",
+          "172.29.0.1",
+          "172.17.0.1",
+          "172.21.0.1",
+          "172.31.0.1",
+          "172.20.0.1",
+          "10.0.0.9",
+          "10.0.0.33",
+          "10.0.0.41",
+          "10.0.0.65",
+          "10.0.0.73",
+          "10.0.0.81",
+          "10.0.0.97",
+          "10.0.0.105",
+          "10.0.0.113",
+          "10.0.0.1",
+          "10.0.0.17",
+          "10.0.0.89"
+        ],
+        "services": [
+          {
+            "address": "10.0.0.91",
+            "port": 4873
+          }
+        ],
+        "firewallSha256": "513868097e3575450456d138761d548d36b46a2e52082e9fcb6b5335e8c2f6c2",
+        "firewallInstalledAt": "2026-09-28T23:50:02.711Z",
+        "ownAddresses": [
+          "10.0.0.90"
+        ],
+        "namespaceStartedAt": "2026-09-28T23:50:00.805252744Z",
+        "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+      },
+      "browserContainer": {
+        "name": "sb-fa931b47414ce3b4-browser",
+        "id": "1a05d056daa695f832309eb7041cd9eb06d67cdf512c54877bbed4ab86ab20dc",
+        "image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+        "owned": true,
+        "networkMode": "container:d4d472737797d8aec7213dfd2e4f27456a3d90a4fb991fd7fa267a268f430e33",
+        "running": false,
+        "removedAt": "2026-09-28T23:57:27.859Z"
+      }
+    },
+    "ownership": {
+      "markerSha256": "9111d48e322cf98e561010e06f9c2d42ed85a085beced557be941c8ae9fe5abc"
+    }
+  }
+}

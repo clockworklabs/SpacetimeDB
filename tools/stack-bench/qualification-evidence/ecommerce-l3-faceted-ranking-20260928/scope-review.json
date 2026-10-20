@@ -1,0 +1,118 @@
+{
+  "kind": "independent_qualification_scope_review",
+  "baseCommit": "3943a8eaab4b94d5246e0b6d7c63739feda83294",
+  "candidateCommit": "49b405390274f5c4e692c3978acb9ed06319ebe3",
+  "sourceDiffSha256": "882ef2ece22365f5850cb22932e4308bae04e7074677512d80f1a0818f932bc0",
+  "scope": {
+    "path": "tools/stack-bench/local-notes/sol6-four-stack-20260925/sol6-four-stack-qualified-3943a8eaab/l3-ranking-audit/candidate-49b405390/scope.json",
+    "sha256": "61e5ade8ebf2bbd9964bcfbaae6a6f5cdf241652dc7cf295457b49da540204a8"
+  },
+  "verdict": "Replacement is limited to three checks; 109 unchanged checks are eligible for reviewed executable-identity reuse. Qualification remains pending.",
+  "replacedChecks": [
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.search-ordering.search-ordering.402b"
+  ],
+  "retainedChecks": 109,
+  "callers": [
+    {
+      "path": "tracks/ecommerce/scenarios/01-catalog-ranking.json",
+      "feature": 2,
+      "criteria": [
+        "2b"
+      ],
+      "observations": 1
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-core.json",
+      "feature": 2,
+      "criteria": [
+        "2b",
+        "2c"
+      ],
+      "observations": 3,
+      "note": "Current recipe owns 2b through 01-catalog-ranking, and 2c through 01-core."
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "feature": 402,
+      "criteria": [
+        "402b"
+      ],
+      "observations": 1,
+      "note": "Only the final cleared-filter item-list observation changes; active-filter search-results observations are unchanged."
+    }
+  ],
+  "gate": {
+    "owner": "grader/grade.ts:570",
+    "contractId": "ecommerce.progression.faceted-search-hooks",
+    "inputSource": "GradeRunContext.contractIds from resolveBoundRecipeTaskRequest; exact current and retained delivered contracts",
+    "executor": "src/actions/browser-action-executors.ts:528",
+    "match": {
+      "testid": "item-name",
+      "from": "item-list",
+      "to": "search-results"
+    },
+    "fallback": "Only absent/hidden primary; visible primary remains authoritative. Exact visible names/count/order/deadline unchanged.",
+    "otherActions": "No selector alias, action schema, prompt, reference app, mutation definition, fixture, budget, or transport change."
+  },
+  "staticEvidence": {
+    "qualifiedCheckCount": 112,
+    "retainedSlicesVerified": 110,
+    "snapshotFilesVerified": 14,
+    "artifactAndSnapshotHashesVerified": true,
+    "unchangedQualificationChecksPassed": true,
+    "recipeContentUnchanged": true,
+    "mutationManifestHashesMatchScope": true,
+    "controlsPerStack": 3,
+    "controlsTotal": 12
+  },
+  "promotion": {
+    "pattern": "Existing sliced qualification; no validator change.",
+    "positiveAndMutation": "Use each original selected-mutation report twice: reference and mutation entries, repetition 1, same path/hash and exact three-key slice/snapshot. calibration-compiler.ts:1004 validates measuredKind=mutation including clean baseline and complete catches. No companion artifact or separate reference rerun required.",
+    "retained": "Preserve original artifact/snapshot bytes and remove the three replacement keys from old slices. Derive exact old-to-new executable mappings with qualificationScopeIdentity for each measured kind/stack/original mutation identity. Retain existing task/source mappings; add no task or reference-source equivalence.",
+    "newEvidence": "Four terminal reports, input snapshots deduplicated by raw hash, worker checkpoints, null three-check report, source/image/launch/cleanup bindings, browser fallback green evidence, and hash-bound reuse review.",
+    "finalGates": [
+      "Normal check-calibration",
+      "qualification status ready=true and launch.ok=true",
+      "Exact staged Ponytail review"
+    ]
+  },
+  "study": {
+    "job": "fbfc5f1273472578cfcef463f0d19ca2260a6eaf85b0ccada9463d18d2c3c336",
+    "inspection": "Read-only state-volume scan of completed first-build grading bundles; every saved recipeTask variant resolved against bound recipe.",
+    "completedDepths": 29,
+    "levels": [
+      {
+        "level": 1,
+        "completed": 12,
+        "facetedGate": 0
+      },
+      {
+        "level": 2,
+        "completed": 12,
+        "facetedGate": 0
+      },
+      {
+        "level": 3,
+        "completed": 5,
+        "facetedGate": 5
+      }
+    ],
+    "completedL3": [
+      "mongodb-r1",
+      "postgres-r1",
+      "convex-r2",
+      "postgres-r2",
+      "postgres-r3"
+    ],
+    "l3TaskSha256": "ef982a3a75d64dc1ce370c8db7bd28d4b24e8e2d55519b9698ff83d61a3687f1",
+    "disposition": "No L1/L2 task or progression gate changes. Regrade affected saved L3 sources under the corrected grader and original task selection without model reruns. Preserve original grades."
+  },
+  "limits": [
+    "Remaining live L3 bundles were not complete at inspection; inspect each final original selection before regrading.",
+    "This source review is not terminal reference/defect/null qualification.",
+    "All retained executable mappings still need exact derivation and normal validator acceptance.",
+    "No builds, tests, qualification launches, app interactions, or campaign evidence edits performed."
+  ]
+}

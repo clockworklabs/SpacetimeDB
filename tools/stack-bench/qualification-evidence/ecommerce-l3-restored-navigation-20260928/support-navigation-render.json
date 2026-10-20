@@ -1,0 +1,185 @@
+{
+  "contract": {
+    "path": "tracks/ecommerce/contracts/support-intake.md",
+    "sha256": "5c43cefdb0dd345a2562192f7756a27fcf67325652b04cc5c27e5903008b8d82"
+  },
+  "rows": [
+    {
+      "feature": "support-intake",
+      "level": 1,
+      "taskMode": "fresh",
+      "stack": "spacetime",
+      "promptSha256": "675005c722abad118dd6c2154f0039f4c981cc171cb00e066a56e524e8a43f7a",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 1,
+      "taskMode": "fresh",
+      "stack": "postgres",
+      "promptSha256": "3d1dd2a0a597019c0b6872626593730ccaf8898a0b0731f70ea565d5b9c7f2d9",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 1,
+      "taskMode": "fresh",
+      "stack": "mongodb",
+      "promptSha256": "7e969d75f52f2c1e0952294e3dab0f6d04445799bc0d34a02af737e39182dafb",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 1,
+      "taskMode": "fresh",
+      "stack": "convex",
+      "promptSha256": "975113bd47137ee798dbaccac7c126ceac0453fe6032b2622a3cb466e9c73dad",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "spacetime",
+      "promptSha256": "e0a550e06c2b2df6accd02653690a432a157ce4bf0a5db02ee8fdd4254c2c361",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "postgres",
+      "promptSha256": "2e301751ca394eff32f144c3d24c2785fb09d5e1fefbda5511f9cfc0a22cf282",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "mongodb",
+      "promptSha256": "4fe535059946dc6ac71f68bdfa9c310703f0293ce384c0052907c49ad06b0c27",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-intake",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "convex",
+      "promptSha256": "952548d3d99363bf0acf451d90a1e7eb7c98cd28690256da184df13c9c5ad51c",
+      "contractSha256": "b53fdbd49298c343270c3b7d430ab94571a09d50268e8777ae514a1fe516c1f4",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-history",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "spacetime",
+      "promptSha256": "fe30dbad2981e15e7f51db08df4801af674ef480b1d2406f8bfdefeb8020c7f8",
+      "contractSha256": "cb1bafc5954de7c72d6ca887010336c49cfb58e07feac6f62cd88bb86549f7d0",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-history",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "postgres",
+      "promptSha256": "6f027c0488a0eb0798e0d5e7c4ef98e58b8edb81a4eb595852eb1887dfbe512e",
+      "contractSha256": "cb1bafc5954de7c72d6ca887010336c49cfb58e07feac6f62cd88bb86549f7d0",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-history",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "mongodb",
+      "promptSha256": "8e1828f7387c573a332da52ca320836d9b12329643c76a12269e9f0f540199da",
+      "contractSha256": "cb1bafc5954de7c72d6ca887010336c49cfb58e07feac6f62cd88bb86549f7d0",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "support-history",
+      "level": 2,
+      "taskMode": "upgrade",
+      "stack": "convex",
+      "promptSha256": "e7724c589fcd73c61807467a24f9bab271443271f7221d06e5000868559c4f73",
+      "contractSha256": "cb1bafc5954de7c72d6ca887010336c49cfb58e07feac6f62cd88bb86549f7d0",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "managed-support",
+      "level": 3,
+      "taskMode": "upgrade",
+      "stack": "spacetime",
+      "promptSha256": "084cd405077b67dbde765bf873c1566b36ed4738502f669e103fa5e30785551c",
+      "contractSha256": "ba9aca0268ad5d89339b95a468a8cc0314aa8c6e995b1865924a27ad74f6d829",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "managed-support",
+      "level": 3,
+      "taskMode": "upgrade",
+      "stack": "postgres",
+      "promptSha256": "7c9c5787718355db8792abecc0a36615d4850e54d26089eda4a3dd416aeb3bfc",
+      "contractSha256": "ba9aca0268ad5d89339b95a468a8cc0314aa8c6e995b1865924a27ad74f6d829",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "managed-support",
+      "level": 3,
+      "taskMode": "upgrade",
+      "stack": "mongodb",
+      "promptSha256": "504b56172a6112f36b8345be3efe3f68ee163a20b9a2c93feaf3e5a00a9b2c8a",
+      "contractSha256": "ba9aca0268ad5d89339b95a468a8cc0314aa8c6e995b1865924a27ad74f6d829",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    },
+    {
+      "feature": "managed-support",
+      "level": 3,
+      "taskMode": "upgrade",
+      "stack": "convex",
+      "promptSha256": "b31309f219c04f195bd41e2dbf9f6a6537a60b32e812343d470f99b017f6c6a2",
+      "contractSha256": "ba9aca0268ad5d89339b95a468a8cc0314aa8c6e995b1865924a27ad74f6d829",
+      "recipeContentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+      "closeInterfaceDelivered": true,
+      "purchasingContractSelected": false
+    }
+  ],
+  "limits": "Rendered through existing dist only. No model execution, build, qualification, or historical grade changes. Support-only selections explicitly exclude the purchasing interface."
+}

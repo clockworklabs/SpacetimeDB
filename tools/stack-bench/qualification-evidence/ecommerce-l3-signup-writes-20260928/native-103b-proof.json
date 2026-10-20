@@ -1,0 +1,26 @@
+{
+  "candidate": "149fecf8bf454309cdc7473982e175c442b56286",
+  "image": null,
+  "imagePolicy": "Mandatory immutable sha256 launcher argument with exact candidate label; launch receipt records identity",
+  "productScenarioSha256": "26a72bfe910bedbd86b93c77426e4ed563e0fe02b796120e5d8b058b3d5c11aa",
+  "scenarioSha256": "55dc558f8eeffa5794f191722311631f953074147e4dfe102db7acbe0565194a",
+  "planSha256": "eb660caa52bb22511bdb85dd9ff9f398236d83353cabbf2241969dad21356e73",
+  "oldPlanSha256": "a14dfaac78e42e7362f7dd95fa0a257640e9374ff100540c27bcee193430b8d4",
+  "compiledSetupAnd103bStepsEqual": true,
+  "changes": [
+    "Select only criterion 103b.",
+    "Set diagnostic criterion points from 2 to 0.",
+    "Keep named restock placeholder args and data-restock-input binding unchanged.",
+    "Select original plan groups 2 and 3; change only their scenario path."
+  ],
+  "sourceHashes": [
+    {
+      "path": "/evidence/auth-proxy-controls-v3/correct",
+      "sha256": "ad341270373e2a54226f4f8884bfa71aef587e193c5ca0b7ea51c6d80db67ca7"
+    },
+    {
+      "path": "/evidence/auth-proxy-controls-v3/defective",
+      "sha256": "bc793c132df04befbf5277e038c74be47bfe48c0a1509d6dfa4ff8b52d4e610b"
+    }
+  ]
+}

@@ -1,0 +1,2792 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "recipe": "ecommerce.sequential-l1",
+      "fixture": "ecommerce-reference-spacetime",
+      "referenceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "source": {
+        "path": "/evidence/native-101a-control/candidates-v3/correct",
+        "sha256": "79bff72087c0242f148b9ed3e30957df4c1afae4c396bc4a62a66225774beb83"
+      },
+      "scenario": {
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "level": 1,
+        "name": "Purchase requires an account",
+        "note": "Draft: the purchase-session check includes bounded login-input and credential-tampering probes. The login probe replaces the password in one matched JSON form request with query-like text. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused login or forgery. The read scope requires neither carts nor warehouses. Missing, ambiguous, repeated, redirected, non-JSON or incomplete login requests remain inconclusive. This proves one login string cannot grant purchase authority; it does not prove general injection safety. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry or invalidation of previously copied tokens. After signout, the current browser credential must not authorize a purchase; sign-in must restore access. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie. Same-site and cross-site simple POSTs use the real browser cookie policy, without copied tokens. Complete opaque responses do not prove refusal: native state must remain unchanged, and valid purchases must still work. Local-network permission is granted only to the controlled origin because the appliance addresses are private.",
+        "features": [
+          {
+            "id": 101,
+            "name": "Purchase requires an account",
+            "actors": [
+              "buyer",
+              "guest",
+              "wrong-password",
+              "duplicate",
+              "query-input"
+            ],
+            "setup": [
+              {
+                "do": "signUp",
+                "actor": "buyer",
+                "name": "kim"
+              },
+              {
+                "do": "dbRecordStock",
+                "item": "Bluetooth Speaker",
+                "as": "speaker-before-control"
+              },
+              {
+                "do": "click",
+                "actor": "buyer",
+                "testid": "catalog-link",
+                "ifAvailable": true,
+                "unlessVisible": "item-list"
+              },
+              {
+                "do": "callAction",
+                "actor": "buyer",
+                "action": "buy",
+                "namedAction": {
+                  "id": "buy",
+                  "path": "/api/items/:id/buy",
+                  "reducer": "buy_now",
+                  "args": [
+                    0
+                  ],
+                  "params": [
+                    {
+                      "name": "itemId",
+                      "in": "path",
+                      "placeholder": ":id",
+                      "wireType": "u64"
+                    }
+                  ]
+                },
+                "input": {
+                  "testid": "item-card",
+                  "contains": "Bluetooth Speaker",
+                  "attribute": "data-buy-input"
+                },
+                "settleMs": 2000
+              },
+              {
+                "do": "expectActionOutcome",
+                "actor": "buyer",
+                "outcome": "accepted"
+              },
+              {
+                "do": "dbExpectStock",
+                "item": "Bluetooth Speaker",
+                "relativeTo": "speaker-before-control",
+                "plus": -1
+              }
+            ],
+            "criteria": [
+              {
+                "id": "101a",
+                "category": "production",
+                "desc": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+                "points": 0,
+                "steps": [
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-rejected-access",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "guest",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "none",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "guest",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "signIn",
+                    "actor": "wrong-password",
+                    "name": "kim",
+                    "password": "not-kims-password",
+                    "expectFailure": true
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "wrong-password",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "wrong-password",
+                    "application": true,
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "wrong-password",
+                    "testid": "current-user",
+                    "absent": true,
+                    "within": 1000
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "wrong-password",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "optional",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "wrong-password",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "signIn",
+                    "actor": "query-input",
+                    "name": "kim",
+                    "password": "not-kims-password",
+                    "expectFailure": true,
+                    "requestPatch": {
+                      "password": "' OR '1'='1"
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "query-input",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "optional",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "query-input",
+                    "outcome": "completed",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "query-input",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "signUp",
+                    "actor": "duplicate",
+                    "name": "kim",
+                    "password": "not-kims-password",
+                    "expectFailure": true
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "duplicate",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "duplicate",
+                    "application": true,
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "duplicate",
+                    "testid": "current-user",
+                    "absent": true,
+                    "within": 1000
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "duplicate",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "optional",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "duplicate",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 2000,
+                    "authentication": "session-control"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -2
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-forgery",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 1000,
+                    "authentication": "tampered-session"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "completed"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-forgery"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -2
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "application-refused"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -3
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-same-site",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 1000,
+                    "browserOrigin": "same-site"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-same-site"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -3
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -4
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-cross-site",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 1000,
+                    "browserOrigin": "cross-site"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-cross-site"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -4
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -5
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-signout",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "current-user",
+                    "unlessVisible": "signout"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "signout"
+                  },
+                  {
+                    "do": "waitUntilAbsent",
+                    "actor": "buyer",
+                    "testid": "current-user",
+                    "within": 6000
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 2000,
+                    "authentication": "optional"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "completed"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-signout"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -5
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "application-refused"
+                  },
+                  {
+                    "do": "signIn",
+                    "actor": "buyer",
+                    "name": "kim",
+                    "awaitSignedIn": false
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "buyer",
+                    "testid": "current-user",
+                    "contains": "kim",
+                    "within": 10000
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -6
+                  }
+                ],
+                "statedBy": "the server refuses a purchase without an authenticated customer"
+              }
+            ]
+          }
+        ]
+      },
+      "scenarioSha256": "f977355d9eccd99a98a0c836388e2bdf514ac8a021a55ab7010ecd50eb0acf76",
+      "expectedFailures": [],
+      "trials": [
+        {
+          "key": "b5c3e30d80b9c21fa2e6ece669c48a288eedfa377caf5afa4fa539f9defff9f9",
+          "feature": 101,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "recipe": "ecommerce.sequential-l1",
+      "fixture": "ecommerce-reference-spacetime",
+      "referenceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "source": {
+        "path": "/evidence/native-101a-control/candidates-v3/defective",
+        "sha256": "b09860c72d5cce5ae44db188ad18f888384fc3099d1e716d86ebbfe0b8e98227"
+      },
+      "scenario": {
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "level": 1,
+        "name": "Purchase requires an account",
+        "note": "Draft: the purchase-session check includes bounded login-input and credential-tampering probes. The login probe replaces the password in one matched JSON form request with query-like text. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused login or forgery. The read scope requires neither carts nor warehouses. Missing, ambiguous, repeated, redirected, non-JSON or incomplete login requests remain inconclusive. This proves one login string cannot grant purchase authority; it does not prove general injection safety. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry or invalidation of previously copied tokens. After signout, the current browser credential must not authorize a purchase; sign-in must restore access. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie. Same-site and cross-site simple POSTs use the real browser cookie policy, without copied tokens. Complete opaque responses do not prove refusal: native state must remain unchanged, and valid purchases must still work. Local-network permission is granted only to the controlled origin because the appliance addresses are private.",
+        "features": [
+          {
+            "id": 101,
+            "name": "Purchase requires an account",
+            "actors": [
+              "buyer",
+              "guest",
+              "wrong-password",
+              "duplicate",
+              "query-input"
+            ],
+            "setup": [
+              {
+                "do": "signUp",
+                "actor": "buyer",
+                "name": "kim"
+              },
+              {
+                "do": "dbRecordStock",
+                "item": "Bluetooth Speaker",
+                "as": "speaker-before-control"
+              },
+              {
+                "do": "click",
+                "actor": "buyer",
+                "testid": "catalog-link",
+                "ifAvailable": true,
+                "unlessVisible": "item-list"
+              },
+              {
+                "do": "callAction",
+                "actor": "buyer",
+                "action": "buy",
+                "namedAction": {
+                  "id": "buy",
+                  "path": "/api/items/:id/buy",
+                  "reducer": "buy_now",
+                  "args": [
+                    0
+                  ],
+                  "params": [
+                    {
+                      "name": "itemId",
+                      "in": "path",
+                      "placeholder": ":id",
+                      "wireType": "u64"
+                    }
+                  ]
+                },
+                "input": {
+                  "testid": "item-card",
+                  "contains": "Bluetooth Speaker",
+                  "attribute": "data-buy-input"
+                },
+                "settleMs": 2000
+              },
+              {
+                "do": "expectActionOutcome",
+                "actor": "buyer",
+                "outcome": "accepted"
+              },
+              {
+                "do": "dbExpectStock",
+                "item": "Bluetooth Speaker",
+                "relativeTo": "speaker-before-control",
+                "plus": -1
+              }
+            ],
+            "criteria": [
+              {
+                "id": "101a",
+                "category": "production",
+                "desc": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
+                "points": 0,
+                "steps": [
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-rejected-access",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "guest",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "none",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "guest",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "signIn",
+                    "actor": "wrong-password",
+                    "name": "kim",
+                    "password": "not-kims-password",
+                    "expectFailure": true
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "wrong-password",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "wrong-password",
+                    "application": true,
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "wrong-password",
+                    "testid": "current-user",
+                    "absent": true,
+                    "within": 1000
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "wrong-password",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "optional",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "wrong-password",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "signIn",
+                    "actor": "query-input",
+                    "name": "kim",
+                    "password": "not-kims-password",
+                    "expectFailure": true,
+                    "requestPatch": {
+                      "password": "' OR '1'='1"
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "query-input",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "optional",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "query-input",
+                    "outcome": "completed",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "query-input",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "signUp",
+                    "actor": "duplicate",
+                    "name": "kim",
+                    "password": "not-kims-password",
+                    "expectFailure": true
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "duplicate",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "duplicate",
+                    "application": true,
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "duplicate",
+                    "testid": "current-user",
+                    "absent": true,
+                    "within": 1000
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "duplicate",
+                    "from": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "authentication": "optional",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "duplicate",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "buyer"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-rejected-access"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -1
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 2000,
+                    "authentication": "session-control"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -2
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-forgery",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 1000,
+                    "authentication": "tampered-session"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "completed"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-forgery"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -2
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "application-refused"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -3
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-same-site",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 1000,
+                    "browserOrigin": "same-site"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-same-site"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -3
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -4
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-cross-site",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 1000,
+                    "browserOrigin": "cross-site"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-cross-site"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -4
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -5
+                  },
+                  {
+                    "do": "dbRecordCheckout",
+                    "account": "{user:kim}",
+                    "item": "Bluetooth Speaker",
+                    "as": "before-signout",
+                    "storage": {
+                      "kind": "order-data",
+                      "cart": false,
+                      "warehouses": false
+                    }
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "current-user",
+                    "unlessVisible": "signout"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "signout"
+                  },
+                  {
+                    "do": "waitUntilAbsent",
+                    "actor": "buyer",
+                    "testid": "current-user",
+                    "within": 6000
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 2000,
+                    "authentication": "optional"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "completed"
+                  },
+                  {
+                    "do": "dbExpectNoPurchase",
+                    "before": "before-signout"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -5
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "application-refused"
+                  },
+                  {
+                    "do": "signIn",
+                    "actor": "buyer",
+                    "name": "kim",
+                    "awaitSignedIn": false
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "buyer",
+                    "testid": "current-user",
+                    "contains": "kim",
+                    "within": 10000
+                  },
+                  {
+                    "do": "click",
+                    "actor": "buyer",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "buyer",
+                    "action": "buy",
+                    "namedAction": {
+                      "id": "buy",
+                      "path": "/api/items/:id/buy",
+                      "reducer": "buy_now",
+                      "args": [
+                        0
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "path",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker",
+                      "attribute": "data-buy-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "buyer",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Bluetooth Speaker",
+                    "relativeTo": "speaker-before-control",
+                    "plus": -6
+                  }
+                ],
+                "statedBy": "the server refuses a purchase without an authenticated customer"
+              }
+            ]
+          }
+        ]
+      },
+      "scenarioSha256": "f977355d9eccd99a98a0c836388e2bdf514ac8a021a55ab7010ecd50eb0acf76",
+      "expectedFailures": [
+        "101a"
+      ],
+      "trials": [
+        {
+          "key": "eb358b57f5292a1ffe2f1f50ba801ae39fe3f45f6566ac060a8a16501e8e6e96",
+          "feature": 101,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "recipe": "ecommerce.sequential-l1",
+      "fixture": "ecommerce-reference-spacetime",
+      "referenceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "source": {
+        "path": "/evidence/auth-proxy-controls-v3/correct",
+        "sha256": "ad341270373e2a54226f4f8884bfa71aef587e193c5ca0b7ea51c6d80db67ca7"
+      },
+      "scenario": {
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "level": 1,
+        "name": "Only an administrator can restock through staff access",
+        "note": "Draft: staff cannot gain restock authority by submitting role=admin. The same real write receives an extra body field on HTTP/Convex or an extra positional reducer argument. Native schema rejection is valid; it does not prove an application role branch ran. Stored stock must remain unchanged, including after a refusal response. Normal administrator writes must work before and after the probe. This bounded claim does not cover arbitrary authority fields or query injection. Signup also submits role=admin through the real form request. Rejection or an ordinary account is valid; it must not grant stock-write authority. A normal signup must still work. Missing or ambiguous credential-request capture is inconclusive. This does not cover query injection.",
+        "features": [
+          {
+            "id": 103,
+            "name": "Only an administrator can restock",
+            "actors": [
+              "admin",
+              "staff",
+              "claimant",
+              "ordinary"
+            ],
+            "setup": [
+              {
+                "do": "signIn",
+                "actor": "admin",
+                "name": "admin",
+                "password": "stackbench-admin-2026",
+                "exact": true
+              },
+              {
+                "do": "signIn",
+                "actor": "staff",
+                "name": "staff",
+                "password": "stackbench-staff-2026",
+                "exact": true
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "current-user",
+                "ifAvailable": true,
+                "unlessVisible": [
+                  "admin-link"
+                ]
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "admin-link"
+              },
+              {
+                "do": "click",
+                "actor": "staff",
+                "testid": "catalog-link",
+                "ifAvailable": true,
+                "unlessVisible": "item-list"
+              }
+            ],
+            "criteria": [
+              {
+                "id": "103a",
+                "category": "feature",
+                "desc": "an administrator can restock a warehouse",
+                "points": 0,
+                "statedBy": "An administrator can add units to a selected item and warehouse.",
+                "steps": [
+                  {
+                    "do": "recordNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "as": "purifier-before-control"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "admin",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "staff",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "ensureSignedIn",
+                    "actor": "staff",
+                    "name": "staff",
+                    "password": "stackbench-staff-2026",
+                    "exact": true,
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "staff",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "expectNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "relativeTo": "purifier-before-control",
+                    "plus": 1
+                  }
+                ]
+              },
+              {
+                "id": "103b",
+                "category": "production",
+                "desc": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+                "points": 0,
+                "statedBy": "Only administrators can change warehouse stock.",
+                "note": "The ordinary signup can establish a session automatically or through a separate sign-in. The next assertion requires the created account. A patched signup refusal must not be followed by a sign-in.",
+                "steps": [
+                  {
+                    "do": "callAction",
+                    "actor": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "admin",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "staff",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "ensureSignedIn",
+                    "actor": "staff",
+                    "name": "staff",
+                    "password": "stackbench-staff-2026",
+                    "exact": true,
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "staff",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "recordNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "as": "purifier-before-refusal"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "staff",
+                    "from": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "staff",
+                    "outcome": "refused",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "staff",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "ensureSignedIn",
+                    "actor": "staff",
+                    "name": "staff",
+                    "password": "stackbench-staff-2026",
+                    "exact": true,
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "staff",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "expectNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "relativeTo": "purifier-before-refusal",
+                    "plus": 0
+                  },
+                  {
+                    "do": "dbRecordStock",
+                    "item": "Air Purifier",
+                    "as": "before-admin-claim"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "staff",
+                    "from": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1,
+                        "admin"
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        },
+                        {
+                          "name": "role",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "staff",
+                    "outcome": "completed",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Air Purifier",
+                    "relativeTo": "before-admin-claim",
+                    "plus": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "staff",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "signUp",
+                    "actor": "claimant",
+                    "name": "claimant",
+                    "requestPatch": {
+                      "fields": {
+                        "role": "admin"
+                      }
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "claimant",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 1000,
+                    "from": "admin",
+                    "authentication": "optional"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "claimant",
+                    "outcome": "completed",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Air Purifier",
+                    "relativeTo": "before-admin-claim",
+                    "plus": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "claimant",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "signUp",
+                    "actor": "ordinary",
+                    "name": "ordinary",
+                    "awaitSignedIn": false
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "ordinary",
+                    "testid": "current-user",
+                    "contains": "{user:ordinary}",
+                    "within": 10000
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "admin",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Air Purifier",
+                    "relativeTo": "before-admin-claim",
+                    "plus": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "scenarioSha256": "10cba98c8d86102dd6151009fbac60c9bed36e027e88c5924be7ef50a3927e0c",
+      "expectedFailures": [],
+      "trials": [
+        {
+          "key": "b5527c95916c416c2d9730728c8aafb7e5f3697cdbe2945974e5ea653392354e",
+          "feature": 103,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "recipe": "ecommerce.sequential-l1",
+      "fixture": "ecommerce-reference-spacetime",
+      "referenceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "source": {
+        "path": "/evidence/auth-proxy-controls-v3/defective",
+        "sha256": "bc793c132df04befbf5277e038c74be47bfe48c0a1509d6dfa4ff8b52d4e610b"
+      },
+      "scenario": {
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "level": 1,
+        "name": "Only an administrator can restock through staff access",
+        "note": "Draft: staff cannot gain restock authority by submitting role=admin. The same real write receives an extra body field on HTTP/Convex or an extra positional reducer argument. Native schema rejection is valid; it does not prove an application role branch ran. Stored stock must remain unchanged, including after a refusal response. Normal administrator writes must work before and after the probe. This bounded claim does not cover arbitrary authority fields or query injection. Signup also submits role=admin through the real form request. Rejection or an ordinary account is valid; it must not grant stock-write authority. A normal signup must still work. Missing or ambiguous credential-request capture is inconclusive. This does not cover query injection.",
+        "features": [
+          {
+            "id": 103,
+            "name": "Only an administrator can restock",
+            "actors": [
+              "admin",
+              "staff",
+              "claimant",
+              "ordinary"
+            ],
+            "setup": [
+              {
+                "do": "signIn",
+                "actor": "admin",
+                "name": "admin",
+                "password": "stackbench-admin-2026",
+                "exact": true
+              },
+              {
+                "do": "signIn",
+                "actor": "staff",
+                "name": "staff",
+                "password": "stackbench-staff-2026",
+                "exact": true
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "current-user",
+                "ifAvailable": true,
+                "unlessVisible": [
+                  "admin-link"
+                ]
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "admin-link"
+              },
+              {
+                "do": "click",
+                "actor": "staff",
+                "testid": "catalog-link",
+                "ifAvailable": true,
+                "unlessVisible": "item-list"
+              }
+            ],
+            "criteria": [
+              {
+                "id": "103a",
+                "category": "feature",
+                "desc": "an administrator can restock a warehouse",
+                "points": 0,
+                "statedBy": "An administrator can add units to a selected item and warehouse.",
+                "steps": [
+                  {
+                    "do": "recordNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "as": "purifier-before-control"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "admin",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "staff",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "ensureSignedIn",
+                    "actor": "staff",
+                    "name": "staff",
+                    "password": "stackbench-staff-2026",
+                    "exact": true,
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "staff",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "expectNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "relativeTo": "purifier-before-control",
+                    "plus": 1
+                  }
+                ]
+              },
+              {
+                "id": "103b",
+                "category": "production",
+                "desc": "staff or client-supplied signup claims cannot grant administrator stock-write authority",
+                "points": 0,
+                "statedBy": "Only administrators can change warehouse stock.",
+                "note": "The ordinary signup can establish a session automatically or through a separate sign-in. The next assertion requires the created account. A patched signup refusal must not be followed by a sign-in.",
+                "steps": [
+                  {
+                    "do": "callAction",
+                    "actor": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "admin",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "staff",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "ensureSignedIn",
+                    "actor": "staff",
+                    "name": "staff",
+                    "password": "stackbench-staff-2026",
+                    "exact": true,
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "staff",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "recordNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "as": "purifier-before-refusal"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "staff",
+                    "from": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "staff",
+                    "outcome": "refused",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "reload",
+                    "actor": "staff",
+                    "settleMs": 2000
+                  },
+                  {
+                    "do": "ensureSignedIn",
+                    "actor": "staff",
+                    "name": "staff",
+                    "password": "stackbench-staff-2026",
+                    "exact": true,
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "staff",
+                    "testid": "catalog-link",
+                    "ifAvailable": true,
+                    "unlessVisible": "item-list"
+                  },
+                  {
+                    "do": "expectNumber",
+                    "actor": "staff",
+                    "testid": "item-stock",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Air Purifier"
+                    },
+                    "relativeTo": "purifier-before-refusal",
+                    "plus": 0
+                  },
+                  {
+                    "do": "dbRecordStock",
+                    "item": "Air Purifier",
+                    "as": "before-admin-claim"
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "staff",
+                    "from": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1,
+                        "admin"
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        },
+                        {
+                          "name": "role",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "staff",
+                    "outcome": "completed",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Air Purifier",
+                    "relativeTo": "before-admin-claim",
+                    "plus": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "staff",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "signUp",
+                    "actor": "claimant",
+                    "name": "claimant",
+                    "requestPatch": {
+                      "fields": {
+                        "role": "admin"
+                      }
+                    }
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "claimant",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 1000,
+                    "from": "admin",
+                    "authentication": "optional"
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "claimant",
+                    "outcome": "completed",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Air Purifier",
+                    "relativeTo": "before-admin-claim",
+                    "plus": 0
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "claimant",
+                    "outcome": "application-refused",
+                    "routeProvenBy": "admin"
+                  },
+                  {
+                    "do": "signUp",
+                    "actor": "ordinary",
+                    "name": "ordinary",
+                    "awaitSignedIn": false
+                  },
+                  {
+                    "do": "expect",
+                    "actor": "ordinary",
+                    "testid": "current-user",
+                    "contains": "{user:ordinary}",
+                    "within": 10000
+                  },
+                  {
+                    "do": "callAction",
+                    "actor": "admin",
+                    "action": "restock",
+                    "namedAction": {
+                      "id": "restock",
+                      "path": "/api/admin/restock",
+                      "reducer": "admin_restock",
+                      "args": [
+                        0,
+                        0,
+                        1
+                      ],
+                      "params": [
+                        {
+                          "name": "itemId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "warehouseId",
+                          "in": "body",
+                          "wireType": "u64"
+                        },
+                        {
+                          "name": "quantity",
+                          "in": "body"
+                        }
+                      ]
+                    },
+                    "input": {
+                      "testid": "admin-location-row",
+                      "contains": "Air Purifier",
+                      "attribute": "data-restock-input"
+                    },
+                    "settleMs": 1000
+                  },
+                  {
+                    "do": "expectActionOutcome",
+                    "actor": "admin",
+                    "outcome": "accepted"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Air Purifier",
+                    "relativeTo": "before-admin-claim",
+                    "plus": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "scenarioSha256": "10cba98c8d86102dd6151009fbac60c9bed36e027e88c5924be7ef50a3927e0c",
+      "expectedFailures": [
+        "103b"
+      ],
+      "trials": [
+        {
+          "key": "fd33abe78d278fed1e8b0f095568a4f3a9b344e15e178726ea30c5444c4473ee",
+          "feature": 103,
+          "repetition": 1
+        }
+      ]
+    },
+    {
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 3,
+      "recipe": "ecommerce.progression-catalog",
+      "fixture": "ecommerce-reference-spacetime",
+      "referenceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+      "scenario": {
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "level": 2,
+        "name": "Fresh staff seed observation",
+        "note": "Draft: updated observations require matching reference and defect-control qualification.",
+        "features": [
+          {
+            "id": 621,
+            "name": "Staff roles",
+            "actors": [
+              "admin"
+            ],
+            "setup": [
+              {
+                "do": "signIn",
+                "actor": "admin",
+                "name": "admin",
+                "password": "stackbench-admin-2026",
+                "exact": true
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "current-user",
+                "ifAvailable": true,
+                "unlessVisible": [
+                  "admin-link",
+                  "staff-roles-link",
+                  "staff-role-account-staff"
+                ]
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "admin-link",
+                "unlessVisible": [
+                  "staff-roles-link",
+                  "staff-role-account-staff"
+                ]
+              },
+              {
+                "do": "click",
+                "actor": "admin",
+                "testid": "staff-roles-link",
+                "ifAvailable": true,
+                "unlessVisible": "staff-role-account-staff"
+              }
+            ],
+            "criteria": [
+              {
+                "id": "621-seed",
+                "category": "feature",
+                "desc": "Both fresh staff accounts have the staff role before any assignment",
+                "points": 0,
+                "statedBy": "The reference must seed the declared staff role.",
+                "steps": [
+                  {
+                    "within": 10000,
+                    "testid": "staff-role-select",
+                    "actor": "admin",
+                    "value": "staff",
+                    "in": {
+                      "testid": "staff-role-account-staff"
+                    },
+                    "do": "expect"
+                  },
+                  {
+                    "within": 10000,
+                    "testid": "staff-role-select",
+                    "actor": "admin",
+                    "value": "staff",
+                    "in": {
+                      "testid": "staff-role-account-staff2"
+                    },
+                    "do": "expect"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "scenarioSha256": "442f7b5188cf6a33c6ef219e75bcce0cbb9e230e22e3295e16e3d283faeb8044",
+      "expectedFailures": [],
+      "trials": [
+        {
+          "key": "f957d3cd648cf62e6a7e6362b5fe791f0f762d44124988a035cb7065d847b77d",
+          "feature": 621,
+          "repetition": 1
+        }
+      ]
+    }
+  ],
+  "sha256": "804db9e6449afa5d319d6f475e8241220e0617b8a1858ff478236cf3c9a4fe98"
+}

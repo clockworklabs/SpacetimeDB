@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "kind": "scoped_cleanup_verification",
+  "observedAt": "2026-09-27T09:08:36.920Z",
+  "image": "sha256:ef251d1415b69ee2a43e1b926667b19c49f612dd5a2007606311603b14f13757",
+  "method": "Read each baseline/worker recovery and backend lease. Require released locks and check their actual paths. Compare only owned resource IDs/names against successful Docker container and network inventories. Full raw records remain private; the hashes below identify those records without exposing ownership markers or unrelated resources.",
+  "rows": [
+    {
+      "stack": "spacetime",
+      "reportSha256": "3fd4f2730c32f1b9352e75569538c5ac9340e2ced4fc7d53efb0ac61e53bf073",
+      "controllerExitCode": 0,
+      "recovery": "clean",
+      "locksReleased": true,
+      "networkAbsent": true,
+      "remainingOwnedResources": 0,
+      "leases": [
+        {
+          "role": "baseline",
+          "runId": "ecommerce-spacetime-run40-20260927084118-066b3877",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-1",
+          "runId": "ecommerce-spacetime-run40-20260927085620-a4af682c",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-2",
+          "runId": "ecommerce-spacetime-run41-20260927085620-1fa0c9df",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        }
+      ],
+      "privateProofHashes": [
+        {
+          "file": "spacetime-baseline-recovery.json",
+          "sha256": "148d5834aac63b40df6710734ff9feb2236d0c6543a5dceece873f1387617c9a"
+        },
+        {
+          "file": "spacetime-baseline-lease.json",
+          "sha256": "876a6f0188911f321d21828c297a787653bd6f6bc449e77957b52848a9edb793"
+        },
+        {
+          "file": "spacetime-worker-1-recovery.json",
+          "sha256": "8819c386f38944e76628548eb6b58666c0b1e0c7c5558ee8f31a42e81e3f2f97"
+        },
+        {
+          "file": "spacetime-worker-1-lease.json",
+          "sha256": "e1495fc83cf4f3f4446621ab3a9b3195efaf83969206dacee54f0ea34a7ff841"
+        },
+        {
+          "file": "spacetime-worker-2-recovery.json",
+          "sha256": "6b45687294cc1b6c10cdd673b3d09db88ddd612932c67f169a2f0271545fdbfc"
+        },
+        {
+          "file": "spacetime-worker-2-lease.json",
+          "sha256": "98f1f400c2a6e4028921be1d1306d6ed19de643be1570e52dea20e70248056ff"
+        },
+        {
+          "file": "spacetime-controller-state.json",
+          "sha256": "0dbe82a78d627c5b64dbaa765a57cf99249ecbbfd472ea79e6abd9fb8fa5a45a"
+        },
+        {
+          "file": "spacetime-resource-observation-1790500116895.json",
+          "sha256": "0f84c5b4138d70273deb56bb24aefbd59e39538e6732111187f6db8e187c52d6"
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "reportSha256": "0731e174f79aa6e7a4d1c2c6c3ffe39abc99179a4b291d7043b23934e3f15ac6",
+      "controllerExitCode": 0,
+      "recovery": "clean",
+      "locksReleased": true,
+      "networkAbsent": true,
+      "remainingOwnedResources": 0,
+      "leases": [
+        {
+          "role": "baseline",
+          "runId": "ecommerce-postgres-run43-20260927084119-5ab2a7c2",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-1",
+          "runId": "ecommerce-postgres-run43-20260927085132-b9d9f413",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-2",
+          "runId": "ecommerce-postgres-run44-20260927085132-2c9edd79",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        }
+      ],
+      "privateProofHashes": [
+        {
+          "file": "postgres-baseline-recovery.json",
+          "sha256": "f8a3181f30cb046147384c921b001b7b4a8f4dc22f244701f49e06b9a3fd9c58"
+        },
+        {
+          "file": "postgres-baseline-lease.json",
+          "sha256": "2eef391cb120087e8fde92435a3558418505cd355bc906c4d68b48beffb6426a"
+        },
+        {
+          "file": "postgres-worker-1-recovery.json",
+          "sha256": "87ab85c0fa6cb3b61687ee5fa0188e1193c38c3f5211d8d8163d1dda8887a423"
+        },
+        {
+          "file": "postgres-worker-1-lease.json",
+          "sha256": "10cbcc75a593fa6394b2c25604e3f367d76d0d668b5976f7db71dab00f05ee69"
+        },
+        {
+          "file": "postgres-worker-2-recovery.json",
+          "sha256": "a9ffa76fc43eaa0f7366d536831a298ce785d6361e197fb25eebe10ddab8e427"
+        },
+        {
+          "file": "postgres-worker-2-lease.json",
+          "sha256": "f5171e33a62ee47bbba2761c4eb05f01e5dbf87027d26ca90011e0f7507afc01"
+        },
+        {
+          "file": "postgres-controller-state.json",
+          "sha256": "a96529ddb2ef5fcd294f23ada02d607c4d9f35134c5827927c3a4741af92525b"
+        },
+        {
+          "file": "postgres-resource-observation-1790499607559.json",
+          "sha256": "8dab75d89113bbefa3e1c6c885c9300b03088838ab223a44dcd9b2da570b91b7"
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "reportSha256": "bffbfd5e49aaa63eb832f0178a4e608f60378f1086050badab0dbc6205239985",
+      "controllerExitCode": 0,
+      "recovery": "clean",
+      "locksReleased": true,
+      "networkAbsent": true,
+      "remainingOwnedResources": 0,
+      "leases": [
+        {
+          "role": "baseline",
+          "runId": "ecommerce-mongodb-run46-20260927084120-391d7985",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-1",
+          "runId": "ecommerce-mongodb-run46-20260927084900-d841e4cc",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-2",
+          "runId": "ecommerce-mongodb-run47-20260927084900-14bdb18a",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        }
+      ],
+      "privateProofHashes": [
+        {
+          "file": "mongodb-baseline-recovery.json",
+          "sha256": "f1451e0a59d4b4adae14186e40a6e3a95b15484eed0153f0950e3218df720585"
+        },
+        {
+          "file": "mongodb-baseline-lease.json",
+          "sha256": "93d005edb533a9f8152456931cc0925e83ed59b9aa7b61b35c7ac7a0af41bde9"
+        },
+        {
+          "file": "mongodb-worker-1-recovery.json",
+          "sha256": "01460d143d03c574672bfbabc16b8f5c6a83ab279e4ddd62a1bf051503bf4f4b"
+        },
+        {
+          "file": "mongodb-worker-1-lease.json",
+          "sha256": "234073830c28d956f4dc1201425c53a2e92a9b4bfffa5fe55297d108779a3a0f"
+        },
+        {
+          "file": "mongodb-worker-2-recovery.json",
+          "sha256": "1609ffed67b7a55ae932c22f2d5fdaf61fc33942af0dd9218ff4d46e896df793"
+        },
+        {
+          "file": "mongodb-worker-2-lease.json",
+          "sha256": "4ee6cd5e5a11ed126adc60a279d3ea52a6f0ce77cb218034032c6be5fb839e81"
+        },
+        {
+          "file": "mongodb-controller-state.json",
+          "sha256": "f093b42da5e00aa88cc8405b4230064c98b024fb2d983ff25166cb46bf466643"
+        },
+        {
+          "file": "mongodb-resource-observation-1790499386713.json",
+          "sha256": "e7f76e45ecfc0c28f05478d587129ed38ea347f846dd8aef0e9d2601915914e6"
+        }
+      ]
+    },
+    {
+      "stack": "convex",
+      "reportSha256": "9b068b7355613c88ef8e96053cd57b5cc9ff538e73d0d66dd13503b736be7141",
+      "controllerExitCode": 0,
+      "recovery": "clean",
+      "locksReleased": true,
+      "networkAbsent": true,
+      "remainingOwnedResources": 0,
+      "leases": [
+        {
+          "role": "baseline",
+          "runId": "ecommerce-convex-run49-20260927084121-bed05674",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-1",
+          "runId": "ecommerce-convex-run49-20260927085549-f57c6044",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        },
+        {
+          "role": "worker-2",
+          "runId": "ecommerce-convex-run50-20260927085549-4d206d58",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "ownedContainersAbsent": 3,
+          "ownedNetworkAbsent": true
+        }
+      ],
+      "privateProofHashes": [
+        {
+          "file": "convex-baseline-recovery.json",
+          "sha256": "31dc70a7158b14f6de4e2fa87e0c7f9804306d31f7e5649f4dd25c1f7ece6719"
+        },
+        {
+          "file": "convex-baseline-lease.json",
+          "sha256": "3f9df12b6a78c18746b9d1aaca9e926f5919ca4e408d680088e7e0b90552c41b"
+        },
+        {
+          "file": "convex-worker-1-recovery.json",
+          "sha256": "79088389d9c63fb408273e262b650a8f3ed8419c84117820eca6cb1bec4b31a4"
+        },
+        {
+          "file": "convex-worker-1-lease.json",
+          "sha256": "57d9acfec69f864d2400e9187d66a129b5589967575ffd191cb884fa4a72737b"
+        },
+        {
+          "file": "convex-worker-2-recovery.json",
+          "sha256": "02acd113bd663891bc1487305c2f6d033bbec2b3203d06caf401c30c059ea3ea"
+        },
+        {
+          "file": "convex-worker-2-lease.json",
+          "sha256": "769aca19c00be9881774fa6c42e426972c86e44e62dcbe651dbccb69d65cf544"
+        },
+        {
+          "file": "convex-controller-state.json",
+          "sha256": "05f581fc4441cbe2f6cea4c5dca28b0efc425fae73fc3736ae873a8389de8c69"
+        },
+        {
+          "file": "convex-resource-observation-1790500042476.json",
+          "sha256": "7e2b498af344453e914ee6bd7383095b6adc9acfa3c763c0d125fb8ea460023c"
+        }
+      ]
+    }
+  ]
+}

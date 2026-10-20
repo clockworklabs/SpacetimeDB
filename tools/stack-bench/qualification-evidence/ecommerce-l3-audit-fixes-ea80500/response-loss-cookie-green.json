@@ -1,0 +1,18 @@
+[
+  {
+    "loss": false,
+    "cookieBeforeFinish": "cart-false",
+    "cookieAfterFinish": "cart-false",
+    "cookieAfterRetry": "cart-false",
+    "retryCookie": "original-session=actor-original; checkout-session=cart-false",
+    "retryStatus": 409
+  },
+  {
+    "loss": true,
+    "cookieBeforeFinish": null,
+    "cookieAfterFinish": null,
+    "cookieAfterRetry": null,
+    "retryCookie": "original-session=actor-original",
+    "retryStatus": 409
+  }
+]

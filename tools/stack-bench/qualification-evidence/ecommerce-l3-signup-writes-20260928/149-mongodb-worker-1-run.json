@@ -1,0 +1,679 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "benchmark_run",
+  "id": "ecommerce-mongodb-run416-20260928045929-202e3ccc",
+  "attempt": {
+    "id": "ecommerce-mongodb-run416-20260928045929-202e3ccc",
+    "parentId": "reference-live-mongodb-20260928045927-8544"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T04:59:41.436Z",
+    "completedAt": "2026-09-28T05:06:57.874Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3795f55f6bfecda52bfb48c3e07b72abe5335f57887d250eac9181b0c3ea22f5"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": {
+      "id": "reference-fixture",
+      "sha256": "f437c7fb661e1debcef27e5e7803f469faf78e1d74737ca7fad4b641adf20eb5",
+      "version": "1.4.0"
+    },
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null,
+      "version": "1.5.0"
+    },
+    "packs": []
+  },
+  "payload": {
+    "mode": {
+      "id": "sequential"
+    },
+    "track": "ecommerce",
+    "backend": "mongodb",
+    "model": "reference-fixture",
+    "guidance": "prescribed",
+    "condition": null,
+    "setup": {
+      "session": "model-free-reference",
+      "isolation": {
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "mode": "container",
+        "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455"
+      }
+    },
+    "backendLease": {
+      "version": 1,
+      "runId": "ecommerce-mongodb-run416-20260928045929-202e3ccc",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "runIndex": 416,
+      "ownerPid": 8709,
+      "createdAt": "2026-09-28T04:59:29.066Z",
+      "state": "released",
+      "resources": {
+        "serverUri": null,
+        "database": "app_ecom_run416",
+        "module": null,
+        "dataDir": null,
+        "container": {
+          "name": "sb-1b54e429b6264862-backend",
+          "id": "9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+          "image": "sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082",
+          "owned": true,
+          "networkMode": "0f8cddcaaf157e34bbc20a0d3e99e23a4aaf66dcfd950cc1a9006f8ba2b318b7",
+          "running": false,
+          "removedAt": "2026-09-28T05:06:59.735Z"
+        },
+        "buildContainer": {
+          "name": "sb-1b54e429b6264862-build",
+          "id": "62be86ae86e326bac45ea79a50a2cc58c48d6200bd9051d92fb8abb85bc81f2a",
+          "image": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+          "owned": true,
+          "running": false,
+          "networkMode": "container:9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+          "resourceLimits": {
+            "cpuCount": 2,
+            "memoryBytes": 4294967296,
+            "memorySwapBytes": 4294967296,
+            "pids": 512
+          },
+          "workspaceHandedBackAt": "2026-09-28T05:06:58.779Z",
+          "removedAt": "2026-09-28T05:06:58.986Z"
+        },
+        "locks": [
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/dfdf0b258f66503d8dfdefbe35ca557052290173ba009ac3ec1578f3a6239d58.lock.json",
+            "key": "port:6817",
+            "digest": "dfdf0b258f66503d8dfdefbe35ca557052290173ba009ac3ec1578f3a6239d58",
+            "acquiredAt": "2026-09-28T04:59:29.220Z",
+            "releasedAt": "2026-09-28T05:07:00.546Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/ea6161586c71d544a879e6646802f6e2f565f47794ddef271b2e6a3e419105f0.lock.json",
+            "key": "port:7139",
+            "digest": "ea6161586c71d544a879e6646802f6e2f565f47794ddef271b2e6a3e419105f0",
+            "acquiredAt": "2026-09-28T04:59:29.220Z",
+            "releasedAt": "2026-09-28T05:07:00.546Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/85b757718f937b6c2d773b4b633a8f9aa43dbf589f42b343076070edf28fa98e.lock.json",
+            "key": "slot:ecommerce:mongodb:run416",
+            "digest": "85b757718f937b6c2d773b4b633a8f9aa43dbf589f42b343076070edf28fa98e",
+            "acquiredAt": "2026-09-28T04:59:29.220Z",
+            "releasedAt": "2026-09-28T05:07:00.546Z"
+          },
+          {
+            "path": "/var/lib/docker/volumes/stack-bench-state/_data/controller-home/resource-locks/d8b235ebd5b890a886fd9b40d78b6c1695f9ba1d66bcae352791d7f85635c057.lock.json",
+            "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-mongodb-i7sBM6/app",
+            "digest": "d8b235ebd5b890a886fd9b40d78b6c1695f9ba1d66bcae352791d7f85635c057",
+            "acquiredAt": "2026-09-28T04:59:29.220Z",
+            "releasedAt": "2026-09-28T05:07:00.546Z"
+          }
+        ],
+        "launchedProcess": null,
+        "listenerProcesses": [],
+        "network": {
+          "name": "sb-1b54e429b6264862-network",
+          "id": "0f8cddcaaf157e34bbc20a0d3e99e23a4aaf66dcfd950cc1a9006f8ba2b318b7",
+          "namespaceContainerId": "9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+          "hostAddresses": [
+            "10.0.0.65",
+            "10.0.0.73",
+            "127.0.0.1",
+            "192.168.65.6",
+            "192.168.65.3",
+            "192.168.192.1",
+            "10.0.0.49",
+            "172.30.0.1",
+            "10.0.0.25",
+            "10.0.0.57",
+            "10.254.0.1",
+            "172.29.0.1",
+            "172.17.0.1",
+            "172.31.0.1",
+            "172.20.0.1",
+            "10.0.0.1",
+            "10.0.0.9",
+            "10.0.0.33",
+            "10.0.0.41"
+          ],
+          "services": [
+            {
+              "address": "10.0.0.75",
+              "port": 4873
+            }
+          ],
+          "firewallSha256": "f92373a753774445e34c4ae357e4ca3d824212f851a81c809e8e521c63d7c2fa",
+          "firewallInstalledAt": "2026-09-28T04:59:32.350Z",
+          "ownAddresses": [
+            "10.0.0.74"
+          ],
+          "namespaceStartedAt": "2026-09-28T04:59:30.974711807Z",
+          "cacheContainerId": "213a0427cfb9cd5cd367c50f48fc323fb1ed0005b9c9286e727e323018ea7091"
+        },
+        "browserContainer": {
+          "name": "sb-1b54e429b6264862-browser",
+          "id": "3d770eed1fb705e6284dcdfbff961e594201e05441c454cef5c73764c9f01de8",
+          "image": "sha256:cd439c68bfa1ad9f742b5f5b11842aeb6830b41cd60a2efa88425ca47dc5d730",
+          "owned": true,
+          "networkMode": "container:9252b10f3569609e9e2b6ea0b14728753c0d6039ffb077ae670b5f31cd1694b2",
+          "running": false,
+          "removedAt": "2026-09-28T05:06:58.278Z"
+        }
+      },
+      "stoppedAt": "2026-09-28T05:07:00.493Z",
+      "releasedAt": "2026-09-28T05:07:00.546Z",
+      "ownership": {
+        "markerSha256": "93d0299608393e3e2a8d0352cfc2cb4f2413b4407ef165f05065d2616e09f954"
+      }
+    },
+    "backendDiagnostics": {
+      "captured": true,
+      "path": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/mongodb.runs/r1-workers/w1.runs/r1/backend.log"
+    },
+    "validation": {
+      "ladder": {
+        "policy": "pass-before-next-level",
+        "requestedLevels": [
+          3
+        ],
+        "completedLevels": [],
+        "stoppedAfterLevel": null,
+        "blockedLevels": []
+      }
+    },
+    "levels": [
+      {
+        "level": 3,
+        "score": null,
+        "max": null,
+        "graded": false,
+        "contractPass": null,
+        "selection": null,
+        "outcome": {
+          "kind": "ungraded",
+          "phase": "reference-mutation-only",
+          "reason": "the parent qualification owns the full clean grade",
+          "appFailures": [],
+          "inconclusive": [],
+          "harnessFailures": []
+        },
+        "buildSessions": [
+          {
+            "sessionId": "reference-mongodb-1790571596452",
+            "costUsd": 0,
+            "durationMs": 14770,
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheWrite": 0,
+              "cacheRead": 0
+            },
+            "costReceipts": [],
+            "costComplete": true,
+            "providerThrottle": null,
+            "resources": null,
+            "tokens": 0,
+            "outputTokens": 0,
+            "turns": 0,
+            "promptBytes": 0,
+            "thinking": null,
+            "transcript": {
+              "kind": "provider-session",
+              "id": "reference-mongodb-1790571596452"
+            },
+            "provenance": null,
+            "providerMetadata": null
+          }
+        ],
+        "buildCostUsd": 0,
+        "sessionTotals": {
+          "sessions": 1,
+          "costUsd": 0,
+          "tokens": 0,
+          "outputTokens": 0,
+          "turns": 0,
+          "durationMs": 14770,
+          "activeDurationMs": 14770,
+          "providerThrottle": {
+            "waits": 0,
+            "waitedMs": 0
+          },
+          "promptBytes": 0,
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheWrite": 0,
+            "cacheRead": 0
+          },
+          "thinking": null
+        },
+        "costUsd": 0,
+        "durationMs": 15057
+      }
+    ],
+    "contaminated": false,
+    "contamination": {
+      "evidence": "no agent access to private benchmark files detected",
+      "verdict": "private-access audit passed"
+    },
+    "mutationControl": {
+      "ok": true,
+      "artifact": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/combined11-149fecf8b/mongodb.runs/r1-workers/w1.runs/r1/mutation-control.json",
+      "processError": null,
+      "summary": {
+        "caught": 9,
+        "completed": 9,
+        "total": 9,
+        "remaining": 0
+      },
+      "outcome": null,
+      "results": [
+        {
+          "id": "restock-race-records-wrong-order-total",
+          "scenario": "../tracks/ecommerce/scenarios/01-restock-race.json",
+          "targets": [
+            "ecommerce.spec.concurrency-safety.restock-race.202a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.concurrency-safety.restock-race.202a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 202,
+              "criterion": "202a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase order total control reads 0, expected exactly 7950",
+              "failedAction": "dbExpectPurchases",
+              "key": "ecommerce.spec.concurrency-safety.restock-race.202a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "transfer-debits-source-without-crediting-existing-destination",
+          "scenario": "../tracks/ecommerce/scenarios/02-strengthened.json",
+          "targets": [
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.operations-access.operator-authorization.201a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.inventory-operations.warehouse-transfer.2a",
+            "ecommerce.operations-access.operator-authorization.201a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 2,
+              "criterion": "2a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Headphones in West control reads 40, expected exactly 50",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.inventory-operations.warehouse-transfer.2a",
+              "expected": true
+            },
+            {
+              "feature": 201,
+              "criterion": "201a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Headphones in West control reads 40, expected exactly 65",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.operations-access.operator-authorization.201a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "staff-can-use-direct-restock",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the restock action was accepted for staff, who must be refused",
+              "failedAction": "expectActionOutcome",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "server-time-restock-never-completes",
+          "scenario": "../tracks/ecommerce/scenarios/03-server-time.json",
+          "targets": [
+            "ecommerce.l3.server-time.server-time.312a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.l3.server-time.server-time.312a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 312,
+              "criterion": "312a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Espresso Machine control reads 100, expected exactly 104",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.l3.server-time.server-time.312a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "overdraw-transfer-is-accepted",
+          "scenario": "../tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+          "targets": [
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 2,
+              "criterion": "2c",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the order-error control did not appear",
+              "failedAction": "expect",
+              "key": "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "restock-trusts-submitted-admin-role",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "overlapping-cart-add-ignored",
+          "scenario": "../tracks/ecommerce/scenarios/progression-cart-checkout.json",
+          "targets": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.feature.cart-checkout.cart.4d"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 4,
+              "criterion": "4d",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the cart add and checkout match a complete serial outcome control reads 0, expected exactly 1",
+              "failedAction": "dbExpectCheckout",
+              "key": "ecommerce.feature.cart-checkout.cart.4d",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "query-like-password-bypasses-signin",
+          "scenario": "../tracks/ecommerce/scenarios/01-purchase-session.json",
+          "targets": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.purchase-session.101a"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 101,
+              "criterion": "101a",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the purchase orders for account kim5eda4ab7-c831-4cf101 control reads 1, expected exactly 0",
+              "failedAction": "dbExpectNoPurchase",
+              "key": "ecommerce.spec.access-control.purchase-session.101a",
+              "expected": true
+            }
+          ]
+        },
+        {
+          "id": "signup-accepts-admin-claim",
+          "scenario": "../tracks/ecommerce/scenarios/01-admin-write-staff.json",
+          "targets": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "status": "CAUGHT",
+          "targetKeys": [
+            "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+          ],
+          "targetMissing": [],
+          "targetHarnessFailures": [],
+          "targetInconclusive": [],
+          "targetSurvived": [],
+          "targetOffAssertion": [],
+          "collateral": [],
+          "collateralHarnessFailures": [],
+          "collateralInconclusive": [],
+          "setupFailures": [],
+          "missing": [],
+          "regressions": [
+            {
+              "feature": 103,
+              "criterion": "103b",
+              "passed": false,
+              "measured": true,
+              "applicationFailure": true,
+              "outcomeKind": "app_failure",
+              "status": "failed",
+              "phase": "assertion",
+              "detail": "the stored stock for Air Purifier control reads 103, expected exactly 102",
+              "failedAction": "dbExpectStock",
+              "key": "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+              "expected": true
+            }
+          ]
+        }
+      ]
+    },
+    "totals": {
+      "score": 0,
+      "max": 0,
+      "costUsd": 0,
+      "costComplete": true,
+      "repairs": 0,
+      "sessions": 1,
+      "tokens": 0,
+      "outputTokens": 0,
+      "turns": 0,
+      "modelDurationMs": 14770,
+      "durationSec": 436,
+      "ungraded": [
+        3
+      ]
+    },
+    "outcome": {
+      "kind": "passed",
+      "phase": "mutation-control",
+      "reason": null,
+      "appFailures": [],
+      "inconclusive": [],
+      "harnessFailures": []
+    },
+    "selectionRequest": {
+      "packs": [],
+      "checks": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+        "ecommerce.spec.access-control.purchase-session.101a",
+        "ecommerce.spec.concurrency-safety.restock-race.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a",
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
+        "ecommerce.l3.deferred-integrity.exactly-once.311a",
+        "ecommerce.l3.server-time.server-time.312a",
+        "ecommerce.feature.cart-checkout.cart.4a",
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ]
+    },
+    "skills": [],
+    "runtime": {
+      "buildImage": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+      "url": "http://localhost:7139"
+    },
+    "pricing": null,
+    "featureCatalog": null,
+    "dependencyPolicy": null
+  }
+}

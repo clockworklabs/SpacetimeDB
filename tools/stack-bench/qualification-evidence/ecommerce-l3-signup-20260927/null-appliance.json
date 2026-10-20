@@ -1,0 +1,143 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-27T08-05-42-229Z",
+  "attempt": {
+    "id": "null-control-2026-09-27T08-05-42-229Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T08:05:42.230Z",
+    "completedAt": "2026-09-27T08:06:04.956Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "ae8798bce6cf45f3e76f5b189a024a2704e2420143c0e1d431323507a872608a"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "f161f9ee7884c6cfde45d8e9378339062a6262c159452d488b5c74a8bd1a2eb7"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "054d78d1b5520d3bd837796bd61b0c36d6fbad43c0e3ef1207c7d9f9a585ca35"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 22726,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 31,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "edbb523cf685494c537d90b237b34d1be0b6b2d666a3d0fe650b0b7abc312a0a",
+      "executableSha256": "a624ae4170d100a9133db5ed2ac3686a6be63153564eedd333c1cdae11c4c817",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "f161f9ee7884c6cfde45d8e9378339062a6262c159452d488b5c74a8bd1a2eb7",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "944ae63d10057f276466c1673cb45a219e835b0e282065965fd780de92790f89"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 3,
+      "points": 4,
+      "expectedFailures": {
+        "criteria": 3,
+        "points": 4
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 2,
+          "points": 3
+        },
+        "assertion": {
+          "criteria": 1,
+          "points": 1
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-001",
+        "scenario": "scenarios/01-account-create.json",
+        "feature": 1,
+        "featureName": "Accounts",
+        "criterion": "1a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "failed",
+        "failureStage": "assertion",
+        "detail": "none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-007",
+        "scenario": "scenarios/01-admin-write-staff.json",
+        "feature": 103,
+        "featureName": "Only an administrator can restock",
+        "criterion": "103a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-007",
+        "scenario": "scenarios/01-admin-write-staff.json",
+        "feature": 103,
+        "featureName": "Only an administrator can restock",
+        "criterion": "103b",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

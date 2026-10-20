@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: account creation accepts explicit login without masking refused or wrong-account signup
+ok 1 - account creation accepts explicit login without masking refused or wrong-account signup
+  ---
+  duration_ms: 17629.9248
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 18392.0191

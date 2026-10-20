@@ -1,0 +1,311 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-28T14-40-40-400Z",
+  "attempt": {
+    "id": "null-control-2026-09-28T14-40-40-400Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T14:40:40.401Z",
+    "completedAt": "2026-09-28T14:42:35.754Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "9531e90fdb874cc5f7588b4977e5d717892b3750e87ae722c97e3b1704682de1"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "aada3dfbfd205afed9ac7019f0b5ea21985f94263efbffc126485fb305e1e316"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "5f5a83ad40843308d0efe6e62082bf1975fae709256dfacd4202d1b963013c24"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 115353,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 32,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "7f916c5f10436915a771d35f0425531147ef3cd9228bf12069360a7b0a09bd24",
+      "executableSha256": "f0c376de1594b0486f6294ec13ac689cacf1cfb992306f6db017fd7cb99bdb08",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "aada3dfbfd205afed9ac7019f0b5ea21985f94263efbffc126485fb305e1e316",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "15e5df8da57d49fc060251e8100492e4cc15b66106e14e1e94dc11f031f5a73f"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 15,
+      "points": 24,
+      "expectedFailures": {
+        "criteria": 15,
+        "points": 24
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 15,
+          "points": 24
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-015",
+        "scenario": "scenarios/01-duplicate-checkout.json",
+        "feature": 203,
+        "featureName": "One cart, two tabs, one checkout",
+        "criterion": "203a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-015",
+        "scenario": "scenarios/01-duplicate-checkout.json",
+        "feature": 203,
+        "featureName": "One cart, two tabs, one checkout",
+        "criterion": "203b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-023",
+        "scenario": "scenarios/01-restock-race.json",
+        "feature": 202,
+        "featureName": "A restock during a rush is not lost",
+        "criterion": "202a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-029",
+        "scenario": "scenarios/01-warehouse-admin-staff.json",
+        "feature": 7,
+        "featureName": "Admin and warehouses",
+        "criterion": "7a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-029",
+        "scenario": "scenarios/01-warehouse-admin-staff.json",
+        "feature": 7,
+        "featureName": "Admin and warehouses",
+        "criterion": "7b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-046",
+        "scenario": "scenarios/02-server-actions.json",
+        "feature": 204,
+        "featureName": "An order belongs to the person who placed it",
+        "criterion": "204a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-047",
+        "scenario": "scenarios/02-strengthened.json",
+        "feature": 2,
+        "featureName": "Moving stock between warehouses",
+        "criterion": "2a",
+        "points": 3,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-047",
+        "scenario": "scenarios/02-strengthened.json",
+        "feature": 201,
+        "featureName": "Operating the store requires authorization",
+        "criterion": "201a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-048",
+        "scenario": "scenarios/02-transfer-overdraw.json",
+        "feature": 2,
+        "featureName": "Moving stock between warehouses",
+        "criterion": "2c",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signin-username, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-059",
+        "scenario": "scenarios/mixed-operation-history.json",
+        "feature": 202,
+        "featureName": "Mixed operations preserve stock and orders",
+        "criterion": "202f",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-072",
+        "scenario": "scenarios/progression-checkout-crash.json",
+        "feature": 910,
+        "featureName": "Checkout crash recovery",
+        "criterion": "910a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-072",
+        "scenario": "scenarios/progression-checkout-crash.json",
+        "feature": 910,
+        "featureName": "Checkout crash recovery",
+        "criterion": "910b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-076",
+        "scenario": "scenarios/progression-faceted-filters.json",
+        "feature": 401,
+        "featureName": "Filters compose",
+        "criterion": "401a",
+        "points": 3,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the category-filter control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-077",
+        "scenario": "scenarios/progression-faceted-pagination.json",
+        "feature": 402,
+        "featureName": "Pages are stable",
+        "criterion": "402a",
+        "points": 3,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: the minimum-price control did not become available in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-096",
+        "scenario": "scenarios/progression-search-ordering.json",
+        "feature": 402,
+        "featureName": "Purchases preserve search ordering",
+        "criterion": "402b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "browser": "151.0.7922.34",
+  "observations": [
+    {
+      "mode": "delayed",
+      "elapsedMs": 48,
+      "status": "failed",
+      "finding": {
+        "kind": "count-mismatch",
+        "fields": {
+          "control": "row",
+          "expected": 1,
+          "observed": 0
+        }
+      },
+      "summary": "0 row entries shown, expected 1"
+    },
+    {
+      "mode": "missing",
+      "elapsedMs": 27,
+      "status": "failed",
+      "finding": {
+        "kind": "count-mismatch",
+        "fields": {
+          "control": "row",
+          "expected": 1,
+          "observed": 0
+        }
+      },
+      "summary": "0 row entries shown, expected 1"
+    },
+    {
+      "mode": "duplicates",
+      "elapsedMs": 26,
+      "status": "failed",
+      "finding": {
+        "kind": "count-mismatch",
+        "fields": {
+          "control": "row",
+          "expected": 1,
+          "observed": 2
+        }
+      },
+      "summary": "2 row entries shown, expected 1"
+    },
+    {
+      "mode": "late",
+      "elapsedMs": 30,
+      "status": "failed",
+      "finding": {
+        "kind": "count-mismatch",
+        "fields": {
+          "control": "row",
+          "expected": 1,
+          "observed": 0
+        }
+      },
+      "summary": "0 row entries shown, expected 1"
+    },
+    {
+      "mode": "scoped",
+      "elapsedMs": 21,
+      "status": "passed",
+      "finding": null,
+      "summary": null
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "kind": "scoped_cleanup_verification",
+  "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "rows": [
+    {
+      "stack": "spacetime",
+      "reportSha256": "49234d55cee88ba1381a1b3dc02d9d71bf0d32336f9cc5db3755969f56a7c632",
+      "leases": [
+        {
+          "role": "baseline",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-1",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-2",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-3",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        }
+      ]
+    },
+    {
+      "stack": "postgres",
+      "reportSha256": "19fc76d6c316ca4805c8fdded05a806a9298804e3e301f9920b14a7cf444a427",
+      "leases": [
+        {
+          "role": "baseline",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-1",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-2",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-3",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        }
+      ]
+    },
+    {
+      "stack": "mongodb",
+      "reportSha256": "4f40ac2b16ca95388b14a4d797720f672f35178e41f713d5a6ded10e222746fa",
+      "leases": [
+        {
+          "role": "baseline",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-1",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-2",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-3",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        }
+      ]
+    },
+    {
+      "stack": "convex",
+      "reportSha256": "40f5746b89458d6e16f23d59ff8170ec5a18e8f770b1cdee3e8cc2691bd4f353",
+      "leases": [
+        {
+          "role": "baseline",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-1",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-2",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        },
+        {
+          "role": "worker-3",
+          "recovery": "clean",
+          "backendState": "released",
+          "locksReleased": true,
+          "remainingOwnedResources": 0
+        }
+      ]
+    }
+  ],
+  "null": {
+    "controller": "stack-bench-crash-qual-null-473ca5c2d",
+    "exitCode": 0
+  },
+  "method": "Independent collector confirmed clean recovery, released locks and no owned resources for four leases per stack."
+}

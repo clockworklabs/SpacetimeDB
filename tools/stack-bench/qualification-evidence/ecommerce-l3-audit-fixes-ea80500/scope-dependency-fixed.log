@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: qualification scopes resolve the current executable tree for every real stack
+ok 1 - qualification scopes resolve the current executable tree for every real stack
+  ---
+  duration_ms: 773.7205
+  type: 'test'
+  ...
+# Subtest: SpacetimeDB replay qualification includes its executable codec and rejects missing or changed loaders
+ok 2 - SpacetimeDB replay qualification includes its executable codec and rejects missing or changed loaders
+  ---
+  duration_ms: 78.1371
+  type: 'test'
+  ...
+# Subtest: a directly imported backend helper invalidates every caller scope
+ok 3 - a directly imported backend helper invalidates every caller scope
+  ---
+  duration_ms: 67.4822
+  type: 'test'
+  ...
+# Subtest: qualification identities isolate stack, mutation, and selected-check inputs
+ok 4 - qualification identities isolate stack, mutation, and selected-check inputs
+  ---
+  duration_ms: 78.0134
+  type: 'test'
+  ...
+# Subtest: stack-owned reset and version changes invalidate only their stack
+ok 5 - stack-owned reset and version changes invalidate only their stack
+  ---
+  duration_ms: 171.1221
+  type: 'test'
+  ...
+# Subtest: shared grading changes invalidate every affected scope while mutation-only changes do not
+ok 6 - shared grading changes invalidate every affected scope while mutation-only changes do not
+  ---
+  duration_ms: 208.7706
+  type: 'test'
+  ...
+# Subtest: the spawned browser proxy changes every executable scope and is required
+ok 7 - the spawned browser proxy changes every executable scope and is required
+  ---
+  duration_ms: 71.7066
+  type: 'test'
+  ...
+# Subtest: reference deployment and its container launcher invalidate qualification
+ok 8 - reference deployment and its container launcher invalidate qualification
+  ---
+  duration_ms: 112.2232
+  type: 'test'
+  ...
+# Subtest: unmapped executable imports and tampered identities fail closed
+ok 9 - unmapped executable imports and tampered identities fail closed
+  ---
+  duration_ms: 79.2635
+  type: 'test'
+  ...
+# Subtest: registering another stack changes no existing stack scope
+ok 10 - registering another stack changes no existing stack scope
+  ---
+  duration_ms: 93.0368
+  type: 'test'
+  ...
+# Subtest: a stack scope includes its runtime asset directory
+ok 11 - a stack scope includes its runtime asset directory
+  ---
+  duration_ms: 71.278
+  type: 'test'
+  ...
+# Subtest: a stack module that imports another stack module fails closed
+ok 12 - a stack module that imports another stack module fails closed
+  ---
+  duration_ms: 63.3021
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2096.5261

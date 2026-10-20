@@ -1,0 +1,4858 @@
+{
+  "rerun": "STACK_BENCH_STAFF_NAVIGATION_EVIDENCE=<file> node --test --test-name-pattern=\"staff and role navigation\" dist/tests/account-navigation.integration.js",
+  "evidence": [
+    {
+      "kind": "staff",
+      "layout": "direct",
+      "passed": true,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 4,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506359572,
+                "completedAtMs": 1790506359894,
+                "durationMs": 322
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359573,
+                      "completedAtMs": 1790506359710,
+                      "durationMs": 137,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359710,
+                      "completedAtMs": 1790506359753,
+                      "durationMs": 43,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359753,
+                      "completedAtMs": 1790506359766,
+                      "durationMs": 13,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "admin",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359766,
+                      "completedAtMs": 1790506359845,
+                      "durationMs": 79,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359845,
+                      "completedAtMs": 1790506359883,
+                      "durationMs": 38,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359883,
+                      "completedAtMs": 1790506359894,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506359896,
+                "completedAtMs": 1790506370372,
+                "durationMs": 10476
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359897,
+                      "completedAtMs": 1790506359979,
+                      "durationMs": 82,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506359979,
+                      "completedAtMs": 1790506360016,
+                      "durationMs": 37,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506360016,
+                      "completedAtMs": 1790506360027,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "customer",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506360028,
+                      "completedAtMs": 1790506360109,
+                      "durationMs": 81,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506360110,
+                      "completedAtMs": 1790506365113,
+                      "durationMs": 5003,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506365113,
+                      "completedAtMs": 1790506370372,
+                      "durationMs": 5259,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506359569,
+            "completedAtMs": 1790506359569,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /staff",
+        "GET /",
+        "GET /staff",
+        "GET /",
+        "GET /staff",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "staff",
+      "layout": "menu",
+      "passed": true,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 0,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "staff",
+              "summary": "the staff-area control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "staff-area"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506370600,
+                "completedAtMs": 1790506376395,
+                "durationMs": 5795
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506370600,
+                      "completedAtMs": 1790506370679,
+                      "durationMs": 79,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506370679,
+                      "completedAtMs": 1790506375690,
+                      "durationMs": 5011,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-area control did not appear",
+                    "finding": {
+                      "kind": "control-missing",
+                      "fields": {
+                        "control": "staff-area"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506375690,
+                      "completedAtMs": 1790506376394,
+                      "durationMs": 704,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "authorized",
+              "summary": "the staff-link control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-link",
+                  "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506376396,
+                "completedAtMs": 1790506381490,
+                "durationMs": 5094
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506376396,
+                      "completedAtMs": 1790506376487,
+                      "durationMs": 91,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-interaction-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-link control did not become available in time",
+                    "finding": {
+                      "kind": "page-timeout",
+                      "fields": {
+                        "control": "staff-link",
+                        "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506376487,
+                      "completedAtMs": 1790506381489,
+                      "durationMs": 5002,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506370599,
+            "completedAtMs": 1790506370600,
+            "durationMs": 1
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "staff",
+      "layout": "already-open",
+      "passed": true,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 2,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506381768,
+                "completedAtMs": 1790506391953,
+                "durationMs": 10185
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506381768,
+                      "completedAtMs": 1790506381847,
+                      "durationMs": 79,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506381847,
+                      "completedAtMs": 1790506386862,
+                      "durationMs": 5015,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506386862,
+                      "completedAtMs": 1790506386865,
+                      "durationMs": 3,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "admin",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506386865,
+                      "completedAtMs": 1790506386946,
+                      "durationMs": 81,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506386946,
+                      "completedAtMs": 1790506391951,
+                      "durationMs": 5005,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506391951,
+                      "completedAtMs": 1790506391953,
+                      "durationMs": 2,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "authorized",
+              "summary": "the staff-link control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-link",
+                  "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506391954,
+                "completedAtMs": 1790506397028,
+                "durationMs": 5074
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506391954,
+                      "completedAtMs": 1790506392028,
+                      "durationMs": 74,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-interaction-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-link control did not become available in time",
+                    "finding": {
+                      "kind": "page-timeout",
+                      "fields": {
+                        "control": "staff-link",
+                        "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506392028,
+                      "completedAtMs": 1790506397028,
+                      "durationMs": 5000,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506381768,
+            "completedAtMs": 1790506381768,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "staff",
+      "layout": "menu-noop",
+      "passed": false,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 0,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "staff",
+              "summary": "the staff-area control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "staff-area"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506397299,
+                "completedAtMs": 1790506403096,
+                "durationMs": 5797
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506397299,
+                      "completedAtMs": 1790506397376,
+                      "durationMs": 77,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506397376,
+                      "completedAtMs": 1790506402386,
+                      "durationMs": 5010,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-area control did not appear",
+                    "finding": {
+                      "kind": "control-missing",
+                      "fields": {
+                        "control": "staff-area"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506402386,
+                      "completedAtMs": 1790506403096,
+                      "durationMs": 710,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "authorized",
+              "summary": "the staff-link control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-link",
+                  "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506403096,
+                "completedAtMs": 1790506408184,
+                "durationMs": 5088
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506403096,
+                      "completedAtMs": 1790506403177,
+                      "durationMs": 81,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-interaction-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-link control did not become available in time",
+                    "finding": {
+                      "kind": "page-timeout",
+                      "fields": {
+                        "control": "staff-link",
+                        "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506403177,
+                      "completedAtMs": 1790506408184,
+                      "durationMs": 5007,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506397299,
+            "completedAtMs": 1790506397299,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "staff",
+      "layout": "missing-target",
+      "passed": false,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 0,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "staff",
+              "summary": "the staff-area control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "staff-area"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506408397,
+                "completedAtMs": 1790506414195,
+                "durationMs": 5798
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506408397,
+                      "completedAtMs": 1790506408476,
+                      "durationMs": 79,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506408476,
+                      "completedAtMs": 1790506413484,
+                      "durationMs": 5008,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-area control did not appear",
+                    "finding": {
+                      "kind": "control-missing",
+                      "fields": {
+                        "control": "staff-area"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506413484,
+                      "completedAtMs": 1790506414195,
+                      "durationMs": 711,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "authorized",
+              "summary": "the staff-link control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-link",
+                  "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506414195,
+                "completedAtMs": 1790506419279,
+                "durationMs": 5084
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506414195,
+                      "completedAtMs": 1790506414276,
+                      "durationMs": 81,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-interaction-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-link control did not become available in time",
+                    "finding": {
+                      "kind": "page-timeout",
+                      "fields": {
+                        "control": "staff-link",
+                        "detail": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-link\"],#staff-link').filter({ visible: true }).first()\u001b[22m\n"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506414276,
+                      "completedAtMs": 1790506419279,
+                      "durationMs": 5003,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506408397,
+            "completedAtMs": 1790506408397,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "staff",
+      "layout": "customer-hidden",
+      "passed": true,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 4,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506419483,
+                "completedAtMs": 1790506419727,
+                "durationMs": 244
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419483,
+                      "completedAtMs": 1790506419559,
+                      "durationMs": 76,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419559,
+                      "completedAtMs": 1790506419598,
+                      "durationMs": 39,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419598,
+                      "completedAtMs": 1790506419610,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "admin",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419610,
+                      "completedAtMs": 1790506419675,
+                      "durationMs": 65,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419675,
+                      "completedAtMs": 1790506419715,
+                      "durationMs": 40,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419715,
+                      "completedAtMs": 1790506419727,
+                      "durationMs": 12,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506419727,
+                "completedAtMs": 1790506430195,
+                "durationMs": 10468
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419727,
+                      "completedAtMs": 1790506419808,
+                      "durationMs": 81,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419808,
+                      "completedAtMs": 1790506419847,
+                      "durationMs": 39,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419847,
+                      "completedAtMs": 1790506419858,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "customer",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419858,
+                      "completedAtMs": 1790506419925,
+                      "durationMs": 67,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506419925,
+                      "completedAtMs": 1790506424932,
+                      "durationMs": 5007,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506424932,
+                      "completedAtMs": 1790506430195,
+                      "durationMs": 5263,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506419483,
+            "completedAtMs": 1790506419483,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /staff",
+        "GET /",
+        "GET /staff",
+        "GET /",
+        "GET /staff",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "staff",
+      "layout": "customer-leak",
+      "passed": false,
+      "grade": {
+        "id": 601,
+        "name": "Staff access",
+        "score": 4,
+        "max": 4,
+        "criteria": [
+          {
+            "id": "601a",
+            "desc": "staff and administrators can sign in and open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506430400,
+                "completedAtMs": 1790506430657,
+                "durationMs": 257
+              },
+              "actions": [
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430400,
+                      "completedAtMs": 1790506430475,
+                      "durationMs": 75,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430475,
+                      "completedAtMs": 1790506430515,
+                      "durationMs": 40,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "staff",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430515,
+                      "completedAtMs": 1790506430526,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "admin",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430526,
+                      "completedAtMs": 1790506430610,
+                      "durationMs": 84,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430610,
+                      "completedAtMs": 1790506430646,
+                      "durationMs": 36,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430646,
+                      "completedAtMs": 1790506430657,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Staff and administrators can sign in and use staff areas."
+          },
+          {
+            "id": "601b",
+            "desc": "customers cannot open staff tools",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506430657,
+                "completedAtMs": 1790506441101,
+                "durationMs": 10444
+              },
+              "actions": [
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "staff",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430657,
+                      "completedAtMs": 1790506430725,
+                      "durationMs": 68,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430725,
+                      "completedAtMs": 1790506430763,
+                      "durationMs": 38,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "authorized",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430763,
+                      "completedAtMs": 1790506430774,
+                      "durationMs": 11,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "customer",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430774,
+                      "completedAtMs": 1790506430841,
+                      "durationMs": 67,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "staff-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506430841,
+                      "completedAtMs": 1790506435853,
+                      "durationMs": 5012,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "customer",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "absent": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506435853,
+                      "completedAtMs": 1790506441101,
+                      "durationMs": 5248,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Customers cannot open staff tools."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506430400,
+            "completedAtMs": 1790506430400,
+            "durationMs": 0
+          },
+          "actions": [],
+          "attachments": [],
+          "sensitivity": []
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /staff",
+        "GET /",
+        "GET /staff",
+        "GET /",
+        "GET /staff",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "roles",
+      "layout": "direct",
+      "passed": true,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 3,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506441546,
+                "completedAtMs": 1790506441576,
+                "durationMs": 30
+              },
+              "actions": [
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true,
+                      "value": "inventory"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441546,
+                      "completedAtMs": 1790506441576,
+                      "durationMs": 30,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "passed",
+              "code": "completed",
+              "phase": "assertion",
+              "actor": null,
+              "summary": null,
+              "finding": null,
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506441577,
+                "completedAtMs": 1790506441819,
+                "durationMs": 242
+              },
+              "actions": [
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441577,
+                      "completedAtMs": 1790506441590,
+                      "durationMs": 13,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "admin"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441590,
+                      "completedAtMs": 1790506441602,
+                      "durationMs": 12,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "admin-link",
+                      "visible": "staff-role-account-staff"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441602,
+                      "completedAtMs": 1790506441620,
+                      "durationMs": 18,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true,
+                      "value": "inventory"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441620,
+                      "completedAtMs": 1790506441627,
+                      "durationMs": 7,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "freshClient",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "actor": "admin-fresh"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441627,
+                      "completedAtMs": 1790506441675,
+                      "durationMs": 48,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "signIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "user": "admin",
+                      "authenticationPath": "local-form",
+                      "signedIn": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441675,
+                      "completedAtMs": 1790506441758,
+                      "durationMs": 83,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": "admin-link"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441758,
+                      "completedAtMs": 1790506441797,
+                      "durationMs": 39,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin-fresh",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-observation-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "visible": true,
+                      "value": "inventory"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506441797,
+                      "completedAtMs": 1790506441819,
+                      "durationMs": 22,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506441357,
+            "completedAtMs": 1790506441546,
+            "durationMs": 189
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506441357,
+                  "completedAtMs": 1790506441424,
+                  "durationMs": 67,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506441424,
+                  "completedAtMs": 1790506441426,
+                  "durationMs": 2,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506441426,
+                  "completedAtMs": 1790506441462,
+                  "durationMs": 36,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "fill",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "filled": "staff-role-select"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506441462,
+                  "completedAtMs": 1790506441494,
+                  "durationMs": 32,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "staff-role-save"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506441494,
+                  "completedAtMs": 1790506441546,
+                  "durationMs": 52,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /admin",
+        "POST /save-role",
+        "GET /roles",
+        "GET /roles",
+        "GET /",
+        "GET /",
+        "GET /admin"
+      ],
+      "assignedRole": "inventory"
+    },
+    {
+      "kind": "roles",
+      "layout": "menu",
+      "passed": true,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the admin-link control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "admin-link"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506442073,
+                "completedAtMs": 1790506442848,
+                "durationMs": 775
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the admin-link control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "admin-link"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506442073,
+                "completedAtMs": 1790506442848,
+                "durationMs": 775
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "failed",
+          "code": "application_failure",
+          "phase": "setup",
+          "actor": "admin",
+          "summary": "the admin-link control did not appear",
+          "finding": {
+            "kind": "control-missing",
+            "fields": {
+              "control": "admin-link"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506442073,
+            "completedAtMs": 1790506442848,
+            "durationMs": 775
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506442073,
+                  "completedAtMs": 1790506442139,
+                  "durationMs": 66,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "failed",
+                "type": "browser-observation-evidence",
+                "code": "application_failure",
+                "phase": "execute",
+                "summary": "the admin-link control did not appear",
+                "finding": {
+                  "kind": "control-missing",
+                  "fields": {
+                    "control": "admin-link"
+                  }
+                },
+                "observation": null,
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506442139,
+                  "completedAtMs": 1790506442848,
+                  "durationMs": 709,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "roles",
+      "layout": "already-open",
+      "passed": true,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the admin-link control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "admin-link"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506443126,
+                "completedAtMs": 1790506443913,
+                "durationMs": 787
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the admin-link control did not appear",
+              "finding": {
+                "kind": "control-missing",
+                "fields": {
+                  "control": "admin-link"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506443126,
+                "completedAtMs": 1790506443913,
+                "durationMs": 787
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "failed",
+          "code": "application_failure",
+          "phase": "setup",
+          "actor": "admin",
+          "summary": "the admin-link control did not appear",
+          "finding": {
+            "kind": "control-missing",
+            "fields": {
+              "control": "admin-link"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506443126,
+            "completedAtMs": 1790506443913,
+            "durationMs": 787
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506443127,
+                  "completedAtMs": 1790506443208,
+                  "durationMs": 81,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "failed",
+                "type": "browser-observation-evidence",
+                "code": "application_failure",
+                "phase": "execute",
+                "summary": "the admin-link control did not appear",
+                "finding": {
+                  "kind": "control-missing",
+                  "fields": {
+                    "control": "admin-link"
+                  }
+                },
+                "observation": null,
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506443208,
+                  "completedAtMs": 1790506443913,
+                  "durationMs": 705,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "roles",
+      "layout": "role-tab",
+      "passed": true,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-role-select",
+                  "scope": "staff-role-account-staff",
+                  "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506444176,
+                "completedAtMs": 1790506464301,
+                "durationMs": 20125
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-role-select",
+                  "scope": "staff-role-account-staff",
+                  "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506444176,
+                "completedAtMs": 1790506464301,
+                "durationMs": 20125
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "failed",
+          "code": "application_failure",
+          "phase": "setup",
+          "actor": "admin",
+          "summary": "the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+          "finding": {
+            "kind": "page-timeout",
+            "fields": {
+              "control": "staff-role-select",
+              "scope": "staff-role-account-staff",
+              "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506444176,
+            "completedAtMs": 1790506464300,
+            "durationMs": 20124
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506444176,
+                  "completedAtMs": 1790506444258,
+                  "durationMs": 82,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506444258,
+                  "completedAtMs": 1790506444260,
+                  "durationMs": 2,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506444260,
+                  "completedAtMs": 1790506444297,
+                  "durationMs": 37,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "fill",
+                  "version": "1.0.0"
+                },
+                "status": "failed",
+                "type": "browser-interaction-evidence",
+                "code": "application_failure",
+                "phase": "execute",
+                "summary": "the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+                "finding": {
+                  "kind": "page-timeout",
+                  "fields": {
+                    "control": "staff-role-select",
+                    "scope": "staff-role-account-staff",
+                    "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                  }
+                },
+                "observation": null,
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506444297,
+                  "completedAtMs": 1790506464300,
+                  "durationMs": 20003,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /admin"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "roles",
+      "layout": "broken-tab",
+      "passed": false,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-role-select",
+                  "scope": "staff-role-account-staff",
+                  "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506464572,
+                "completedAtMs": 1790506484694,
+                "durationMs": 20122
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-role-select",
+                  "scope": "staff-role-account-staff",
+                  "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506464572,
+                "completedAtMs": 1790506484694,
+                "durationMs": 20122
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "failed",
+          "code": "application_failure",
+          "phase": "setup",
+          "actor": "admin",
+          "summary": "the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+          "finding": {
+            "kind": "page-timeout",
+            "fields": {
+              "control": "staff-role-select",
+              "scope": "staff-role-account-staff",
+              "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506464572,
+            "completedAtMs": 1790506484694,
+            "durationMs": 20122
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506464572,
+                  "completedAtMs": 1790506464640,
+                  "durationMs": 68,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506464641,
+                  "completedAtMs": 1790506464643,
+                  "durationMs": 2,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506464643,
+                  "completedAtMs": 1790506464679,
+                  "durationMs": 36,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "fill",
+                  "version": "1.0.0"
+                },
+                "status": "failed",
+                "type": "browser-interaction-evidence",
+                "code": "application_failure",
+                "phase": "execute",
+                "summary": "the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+                "finding": {
+                  "kind": "page-timeout",
+                  "fields": {
+                    "control": "staff-role-select",
+                    "scope": "staff-role-account-staff",
+                    "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                  }
+                },
+                "observation": null,
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506464679,
+                  "completedAtMs": 1790506484693,
+                  "durationMs": 20014,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /admin"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "roles",
+      "layout": "missing-tab",
+      "passed": false,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-role-select",
+                  "scope": "staff-role-account-staff",
+                  "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506484952,
+                "completedAtMs": 1790506505072,
+                "durationMs": 20120
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "blocked",
+              "code": "application_failure",
+              "phase": "setup",
+              "actor": "admin",
+              "summary": "Blocked by a failed prerequisite: the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+              "finding": {
+                "kind": "page-timeout",
+                "fields": {
+                  "control": "staff-role-select",
+                  "scope": "staff-role-account-staff",
+                  "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506484952,
+                "completedAtMs": 1790506505072,
+                "durationMs": 20120
+              },
+              "actions": [],
+              "attachments": [
+                {
+                  "kind": "check-evidence",
+                  "ref": "feature.setupEvidence"
+                }
+              ],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "failed",
+          "code": "application_failure",
+          "phase": "setup",
+          "actor": "admin",
+          "summary": "the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+          "finding": {
+            "kind": "page-timeout",
+            "fields": {
+              "control": "staff-role-select",
+              "scope": "staff-role-account-staff",
+              "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+            }
+          },
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506484952,
+            "completedAtMs": 1790506505072,
+            "durationMs": 20120
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506484952,
+                  "completedAtMs": 1790506485023,
+                  "durationMs": 71,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506485023,
+                  "completedAtMs": 1790506485024,
+                  "durationMs": 1,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506485024,
+                  "completedAtMs": 1790506485063,
+                  "durationMs": 39,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "fill",
+                  "version": "1.0.0"
+                },
+                "status": "failed",
+                "type": "browser-interaction-evidence",
+                "code": "application_failure",
+                "phase": "execute",
+                "summary": "the staff-role-select control inside the staff-role-account-staff control did not become available in time",
+                "finding": {
+                  "kind": "page-timeout",
+                  "fields": {
+                    "control": "staff-role-select",
+                    "scope": "staff-role-account-staff",
+                    "detail": "locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-role=\"staff-role-account-staff\"],#staff-role-account-staff').filter({ visible: true }).first().locator('[data-role=\"staff-role-select\"],#staff-role-select').filter({ visible: true }).first() to be visible\u001b[22m\n"
+                  }
+                },
+                "observation": null,
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506485063,
+                  "completedAtMs": 1790506505072,
+                  "durationMs": 20009,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /admin"
+      ],
+      "assignedRole": "staff"
+    },
+    {
+      "kind": "roles",
+      "layout": "wrong-row",
+      "passed": false,
+      "grade": {
+        "id": 621,
+        "name": "Staff roles",
+        "score": 0,
+        "max": 3,
+        "criteria": [
+          {
+            "id": "621c",
+            "desc": "an administrator can assign a staff role",
+            "points": 1,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "admin",
+              "summary": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+              "finding": {
+                "kind": "value-mismatch",
+                "fields": {
+                  "control": "staff-role-select",
+                  "observed": "staff",
+                  "expected": "inventory"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506505574,
+                "completedAtMs": 1790506506389,
+                "durationMs": 815
+              },
+              "actions": [
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+                    "finding": {
+                      "kind": "value-mismatch",
+                      "fields": {
+                        "control": "staff-role-select",
+                        "observed": "staff",
+                        "expected": "inventory"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506505574,
+                      "completedAtMs": 1790506506389,
+                      "durationMs": 815,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": []
+            },
+            "statedBy": "An administrator can assign a role to an existing staff account."
+          },
+          {
+            "id": "621a",
+            "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
+            "points": 2,
+            "evidence": {
+              "schemaVersion": 2,
+              "status": "failed",
+              "code": "application_failure",
+              "phase": "assertion",
+              "actor": "admin",
+              "summary": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+              "finding": {
+                "kind": "value-mismatch",
+                "fields": {
+                  "control": "staff-role-select",
+                  "observed": "staff",
+                  "expected": "inventory"
+                }
+              },
+              "observation": null,
+              "expected": null,
+              "retryable": false,
+              "timing": {
+                "startedAtMs": 1790506506390,
+                "completedAtMs": 1790506507257,
+                "durationMs": 867
+              },
+              "actions": [
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "reload",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "reloaded": true
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506506390,
+                      "completedAtMs": 1790506506411,
+                      "durationMs": 21,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "ensureSignedIn",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "restored": false,
+                      "user": "admin"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506506411,
+                      "completedAtMs": 1790506506424,
+                      "durationMs": 13,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "credential",
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "click",
+                      "version": "1.0.0"
+                    },
+                    "status": "passed",
+                    "type": "browser-interaction-evidence",
+                    "code": "completed",
+                    "phase": "execute",
+                    "summary": null,
+                    "finding": null,
+                    "observation": {
+                      "clicked": false,
+                      "testid": "admin-link",
+                      "visible": "staff-role-account-staff"
+                    },
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506506424,
+                      "completedAtMs": 1790506506452,
+                      "durationMs": 28,
+                      "deadlineMs": 60000
+                    },
+                    "attachments": [],
+                    "sensitivity": [
+                      "user-content"
+                    ]
+                  }
+                },
+                {
+                  "actor": "admin",
+                  "evidence": {
+                    "schemaVersion": 2,
+                    "action": {
+                      "id": "expect",
+                      "version": "1.0.0"
+                    },
+                    "status": "failed",
+                    "type": "browser-observation-evidence",
+                    "code": "application_failure",
+                    "phase": "execute",
+                    "summary": "the staff-role-select control shows \"staff\", expected \"inventory\"",
+                    "finding": {
+                      "kind": "value-mismatch",
+                      "fields": {
+                        "control": "staff-role-select",
+                        "observed": "staff",
+                        "expected": "inventory"
+                      }
+                    },
+                    "observation": null,
+                    "expected": null,
+                    "retryable": false,
+                    "timing": {
+                      "startedAtMs": 1790506506452,
+                      "completedAtMs": 1790506507257,
+                      "durationMs": 805,
+                      "deadlineMs": 300000
+                    },
+                    "attachments": [],
+                    "sensitivity": []
+                  }
+                }
+              ],
+              "attachments": [],
+              "sensitivity": [
+                "credential",
+                "user-content"
+              ]
+            },
+            "statedBy": "Assigned staff roles persist."
+          }
+        ],
+        "consoleErrors": [],
+        "setupEvidence": {
+          "schemaVersion": 2,
+          "status": "passed",
+          "code": "completed",
+          "phase": "setup",
+          "actor": null,
+          "summary": null,
+          "finding": null,
+          "observation": null,
+          "expected": null,
+          "retryable": false,
+          "timing": {
+            "startedAtMs": 1790506505385,
+            "completedAtMs": 1790506505574,
+            "durationMs": 189
+          },
+          "actions": [
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "signIn",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "user": "admin",
+                  "authenticationPath": "local-form",
+                  "signedIn": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506505385,
+                  "completedAtMs": 1790506505458,
+                  "durationMs": 73,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "credential",
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "expect",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-observation-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "visible": true
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506505459,
+                  "completedAtMs": 1790506505461,
+                  "durationMs": 2,
+                  "deadlineMs": 300000
+                },
+                "attachments": [],
+                "sensitivity": []
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "admin-link"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506505461,
+                  "completedAtMs": 1790506505495,
+                  "durationMs": 34,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "fill",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "filled": "staff-role-select"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506505495,
+                  "completedAtMs": 1790506505524,
+                  "durationMs": 29,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            },
+            {
+              "actor": "admin",
+              "evidence": {
+                "schemaVersion": 2,
+                "action": {
+                  "id": "click",
+                  "version": "1.0.0"
+                },
+                "status": "passed",
+                "type": "browser-interaction-evidence",
+                "code": "completed",
+                "phase": "execute",
+                "summary": null,
+                "finding": null,
+                "observation": {
+                  "clicked": "staff-role-save"
+                },
+                "expected": null,
+                "retryable": false,
+                "timing": {
+                  "startedAtMs": 1790506505525,
+                  "completedAtMs": 1790506505574,
+                  "durationMs": 49,
+                  "deadlineMs": 60000
+                },
+                "attachments": [],
+                "sensitivity": [
+                  "user-content"
+                ]
+              }
+            }
+          ],
+          "attachments": [],
+          "sensitivity": [
+            "credential",
+            "user-content"
+          ]
+        }
+      },
+      "visits": [
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /",
+        "GET /admin",
+        "POST /save-role",
+        "GET /roles",
+        "GET /roles"
+      ],
+      "assignedRole": "staff"
+    }
+  ]
+}

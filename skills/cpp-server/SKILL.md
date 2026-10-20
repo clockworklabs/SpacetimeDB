@@ -41,6 +41,8 @@ Options:
 - `SPACETIMEDB_TABLE(Type, accessor, Public|Private)`: regular table
 - `SPACETIMEDB_TABLE(Type, accessor, Public|Private, true)`: event table
 
+Only server-side code such as reducers reads a `Private` table. `Public` exposes all of a table's rows to every client through subscriptions.
+
 Field constraints:
 - `FIELD_PrimaryKey(accessor, field)`: primary key
 - `FIELD_PrimaryKeyAutoInc(accessor, field)`: primary key with auto-increment (use 0 on insert)
@@ -137,6 +139,8 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
     return Ok();
 }
 ```
+
+Connection hooks run once per connection. The same authenticated principal keeps the same identity (`ctx.sender()`) across connections, while each connection has its own connection ID (`ctx.connection_id()`). A disconnect ends one connection; it does not end the identity, which returns unchanged on the next connection with the same token. Use connection IDs for presence and other connection-scoped state.
 
 ## Authentication & Timestamps
 

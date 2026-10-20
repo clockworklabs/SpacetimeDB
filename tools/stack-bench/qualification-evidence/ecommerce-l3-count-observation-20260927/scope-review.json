@@ -1,0 +1,680 @@
+{
+  "at": "2026-09-27T06:40:58.758Z",
+  "baseCommit": "f9d81006cb57196e3cf6e4dd49117bfb988132b7",
+  "recipe": "4f5c064388746ebf821a4f03bcf070bece749641f5da2948fcb6ffff3f008d56",
+  "selectedChecks": 112,
+  "countChecks": 22,
+  "countSteps": 43,
+  "checks": [
+    {
+      "stableKey": "ecommerce.spec.access-control.cart-boundary.109a",
+      "source": "scenarios/01-cart-boundary.json",
+      "featureId": 109,
+      "criterionId": "109a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.11",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": "Coffee Grinder",
+          "in": null
+        },
+        {
+          "path": "steps.14",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": "Coffee Grinder",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "source": "scenarios/01-duplicate-checkout.json",
+      "featureId": 203,
+      "criterionId": "203a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.0",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": "Gaming Mouse",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "source": "scenarios/01-duplicate-checkout.json",
+      "featureId": 203,
+      "criterionId": "203b",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.53",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Keyboard",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.access-control.order-ownership.106a",
+      "source": "scenarios/01-order-ownership.json",
+      "featureId": 106,
+      "criterionId": "106a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.5",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Desk Lamp",
+          "in": null
+        },
+        {
+          "path": "steps.16",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Coffee Grinder",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.access-control.purchase-attribution.102a",
+      "source": "scenarios/01-purchase-attribution.json",
+      "featureId": 102,
+      "criterionId": "102a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.4",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Coffee Grinder",
+          "in": null
+        },
+        {
+          "path": "steps.8",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Desk Lamp",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "source": "scenarios/01-restock-race.json",
+      "featureId": 202,
+      "criterionId": "202a",
+      "setup": [
+        {
+          "path": "setup.10",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Bluetooth Speaker",
+          "in": null
+        }
+      ],
+      "criterion": [
+        {
+          "path": "steps.14",
+          "count": 2,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Bluetooth Speaker",
+          "in": null
+        },
+        {
+          "path": "steps.20",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Bluetooth Speaker",
+          "in": null
+        },
+        {
+          "path": "steps.26",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Bluetooth Speaker",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.transactional-integrity.unique-review.6b",
+      "source": "scenarios/01-review-uniqueness.json",
+      "featureId": 6,
+      "criterionId": "6b",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.9",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "review-item",
+          "contains": null,
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.transactional-integrity.server-price.104a",
+      "source": "scenarios/01-server-price.json",
+      "featureId": 104,
+      "criterionId": "104a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.9",
+          "count": 2,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": null,
+          "in": null
+        },
+        {
+          "path": "steps.10",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Espresso Machine",
+          "in": null
+        },
+        {
+          "path": "steps.12",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Coffee Grinder",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "source": "scenarios/01-warehouse-admin-staff.json",
+      "featureId": 7,
+      "criterionId": "7b",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.0",
+          "count": 13,
+          "within": null,
+          "absent": false,
+          "testid": "admin-item-row",
+          "contains": null,
+          "in": null
+        },
+        {
+          "path": "steps.1",
+          "count": 26,
+          "within": null,
+          "absent": false,
+          "testid": "admin-location-row",
+          "contains": null,
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.inventory-operations.stock-conservation.202b",
+      "source": "scenarios/02-self-contained.json",
+      "featureId": 202,
+      "criterionId": "202b",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.8",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Induction Cooktop",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.operations-access.operator-authorization.201c",
+      "source": "scenarios/02-server-actions.json",
+      "featureId": 201,
+      "criterionId": "201c",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.5",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Coffee Grinder",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.inventory-operations.stock-conservation.202d",
+      "source": "scenarios/02-server-actions.json",
+      "featureId": 202,
+      "criterionId": "202d",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.29",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Headphones",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "source": "scenarios/02-strengthened.json",
+      "featureId": 2,
+      "criterionId": "2a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.3",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "East",
+          "in": null
+        },
+        {
+          "path": "steps.5",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "West",
+          "in": null
+        },
+        {
+          "path": "steps.11",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "East",
+          "in": null
+        },
+        {
+          "path": "steps.15",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "West",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.operations-access.operator-authorization.201a",
+      "source": "scenarios/02-strengthened.json",
+      "featureId": 201,
+      "criterionId": "201a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.16",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "East",
+          "in": null
+        },
+        {
+          "path": "steps.18",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "West",
+          "in": null
+        },
+        {
+          "path": "steps.31",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "East",
+          "in": null
+        },
+        {
+          "path": "steps.35",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "admin-warehouse-item",
+          "contains": "West",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.l3.deferred-access.scheduled-work-access.317a",
+      "source": "scenarios/03-deferred-access.json",
+      "featureId": 317,
+      "criterionId": "317a",
+      "setup": [
+        {
+          "path": "setup.9",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ],
+      "criterion": [
+        {
+          "path": "steps.8",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.l3.deferred-integrity.exactly-once.311a",
+      "source": "scenarios/03-deferred-integrity.json",
+      "featureId": 311,
+      "criterionId": "311a",
+      "setup": [
+        {
+          "path": "setup.9",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ],
+      "criterion": []
+    },
+    {
+      "stableKey": "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a",
+      "source": "scenarios/03-scheduled-restock-cancel.json",
+      "featureId": 306,
+      "criterionId": "306a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.5",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a",
+      "source": "scenarios/03-scheduled-restocks.json",
+      "featureId": 302,
+      "criterionId": "302a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.5",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.l3.server-time.server-time.312a",
+      "source": "scenarios/03-server-time.json",
+      "featureId": 312,
+      "criterionId": "312a",
+      "setup": [
+        {
+          "path": "setup.10",
+          "count": 1,
+          "within": 10000,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ],
+      "criterion": [
+        {
+          "path": "steps.4",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "pending-restock-item",
+          "contains": null,
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "source": "scenarios/progression-account-state-reload.json",
+      "featureId": 105,
+      "criterionId": "105a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.13",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": "Keyboard",
+          "in": null
+        },
+        {
+          "path": "steps.16",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Headphones",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.feature.cart-checkout.cart.4a",
+      "source": "scenarios/progression-cart-checkout.json",
+      "featureId": 4,
+      "criterionId": "4a",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.6",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": "Headphones",
+          "in": null
+        }
+      ]
+    },
+    {
+      "stableKey": "ecommerce.feature.cart-checkout.cart.4d",
+      "source": "scenarios/progression-cart-checkout.json",
+      "featureId": 4,
+      "criterionId": "4d",
+      "setup": [],
+      "criterion": [
+        {
+          "path": "steps.7",
+          "count": 2,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": null,
+          "in": null
+        },
+        {
+          "path": "steps.24",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "order-item",
+          "contains": "Desk Lamp",
+          "in": null
+        },
+        {
+          "path": "steps.33",
+          "count": 2,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": null,
+          "in": null
+        },
+        {
+          "path": "steps.44",
+          "count": 1,
+          "within": null,
+          "absent": false,
+          "testid": "cart-item",
+          "contains": "Desk Lamp",
+          "in": null
+        }
+      ]
+    }
+  ],
+  "scopes": [
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "before": [
+        "279315b6dd0591e214606a43d3133f3519a4a8f71013d51185ba265ea7d4fe2a"
+      ],
+      "after": "b237ae24258393ae970323ae67ac98bf7812b02592890d02d21520418c456dba",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "before": [
+        "279315b6dd0591e214606a43d3133f3519a4a8f71013d51185ba265ea7d4fe2a"
+      ],
+      "after": "b237ae24258393ae970323ae67ac98bf7812b02592890d02d21520418c456dba",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "before": [
+        "3981eac083b5a3a36e3d79d6bf10e2dc856382fe0104091696dcc938c9d9d805"
+      ],
+      "after": "d30eb8c0a7c2657756a37320ff434831d7690a9ddbc29fe8d894a362e08a9f8a",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "before": [
+        "3981eac083b5a3a36e3d79d6bf10e2dc856382fe0104091696dcc938c9d9d805"
+      ],
+      "after": "d30eb8c0a7c2657756a37320ff434831d7690a9ddbc29fe8d894a362e08a9f8a",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "before": [
+        "48be8d97c368f729076aee7c4be4220e5b6156048b098479f3101f5320b995c9"
+      ],
+      "after": "4408e4aa10e27295d62a6083ddc9466611448244ba68da4abc4a891c471c0962",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "before": [
+        "48be8d97c368f729076aee7c4be4220e5b6156048b098479f3101f5320b995c9"
+      ],
+      "after": "4408e4aa10e27295d62a6083ddc9466611448244ba68da4abc4a891c471c0962",
+      "changed": true
+    },
+    {
+      "kind": "reference",
+      "stack": "convex",
+      "before": [
+        "e753913a511dfb0d131b61c9488e5dd30533345c4aabac9e53d1e3a10f78860e"
+      ],
+      "after": "556d5e992d442641ce5bbfd0f13f87a70598c8ec35b40572e7c1de8e2ca07990",
+      "changed": true
+    },
+    {
+      "kind": "mutation",
+      "stack": "convex",
+      "before": [
+        "e753913a511dfb0d131b61c9488e5dd30533345c4aabac9e53d1e3a10f78860e"
+      ],
+      "after": "556d5e992d442641ce5bbfd0f13f87a70598c8ec35b40572e7c1de8e2ca07990",
+      "changed": true
+    },
+    {
+      "kind": "null",
+      "before": [
+        "b832f978468450e776069fdb1e59f753a55743f6d06a2a7cc8cc56c8d19f5804"
+      ],
+      "after": "d204077a5e390c1a777bde43b37d953882ec4039261d4c7b58159740d22e4977"
+    }
+  ],
+  "limits": "Read-only scope inventory; executable identities only. Original input snapshots, qualification outcomes, mutation selections and evidence hashes still need normal compiler validation. No qualification executed by this reviewer."
+}

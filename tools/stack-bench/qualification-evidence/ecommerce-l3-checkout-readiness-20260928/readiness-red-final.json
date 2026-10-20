@@ -1,0 +1,312 @@
+{
+  "rerun": "STACK_BENCH_NAMED_INPUT_EVIDENCE=<file> node --test --test-name-pattern=\"named action inputs wait\" dist/tests/review-owner.integration.js",
+  "fixture": "Browser row renders before a held HTTP input response; registered actions use real HTTP writes.",
+  "evidence": [
+    {
+      "mode": "primary",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596186229,
+          "completedAtMs": 1790596186256,
+          "durationMs": 27,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "override",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the other-order control exposes no data-entity-id for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "other-order",
+            "attribute": "data-entity-id",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596186393,
+          "completedAtMs": 1790596186416,
+          "durationMs": 23,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "concurrent",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callConcurrently",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "concurrency-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596186544,
+          "completedAtMs": 1790596186561,
+          "durationMs": 17,
+          "deadlineMs": 120000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      "requests": []
+    },
+    {
+      "mode": "alongside",
+      "expected": "passed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callConcurrently",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "concurrency-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596186690,
+          "completedAtMs": 1790596186717,
+          "durationMs": 27,
+          "deadlineMs": 120000
+        },
+        "attachments": [],
+        "sensitivity": []
+      },
+      "requests": []
+    },
+    {
+      "mode": "missing",
+      "expected": "failed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596186843,
+          "completedAtMs": 1790596186862,
+          "durationMs": 19,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "malformed",
+      "expected": "failed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596187000,
+          "completedAtMs": 1790596187023,
+          "durationMs": 23,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "late",
+      "expected": "failed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596187150,
+          "completedAtMs": 1790596187169,
+          "durationMs": 19,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    },
+    {
+      "mode": "cancelled",
+      "expected": "inconclusive",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "callAction",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "transport-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the order-item control exposes no data-cancel-input for the cancel action",
+        "finding": {
+          "kind": "interface-missing",
+          "fields": {
+            "control": "order-item",
+            "attribute": "data-cancel-input",
+            "action": "cancel"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790596187328,
+          "completedAtMs": 1790596187350,
+          "durationMs": 22,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "user-content",
+          "network-address"
+        ]
+      },
+      "requests": []
+    }
+  ]
+}

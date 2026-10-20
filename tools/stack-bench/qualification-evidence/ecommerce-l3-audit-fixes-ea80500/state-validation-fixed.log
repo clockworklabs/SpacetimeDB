@@ -1,0 +1,28 @@
+TAP version 13
+# Subtest: state persistence validates current inputs once and still rejects tampering
+ok 1 - state persistence validates current inputs once and still rejects tampering
+  ---
+  duration_ms: 3775.4917
+  type: 'test'
+  ...
+# Subtest: campaign directory initialization is identity-bound and resumes exact state
+ok 2 - campaign directory initialization is identity-bound and resumes exact state
+  ---
+  duration_ms: 6539.4899
+  type: 'test'
+  ...
+# Subtest: interrupted initialization recreates only missing state from the stored plan
+ok 3 - interrupted initialization recreates only missing state from the stored plan
+  ---
+  duration_ms: 5362.3698
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 17483.9635

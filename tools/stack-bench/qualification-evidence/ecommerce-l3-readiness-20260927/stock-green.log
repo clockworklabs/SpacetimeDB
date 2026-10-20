@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: trusted postgres stock reads use real database results
+ok 1 - trusted postgres stock reads use real database results
+  ---
+  duration_ms: 25749.7659
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 25883.3711

@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "e569492caee2a1e668c2c0451a73967c795cbb39",
+  "candidateCommit": "473ca5c2d6c96d2b0f712a859a5789a1c3255b59",
+  "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "changedFiles": [
+    "tools/stack-bench/src/actions/crash-action-executors.ts",
+    "tools/stack-bench/tests/crash-diagnostic.test.ts"
+  ],
+  "changedChecks": [
+    "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+    "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+  ],
+  "retainedChecks": 110,
+  "existingEvidenceEntries": 83,
+  "reusedEvidenceEntries": 83,
+  "freshEvidenceEntries": 9,
+  "scopeReview": "Only the crash action implementation and its behavior test changed. The selected crash scenario owns 910a/b. All 110 other selected checks, task text, scenarios, reference sources, mutations, fixtures, budgets, and policy inputs stay fixed. Prior measured executable hashes map directly to this candidate only after this review and the fresh crash controls.",
+  "validation": {
+    "positiveChecksPerStack": 2,
+    "registeredDefectsPerStack": 3,
+    "nullExpectedFailures": 2,
+    "terminal": true,
+    "zeroModelCalls": true,
+    "recovery": [
+      {
+        "stack": "spacetime",
+        "reportSha256": "49234d55cee88ba1381a1b3dc02d9d71bf0d32336f9cc5db3755969f56a7c632",
+        "leases": [
+          {
+            "role": "baseline",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-1",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-2",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-3",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          }
+        ]
+      },
+      {
+        "stack": "postgres",
+        "reportSha256": "19fc76d6c316ca4805c8fdded05a806a9298804e3e301f9920b14a7cf444a427",
+        "leases": [
+          {
+            "role": "baseline",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-1",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-2",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-3",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          }
+        ]
+      },
+      {
+        "stack": "mongodb",
+        "reportSha256": "4f40ac2b16ca95388b14a4d797720f672f35178e41f713d5a6ded10e222746fa",
+        "leases": [
+          {
+            "role": "baseline",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-1",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-2",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-3",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          }
+        ]
+      },
+      {
+        "stack": "convex",
+        "reportSha256": "40f5746b89458d6e16f23d59ff8170ec5a18e8f770b1cdee3e8cc2691bd4f353",
+        "leases": [
+          {
+            "role": "baseline",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-1",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-2",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          },
+          {
+            "role": "worker-3",
+            "recovery": "clean",
+            "backendState": "released",
+            "locksReleased": true,
+            "remainingOwnedResources": 0
+          }
+        ]
+      }
+    ],
+    "controls": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-qualification-473ca5c2d-verification.json",
+        "sha256": "bf9f5c641cebd17858326e596a38ca3239282c8e56a5b27562c8aee6f3a2abf3"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-qualification-473ca5c2d-launch.json",
+        "sha256": "2ec7d3ecceedd362af56956b27c69392d68be2c247ad54fb323e2fe23f30f9ab"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-qualification-473ca5c2d-image-verification.json",
+        "sha256": "9c50cdd4bd93e57708196857e7aad25b849e8dc979329b116735bb26803f4ddc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-qualification-473ca5c2d-controller-cleanup.json",
+        "sha256": "5e8175b4f6d2303758095671a0363f506a59e9dd72b14d998f42478c0f34c2db"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-qualification-reuse-proposal.json",
+        "sha256": "1afc3b0cc90fa55568a521d111048ced3440b971a2b0d933cb89b670efc40681"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime.json",
+        "sha256": "49234d55cee88ba1381a1b3dc02d9d71bf0d32336f9cc5db3755969f56a7c632"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-worker-1.json",
+        "sha256": "c6211ff5d5da6331ac6d70b1020cda2fa64ab7a6179ae6a87856f6bbb49edda5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-worker-2.json",
+        "sha256": "21ee5715379aa704a37d35b06b6b2cdefa673a8ffed7977cc2610c96e0d644d7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-worker-3.json",
+        "sha256": "e3ce4e35496ff8bc4f4703d25eafa0efa35aee4d473ee3239adb76efe373ee25"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-worker-1-checkpoint.json",
+        "sha256": "130945530e334f1f538691292dd55e420ca8751307e924661d2a68eadea4dad3"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-worker-2-checkpoint.json",
+        "sha256": "193ba1545918d98d43486ac7a12adc0e8fef5592a605dde58aed50cb802f4167"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-worker-3-checkpoint.json",
+        "sha256": "7ed54a30499bd35a315c252427088850b99b07c3e391e56f4d1f967229f16098"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-controller.stdout.log",
+        "sha256": "cad0eac699d31d317734e112f60ba21ad1eed15674eb2b87eb072bad0db3f8bf"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-controller.stderr.log",
+        "sha256": "22db2b6df4e9ade2531e2a376ae6d5e7aed656800d0a849a2eb66ec550339f18"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-spacetime-controller-state.json",
+        "sha256": "efb747e7d5f6de102671c5ea16f83d3ebe33d01edfe4b60824f4b74d1f941bba"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/inputs-7a03147ef791.json",
+        "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres.json",
+        "sha256": "19fc76d6c316ca4805c8fdded05a806a9298804e3e301f9920b14a7cf444a427"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-worker-1.json",
+        "sha256": "038523db2456beb7b793e3afd2e3e3c6e45d7c07ff97e7700b347c484f01fad1"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-worker-2.json",
+        "sha256": "8342c121835907e98f811ee1177b7fbcb8bb7838760e90d0de582780a530d997"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-worker-3.json",
+        "sha256": "873fa3efb89755493ab40bd1205cb44c161cfe4521dbebc5cc92638a1bec9e92"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-worker-1-checkpoint.json",
+        "sha256": "cc2fac0ae6a7ec0162fce1c7ba6bb46ce9f0411f49d7c7b44bdb4565fa9ead15"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-worker-2-checkpoint.json",
+        "sha256": "df022b330b21e4768a299f10c923d3f2d3cac9b745ed94263ac958af168ca819"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-worker-3-checkpoint.json",
+        "sha256": "31165835d34cde06b8e21b0c2ea0d2268270a5d113c1eacce8eb5f433f9f64fa"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-controller.stdout.log",
+        "sha256": "8772a95ec4cb366498458ba0ebf01343ca6c1584121056a7549284be63a57308"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-controller.stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-postgres-controller-state.json",
+        "sha256": "23ea170816ec6390fa785d08a1ad21c65d8810ce0808315e375135e1d69e2aed"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb.json",
+        "sha256": "4f40ac2b16ca95388b14a4d797720f672f35178e41f713d5a6ded10e222746fa"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-worker-1.json",
+        "sha256": "472888e9c469bdd31ef0fbc41b38aae3a5ee690159db5c776a3682755db04b46"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-worker-2.json",
+        "sha256": "4cdb429989f61476046afe1ed48e5f54b897649b97b80c360c17266fe25ef02f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-worker-3.json",
+        "sha256": "3f76ec9caf1ab52bfd886c73a7fb362b1e53bc3b5958165262c82ea57f30eba5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-worker-1-checkpoint.json",
+        "sha256": "f997f0974b23eb78ef2e05bd2d6286cd09d269f07dc6e65f3efdce0be9b4b2ad"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-worker-2-checkpoint.json",
+        "sha256": "660635b9f160f3b0cb93b9e64d255bea4e9c923336a24325fafb3ed22cbe80b4"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-worker-3-checkpoint.json",
+        "sha256": "bcf97b4b54234e694e24b7ef6f49abafa671b83fe1744a5f2a410ccbb240f7b9"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-controller.stdout.log",
+        "sha256": "139868904ccd03235c981196f9cbd121a44c2b1098f9faffb6c6c23d336148a7"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-controller.stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-mongodb-controller-state.json",
+        "sha256": "10eebbb4e77dcd9aff46281603e8dbbdb0f7b723c7e38fa8fe47ee8cc92a799b"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex.json",
+        "sha256": "40f5746b89458d6e16f23d59ff8170ec5a18e8f770b1cdee3e8cc2691bd4f353"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-worker-1.json",
+        "sha256": "f82c004eab5fc8e8b3ef7bf4344866b4ca14a5f5d1324c9993d15660156abf3c"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-worker-2.json",
+        "sha256": "6492b3fbf7e93c308f3a245668efcaf9c93cd5aa46c530cab5d6b3b11114601f"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-worker-3.json",
+        "sha256": "cefad497dbbec5a9095d9e4db1e0bd022219d43080ab3b116d055c024d3fdd43"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-worker-1-checkpoint.json",
+        "sha256": "9a6c8669d597310d561f9a97359e2ada16f7d795c3302767f0ebfea7d6e8dde0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-worker-2-checkpoint.json",
+        "sha256": "1918f8d610753e9fd804f018c65c914cedfdf78beab830f30febf637064749a0"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-worker-3-checkpoint.json",
+        "sha256": "3961ab991e0df049cfaf33bb282cd70164f8c96c8ca77c97161454506c46538d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-controller.stdout.log",
+        "sha256": "e34605ccbe6a5710d2d3aef8977b13c440103cb25ed079885665e3686be13431"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-controller.stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-convex-controller-state.json",
+        "sha256": "a9a3f5d08190aa408643270c1cf471445771b0215c671c8ab61061ad43dce91d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-null.json",
+        "sha256": "529fcb9c5de1650b9b4f1fc4d975a19f5605b4d0c7359aed30a9870607b832c6"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-null-controller.stdout.log",
+        "sha256": "599fd400f55f7586ee2ae6acd96f60d947d5f3f8899f48f571e795c1cfccffcc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-null-controller.stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/crash-null-controller-state.json",
+        "sha256": "218abc87cbcaf7cd1e745c57c105b15db6189ac99874a2d56159626db62cb199"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-crash-order-20260927/cleanup-verification.json",
+        "sha256": "66862f115fae4269a4a77560813afa86470d0f4929da8abaf30d41ecf50cee38"
+      }
+    ]
+  },
+  "limits": "Prospective fixed-reference qualification only. The old paid campaign and its grades remain unchanged. Run the normal calibration and qualification status checks after promotion."
+}

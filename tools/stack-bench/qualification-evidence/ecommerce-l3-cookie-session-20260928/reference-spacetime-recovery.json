@@ -1,0 +1,75 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "recovery",
+  "id": "ecommerce-spacetime-run800-20260928234124-3e87427e-recovery",
+  "attempt": {
+    "id": "ecommerce-spacetime-run800-20260928234124-3e87427e-recovery",
+    "parentId": "ecommerce-spacetime-run800-20260928234124-3e87427e"
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T23:45:18.820Z",
+    "completedAt": null
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": null,
+    "fixture": null,
+    "calibration": null,
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "schemaVersion": 1,
+    "status": "clean",
+    "runId": "ecommerce-spacetime-run800-20260928234124-3e87427e",
+    "backend": "spacetime",
+    "reason": null,
+    "cleanup": {
+      "succeeded": true,
+      "retained": false
+    },
+    "resources": {
+      "backendState": "released",
+      "buildContainer": {
+        "id": "7a6aaded8df181680b94cf237e51cddab7b712c60aa76e4af29632cd7b652d13",
+        "name": "sb-f81a97a9c311cc3c-build",
+        "running": false
+      },
+      "listenerProcesses": [],
+      "locks": [
+        {
+          "key": "listener:http://127.0.0.1:4110",
+          "released": true
+        },
+        {
+          "key": "port:4110",
+          "released": true
+        },
+        {
+          "key": "port:7273",
+          "released": true
+        },
+        {
+          "key": "slot:ecommerce:spacetime:run800",
+          "released": true
+        },
+        {
+          "key": "workspace:/var/lib/docker/volumes/stack-bench-state/_data/work/reference-live-spacetime-0GJvHQ/app",
+          "released": true
+        }
+      ]
+    },
+    "instructions": [
+      "No recovery action is required."
+    ],
+    "ownershipMarkerSha256": "ed9d2948e1c6cf2b40ba2a76b4739912ca6940ea6bae5dc0380b4e23a6616332"
+  }
+}

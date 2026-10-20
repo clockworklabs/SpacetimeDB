@@ -1,0 +1,571 @@
+{
+  "at": "2026-09-27T23:02:05.296Z",
+  "rows": [
+    {
+      "backend": "spacetime",
+      "controller": "stack-bench-crash-qual-spacetime-473ca5c2d",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "output": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/spacetime.json",
+      "exitCode": 0,
+      "score": "2/2",
+      "mutations": {
+        "caught": 3,
+        "total": 3
+      },
+      "checks": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "leases": [
+        {
+          "name": "baseline",
+          "runId": "ecommerce-spacetime-run240-20260927225643-3fd8efec",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-1",
+          "runId": "ecommerce-spacetime-run240-20260927225923-217b1e5b",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-2",
+          "runId": "ecommerce-spacetime-run241-20260927225923-489e34a0",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-3",
+          "runId": "ecommerce-spacetime-run242-20260927225923-d6a0e4b9",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        }
+      ],
+      "missing": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime.json",
+          "sha256": "49234d55cee88ba1381a1b3dc02d9d71bf0d32336f9cc5db3755969f56a7c632"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-1.json",
+          "sha256": "c6211ff5d5da6331ac6d70b1020cda2fa64ab7a6179ae6a87856f6bbb49edda5"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-1.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-2.json",
+          "sha256": "21ee5715379aa704a37d35b06b6b2cdefa673a8ffed7977cc2610c96e0d644d7"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-2.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-3.json",
+          "sha256": "e3ce4e35496ff8bc4f4703d25eafa0efa35aee4d473ee3239adb76efe373ee25"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-3.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-1-checkpoint.json",
+          "sha256": "130945530e334f1f538691292dd55e420ca8751307e924661d2a68eadea4dad3"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-2-checkpoint.json",
+          "sha256": "193ba1545918d98d43486ac7a12adc0e8fef5592a605dde58aed50cb802f4167"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-worker-3-checkpoint.json",
+          "sha256": "7ed54a30499bd35a315c252427088850b99b07c3e391e56f4d1f967229f16098"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-controller.stdout.log",
+          "sha256": "cad0eac699d31d317734e112f60ba21ad1eed15674eb2b87eb072bad0db3f8bf"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-controller.stderr.log",
+          "sha256": "22db2b6df4e9ade2531e2a376ae6d5e7aed656800d0a849a2eb66ec550339f18"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/spacetime-controller-state.json",
+          "sha256": "efb747e7d5f6de102671c5ea16f83d3ebe33d01edfe4b60824f4b74d1f941bba"
+        }
+      ],
+      "ok": true
+    },
+    {
+      "backend": "postgres",
+      "controller": "stack-bench-crash-qual-postgres-473ca5c2d",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "output": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/postgres.json",
+      "exitCode": 0,
+      "score": "2/2",
+      "mutations": {
+        "caught": 3,
+        "total": 3
+      },
+      "checks": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "leases": [
+        {
+          "name": "baseline",
+          "runId": "ecommerce-postgres-run248-20260927225644-71014425",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-1",
+          "runId": "ecommerce-postgres-run248-20260927225823-76e37ac0",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-2",
+          "runId": "ecommerce-postgres-run249-20260927225823-e5e7ea42",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-3",
+          "runId": "ecommerce-postgres-run250-20260927225823-39cf5a7f",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        }
+      ],
+      "missing": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres.json",
+          "sha256": "19fc76d6c316ca4805c8fdded05a806a9298804e3e301f9920b14a7cf444a427"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-1.json",
+          "sha256": "038523db2456beb7b793e3afd2e3e3c6e45d7c07ff97e7700b347c484f01fad1"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-1.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-2.json",
+          "sha256": "8342c121835907e98f811ee1177b7fbcb8bb7838760e90d0de582780a530d997"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-2.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-3.json",
+          "sha256": "873fa3efb89755493ab40bd1205cb44c161cfe4521dbebc5cc92638a1bec9e92"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-3.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-1-checkpoint.json",
+          "sha256": "cc2fac0ae6a7ec0162fce1c7ba6bb46ce9f0411f49d7c7b44bdb4565fa9ead15"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-2-checkpoint.json",
+          "sha256": "df022b330b21e4768a299f10c923d3f2d3cac9b745ed94263ac958af168ca819"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-worker-3-checkpoint.json",
+          "sha256": "31165835d34cde06b8e21b0c2ea0d2268270a5d113c1eacce8eb5f433f9f64fa"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-controller.stdout.log",
+          "sha256": "8772a95ec4cb366498458ba0ebf01343ca6c1584121056a7549284be63a57308"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-controller.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/postgres-controller-state.json",
+          "sha256": "23ea170816ec6390fa785d08a1ad21c65d8810ce0808315e375135e1d69e2aed"
+        }
+      ],
+      "ok": true
+    },
+    {
+      "backend": "mongodb",
+      "controller": "stack-bench-crash-qual-mongodb-473ca5c2d",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "output": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/mongodb.json",
+      "exitCode": 0,
+      "score": "2/2",
+      "mutations": {
+        "caught": 3,
+        "total": 3
+      },
+      "checks": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "leases": [
+        {
+          "name": "baseline",
+          "runId": "ecommerce-mongodb-run256-20260927225645-67fa5eb0",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-1",
+          "runId": "ecommerce-mongodb-run256-20260927225837-400080e9",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-2",
+          "runId": "ecommerce-mongodb-run257-20260927225837-09f31857",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-3",
+          "runId": "ecommerce-mongodb-run258-20260927225837-a6e22f7e",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        }
+      ],
+      "missing": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb.json",
+          "sha256": "4f40ac2b16ca95388b14a4d797720f672f35178e41f713d5a6ded10e222746fa"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-1.json",
+          "sha256": "472888e9c469bdd31ef0fbc41b38aae3a5ee690159db5c776a3682755db04b46"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-1.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-2.json",
+          "sha256": "4cdb429989f61476046afe1ed48e5f54b897649b97b80c360c17266fe25ef02f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-2.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-3.json",
+          "sha256": "3f76ec9caf1ab52bfd886c73a7fb362b1e53bc3b5958165262c82ea57f30eba5"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-3.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-1-checkpoint.json",
+          "sha256": "f997f0974b23eb78ef2e05bd2d6286cd09d269f07dc6e65f3efdce0be9b4b2ad"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-2-checkpoint.json",
+          "sha256": "660635b9f160f3b0cb93b9e64d255bea4e9c923336a24325fafb3ed22cbe80b4"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-worker-3-checkpoint.json",
+          "sha256": "bcf97b4b54234e694e24b7ef6f49abafa671b83fe1744a5f2a410ccbb240f7b9"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-controller.stdout.log",
+          "sha256": "139868904ccd03235c981196f9cbd121a44c2b1098f9faffb6c6c23d336148a7"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-controller.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/mongodb-controller-state.json",
+          "sha256": "10eebbb4e77dcd9aff46281603e8dbbdb0f7b723c7e38fa8fe47ee8cc92a799b"
+        }
+      ],
+      "ok": true
+    },
+    {
+      "backend": "convex",
+      "controller": "stack-bench-crash-qual-convex-473ca5c2d",
+      "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+      "output": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/convex.json",
+      "exitCode": 0,
+      "score": "2/2",
+      "mutations": {
+        "caught": 3,
+        "total": 3
+      },
+      "checks": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "leases": [
+        {
+          "name": "baseline",
+          "runId": "ecommerce-convex-run264-20260927225647-9172a8b8",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-1",
+          "runId": "ecommerce-convex-run264-20260927225856-df524410",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-2",
+          "runId": "ecommerce-convex-run265-20260927225856-c4e5479d",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        },
+        {
+          "name": "worker-3",
+          "runId": "ecommerce-convex-run266-20260927225856-09aeae53",
+          "recovery": "clean",
+          "cleanup": {
+            "succeeded": true,
+            "retained": false
+          },
+          "backendState": "released",
+          "locksReleased": true,
+          "remaining": []
+        }
+      ],
+      "missing": [],
+      "files": [
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex.json",
+          "sha256": "40f5746b89458d6e16f23d59ff8170ec5a18e8f770b1cdee3e8cc2691bd4f353"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-1.json",
+          "sha256": "f82c004eab5fc8e8b3ef7bf4344866b4ca14a5f5d1324c9993d15660156abf3c"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-1.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-2.json",
+          "sha256": "6492b3fbf7e93c308f3a245668efcaf9c93cd5aa46c530cab5d6b3b11114601f"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-2.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-3.json",
+          "sha256": "cefad497dbbec5a9095d9e4db1e0bd022219d43080ab3b116d055c024d3fdd43"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-3.json.inputs.json",
+          "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-1-checkpoint.json",
+          "sha256": "9a6c8669d597310d561f9a97359e2ada16f7d795c3302767f0ebfea7d6e8dde0"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-2-checkpoint.json",
+          "sha256": "1918f8d610753e9fd804f018c65c914cedfdf78beab830f30febf637064749a0"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-worker-3-checkpoint.json",
+          "sha256": "3961ab991e0df049cfaf33bb282cd70164f8c96c8ca77c97161454506c46538d"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-controller.stdout.log",
+          "sha256": "e34605ccbe6a5710d2d3aef8977b13c440103cb25ed079885665e3686be13431"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-controller.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/convex-controller-state.json",
+          "sha256": "a9a3f5d08190aa408643270c1cf471445771b0215c671c8ab61061ad43dce91d"
+        }
+      ],
+      "ok": true
+    }
+  ],
+  "pending": [],
+  "null": {
+    "controller": "stack-bench-crash-qual-null-473ca5c2d",
+    "image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+    "output": "/var/lib/docker/volumes/stack-bench-state/_data/results/diagnostics/crash-qualification-473ca5c2d/null.json",
+    "exitCode": 0,
+    "summary": {
+      "criteria": 2,
+      "points": 2,
+      "expectedFailures": {
+        "criteria": 2,
+        "points": 2
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 2,
+          "points": 2
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "files": [
+      {
+        "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/null.json",
+        "sha256": "529fcb9c5de1650b9b4f1fc4d975a19f5605b4d0c7359aed30a9870607b832c6"
+      },
+      {
+        "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/null.json.inputs.json",
+        "sha256": "7a03147ef791be973381a0b1aba006ad59130d0ab916f08d00607a6b250d9497"
+      },
+      {
+        "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/null-controller.stdout.log",
+        "sha256": "599fd400f55f7586ee2ae6acd96f60d947d5f3f8899f48f571e795c1cfccffcc"
+      },
+      {
+        "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/null-controller.stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "local-notes/sol6-four-stack-20260925/crash-qualification-473ca5c2d-evidence/null-controller-state.json",
+        "sha256": "218abc87cbcaf7cd1e745c57c105b15db6189ac99874a2d56159626db62cb199"
+      }
+    ],
+    "ok": true
+  }
+}

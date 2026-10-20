@@ -1,0 +1,472 @@
+Add the features below to the existing app.
+
+Keep completed features working. Add only the current features below.
+
+After the web application is running, reply with UPGRADE_COMPLETE.
+
+Build a production-quality application suitable for real users, not a prototype or demo.
+
+Build the app in /app.
+
+The web application must listen on 0.0.0.0, not localhost, so it is reachable outside its process.
+The environment can run /app/start.sh again with APP_WARM_START=1. When dependencies are current, reuse them instead of installing them again.
+Startup must work with an empty database by creating the supplied starting data and accounts. On an existing database, preserve current quantities, prices, and user data. This applies after upgrades and repairs too.
+
+Chromium is installed at /usr/bin/chromium (CHROME_BIN). Use that executable with --no-sandbox in this isolated container; no browser download is needed. Puppeteer Core is installed at /opt/browser-tools/node_modules/puppeteer-core. In a .cjs script, use const puppeteer = require("/opt/browser-tools/node_modules/puppeteer-core"); then await puppeteer.launch({ executablePath: process.env.CHROME_BIN, args: ["--no-sandbox"] }).
+
+## Stack
+
+# Convex
+
+Use Convex for application data and backend functions. Choose the client libraries,
+architecture, and project structure.
+
+## Connection
+
+The local Convex service is already running. Read its URL from
+`CONVEX_SELF_HOSTED_URL` and its deployment key from `CONVEX_SELF_HOSTED_ADMIN_KEY`.
+The web client uses `VITE_CONVEX_URL`. These values are supplied in the process
+environment and can change between launches. Do not embed or save them in source.
+Keep the deployment key on the server; it is not an end-user credential.
+
+Use this deployment. Do not start another Convex server or connect to a hosted project.
+The native HTTP-action origin is `http://127.0.0.1:7001`.
+Serve the complete application on `6923`.
+
+Create `/app/start.sh`. From a clean source checkout, it must install dependencies,
+deploy the Convex functions, build the web application, and start the complete application.
+The script must not change source files. Deploy the functions and initialize empty application data even when
+`APP_WARM_START=1`; that flag only permits reusing current dependencies. Preserve
+existing application data and accounts. Leave the application running when work is complete.
+
+
+## Existing application
+
+Add the current product work to the existing ecommerce application. Preserve its data;
+do not add sample orders or purchase history while adding features.
+
+## Inventory dashboard
+
+Give administrators a low-stock view. It lists items with 10 units or fewer, most urgent first.
+
+## Sales dashboard
+
+Give customers and administrators sales views. Category totals show units sold and revenue for
+each category. Signed-out visitors see best sellers on the storefront.
+
+## Recommendations
+
+Show customers a recommended-for-you list on the catalog page. It recommends items from categories the customer has
+bought from and excludes items already in the cart.
+
+## Checkout
+
+Checkout creates one order, reduces stock for every line, and empties the cart. Show an
+explanation if checkout fails.
+
+## Reviews
+
+Customers can rate items they purchased from one to five and add a comment. Show reviews
+and the average rating on the item detail.
+
+## Catalog management
+
+Authorized staff can add a product with named variants. The new product and its variants appear
+in the public catalog.
+
+# Fulfilment operations
+
+Add a fulfilment area for staff and administrators. Show pending orders, their items, and the
+warehouse that will ship them. Staff and administrators can mark an order as shipped. Show the
+new status in the fulfilment area and the customer's order history.
+
+## Stock transfers
+
+An administrator can move units of an item from one warehouse to another.
+
+## Order cancellation
+
+A customer can cancel an order before it ships. Refund the purchase, return its stock to
+the supplying warehouse, and show its cancelled status in order history.
+
+## Scheduled restocks
+
+An admin can schedule and cancel a restock. Show pending restocks and their remaining
+time. Show completed stock movements in a stock ledger.
+
+## Managed support cases
+
+Customers and staff can exchange replies and update the status of a support case.
+
+## Stock alerts
+
+A signed-in customer can request an alert for an unavailable item. Show an alert when stock
+returns.
+
+# Faceted search
+
+Let visitors filter the catalog by category, minimum price, maximum price, and availability.
+Combine the selected filters. While search text or any filter is active, order matching
+items by name, with ten results per page. With no search text or active filter, use
+the storefront's purchase ranking, breaking ties by item name. Clearing all search
+text and filters returns to that ranking.
+
+
+## Starting catalog
+
+This is the original catalog baseline. Preserve its entity names and relationships. Do not reset current quantities, prices, or user data.
+
+```json
+{
+  "warehouses": [
+    "East",
+    "West"
+  ],
+  "items": [
+    {
+      "name": "Air Purifier",
+      "price": "189.00",
+      "category": "Home",
+      "stock": {
+        "East": 60,
+        "West": 40
+      }
+    },
+    {
+      "name": "Bluetooth Speaker",
+      "price": "79.50",
+      "category": "Audio",
+      "stock": {
+        "East": 50,
+        "West": 50
+      }
+    },
+    {
+      "name": "Coffee Grinder",
+      "price": "64.00",
+      "category": "Home",
+      "stock": {
+        "East": 70,
+        "West": 30
+      }
+    },
+    {
+      "name": "Desk Lamp",
+      "price": "42.00",
+      "category": "Home",
+      "stock": {
+        "East": 55,
+        "West": 45
+      }
+    },
+    {
+      "name": "Espresso Machine",
+      "price": "449.00",
+      "category": "Home",
+      "stock": {
+        "East": 80,
+        "West": 20
+      }
+    },
+    {
+      "name": "Gaming Mouse",
+      "price": "59.00",
+      "category": "Computing",
+      "stock": {
+        "East": 50,
+        "West": 50
+      }
+    },
+    {
+      "name": "Headphones",
+      "price": "199.00",
+      "category": "Audio",
+      "stock": {
+        "East": 60,
+        "West": 40
+      }
+    },
+    {
+      "name": "Induction Cooktop",
+      "price": "329.00",
+      "category": "Home",
+      "stock": {
+        "East": 50,
+        "West": 50
+      }
+    },
+    {
+      "name": "Keyboard",
+      "price": "89.00",
+      "category": "Computing",
+      "stock": {
+        "East": 70,
+        "West": 30
+      }
+    },
+    {
+      "name": "Laptop Stand",
+      "price": "29.00",
+      "category": "Computing",
+      "stock": {
+        "East": 90,
+        "West": 10
+      }
+    },
+    {
+      "name": "Mirrorless Camera",
+      "price": "1299.00",
+      "category": "Photo",
+      "stock": {
+        "East": 2,
+        "West": 1
+      }
+    },
+    {
+      "name": "USB Cable",
+      "price": "65.00",
+      "category": "Home",
+      "stock": {
+        "East": 0,
+        "West": 0
+      }
+    },
+    {
+      "name": "Webcam",
+      "price": "69.00",
+      "category": "Computing",
+      "stock": {
+        "East": 60,
+        "West": 40
+      }
+    }
+  ]
+}
+```
+
+## Application interface
+
+# Application interface
+
+Use each interface name below as an exact HTML attribute value. Use `id` for
+a one-off element. Use `data-role` when the same interface can
+appear more than once. These attributes do not prescribe the layout, data
+model, libraries, or transport.
+
+Each exposed server operation completes every valid request, including requests that
+overlap, without relying on the browser to retry it. A business refusal, such as insufficient
+stock, still completes the request.
+
+Expose the named application operations below as public native Convex mutations in `convex/api.ts`.
+Use the same mutations from the visible controls. Pass arguments as JSON objects with the
+names shown below. Preserve native document identifiers as strings. Handlers reject expected
+access or input errors with `ConvexError`. Native argument validation may also refuse a request
+before its handler runs. Successful calls use the normal Convex return value.
+Do not add HTTP routes merely to wrap these mutations.
+
+Human-readable status text is case-insensitive. Machine identifiers and protocol values keep their specified spelling.
+
+# Catalog management application interface
+
+Use `admin-link` to open the administrator area containing the product controls.
+Use `catalog-name`, `catalog-category`, `catalog-price`, and `catalog-variants` for the product
+values; `catalog-category` accepts a new category name as text, and `catalog-variants` accepts
+comma-separated variant names. Use `catalog-save` to add the product. Use `item-variant` for each named variant shown
+to a visitor.
+
+# Stock transfer application interface
+
+Put `transfer-from`, `transfer-to`, `transfer-qty`, and `transfer-submit` inside the applicable
+`admin-item-row`. Use `warehouse-total` inside each `admin-warehouse-item` for its numeric stock
+total. Show `order-error` when a transfer is refused.
+
+Put `data-transfer-input` on each `admin-item-row`. Its value is a JSON object with exactly
+`itemId`, `fromWarehouseId`, and `toWarehouseId` for the currently selected source and destination.
+Identifiers can be JSON numbers or strings.
+
+Use `api:admin_transfer_stock` with `{ itemId, fromWarehouseId, toWarehouseId, quantity }`.
+
+# Inventory dashboard application interface
+
+Use `admin-link` to open the administrator area. If `low-stock-list` is on a separate screen
+within it, expose `low-stock-link` there to reach it. Use `low-stock-list` for items with 10 units
+or fewer and `low-stock-item` for each item. Use
+`buy-now` inside an `item-card` to create sales that change available stock.
+
+# Order cancellation application interface
+
+Use `order-status` for an order's state inside its `order-item`. Use `cancel-order` on a pending
+order. Use `catalog-link` to return to the catalog.
+`order-status` reads `pending` until the order ships, `shipped` once it has, and `cancelled`
+after a cancellation. Later features may add further states after `shipped`.
+
+Each customer `order-item` must have `data-cancel-input` containing a JSON object with
+exactly `orderId`. Use the identifier representation required by the selected stack.
+
+Use `api:cancel_order` with `{ orderId }`.
+
+# Sales dashboard application interface
+
+Open the administrator area with `admin-link`. If category totals are on a
+separate tab or screen, expose `sales-link` there to open them. Omit this control
+when the totals are already shown.
+
+Use `category-row` for each product category, including a category with no sales yet, whose
+units and revenue read 0. Use `category-units` and `category-revenue` inside each row. Use `recommended-list` for signed-out
+best sellers and `recommended-item` for each item. Use `buy-now` inside an `item-card` to create
+sales activity for the dashboard. Each best seller contains its one-based `recommendation-rank`.
+
+# Recommendations application interface
+
+Use `recommended-list` for recommendations and `recommended-item` for each item in the list.
+While a customer is signed in, these hooks hold only that customer's recommendations,
+never best sellers.
+Use `catalog-link` to open the catalog with this list visible.
+
+# Checkout application interface
+
+Use `checkout-submit` to check out and `buy-error` for a failed checkout. Use `orders-toggle`
+to open order history and `order-item` for each order created by checkout.
+
+Expose the same checkout used by `checkout-submit`.
+
+Use the `api:checkout` mutation with `{}`.
+
+# Order data interface
+
+Expose the following data through the database's native read tools. These names
+describe a read interface; tables, collections, or database-native views over the
+application's current records are allowed. Do not maintain separate copies for
+this interface. Extra columns are allowed.
+
+- `item(id, name, price)` identifies catalog items and their current prices. These are the same items shown in the catalog.
+- `order_account(id, username)` identifies customer accounts. Do not include passwords or tokens in this interface.
+- `order_header(id, account_id, total, refunded, status)` contains every order from direct purchase or checkout, including cancelled orders. `total` is the amount booked for the order. `refunded` is the amount refunded so far, initially zero.
+- `order_line(id, order_id, item_id, quantity, unit_price)` contains each order's purchased lines and their booked unit prices.
+- When carts are available, `order_cart(account_id, item_id, quantity)` contains their current lines. An empty cart has no lines.
+- When carts and warehouse stock are available, `order_reservation(account_id, item_id, warehouse_id, quantity)` contains any stock held for those carts and already deducted from available `stock.quantity`. If the app does not hold stock for carts, this read interface is empty. This does not require adding stock reservations to the app.
+- When warehouse stock is available, `order_allocation(order_line_id, warehouse_id, quantity)` contains the original warehouse quantities used for each order line. Keep these quantities available after cancellation.
+
+Each `id` is a nonempty string or an exact nonnegative integer. Related identifiers
+refer to that same `id`; a document may use `_id` when it has no `id`. Item and warehouse
+identifiers match the existing `item` and `warehouse` data interfaces and the visible
+application actions. Quantities are whole numbers. Money fields use the same currency
+units as displayed prices, with at most two decimal places. Status uses the states in
+the order interface.
+
+The names and fields above must remain readable by the supplied database credentials
+as features are added. Customer screens and writes must use the same underlying records.
+This does not require making customer data available to unauthenticated app users.
+
+For Convex, each `id` in this interface is the native document `_id`. Store related
+identifiers as references to those same `_id` values. Keep the table and field names
+above; no additional `id` column or copy of the application data is needed.
+
+# Review application interface
+
+On item details, show the review form for eligible customers or expose
+`review-toggle` to open it. Omit this control when the form is already shown.
+
+Use `review-rating` on an input or select with values 1 through 5, `review-input` for the comment, and
+`review-submit` to submit it. Put the item's server identifier in
+`data-review-item-id` on `review-submit`. Use `review-average` for the numeric average,
+`review-item` for each visible review, and `review-error` for a failed submission.
+
+Expose the same review operation used by `review-submit`.
+
+Use `api:submit_review` with `{ itemId, rating, comment }`.
+
+# Fulfilment application interface
+
+| Element ID | Required element |
+| --- | --- |
+| `staff-link` | Opens the fulfilment area. |
+| `fulfilment-panel` | Contains fulfilment tools, including an empty queue; not a loading or error message. |
+| `queue-depth` | Shows the number of pending orders. |
+| `queue-item` | Shows one pending order and names its items. |
+| `queue-warehouse` | Shows the selected warehouse inside its `queue-item`. |
+| `ship-submit` | Marks the order in its `queue-item` as shipped. |
+
+On `fulfilment-panel`, expose `data-submit-state` for the latest shipping submission:
+`idle` initially, `pending` immediately when submitted, `succeeded` only after the server
+confirms success, or `failed` after rejection or transport failure. Keep the terminal state
+on the panel when the shipped row disappears. A new submission must replace the old state.
+
+`order-status` reads `pending` until the order ships, `shipped` once it has, and `cancelled`
+after a cancellation. Later features may add further states after `shipped`.
+
+Each customer `order-item` must have `data-ship-input` containing a JSON object with
+exactly `orderId`.
+
+Use the identifier representation required by the selected stack.
+
+Use `api:ship_order` with `{ orderId }`.
+
+# Managed support application interface
+
+## Managed support controls
+
+Use `support-ticket` for each case and set `data-entity-id` to that case's server identifier.
+Within a case, use `support-status` for the current status, `support-reply` for the reply field,
+`support-reply-submit` to send a reply, and `support-reply-item` for each reply.
+
+Expose the same reply operation used by `support-reply-submit`.
+
+Use `api:reply_support` with `{ ticketId, body }`. Render `data-entity-id` as
+the native string case identifier.
+
+# Scheduled restock application interface
+
+Use `admin-link` to open the administrator area. If these controls are on a separate screen within
+it, expose `restocks-link` there to reach them. Use `schedule-restock-item`, `schedule-restock-warehouse`, `schedule-restock-qty`, and
+`schedule-restock-delay` for the inputs. Use `schedule-restock-submit` to schedule the restock.
+Set its `data-action-input` to a JSON object with exactly `item`, `warehouse`, `quantity`, and
+`delaySeconds`. `item` and `warehouse` are their names as strings; `quantity` and
+`delaySeconds` are JSON integers. Use `pending-restock-item` for each pending row and set its
+`data-entity-id` to the restock's server identifier.
+Each row contains the item name and sets `data-quantity` to its integer quantity. Use
+`pending-restock-remaining` for its remaining seconds, `pending-restock-cancel` to cancel it,
+and `stock-ledger-entry` for a completed stock movement.
+
+Use `api:schedule_restock` with `{ item, warehouse, quantity, delaySeconds }` and
+`api:cancel_scheduled_restock` with `{ restockId }`. The item and warehouse arguments are names.
+Use the scheduled-restock document's native `_id` string for `data-entity-id` and `restockId`.
+
+# Stock alert application interface
+
+Use `stock-alert` inside an unavailable `item-card` to request an alert. Use
+`notifications-toggle` to open notifications and `notification-item` for each alert.
+On that `item-card`, expose `data-submit-state` for the latest stock-alert request:
+`idle` initially, `pending` immediately when submitted, `succeeded` only after the server
+confirms success, or `failed` after rejection or transport failure. Keep the terminal state
+if the request button disappears. A new submission must replace the old state.
+Use `notifications-panel` for the opened notification view, including while its contents
+load. Set its `aria-busy` attribute to `false` only when the signed-in account's contents
+have loaded successfully, including an empty list; keep it `true` while loading or after
+a failed read. Its toggle may also close it.
+Within a delivered stock alert, expose `stock-alert-delivery` containing the item's
+displayed name. A pending request must not expose `stock-alert-delivery`.
+
+Use `catalog-link` to return to the catalog. If an overlay blocks navigation,
+expose a visible `overlay-close` control that dismisses it before navigation.
+Screens without a blocking overlay do not need this control.
+
+# Faceted search application interface
+
+| Element ID | Required element |
+| --- | --- |
+| `category-filter` | Sets the category filter; a text input, or a `select` whose option values are the category names. |
+| `minimum-price` | Sets the inclusive minimum price. |
+| `maximum-price` | Sets the inclusive maximum price. |
+| `in-stock-filter` | Toggles the in-stock-only filter, which starts off. |
+| `search-results` | Contains the filtered page; with no search text and no filter selected, the current page of the full catalog. |
+| `item-card` | Shows one result inside `search-results`. |
+| `search-next-page` | Opens the next page. |
+| `search-previous-page` | Opens the previous page. |
+
+If a `filter-apply` control exists, activating it applies the filters; otherwise results update
+as each filter changes.
+
+Search text or any active filter selects alphabetical ordering. With neither, use
+purchase ranking and break ties by item name. Clearing all search text and filters
+restores purchase ranking. Both modes can use the same rendered list.

@@ -1,0 +1,233 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-mongodb-20260928213841-31",
+  "attempt": {
+    "id": "reference-live-mongodb-20260928213841-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T21:38:41.869Z",
+    "completedAt": "2026-09-28T21:43:15.921Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "dd2d519d391f46ab315fd7d1240ed35b895cfa4a2ed9312346abf74252922d84"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-mongodb",
+      "sha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "eafc0d64ec059d1708ce99fd22c99dc454a9029bd0c2c4971475048fe0444a46"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "mongodb",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-mongodb",
+    "fixtureSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 22,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "2a884e1191462e8f96838e332d34189abb455d822a9b1c6489820fe3e2231f67",
+      "executableSha256": "62f26a9e151cb1a51dca976169c12a671691513e22baa17ac98e15f338159d9d",
+      "kind": "mutation",
+      "mutationSha256": "afe78138b6e245b853fdb6c425a128bde6dad93d7fa7802a07973c720594748f",
+      "recipe": {
+        "contentSha256": "46e1fecb340c595710b45388362b3a9762e56736a30ac18bdb49b528897f49ec",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-reference-mongodb",
+          "sourceSha256": "b700b058f4d6bf55f0ddcf3d36506bab9cd566946e34e04f7f2a431bc335b938"
+        },
+        "version": "1.5.0"
+      },
+      "sha256": "c56523570fbdbecedeb6fe4daf6de9131153df0f505d5e2485aa5ea4dcf544e9"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "mongodb.runs/r1-workers",
+        "durationMs": 270269,
+        "processError": null,
+        "harnessSha256Before": "8d3e862609462d05495c7e0861346ba0ca838a2c816814faf7d7bc6e61321ddd",
+        "harnessSha256After": "8d3e862609462d05495c7e0861346ba0ca838a2c816814faf7d7bc6e61321ddd",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-mongodb-20260928213841-31",
+        "score": "9/9",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 5,
+        "zeroPointCriteria": 0,
+        "fingerprint": "09f85b19647cb085b0209dcea9fbddbeed37b1db4d2bb8babba12dbf50761027",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 2000,
+              "criterionRuntimeMs": 34,
+              "measuredRuntimeMs": 2034,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.l2.stock-transfers-features",
+              "checkCount": 1,
+              "setupRuntimeMs": 1436,
+              "criterionRuntimeMs": 3728,
+              "measuredRuntimeMs": 5164,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.operations-access-specifications",
+              "checkCount": 1,
+              "setupRuntimeMs": 1330,
+              "criterionRuntimeMs": 19848,
+              "measuredRuntimeMs": 21178,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 138000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 1,
+              "setupRuntimeMs": 2000,
+              "criterionRuntimeMs": 10245,
+              "measuredRuntimeMs": 12245,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 1558,
+              "criterionRuntimeMs": 9972,
+              "measuredRuntimeMs": 11530,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 5,
+          "total": 5
+        },
+        "baselineDurationMs": 151136,
+        "baselineOutput": "mongodb.runs/r1",
+        "baselineHarnessSha256Before": "8d3e862609462d05495c7e0861346ba0ca838a2c816814faf7d7bc6e61321ddd",
+        "baselineHarnessSha256After": "8d3e862609462d05495c7e0861346ba0ca838a2c816814faf7d7bc6e61321ddd",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 656,
+            "artifact": "mongodb.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "warehouse-view-omits-one-location",
+              "staff-can-see-admin-navigation"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w1.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 657,
+            "artifact": "mongodb.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "operator-authorization-allows-customer-transfer",
+              "overdraw-transfer-is-accepted"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w2.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 658,
+            "artifact": "mongodb.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "transfer-debits-source-without-crediting-existing-destination"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "mongodb.runs/r1-workers/w3.stdout.log",
+              "stderr": "mongodb.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "8d3e862609462d05495c7e0861346ba0ca838a2c816814faf7d7bc6e61321ddd",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.inventory-operations.warehouse-transfer.2a",
+      "ecommerce.operations-access.operator-authorization.201a",
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a",
+      "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+    ],
+    "featureCatalog": {
+      "contentSha256": "81293ef69fefd55d3744d5adcbb3e70bd06d339f7810e2017f2efe229616d3e0",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "Id": "cd9d9a194c62ba504c344ebf1b6f072bf16b7858cca41aa9274187715fb041f6",
+  "Image": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+  "Name": "/stack-bench-cookie-mutation-postgres-0ab41064a",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-28T23:49:49.764012037Z",
+    "FinishedAt": "2026-09-28T23:56:13.648873385Z"
+  },
+  "Labels": {
+    "org.opencontainers.image.title": "Stack Bench controller",
+    "org.opencontainers.image.version": "24.04",
+    "stack-bench.candidate": "0ab41064a25dbcda8064e4f02954aa56482fd458",
+    "stack-bench.diagnostic": "unqualified-cookie-session",
+    "stack-bench.inputs": "93e7fb015821348de16f11b4e33c1465d024431e9e79f330acbec0d069b47b57"
+  }
+}

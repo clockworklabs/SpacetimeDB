@@ -1,0 +1,42 @@
+TAP version 13
+# Subtest: purchase observers reach a separate catalog before the write and stay there
+    # Subtest: root
+    ok 1 - root
+      ---
+      duration_ms: 3133.1766
+      type: 'test'
+      ...
+    # Subtest: linked
+    ok 2 - linked
+      ---
+      duration_ms: 3096.2363
+      type: 'test'
+      ...
+    # Subtest: dead-link
+    ok 3 - dead-link
+      ---
+      duration_ms: 8104.8678
+      type: 'test'
+      ...
+    # Subtest: stale-observer
+    ok 4 - stale-observer
+      ---
+      duration_ms: 7896.7656
+      type: 'test'
+      ...
+    1..4
+ok 1 - purchase observers reach a separate catalog before the write and stay there
+  ---
+  duration_ms: 23435.4244
+  type: 'test'
+  ...
+# Evidence: D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\results\\diagnostics\\purchase-navigation-nJzOBD; repeat: node --test --test-name-pattern="purchase observers" dist/tests/selected-grade.integration.js
+1..1
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 23683.2932

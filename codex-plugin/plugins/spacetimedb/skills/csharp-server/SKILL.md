@@ -162,7 +162,9 @@ public static void OnConnect(ReducerContext ctx) { ... }
 public static void OnDisconnect(ReducerContext ctx) { ... }
 ```
 
-`ctx.ConnectionId` is `ConnectionId?`, including in connection lifecycle reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
+Connection hooks run once per connection. The same authenticated principal keeps the same identity (`ctx.Sender`) across connections, while each connection has its own connection ID (`ctx.ConnectionId`). A disconnect ends one connection; it does not end the identity, which returns unchanged on the next connection with the same token. Use connection IDs for presence and other connection-scoped state.
+
+`ctx.ConnectionId` is typed `ConnectionId?`. It is present inside connection lifecycle reducers and reducers invoked over a connection, and null in `Init` and scheduled reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
 
 ## Views
 

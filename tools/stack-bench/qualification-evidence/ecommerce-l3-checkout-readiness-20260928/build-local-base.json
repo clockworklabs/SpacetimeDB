@@ -1,0 +1,7 @@
+{
+  "reason": "BuildKit treats raw config IDs as registry names; verified local tag resolves to same immutable base.",
+  "baseTag": "stack-bench-controller:3943a8eaab",
+  "dockerfileSha256": "741691808f3e27bc43ad5e6102f2770ef7ce1b71edf432c8219d5bde92d2a568",
+  "originalDockerfileSha256": "10663bc1b551f1dfc06202d43ba270e437dbf0fbd60531c94d267e0091b9664a",
+  "baseImage": "sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133"
+}

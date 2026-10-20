@@ -1,0 +1,32 @@
+{
+  "candidate": "c8a83a6b86ba25fe9111707ec31acf252b01ac54",
+  "baseImage": "sha256:51702e54e864cba7156d91c7725bb581b74394c8bf6f04b8de6c9e19afe3772c",
+  "image": "sha256:b0209e164038969add5318bc20eb7f1c0101cd23076cc2190905465abb93d06c",
+  "source": "git archive exact candidate; 4 support files over base; signed-out-purchase verified unchanged",
+  "files": [
+    {
+      "path": "tests/account-navigation.integration.ts",
+      "sha256": "fbe7dfdc55cbfc2c61f95d72cd854884203c4c2ba200ad5ab4eed0a18f8e0d41"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "sha256": "ebaf98b4dd13df0ee866b77015ea03ebd72bebe435710a2c09e7ac6d0fa4ff00"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "sha256": "54a89a73a9a8179774fc2166720c35ee52c1c1aa64febd0147444d716b8d9fa5"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "sha256": "5e447be4b30bd78bd46857bfd5f1b2923225e0cec4f497e50a66404624b494d7"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
+      "sha256": "57f2fdeb319b4d61db4a79a20a36116eb1edda2b9aaaa9a3ebf2f8bb260cb6ec"
+    }
+  ],
+  "diagnosticCalibration": "Inside image: recomputed recipe identities, cleared L3/L6 evidence and reuse; tracked calibration unchanged",
+  "schemaIdentityCheck": "docker build RUN node dist/commands/check-calibration.js passed; this is not qualified coverage",
+  "preflight": "Linux and Windows selected ports free; no active qualification worker; selected slots 900/908/916/924",
+  "modelCallsExpected": 0
+}

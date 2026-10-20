@@ -1,0 +1,34 @@
+== postgres reference (dependency L6, selected deep scenarios)
+  TOTAL 34/34  $0  0 repair(s)  1150s
+CAUGHT               reorder-rule-save-allows-customers — expected ecommerce.spec.access-control.automatic-reorder-access.502c
+CAUGHT               notifications-not-scoped-to-account — expected ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               product-creation-not-recorded-in-activity — expected ecommerce.progression.staff-activity.staff-activity.624a
+CAUGHT               support-refund-leaves-case-open — expected ecommerce.progression.support-refunds.support-refunds-resolution.615a
+CAUGHT               delivery-job-delivers-cancelled-orders — expected ecommerce.l3.order-delivery.order-delivery.305a
+CAUGHT               delivery-interval-uses-minutes — expected ecommerce.l3.order-delivery.order-delivery.303a
+CAUGHT               reorder-waits-for-stock-below-threshold — expected ecommerce.progression.automatic-reorder.automatic-reorder.502a
+CAUGHT               promotion-redemption-counted-at-apply — expected ecommerce.progression.promotion-reporting.promotion-report-redemptions.622a
+CAUGHT               support-refund-allows-customers — expected ecommerce.spec.access-control.support-refund-access.615c
+CAUGHT               expired-cart-keeps-its-lines — expected ecommerce.l3.cart-expiration.cart-expiration.304a
+CAUGHT               sale-schedules-reorder-without-pending-check — expected ecommerce.spec.transactional-integrity.automatic-reorder-deduplication.502b
+CAUGHT               pending-order-shows-return-button — expected ecommerce.returns-pricing.cancellation-and-return.3e
+CAUGHT               staff-activity-sent-to-customers — expected ecommerce.spec.access-control.staff-activity-privacy.624b
+CAUGHT               cart-restore-checks-stock-without-reserving — expected ecommerce.progression.cart-recovery.cart-recovery.503a
+CAUGHT               promotion-revenue-records-subtotal — expected ecommerce.progression.promotion-reporting.promotion-report-revenue.622b
+CAUGHT               support-refund-refunds-every-customer-order — expected ecommerce.spec.transactional-integrity.support-refund-accounting.615b
+== postgres level 3 reference
+  TOTAL 176/176  $0  0 repair(s)  2439s
+
+== postgres round 2: reference on the affected deep scenarios
+  TOTAL 34/34  $0  0 repair(s)  1064s
+CAUGHT               recommendations-limited-to-purchase-price — expected ecommerce.progression.personalized-recommendations.personalized-recommendations.403a
+CAUGHT               delivery-record-backfill-repeats-on-startup — expected ecommerce.l3.deferred-integrity.exactly-once.312a
+CAUGHT               support-order-link-checks-only-case-owner — expected ecommerce.spec.access-control.order-support-ownership.614b
+CAUGHT               delivery-notification-checks-stock-preference — expected ecommerce.progression.delivery-notifications.delivery-notification-delivery.501a, ecommerce.spec.access-control.delivery-notification-privacy.501b
+CAUGHT               cart-expiry-restarts-at-startup — expected ecommerce.l3.deferred-durability.restart-survival.316a
+CAUGHT               delivery-due-time-kept-in-memory — expected ecommerce.l3.deferred-durability.restart-survival.315a
+CAUGHT               support-order-link-requires-staff — expected ecommerce.progression.order-support.order-support-owned.614a
+CAUGHT               repeat-purchase-overwrites-every-recommendation-profile — expected ecommerce.spec.access-control.recommendation-profile-isolation.403b
+CAUGHT               recommendation-panel-keeps-first-list — expected ecommerce.progression.recommendation-feedback.recommendation-feedback.504a, ecommerce.spec.access-control.recommendation-feedback-privacy.504b
+CAUGHT               recommendation-dismissals-shared-across-customers — expected ecommerce.spec.access-control.recommendation-feedback-privacy.504b
+CAUGHT               cart-restore-warning-omits-item-names — expected ecommerce.progression.cart-recovery.cart-recovery.503b

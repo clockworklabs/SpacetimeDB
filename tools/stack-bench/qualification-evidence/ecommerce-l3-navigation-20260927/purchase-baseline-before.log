@@ -1,0 +1,71 @@
+TAP version 13
+# Subtest: purchase observers reach a separate catalog before the write and stay there
+    # Subtest: root
+    ok 1 - root
+      ---
+      duration_ms: 2799.3905
+      type: 'test'
+      ...
+    # Subtest: linked
+    ok 2 - linked
+      ---
+      duration_ms: 2739.9516
+      type: 'test'
+      ...
+    # Subtest: dead-link
+    ok 3 - dead-link
+      ---
+      duration_ms: 7663.7236
+      type: 'test'
+      ...
+    # Subtest: stale-observer
+    ok 4 - stale-observer
+      ---
+      duration_ms: 7430.8589
+      type: 'test'
+      ...
+    # Subtest: late-first-read
+    not ok 5 - late-first-read
+      ---
+      duration_ms: 2682.3219
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\selected-grade.integration.js:167:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        Expected values to be strictly equal:
+        
+        'passed' !== 'failed'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'failed'
+      actual: 'passed'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/selected-grade.integration.js:231:24)
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/dist/tests/selected-grade.integration.js:167:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..5
+not ok 1 - purchase observers reach a separate catalog before the write and stay there
+  ---
+  duration_ms: 24345.6675
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\dist\\tests\\selected-grade.integration.js:150:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Evidence: D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\results\\diagnostics\\purchase-navigation-Ugawnp; repeat: node --test --test-name-pattern="purchase observers" dist/tests/selected-grade.integration.js
+1..1
+# tests 6
+# suites 0
+# pass 4
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 24538.281

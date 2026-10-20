@@ -1,0 +1,60 @@
+TAP version 13
+# Subtest: role authorization probes distinguish access control from account safeguards
+    # Subtest: 621b: correct
+    ok 1 - 621b: correct
+      ---
+      duration_ms: 1668.5654
+      type: 'test'
+      ...
+    # Subtest: 621b: no-admin-check-self-guard
+    ok 2 - 621b: no-admin-check-self-guard
+      ---
+      duration_ms: 1805.5649
+      type: 'test'
+      ...
+    # Subtest: 621d: correct
+    ok 3 - 621d: correct
+      ---
+      duration_ms: 1825.2555
+      type: 'test'
+      ...
+    # Subtest: 621d: stale-session-last-admin
+    ok 4 - 621d: stale-session-last-admin
+      ---
+      duration_ms: 1706.1012
+      type: 'test'
+      ...
+    # Subtest: 621a: correct
+    ok 5 - 621a: correct
+      ---
+      duration_ms: 1018.4849
+      type: 'test'
+      ...
+# transport body unavailable {"origin":"http://127.0.0.1:65474","pathSha256":"5d28292371bef839038b4f1289a4c9acb1dec2fb5313ae12e81456c8854925d1","status":200,"contentType":"application/json","resourceType":"fetch","pageClosed":true,"failure":null,"error":"target-closed"}
+    # Subtest: 621a: delayed-save
+    ok 6 - 621a: delayed-save
+      ---
+      duration_ms: 967.8748
+      type: 'test'
+      ...
+    # Subtest: 621a: false-save-receipt
+    ok 7 - 621a: false-save-receipt
+      ---
+      duration_ms: 2032.1316
+      type: 'test'
+      ...
+    1..7
+ok 1 - role authorization probes distinguish access control from account safeguards
+  ---
+  duration_ms: 11287.6086
+  type: 'test'
+  ...
+1..1
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12262.6199

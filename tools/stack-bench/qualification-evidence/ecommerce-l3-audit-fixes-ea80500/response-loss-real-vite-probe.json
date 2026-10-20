@@ -1,0 +1,118 @@
+{
+  "viteVersion": "8.2.2",
+  "viteClientSha256": "e6966602a62362a410659d82ead11d8ea7ed5319518164031f046307389e73f6",
+  "gateSha256": "fbf1005885ad865ac784888c94134c57fdc58fd789f0e862713adef417e3d0af",
+  "probeSha256": "c21a4a2647dd3513b1fb21322bd0510637e16ba10ab4e1c138d7ca4e5f7fc0ad",
+  "rows": [
+    {
+      "fault": false,
+      "servedClientSha256": "e79595f768c50ce74c50d3625cc54f51b01d5ec0c2ddc4f77cf08ed1315b17ef",
+      "finishedAt": 1790534370761,
+      "navigationsBefore": 1,
+      "navigationsAfter": 1,
+      "documentChanged": false,
+      "navigation": [
+        {
+          "at": 1790534370598,
+          "path": "/"
+        }
+      ],
+      "consoleMessages": [
+        "[vite] connecting...",
+        "[vite] connected.",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "websockets": [
+        {
+          "path": "/",
+          "tokenKind": "vite",
+          "closed": false
+        },
+        {
+          "path": "/",
+          "tokenKind": "application",
+          "closed": false
+        }
+      ],
+      "faultEvidence": null,
+      "explicitReloads": 0
+    },
+    {
+      "fault": true,
+      "servedClientSha256": "e79595f768c50ce74c50d3625cc54f51b01d5ec0c2ddc4f77cf08ed1315b17ef",
+      "finishedAt": 1790534373528,
+      "navigationsBefore": 1,
+      "navigationsAfter": 2,
+      "documentChanged": true,
+      "navigation": [
+        {
+          "at": 1790534373411,
+          "path": "/"
+        },
+        {
+          "at": 1790534373634,
+          "path": "/"
+        }
+      ],
+      "consoleMessages": [
+        "[vite] connecting...",
+        "[vite] connected.",
+        "[vite] server connection lost. Polling for restart...",
+        "[vite] connecting...",
+        "[vite] connected."
+      ],
+      "websockets": [
+        {
+          "path": "/",
+          "tokenKind": "vite",
+          "closed": false
+        },
+        {
+          "path": "/",
+          "tokenKind": "application",
+          "closed": false
+        },
+        {
+          "path": "/",
+          "tokenKind": "vite",
+          "closed": false
+        },
+        {
+          "path": "/",
+          "tokenKind": "application",
+          "closed": false
+        }
+      ],
+      "faultEvidence": {
+        "state": "finished",
+        "armedAtMs": 1790534373491,
+        "truncated": false,
+        "errors": [],
+        "events": [
+          {
+            "kind": "ws-send",
+            "path": "/",
+            "atMs": 1790534373493,
+            "bytes": 14,
+            "sha256": "45b910a0f1c9dbd0ac2813a2927f821aece6b42c36f592d63bb2cea79f937117"
+          },
+          {
+            "kind": "ws-drop",
+            "path": "/",
+            "atMs": 1790534373499,
+            "bytes": 14,
+            "sha256": "45b910a0f1c9dbd0ac2813a2927f821aece6b42c36f592d63bb2cea79f937117"
+          }
+        ]
+      },
+      "explicitReloads": 0
+    }
+  ],
+  "cleanup": {
+    "browserClosed": true,
+    "viteClosed": true,
+    "socketsClosed": true
+  },
+  "ok": true,
+  "browserVersion": "151.0.7922.34"
+}

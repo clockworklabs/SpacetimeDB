@@ -1,0 +1,33 @@
+{
+  "node": "v22.22.1",
+  "evidence": [
+    {
+      "encoding": "identity",
+      "error": "proxy exited 2"
+    },
+    {
+      "encoding": "gzip",
+      "error": "proxy exited 2"
+    },
+    {
+      "encoding": "deflate",
+      "error": "proxy exited 2"
+    },
+    {
+      "encoding": "br",
+      "error": "proxy exited 2"
+    },
+    {
+      "encoding": "unknown",
+      "error": "proxy exited 2"
+    },
+    {
+      "encoding": "corrupt",
+      "error": "proxy exited 2"
+    },
+    {
+      "encoding": "overflow",
+      "error": "proxy exited 2"
+    }
+  ]
+}

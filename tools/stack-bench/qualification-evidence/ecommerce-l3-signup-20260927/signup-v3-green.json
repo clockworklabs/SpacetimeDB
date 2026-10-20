@@ -1,0 +1,618 @@
+{
+  "rerun": "STACK_BENCH_SIGNUP_EVIDENCE=<file> node --test --test-name-pattern=\"account creation accepts explicit login\" dist/tests/account-navigation.integration.js",
+  "evidence": [
+    {
+      "mode": "patched-silent-refusal",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "browser-interaction-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the page did not respond in time",
+        "finding": {
+          "kind": "page-timeout",
+          "fields": {
+            "detail": "locator.waitFor: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#current-user').or(locator('#auth-error')).filter({ visible: true }).first() to be visible\u001b[22m\n"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495597618,
+          "completedAtMs": 1790495600224,
+          "durationMs": 2606,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "role": "admin",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": false,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "missing-identity-observed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "submitted": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495600302,
+          "completedAtMs": 1790495600873,
+          "durationMs": 571,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "auto",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "signedUp": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495601044,
+          "completedAtMs": 1790495601152,
+          "durationMs": 108,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "Alice-scope",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "manual",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "signedUp": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495601223,
+          "completedAtMs": 1790495601918,
+          "durationMs": 695,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        },
+        {
+          "path": "/signin",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "Alice-scope",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "delayed-manual",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "signedUp": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495602003,
+          "completedAtMs": 1790495602665,
+          "durationMs": 662,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        },
+        {
+          "path": "/signin",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "Alice-scope",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "reject",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "browser-interaction-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the page did not respond in time",
+        "finding": {
+          "kind": "page-timeout",
+          "fields": {
+            "detail": "locator.waitFor: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#current-user').first() to be visible\u001b[22m\n\u001b[2m    6 × locator resolved to hidden <strong hidden=\"\" id=\"current-user\"></strong>\u001b[22m\n"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495602753,
+          "completedAtMs": 1790495603369,
+          "durationMs": 616,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": false,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "missing",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "failed",
+        "type": "browser-interaction-evidence",
+        "code": "application_failure",
+        "phase": "execute",
+        "summary": "the page did not respond in time",
+        "finding": {
+          "kind": "page-timeout",
+          "fields": {
+            "detail": "locator.waitFor: Timeout 500ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#current-user').first() to be visible\u001b[22m\n\u001b[2m    6 × locator resolved to hidden <strong hidden=\"\" id=\"current-user\"></strong>\u001b[22m\n"
+          }
+        },
+        "observation": null,
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495603511,
+          "completedAtMs": 1790495604654,
+          "durationMs": 1143,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        },
+        {
+          "path": "/signin",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": false,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "duplicate",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "expectedFailure": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495604742,
+          "completedAtMs": 1790495606829,
+          "durationMs": 2087,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "wrong-account",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "signedUp": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495606920,
+          "completedAtMs": 1790495607022,
+          "durationMs": 102,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "other-account",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "manual-observed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "submitted": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495607210,
+          "completedAtMs": 1790495607865,
+          "durationMs": 655,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        },
+        {
+          "path": "/signin",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "rejected-observed",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "submitted": true
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495607982,
+          "completedAtMs": 1790495608094,
+          "durationMs": 112,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": false,
+      "currentUser": "",
+      "privilegedStatus": null
+    },
+    {
+      "mode": "patched-manual",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "expectedFailure": true,
+          "requestPatch": {
+            "shape": "object",
+            "status": 200,
+            "bodySha256": "14aabc15b7a9f8d342fd3f764007d8ed8c7f255f3162334e8c4c16905506fcf0"
+          }
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495608266,
+          "completedAtMs": 1790495610938,
+          "durationMs": 2672,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "role": "admin",
+          "signupPending": false
+        },
+        {
+          "path": "/signin",
+          "username": "Alice-scope",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": true,
+      "currentUser": "Alice-scope",
+      "privilegedStatus": 200
+    },
+    {
+      "mode": "patched-reject",
+      "result": {
+        "schemaVersion": 2,
+        "action": {
+          "id": "signUp",
+          "version": "1.0.0"
+        },
+        "status": "passed",
+        "type": "browser-interaction-evidence",
+        "code": "completed",
+        "phase": "execute",
+        "summary": null,
+        "finding": null,
+        "observation": {
+          "user": "Alice-scope",
+          "authenticationPath": "local-form",
+          "expectedFailure": true,
+          "requestPatch": {
+            "shape": "object",
+            "status": 409,
+            "bodySha256": "14aabc15b7a9f8d342fd3f764007d8ed8c7f255f3162334e8c4c16905506fcf0"
+          }
+        },
+        "expected": null,
+        "retryable": false,
+        "timing": {
+          "startedAtMs": 1790495611025,
+          "completedAtMs": 1790495613108,
+          "durationMs": 2083,
+          "deadlineMs": 60000
+        },
+        "attachments": [],
+        "sensitivity": [
+          "credential",
+          "user-content"
+        ]
+      },
+      "requests": [
+        {
+          "path": "/signup",
+          "username": "Alice-scope",
+          "role": "admin",
+          "signupPending": false
+        }
+      ],
+      "accountCreated": false,
+      "currentUser": "",
+      "privilegedStatus": null
+    }
+  ]
+}

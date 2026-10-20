@@ -1,0 +1,18 @@
+{
+  "Id": "620a5552f550b2a7ebd0d43ce97c2c35aec1eef661fab254f8c5ca9bea652da7",
+  "Image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "Name": "/stack-bench-crash-qual-spacetime-473ca5c2d",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-27T22:56:34.679151409Z",
+    "FinishedAt": "2026-09-27T23:01:35.15242182Z"
+  }
+}

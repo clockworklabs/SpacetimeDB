@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification_reuse_review",
+  "baseCommit": "69d6dff0cbf488d61baa762b491a28cb357f59f5",
+  "changes": {
+    "stock": "Remove PostgreSQL-only physical FK inspection. Retain fixed native names and validate selected IDs, names, holdings and signed quantities. Verify native writes by reading committed state. Read-only or no-op views fail. No-FK tables and writable views are supported; requested negative/noninteger quantities are rejected.",
+    "network": "Broker and preflight share the existing provider/auth-mode host choice. Account auth probes ChatGPT, API keys probe the API. Keep npm, database, executable, storage, credential and cleanup gates. Model-free runs have no provider destination. Safe bounded cause codes improve failed fetch evidence; failure still fails and no retry is added.",
+    "contract": "Support email/subject/message are sufficient; extra fields optional. Stock interface states unique IDs/names/holdings, permits native writable views, requires app-visible quantity updates and does not require physical FK metadata. Future prompts change; old ambiguous app results are not relabeled."
+  },
+  "reuse": "Fixed reference/defect apps do not consume new prompts. Scenarios, requirements, ownership, points, fixtures, actions and budgets remain identical under exact task-text mappings and unchangedQualificationChecks. Replace PostgreSQL901a reference/defect evidence. Other stock callers retain validated semantics: dbSetStock is setup or sequential external write, not an in-flight purchase. Real PostgreSQL E2E covers newly accepted layouts and rejected malformed/no-op layouts, signed reads and quiet SQL. Model-free preflight behavior and all non-PostgreSQL graders remain equivalent. Null executable hash is unchanged.",
+  "contractTextEquivalences": [
+    {
+      "fromTaskSha256": "69013025cbb918d3e0c1b0ed6bc43dcf605139f45b82ba613b33a66b65c98111",
+      "toTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276"
+    },
+    {
+      "fromTaskSha256": "fbf20403f2b2d55d35c8ecb2edb47c9fa95f7c18f9c8e96a21e787c0b6946d76",
+      "toTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276"
+    },
+    {
+      "fromTaskSha256": "07b8d90717c2229c45a7e1a1b2392b53ac80ecdaa81400ef01da0230e70edfa7",
+      "toTaskSha256": "db5aeeb89034dc5149dfc8c902e50a51107ccfb1bd7f1444c41b6399dc383276"
+    }
+  ],
+  "sources": [
+    {
+      "path": "container/broker-protocols.ts",
+      "sha256": "b6f33b5e945793fe07b04933c9e7b3e435d619932bf33ddd081ce35a6a24f156"
+    },
+    {
+      "path": "src/runtime/container-smoke.ts",
+      "sha256": "48826e499f12ff20ed8caf9be67a69fa871a047e108a01a97adc92c6472efa10"
+    },
+    {
+      "path": "src/runtime/preflight.ts",
+      "sha256": "c9284027560675ecd68bc78db03f0a37a324577e96466bcb1fdbe9fd1a6186d7"
+    },
+    {
+      "path": "src/stacks/postgres-sql.ts",
+      "sha256": "835eb89ef778037912c3cc66c0f1565e9c6d235d80f435cf7ac7b415afcc4911"
+    },
+    {
+      "path": "dist/container/broker-protocols.js",
+      "sha256": "e72ac222c4eece4d2b36615c6440ff8eb55c298f49879c4736be91e7a69586b7"
+    },
+    {
+      "path": "dist/src/runtime/container-smoke.js",
+      "sha256": "6d5aaa5ef169e475a52c47bf491ba4f383b21409609477a92415642b0e2c95b2"
+    },
+    {
+      "path": "dist/src/runtime/preflight.js",
+      "sha256": "7c5e6c522b4364d5d7c5adc32d6b94af01aca13b69cea24e6f021c2381bb2ba3"
+    },
+    {
+      "path": "dist/src/stacks/postgres-sql.js",
+      "sha256": "ac0b906def5c9b2af2183dd853b4f7f08bf52dfbe4a6ee61cbf9cda51b10f56a"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-intake.md",
+      "sha256": "76cbfecdd1b8ab809edb1a64428374c691e7acc4dfaa124dfec5abff062e5d90"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/warehouse-administration.md",
+      "sha256": "c0d10ad42d8c9e4773a78f8df62aa0d047a6c9b5d10bf892a5cc16ec213a1d84"
+    }
+  ],
+  "validation": {
+    "freshCheck": "ecommerce.spec.external-data-sync.external-stock.901a",
+    "referenceScore": "1/1",
+    "caught": 1,
+    "controls": [
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.json",
+        "sha256": "fcd2a5346c286b3fff2782aa43f367098a752721a0ffcab736477da0ab6016a3"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/postgres-stock.inputs.json",
+        "sha256": "c82322c63ff0e28002d0a8f43e3e4aab4d7b10b926a2f1dc49c9d39df5d20bdc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/provider-smoke.json",
+        "sha256": "32184e6e89a1448636b0b6210a700b9e6ac82655ee6c42133f15f70dbd4487dc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/provider-tests.log",
+        "sha256": "afc7eec07ee6e40512aeb8bbb2e481e5e199b1df47a5bb71de1ff6eab844b7fc"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/stock-interface-e2e.json",
+        "sha256": "fd3cdd0bb9c47b1b4261440472b822afede1c9d5fa107b2724887c752ea8310a"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/stock-red.log",
+        "sha256": "b4ac7dd64b73b6b588312106fdb516bea114fcd66ac11a4c768549b6af7af0d5"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/stock-green.log",
+        "sha256": "b3cb0a0648f88a25e4666967cc3b0e20875c34f51c7b48f15f92260ebc5dc81d"
+      },
+      {
+        "path": "qualification-evidence/ecommerce-l3-readiness-20260927/prompt-delivery.json",
+        "sha256": "0ce002903742be69b81c90d0e181e43b461ee8ccab7954ace2b35f6963f3d352"
+      }
+    ],
+    "promptDelivery": "Twelve normal requests, four stacks at L1-L3, full selected skills and retained prior contracts. Source hashes and exact rendered hashes recorded. No model calls. Other calibration manifests retain zero evidence and remain unqualified."
+  },
+  "limits": "Ecommerce dependency L1-L3, four stacks only. Quiet SQL test does not qualify Supabase. HEAD reachability does not prove model authentication. Historical network cause remains unknown. Catalogue investigation is separate. No app repair, score weakening or claim of universal production readiness. Normal calibration and immutable-image gates remain mandatory."
+}

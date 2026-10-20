@@ -1,0 +1,355 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260927161240-31",
+  "attempt": {
+    "id": "reference-live-spacetime-20260927161240-31",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-27T16:12:40.113Z",
+    "completedAt": "2026-09-27T16:42:56.044Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7fa11ad07acb2fc8799439dd009e621b5abfa30b057d4148eb144910e4142494"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-spacetime",
+      "sha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "554c67b92aea78fe8d3ba7b65cd88fc2599915ab90eeb3159b6014e154287783"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-spacetime",
+    "fixtureSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 18,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "0e582138bee9cea861eac17270ecc9c9c49f4521f9e4419b447df887eac95361",
+      "executableSha256": "681c4c9ad83791152dcc2b62f4fbffe6d16e1112044691f98a2a57d6cb433c90",
+      "kind": "mutation",
+      "mutationSha256": "547a791ec7e947056c2d04bfef9edb9c5063763deb2b034fa3861a340e56692b",
+      "recipe": {
+        "contentSha256": "1af9c03f504fd768c7de7c8d68037730a4c1c44129391f67fa3de465e9540721",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "spacetime",
+        "reference": {
+          "id": "ecommerce-reference-spacetime",
+          "sourceSha256": "dedb3455996f75e2305d61a022f11011a1fb49bb278fce72eb64c1651381111c"
+        },
+        "version": "1.4.0"
+      },
+      "sha256": "193092519e2e4887fc7627f8049a9b214b80807ed6809e24d2942ffe7fd47269"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "spacetime.runs/r1-workers",
+        "durationMs": 1813858,
+        "processError": null,
+        "harnessSha256Before": "acfc8a15aebb746bba33d4d333a152a72a2168eebd2183fd8048e35a6816661b",
+        "harnessSha256After": "acfc8a15aebb746bba33d4d333a152a72a2168eebd2183fd8048e35a6816661b",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-spacetime-20260927161240-31",
+        "score": "40/40",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 25,
+        "zeroPointCriteria": 0,
+        "fingerprint": "ee59382885421be8e7278d066f54b58521eed934799068464c71cf00cea7204d",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 5460,
+              "criterionRuntimeMs": 5224,
+              "measuredRuntimeMs": 10684,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.customer-profile",
+              "checkCount": 1,
+              "setupRuntimeMs": 4041,
+              "criterionRuntimeMs": 5147,
+              "measuredRuntimeMs": 9188,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.notification-preferences",
+              "checkCount": 1,
+              "setupRuntimeMs": 5939,
+              "criterionRuntimeMs": 5162,
+              "measuredRuntimeMs": 11101,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 40000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.promotion-rules",
+              "checkCount": 1,
+              "setupRuntimeMs": 4768,
+              "criterionRuntimeMs": 519,
+              "measuredRuntimeMs": 5287,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 45000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.staff-roles",
+              "checkCount": 1,
+              "setupRuntimeMs": 2497,
+              "criterionRuntimeMs": 37,
+              "measuredRuntimeMs": 2534,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.stock-alerts",
+              "checkCount": 1,
+              "setupRuntimeMs": 32785,
+              "criterionRuntimeMs": 18396,
+              "measuredRuntimeMs": 51181,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 60000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.progression.support-history",
+              "checkCount": 1,
+              "setupRuntimeMs": 6101,
+              "criterionRuntimeMs": 2054,
+              "measuredRuntimeMs": 8155,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 50000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 12,
+              "setupRuntimeMs": 113766,
+              "criterionRuntimeMs": 229791,
+              "measuredRuntimeMs": 343557,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "checkCount": 1,
+              "setupRuntimeMs": 23481,
+              "criterionRuntimeMs": 28263,
+              "measuredRuntimeMs": 51744,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 270000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 4,
+              "setupRuntimeMs": 18578,
+              "criterionRuntimeMs": 40169,
+              "measuredRuntimeMs": 58747,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 768000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 67050,
+              "criterionRuntimeMs": 18102,
+              "measuredRuntimeMs": 85152,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 35,
+          "total": 35
+        },
+        "baselineDurationMs": 915061,
+        "baselineOutput": "spacetime.runs/r1",
+        "baselineHarnessSha256Before": "acfc8a15aebb746bba33d4d333a152a72a2168eebd2183fd8048e35a6816661b",
+        "baselineHarnessSha256After": "acfc8a15aebb746bba33d4d333a152a72a2168eebd2183fd8048e35a6816661b",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 60,
+            "artifact": "spacetime.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "staff-admin-access-survives-role-removal",
+              "guest-purchase-falls-back-to-the-admin-account",
+              "customer-profile-view-leaks-another-account",
+              "notification-preferences-leak-across-accounts",
+              "administrator-role-assignment-is-discarded",
+              "stock-alert-is-sent-after-every-restock",
+              "support-history-leaks-across-customers",
+              "profile-summary-ignores-a-profile-saved-this-session",
+              "support-history-leaks-to-signed-out-visitors",
+              "signout-keeps-session",
+              "account-password-in-script",
+              "signup-accepts-optional-admin-claim"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime.runs/r1-workers/w1.stdout.log",
+              "stderr": "spacetime.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 61,
+            "artifact": "spacetime.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "restock-client-snapshot-overwrites-concurrent-purchases",
+              "direct-restock-does-not-require-an-admin",
+              "managed-support-leaks-and-accepts-cross-account-replies",
+              "customers-can-create-promotions",
+              "staff-can-assign-roles",
+              "stock-alerts-are-visible-to-other-customers",
+              "support-history-rows-are-hidden",
+              "saving-notification-preferences-resets-the-toggles",
+              "account-password-in-public-data",
+              "query-like-password-bypasses-signin",
+              "account-password-in-style",
+              "admin-boundary-rejects-all-signups"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime.runs/r1-workers/w2.stdout.log",
+              "stderr": "spacetime.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 62,
+            "artifact": "spacetime.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "restock-race-records-wrong-order-total",
+              "profile-is-lost-on-fresh-account-login",
+              "notification-preferences-are-not-saved",
+              "promotion-rule-stores-the-wrong-discount",
+              "stock-alert-delivery-is-suppressed",
+              "support-history-is-lost-on-fresh-account-login",
+              "authorized-restock-does-not-change-stock",
+              "saving-a-staff-role-snaps-the-input-back-to-the-stored-role",
+              "account-disclosure-rejects-login",
+              "purchase-session-rejects-returning-login",
+              "signup-accepts-admin-claim"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime.runs/r1-workers/w3.stdout.log",
+              "stderr": "spacetime.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "acfc8a15aebb746bba33d4d333a152a72a2168eebd2183fd8048e35a6816661b",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.progression.customer-profile.customer-profile.620c",
+      "ecommerce.progression.notification-preferences.notification-preferences.630c",
+      "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
+      "ecommerce.progression.staff-roles.staff-roles.621c",
+      "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
+      "ecommerce.progression.support-history.support-history.612c",
+      "ecommerce.spec.access-control.account-disclosure.110a",
+      "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "ecommerce.spec.access-control.managed-support-privacy.613b",
+      "ecommerce.spec.access-control.notification-preferences-privacy.630b",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.stock-alert-privacy.631b",
+      "ecommerce.spec.access-control.support-history-logout.612d",
+      "ecommerce.spec.access-control.support-history-privacy.612b",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.state-durability.customer-profile-reload.620a",
+      "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+      "ecommerce.spec.state-durability.staff-role-reload.621a",
+      "ecommerce.spec.state-durability.support-history-reload.612a",
+      "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "2c8c38aa67ee436a537f5c4b2e853e271e392c0e7182f595ec1cb2ac9acab579",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

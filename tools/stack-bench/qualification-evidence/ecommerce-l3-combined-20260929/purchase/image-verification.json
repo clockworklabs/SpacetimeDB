@@ -1,0 +1,162 @@
+{
+  "candidate": "a7b9bf72925ef5dcd778e731b4efed7114c37c95",
+  "image": "sha256:a24978e57b35d3c61644f73142edfde8b79eb3fd72c5ad5fca3e63daa8bc2258",
+  "tag": "stack-bench-controller:diagnostic-3a-a7b9bf7292",
+  "baseImage": "sha256:b0209e164038969add5318bc20eb7f1c0101cd23076cc2190905465abb93d06c",
+  "baseLayersMatch": true,
+  "scope": {
+    "candidate": "a7b9bf72925ef5dcd778e731b4efed7114c37c95",
+    "checks": [
+      "ecommerce.spec.access-control.signed-out-purchase.3a"
+    ],
+    "mutations": {
+      "mongodb": [
+        {
+          "id": "signed-out-visitor-purchase-is-accepted",
+          "targets": [
+            "ecommerce.spec.access-control.signed-out-purchase.3a"
+          ]
+        }
+      ],
+      "postgres": [
+        {
+          "id": "signed-out-purchase-uses-default-account",
+          "targets": [
+            "ecommerce.spec.access-control.signed-out-purchase.3a"
+          ]
+        }
+      ],
+      "spacetime": [
+        {
+          "id": "signed-out-purchase-bypasses-account-check",
+          "targets": [
+            "ecommerce.spec.access-control.signed-out-purchase.3a"
+          ]
+        }
+      ],
+      "convex": [
+        {
+          "id": "signed-out-visitor-purchase-is-accepted",
+          "targets": [
+            "ecommerce.spec.access-control.signed-out-purchase.3a"
+          ]
+        }
+      ]
+    },
+    "manifestHashes": {
+      "mongodb": "c34fb587384594e4b4367231e1bd322cbfa5d01d849661959b5ec8e7b609f75a",
+      "postgres": "ce0c0c10dad084ed5c694c0db8afa40cb3ae101484c24fe64eda07ad2563f37e",
+      "spacetime": "5d37f436793c4311671c50578e84b3656a1124c76cba1625b6c7a9b5d48b1dbb",
+      "convex": "13b26c47cb482ed3e1ff4338d603e1d524c20bfbffe2cf4ee8d746c413b7efeb"
+    },
+    "recipeSha256": "a5eb8af9c4ed55a343960274c3295ec1cf58748d7b324021ee9240c8fc074101",
+    "rows": [
+      {
+        "backend": "spacetime",
+        "slot": 940,
+        "ports": {
+          "vite": 7413,
+          "express": null,
+          "dbPort": null
+        }
+      },
+      {
+        "backend": "postgres",
+        "slot": 948,
+        "ports": {
+          "vite": 7521,
+          "express": 7249,
+          "dbPort": 6532
+        }
+      },
+      {
+        "backend": "mongodb",
+        "slot": 956,
+        "ports": {
+          "vite": 7679,
+          "express": 7357,
+          "dbPort": 6537
+        }
+      },
+      {
+        "backend": "convex",
+        "slot": 964,
+        "ports": {
+          "vite": 7887,
+          "express": 7965,
+          "dbPort": null
+        }
+      }
+    ],
+    "qualified": false,
+    "modelCalls": 0
+  },
+  "inputsSha256": "bd670b18fc7f99b9ac5bba75decee9373a8ca71500c0ce2b489a2898de334f08",
+  "emitted": [
+    {
+      "source": "tools/stack-bench/grader/grade.ts",
+      "sourceSha256": "2ea8b2c29791e634cd896258ddf9157118eeb437e893cb2462a309de2d5cf13b",
+      "jsSha256": "dd81bcec68d775441b81191ef32116a41f569f5c1bf1700844c38996150e1b49",
+      "mapSha256": "2e8de405333710030482f5a843e4da51ab16f27af9935f63ec20c15ff1aad244"
+    },
+    {
+      "source": "tools/stack-bench/src/actions/action-catalog.ts",
+      "sourceSha256": "7e9bcf70e540a8259695506597bd872f448ad5c622ee637b75d52fcbc48da31d",
+      "jsSha256": "bdab6fb9163e8136889528051e4ed46c6adf8e32fc1a4725d246fb3c7c42cab8",
+      "mapSha256": "c5d4c5fbdcf63acd7c69c9c51b80d909be10ad57d5bbfeee1c6e5d5a10f7116d"
+    },
+    {
+      "source": "tools/stack-bench/src/actions/auth-request-patch.ts",
+      "sourceSha256": "d83925e7ddadd70a1b639677859ed1f0364270294932f1581dce90346a4d77b8",
+      "jsSha256": "9e2d422f1245bbbec3766ccd1fbcef633b6724116e3f2ee300c955505c452056",
+      "mapSha256": "c35a9c5596dcb9c9c17cfe4ff4b97813bb17ffcc807e09f93337bb596557686f"
+    },
+    {
+      "source": "tools/stack-bench/src/actions/browser-action-executors.ts",
+      "sourceSha256": "43750eeaf9326304d3461f919f8870d6988b7296075d465f9e0281af3053d305",
+      "jsSha256": "5a669306b8b4a35689140003576ac376ea34ee1fb0659f7936e2969b97038518",
+      "mapSha256": "250327cd29279860e841bc05d14a5a8af5cfe033fb6d2316c852bfb758887e0c"
+    },
+    {
+      "source": "tools/stack-bench/src/actions/runtime-action-executors.ts",
+      "sourceSha256": "5377ac88d8791997af6362d3fd89bf8da4be944732f2073fd2a249130a7d4ed2",
+      "jsSha256": "e4dc9dd36d4c42fe6b2c427d1bf25ea5425b44c222337fbb6aa5872429d84869",
+      "mapSha256": "c29af24ea7f23dddef8fc2abb3f338b41f141a2e73740a65db366f4310f93603"
+    },
+    {
+      "source": "tools/stack-bench/src/composition/definition-compiler.ts",
+      "sourceSha256": "c66d0db802ad4a95617683928c3f45557af3d9b2b1af2d4965328a043cb9fc4d",
+      "jsSha256": "9c3f446a9a782d4a5377cff2d73e0d1197cb1fb7d2d31874417cb19bf492435d",
+      "mapSha256": "e3d6627029b9d0fee419d9adf63ce1ccae3c88423262af708d7f2d64ac6bdb27"
+    },
+    {
+      "source": "tools/stack-bench/tests/auth-request-patch.test.ts",
+      "sourceSha256": "a6fe08419b00e67bf6303291e54e31d64cd321746a19c1d80957bfc0f389cf31",
+      "jsSha256": "3b63813c875629fd15958ac09467996023a2ec875a6916225dceb846795538db",
+      "mapSha256": "1fc50b11779d2985691f9faad9523db288b75993b0340f7660369ce078d02fdc"
+    },
+    {
+      "source": "tools/stack-bench/tests/checkout-state.test.ts",
+      "sourceSha256": "1f5d827f9783e8dc3a96382ba0c3f868cd74728f934b564e613a4a93d9c16ad3",
+      "jsSha256": "cd8cbeaa842dcd21ffe5b91243a5e963f7eba8563daecfb78d03d081d43250f0",
+      "mapSha256": "4958faf77ce45f95dbcc3359687a3f7d061650a5c276de4870e17733629503d4"
+    }
+  ],
+  "helper": {
+    "id": "abf9779c25813d21286cf2b1505fd254fe35f25f94240e502e586ffeeeb971ad",
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-29T00:45:57.477712212Z",
+      "FinishedAt": "2026-09-29T00:45:57.645912008Z"
+    },
+    "removed": "abf9779c25813d21286cf2b1505fd254fe35f25f94240e502e586ffeeeb971ad"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "candidate": "49b405390274f5c4e692c3978acb9ed06319ebe3",
+  "baseImage": "sha256:7333489c40cf5f6a425ec6aa8b7344e91d943e6b6c196dd66dae3514a8ac2133",
+  "qualified": false,
+  "purpose": "Model-free qualification and saved-source regrades for declared catalog scope",
+  "files": [
+    {
+      "path": "grader/grade.ts",
+      "sha256": "4c2fce81d34c43465e80c43a255fee51bb43d1624e8d8982a94b14f523b7539c"
+    },
+    {
+      "path": "src/actions/browser-action-executors.ts",
+      "sha256": "5eeaadb0e64b59d9af130c1f081ed849b66352a13c08c4217df905ac24592afa"
+    },
+    {
+      "path": "dist/grader/grade.js",
+      "sha256": "73cd98ee959d7bc0f9674dde9ddae3d20dd27cf8324e9cb35cea0d4924a90397"
+    },
+    {
+      "path": "dist/src/actions/browser-action-executors.js",
+      "sha256": "6c95269f98117867bce7f077f31b398a6bbf481c6571b87f2ed12a3d44f7bc50"
+    },
+    {
+      "sha256": "b1d6f0d2648576757c496a82e94bab767645697d71d7526233c61956d70263e6",
+      "path": "tracks/ecommerce/composition/calibrations/dependency-l3.json"
+    }
+  ],
+  "stagedReviewSha256": "d251811fdcbe99a2efe71ae828190ef2ced5fd4c1846f08ebda18593e101a360",
+  "checks": [
+    "ecommerce.feature.catalog.catalog-ranking.2b",
+    "ecommerce.spec.live-state.ranking.2c",
+    "ecommerce.spec.search-ordering.search-ordering.402b"
+  ],
+  "referenceRuns": 4,
+  "targetMutations": 12,
+  "nullChecks": 3,
+  "promptChanged": false,
+  "modelCalls": 0,
+  "calibrationMode": "Diagnostic overlay only: empty qualification evidence and no reuse claims. Source calibration and historical evidence are unchanged."
+}

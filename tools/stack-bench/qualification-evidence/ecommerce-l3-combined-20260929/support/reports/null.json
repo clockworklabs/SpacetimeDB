@@ -1,0 +1,199 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-29T00-28-25-545Z",
+  "attempt": {
+    "id": "null-control-2026-09-29T00-28-25-545Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-29T00:28:25.546Z",
+    "completedAt": "2026-09-29T00:28:51.872Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "755f90d9e0510a157fa9b64d6cb2b31ceaaa02abee55a72beea4b0e8044a1d79"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "d2f8e94401f5b651b7215a5aa7e09ac1edcd7feb4a9fd12875d9f5a55e3e3570"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "46c465ae7177104eca31e8d52246b12431f23ab2e91934d97a92399de9fe463b"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 26326,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 34,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "e3bd727b4cc3b442d2b864c83ae8fa50796951724bd9648a445a4b336cfd6a7f",
+      "executableSha256": "a915e3fedee9ae35b828078f73e7526997f33d07eefeb6d9e2bbd228cbb859f5",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "d2f8e94401f5b651b7215a5aa7e09ac1edcd7feb4a9fd12875d9f5a55e3e3570",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "d0dfbdd098aaebb5e4c8e6a211cec5bb2c4200d71d6e176466bfd04234a1cfac"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 7,
+      "points": 11,
+      "expectedFailures": {
+        "criteria": 7,
+        "points": 11
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 7,
+          "points": 11
+        },
+        "assertion": {
+          "criteria": 0,
+          "points": 0
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-078",
+        "scenario": "scenarios/progression-managed-support-privacy.json",
+        "feature": 613,
+        "featureName": "Managed support privacy",
+        "criterion": "613b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-079",
+        "scenario": "scenarios/progression-managed-support-shared.json",
+        "feature": 613,
+        "featureName": "Shared managed support case",
+        "criterion": "613c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-079",
+        "scenario": "scenarios/progression-managed-support-shared.json",
+        "feature": 613,
+        "featureName": "Shared managed support case",
+        "criterion": "613a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612a",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612b",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-108",
+        "scenario": "scenarios/progression-support-history.json",
+        "feature": 612,
+        "featureName": "Customer support history",
+        "criterion": "612d",
+        "points": 2,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

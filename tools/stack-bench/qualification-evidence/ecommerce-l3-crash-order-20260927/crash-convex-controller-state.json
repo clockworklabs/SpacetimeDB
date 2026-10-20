@@ -1,0 +1,18 @@
+{
+  "Id": "c7073bffe7e989eac7b48db014ef2e8660746fe9482985e21e27e32d19fc07ff",
+  "Image": "sha256:556fa262dbc5d60061025f2f03f19d480d2edd7a5efe5256dafbcc1b70d0d738",
+  "Name": "/stack-bench-crash-qual-convex-473ca5c2d",
+  "State": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-27T22:56:37.182463435Z",
+    "FinishedAt": "2026-09-27T23:00:51.736704839Z"
+  }
+}

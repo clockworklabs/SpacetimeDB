@@ -1,0 +1,143 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-28T11-18-48-612Z",
+  "attempt": {
+    "id": "null-control-2026-09-28T11-18-48-612Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-28T11:18:48.612Z",
+    "completedAt": "2026-09-28T11:19:17.977Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "7d82d666a527c4a7c8fa23effe180274f210974a0d24643863f190eaec21294c"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "801937f18c5e69475d7b8149920abb82aaa1300c6ab61e0135b5df9697b361e8"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 29365,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 55,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "a4c6129dabae65afddfad4348243e6b49458c042c87456bfe631f2ff3d95661f",
+      "executableSha256": "14054c6f1dc3395f434d7bf14c9ee0011c3133e282f8c644a219602a0ad86b9e",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "87b2d4ada9b454d282baea9bd5bae8f4510e9050ddefa4063fb3df04e63176fd",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "10bb81e990f83d9dd725e2c37b3634689d9575f7499b7d74a3e63b97cd2c24df"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 3,
+      "points": 3,
+      "expectedFailures": {
+        "criteria": 3,
+        "points": 3
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 2,
+          "points": 2
+        },
+        "assertion": {
+          "criteria": 1,
+          "points": 1
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-011",
+        "scenario": "scenarios/01-catalog-ranking.json",
+        "feature": 2,
+        "featureName": "Public catalog ranking",
+        "criterion": "2b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "failed",
+        "failureStage": "assertion",
+        "detail": "the item-name control entries are not in the required order"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-014",
+        "scenario": "scenarios/01-core.json",
+        "feature": 2,
+        "featureName": "Storefront is public and live",
+        "criterion": "2c",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      },
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-096",
+        "scenario": "scenarios/progression-search-ordering.json",
+        "feature": 402,
+        "featureName": "Purchases preserve search ordering",
+        "criterion": "402b",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "blocked",
+        "failureStage": "setup",
+        "detail": "Blocked by a failed prerequisite: none of the signup-username, signup-toggle, signin-toggle controls became visible in time"
+      }
+    ]
+  }
+}

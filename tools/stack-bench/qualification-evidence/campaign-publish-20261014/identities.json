@@ -1,0 +1,27 @@
+{
+  "cleanup": "Private suite, upload, runs and new registry rows removed. Original 264 samples remain.",
+  "source": [
+    {
+      "path": "src/campaigns/campaign-publish.ts",
+      "sha256": "a80a73689df30e06549c50dd862eded7815ec8be7368182729f9a88fedf6988c"
+    },
+    {
+      "path": "src/campaigns/campaign-report.ts",
+      "sha256": "10f15dad8b2fae2a6463ea24e87be0dfc5771742c11e4b093754630be68ba4a4"
+    },
+    {
+      "path": "commands/campaign-cli.ts",
+      "sha256": "1917f297967af5ed3adcd323c7537d1200590ab5c456c419c7ded272933b8cd4"
+    },
+    {
+      "path": "tests/campaign-publish.contract.ts",
+      "sha256": "29cd2b143b7188e23954803dcaad325bf14d9f5596f72dd2baaff296a609222b"
+    }
+  ],
+  "platform": "win32",
+  "fixture": "tests/fixtures/dependency-model-free-campaign.json with a frozen two-feature target and one blocked prerequisite",
+  "referenceQualificationRun": false,
+  "paidRuns": 0,
+  "nodeVersion": "v22.22.1",
+  "website": "Remix dev server in stackbench-org-web-1, Postgres 16"
+}

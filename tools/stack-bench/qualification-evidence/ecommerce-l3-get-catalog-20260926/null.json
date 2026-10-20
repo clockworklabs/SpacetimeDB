@@ -1,0 +1,115 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "null_control",
+  "id": "null-control-2026-09-26T20-28-50-393Z",
+  "attempt": {
+    "id": "null-control-2026-09-26T20-28-50-393Z",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-26T20:28:50.394Z",
+    "completedAt": "2026-09-26T20:29:18.844Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "3411af4aaf2973127de61e34282cde4d2061855b95db324dec4a4386781408c9"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "5af86e8add240d37f660a30a1e9fca7ec7313f19647af57c8c95c57111ce2de3"
+    },
+    "fixture": null,
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "c7da099d07e6d1bd8e01a897e2e106f5e30e00aa607d389d2b68db46fea70ca2"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": null,
+    "packs": []
+  },
+  "payload": {
+    "durationMs": 28450,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 21,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "8ab968b5ba37db24009a835265d1fb7cbfde59ceaa62df3bebca9f8124d4af57",
+      "executableSha256": "5964d725ceda174d12f4a9cdbb6a5df9d7d05d36b5081ab017d8a61de7d644cb",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "5af86e8add240d37f660a30a1e9fca7ec7313f19647af57c8c95c57111ce2de3",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": null,
+      "sha256": "390e5ec43f33e6dd08d580ef1c8ca6d49d7a76c57eff3fd9cf08eaf1dddf05ed"
+    },
+    "tracks": [
+      "ecommerce"
+    ],
+    "ok": true,
+    "summary": {
+      "criteria": 1,
+      "points": 1,
+      "expectedFailures": {
+        "criteria": 1,
+        "points": 1
+      },
+      "expectedFailureStages": {
+        "setup": {
+          "criteria": 0,
+          "points": 0
+        },
+        "assertion": {
+          "criteria": 1,
+          "points": 1
+        }
+      },
+      "vacuousPasses": {
+        "criteria": 0,
+        "points": 0
+      },
+      "oracleGaps": {
+        "criteria": 0,
+        "points": 0
+      },
+      "unscored": {
+        "criteria": 0,
+        "passed": 0,
+        "failed": 0,
+        "inconclusive": 0
+      }
+    },
+    "criteria": [
+      {
+        "track": "ecommerce",
+        "level": 3,
+        "suite": "selected-source-013",
+        "scenario": "scenarios/01-catalog-values.json",
+        "feature": 2,
+        "featureName": "Public catalog values",
+        "criterion": "2a",
+        "points": 1,
+        "status": "expected_fail",
+        "evidenceStatus": "failed",
+        "failureStage": "assertion",
+        "detail": "the item-card control matching \"Air Purifier\" did not appear"
+      }
+    ]
+  }
+}

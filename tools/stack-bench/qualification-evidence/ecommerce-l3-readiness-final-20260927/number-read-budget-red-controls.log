@@ -1,0 +1,75 @@
+TAP version 13
+# Subtest: number observations use the authored budget across a control redraw
+    # Subtest: within-budget
+    not ok 1 - within-budget
+      ---
+      duration_ms: 551.1234
+      type: 'test'
+      location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\number-read-budget-isolated.test.mjs:113:17'
+      failureType: 'testCodeFailure'
+      error: |-
+        the stock control inside the warehouse control did not become available in time
+        
+        'failed' !== 'passed'
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 'passed'
+      actual: 'failed'
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/number-read-budget-isolated.test.mjs:175:24)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (file:///D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/tools/stack-bench/local-notes/sol6-four-stack-20260925/number-read-budget-isolated.test.mjs:113:9)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: after-budget
+    ok 2 - after-budget
+      ---
+      duration_ms: 208.36
+      type: 'test'
+      ...
+    # Subtest: wrong-value
+    ok 3 - wrong-value
+      ---
+      duration_ms: 1143.7277
+      type: 'test'
+      ...
+    # Subtest: input
+    ok 4 - input
+      ---
+      duration_ms: 99.6994
+      type: 'test'
+      ...
+    # Subtest: textarea
+    ok 5 - textarea
+      ---
+      duration_ms: 118.4121
+      type: 'test'
+      ...
+    # Subtest: select
+    ok 6 - select
+      ---
+      duration_ms: 101.7292
+      type: 'test'
+      ...
+    1..6
+not ok 1 - number observations use the authored budget across a control redraw
+  ---
+  duration_ms: 2388.7066
+  type: 'test'
+  location: 'D:\\Development\\ClockworkLabs\\SpacetimeDB\\SpacetimeDB\\tools\\stack-bench\\local-notes\\sol6-four-stack-20260925\\number-read-budget-isolated.test.mjs:102:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 7
+# suites 0
+# pass 5
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2846.2764

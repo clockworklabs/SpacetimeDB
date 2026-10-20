@@ -1,0 +1,293 @@
+{
+  "baseCommit": "183b17bd2d5f4a52193fc3aef9a0a2db59843276",
+  "files": [
+    {
+      "path": "tracks/ecommerce/contracts/cart.md",
+      "sha256": "255e0e68da874fbef10ea522358aa6fbb91b86eddaa3162db2f66b38a5e8ca22"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/catalog-items.md",
+      "sha256": "1003d2d23dc14afa15839367c303d60aa97efd5e7fd1d7678391311980252ba7"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/catalog-management.md",
+      "sha256": "5fa87c847c0b5b02b8d6ebdf70d13dbbb9953abaf07b7dca3d3fda44b33cd116"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/checkout.md",
+      "sha256": "fff35b5078f4faf638b04b29abb83dd463800ad1a4fd426f55aa1c816701787c"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/customer-profile.md",
+      "sha256": "6b6c11e1033b735bf5845c890be489c318193f7a1ae957239ba4c2f02ef2a64d"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/notification-preferences.md",
+      "sha256": "9cccddd199530c981d0cdd8c1b60c86e18d74e0a46fee0edd4422e080c63138a"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/promotion-rules.md",
+      "sha256": "2a839c3e42d3fd108ce225728cfd62424c7541c9c666316865c7c25008b4717e"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/purchasing.md",
+      "sha256": "6434d046c21e5f8299c9817fd4383d4235401adc9432c0fb233354f473edf43c"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/staff-access.md",
+      "sha256": "3f08f0172a0973194964d63898d469359d65020f11b15a7da3ba621719580b51"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/staff-roles.md",
+      "sha256": "5678144797a0062d2ba9dd434a856c995ba46cba3e56f31d8fe5ba4d095dd396"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/stock-alerts.md",
+      "sha256": "5d1f347371efad33747681d588ae5687cf4888d2690ae72532810294862210f2"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-history.md",
+      "sha256": "22e5a31ce4adf44521162f6dbc91c2baf577d6488c316263e9b92524a1e1149f"
+    },
+    {
+      "path": "tracks/ecommerce/contracts/support-intake.md",
+      "sha256": "a07b26a36568f67a7e5b24806409bff5219e26fc4f8faf289872126b9c9d8d89"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "sha256": "e99eaae07757128759389706ec70626452c13e1c11e6603631123c47d7bf0940"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "sha256": "0b629d939b60f5c44c0e393c4626dca8b14d3ddf69822b8d912b86885d18f149"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-cart.json",
+      "sha256": "19e72eaaa4742426354fccd39e8298af5580fb5036c7baa59481b20dd1f3743e"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "sha256": "06627043607cb20b0d25647fad15186b60648d80367b9b3d15ffb97d3db8fa0a"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "sha256": "75832e1bca643f40f8de8695589fc8f6ffd0fe51295fbcf55e03bf3366bbf5d9"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "sha256": "a6d255bd2c3f58e944ede95154e7a748ca3ba9fa12efe25060f748a64e495870"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-purchase-attribution.json",
+      "sha256": "95cd97dfa18f6452053f9766cdbd50a9abb878b3321dd4b89efe3464e36b1d7a"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "sha256": "09bea20a3f45d3a2e5f3606aba1953e86fea0ab1248141a966ade940b8426d40"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "sha256": "2cee26bfd8edf69a91afae4fbac9419a8a631ef6102e0157c9835ebf9b40004b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-review-rating-live.json",
+      "sha256": "0bd74926f0004aa1afd2d51d75e562aba85f0fc4035aaeacabb2e992187c1441"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-review-uniqueness.json",
+      "sha256": "1d8f6c15ed55117759dfaaeab9c166c16892420cf63483d4e0fbd7acf8486ae3"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-review-visibility.json",
+      "sha256": "fcc97bdd857cfdd516fdc102fb39c3966513d18201fe538f75bfe964fd94f022"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-server-price.json",
+      "sha256": "294c0dc143b068a53742765e1b14d48ff784353ca7dbd11eaa399ce5e3840941"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "sha256": "7e7fce7f6a0d30a68f85bbd0cb11f7f126a591a5cacb21bc38b8c14eadab5c30"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
+      "sha256": "4f4e276ad955b0bd1f951ab819658fafd7cbf38dedaf7bb63eac72aea5a09ae7"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-fulfilment-access.json",
+      "sha256": "ca90d1f449b1c85eec65c0b419e69802408495e2d7a270243e8f2c34e5a1533c"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-fulfilment-live.json",
+      "sha256": "8bc4f4ed389ccdac6483287c7504a7a845a49a59bc9783a887947b8fe24a93b7"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "sha256": "c0138182e3a6bb50d45b6207ffa4cf154b4b15e2845327293cda1eb72277f65f"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-invariants.json",
+      "sha256": "2c030b52aa271d7fccd3f68221f5d8738b3bd50cb30dda20500fec6b97018172"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-low-stock.json",
+      "sha256": "825106842ee10d734fab9fec922606a0ffe05801af5654b927c3e7371819f101"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-operational-best-sellers.json",
+      "sha256": "707a53bb57e05fea1e587b1861572b452b13234591d3f1ea42a47e635e478991"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "sha256": "3e37bc2c928f8a05dc3436cf8195441eb291447bca7c654631941b3e32db347b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "sha256": "455480a97b078e9eacea3156bcd9bb328bf424fa6e7ad9e379e6570000470a43"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-order-cancellation-history.json",
+      "sha256": "0e15bf64c9fdce6e30a83d5d3cc3f67071ea3d6324761660535f236bb479b74d"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-queue-warehouse.json",
+      "sha256": "ca406727fef2be2ff76b3ce8ff1bbde976d5f672701e71daee3cc336c8d88992"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-self-contained.json",
+      "sha256": "967c0c55be65252fe245fd6bf3cc1a6f2597f90c56f21b2d5039e565711ad8c8"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "sha256": "42fa5518b5cc00349ea9daa7ba4684a62dc8924acddff8fa81d61cd518ced9ae"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "sha256": "2fa6bceb0d87eaa39c00c901b710653ddc0870b922edd2b9ea5de6e9f5e10aa9"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+      "sha256": "aa85197e383460f1484e5629e02db2a321f076fc62270a7843394453de5f30b0"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-deferred-access.json",
+      "sha256": "9bdc7da61aca2b7837b1bc85e2813188faf1adb26bf9406ee40e967cf15e91f4"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "sha256": "9e747ffbb6949e2ab24bfd201205f9c327512ded187d29945f5969911f75b8fc"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
+      "sha256": "3c7f8c47e4cd448eeab897cb99029ee1fd4104ce39b41117cf80abb680aeec01"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
+      "sha256": "5f14a2ddb2420da3f156a86e845bcff95f56164686dee6f85091b1854fa98cb6"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "sha256": "ebea2f55e52e36ece16ceee22d4acef17a6cb36b40cf919562b639607c142dbe"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/03-server-time.json",
+      "sha256": "ecb028ada567a263f3b71bd98e23e1b7fbbaf411f81d599646b9eb300d47994d"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "sha256": "bc88aec5a5468b5e60add545bf1b1d2001e7d0e0fcbb86657385251b24c6ee3e"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-account-state-reconnect.json",
+      "sha256": "26e72c2748b466f91ef3d5a30be7c1b99bef1d1566f01b4d7ed776725c1ac5ec"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
+      "sha256": "02f4c211c11bb5a77a2b0e28d9f761150ae68d2ff6712395226188e4c7046a58"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "sha256": "0ed039fcc2ef867754f465e7f2e8ecedc7a08ce1039df3a6ab1cd4cacb32384c"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "sha256": "16c6a484739fbe0c0ce0e7b1646885a823b7c376d5ab0aebc840fdb3e80b5455"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "sha256": "14f3d0f348303fa0c92e07913a0462ee2938ff2913a93c1889be8c3d6af0c923"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "sha256": "03657ad0ec1c501da37659f7eec805c7866cf9621442b6d390dba25d3a963c3d"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "sha256": "a53ddfa1802a484691ed4632f3461d0e8bebca95086b6bc3d6161d44eae6cb7b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "sha256": "cdb50bff3a4d8c52751856f6e51db0363eda8c8de95b54c305270d738ec2d30b"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "sha256": "c55800a3778aae20fb9172db05de2f625624c79375262dd834ea930b9a2521cb"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "sha256": "f334137a33fc63171d6b5c19549add6ff1c51c6f3729f7f372dd9785a0b7eab2"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "sha256": "a70ecb39135aed2a9ac489a095e6ccee7d46450519aef971202c2080287b18cc"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-open-list-live.json",
+      "sha256": "2293ca3734351091238a795d8ea2f13afc50fd6c10b2867d93965a3fc8798a38"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "sha256": "c1a027a3c930ff3dae31eea8fd512f0dbde61c460e896556a2ca40c25a4d0308"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-purchasing.json",
+      "sha256": "b4ead2290f0ed9eb318f2ff0ec44e243c88073b81e2e554aa7e0f01ce59d5b67"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "sha256": "5eaa26e4d0fe5d8120d633a76a3b145a8d825e6c6107981675746fe9de1ad48e"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "sha256": "c4f3f9b4d3fca1436900eebbb74e7ca6038b3942a6f3e6fd2481d4376c912ac6"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "sha256": "bfe392b6cfb5b918b847778ee9fbf94521a647859617970e1e0d44109567c784"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "sha256": "9915be05556c0d90052c82d0aef1f8fbf20c6dc56260fd95a0d932ae32ab906a"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "sha256": "d5df4d77d1e0abf172cd52e350b419e545b045c5ec73785cd7ad98a35f8839aa"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "sha256": "a9799e8d9c5d96e29eaafffcd1fc3f6e205a3f7f00b2f0bb2b157c4db8982492"
+    },
+    {
+      "path": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "sha256": "0b09a2f1f4b9483c43ea460c2c5515c84d702d9c0e4481dfdc3304d333763d91"
+    }
+  ],
+  "recipe": {
+    "contentSha256": "f4abe47198b4f1aefe1b833d24a3cb429494e3060852721855fa5d781e16a3fe",
+    "meaningSha256": "4ca7db770be33b97863425348a60113fa350f944c40954f53002496ebe0373f8",
+    "executionSha256": "47c9be8d4dbc5b25b6bc4c5a55725946d9ead98f2e0a556676bee68cafbc37be"
+  },
+  "originalManifestSha256": "36a79326570c56f89289d094e4380f312d7fed0e8b424a98e9288770ecc6479e",
+  "roleManifestSha256": "eae7a29e24c63766c5fff10b329064dcc509dd5630665a1432ce0313cbb28c31",
+  "originalRecipeSha256": "bfe14de3cc0d49abf3054a523f4e59be67b2a67e6eafde1dcd41e8bcd70d1874"
+}

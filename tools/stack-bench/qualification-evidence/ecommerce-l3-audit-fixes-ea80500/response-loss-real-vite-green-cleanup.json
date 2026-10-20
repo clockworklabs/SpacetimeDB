@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-27T18:52:36.504Z",
+  "removed": [
+    "055cf873085e869ac916f2af5030d013b9a8bb5bbae21a407a568157b000b56d",
+    "033d775ef779524f0583a0e6eaf533ef7b31a379e27a1788748ca283b41cd49c",
+    "37c676127b61be5bdf4bb574c0a6e97dc09495a435274b2bd5fd57f2efd87c93"
+  ],
+  "preservedFailures": [
+    "response-loss-real-vite-green-failure.json",
+    "response-loss-real-vite-green-2-verification.json"
+  ]
+}
