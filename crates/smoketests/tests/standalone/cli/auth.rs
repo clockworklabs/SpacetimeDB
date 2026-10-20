@@ -65,7 +65,7 @@ fn cli_list_without_login_warns_before_server_issued_login() {
         ))
         .stdout(predicates::str::contains("you will lose access to those databases."))
         .stdout(predicates::str::contains(
-            "Continue with a server-issued identity? [y/N]",
+            "Are you sure you want to continue? [y/N]",
         ))
         .stderr(predicates::str::contains("Login cancelled."));
     assert_no_login_saved(root.path());
