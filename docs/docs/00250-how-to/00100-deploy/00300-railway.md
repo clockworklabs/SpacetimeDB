@@ -62,7 +62,7 @@ To update an existing database later, run the same command again.
 
 After publishing, connect your client to your Railway-hosted database using your Railway domain as the server URI and your database name.
 
-See [Connecting to SpacetimeDB](../../../00200-core-concepts/00600-clients/00300-connection.md) for the current client connection patterns across supported SDKs.
+See [Connecting to SpacetimeDB](../../00200-core-concepts/00600-clients/00300-connection.md) for the current client connection patterns across supported SDKs.
 
 ## Notes
 

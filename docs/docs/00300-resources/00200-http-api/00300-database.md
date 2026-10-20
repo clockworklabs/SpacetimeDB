@@ -4,7 +4,7 @@ slug: /http/database
 
 # `/v1/database`
 
-The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries. These APIs are intended primarily for management, debugging and interactive developer use, and have not been optimized for performance to the same extent as the WebSocket API used by [the SpacetimeDB client SDKs](../../../00200-core-concepts/00600-clients.md).
+The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries. These APIs are intended primarily for management, debugging and interactive developer use, and have not been optimized for performance to the same extent as the WebSocket API used by [the SpacetimeDB client SDKs](../../00200-core-concepts/00600-clients.md).
 
 ## At a glance
 
@@ -107,7 +107,7 @@ If a database with the given name exists, but the identity provided in the `Auth
 
 ### Publishing with environment values
 
-Both publish endpoints accept [environment values](../../../00200-core-concepts/00100-databases/00700-environment-variables.md) in headers, alongside the module in the body. Send one `spacetime-environment` header per value, in the form `KEY=VALUE`:
+Both publish endpoints accept [environment values](../../00200-core-concepts/00100-databases/00700-environment-variables.md) in headers, alongside the module in the body. Send one `spacetime-environment` header per value, in the form `KEY=VALUE`:
 
 ```
 spacetime-environment: API_KEY=development-only-key
@@ -620,4 +620,4 @@ The `rows` will be an array of [JSON-encoded `ProductValue`s](../00300-internals
 
 ## `ANY /v1/database/:name_or_identity/route/{*path}`
 
-Access routes defined by a database using [HTTP handlers](../../../00200-core-concepts/00200-functions/00600-HTTP-handlers.md).
+Access routes defined by a database using [HTTP handlers](../../00200-core-concepts/00200-functions/00600-HTTP-handlers.md).

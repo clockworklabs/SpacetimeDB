@@ -369,7 +369,6 @@ impl YesOrNo {
         std::io::stdout().flush()?;
         let mut input = String::new();
         let num_read = std::io::stdin().read_line(&mut input)?;
-        // EOF is an error
         anyhow::ensure!(num_read != 0, "Unexpected EOF while reading response");
         let input = input.trim().to_lowercase();
         if input.is_empty() {

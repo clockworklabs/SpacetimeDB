@@ -467,5 +467,5 @@ subscriptions your app depends on.
 - [Procedures](/docs/functions/procedures)
 - [HTTP handlers](/docs/functions/http-handlers)
 - [Subscriptions](/docs/clients/subscriptions)
-- [Authentication](../../00200-core-concepts/00500-authentication.md)
+- [Authentication](../00200-core-concepts/00500-authentication.md)
 - [Schedule tables](/docs/tables/schedule-tables)
