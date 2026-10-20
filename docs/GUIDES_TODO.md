@@ -16,7 +16,7 @@ Each guide will also get a short-format video (done later, once the written guid
 - [x] Build a matchmaking queue
 - [x] Skill-based matchmaking with OpenSkill
 - [x] Make a turn-based game with turn timeouts
-- [ ] Only sync what's near the player
+- [x] Only sync what's near the player
 - [ ] Hide information from players
 - [ ] Reset a leaderboard each season
 
