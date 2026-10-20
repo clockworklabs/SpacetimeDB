@@ -140,17 +140,29 @@ For users who want NativeAOT-LLVM compilation on Windows **or** Linux.
 
 ### Project Configuration
 
-For .NET 10, the project configuration is simpler - no conditional package references needed:
+For .NET 10, ordinary builds produce a managed library. Publishing with the
+`wasi-wasm` runtime identifier selects NativeAOT-LLVM. The module references the
+compiler packages directly, only for WASM builds:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="2.2.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="2.13.*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
   </ItemGroup>
 </Project>
 ```
@@ -194,24 +206,19 @@ This is automatically created by the CLI when using the `init` command with `--d
 
 ### Activating NativeAOT-LLVM (.NET 10)
 
-NativeAOT-LLVM is automatically used when targeting .NET 10. You can also explicitly enable it:
-
-**Option 1: Target .NET 10 during init (recommended)**
-```
+The CLI selects WASM and NativeAOT-LLVM automatically for .NET 10 modules.
+```sh
 spacetime init --lang csharp --dotnet-version 10 my-project
 ```
 
-**Option 2: Use `--native-aot` flag**
-```
-spacetime init --lang csharp --native-aot my-project
-```
+Inside the generated module directory:
 
-**Option 3: `spacetime.json` configuration**
-```json
-{
-  "module": "my-module",
-  "native-aot": true
-}
+```sh
+# Managed library, suitable for a ProjectReference from a .NET test project.
+dotnet build
+
+# WASM module, using the same project and runtime DLL.
+dotnet publish -c Release -r wasi-wasm
 ```
 
 ---
