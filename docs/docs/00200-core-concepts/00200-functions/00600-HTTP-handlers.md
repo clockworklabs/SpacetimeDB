@@ -7,7 +7,7 @@ import Tabs from '@theme/Tabs'
 import TabItem from '@theme/TabItem'
 
 HTTP handlers allow a SpacetimeDB database to expose an HTTP API.
-External clients can make HTTP requests to routes nested under [`/v1/database/:name_or_identity/route`](../../00300-resources/00200-reference/00200-http-api/00300-database.md#any-v1databasename_or_identityroutepath); these requests are resolved to routes defined by the database and then passed to the corresponding HTTP handler.
+External clients can make HTTP requests to routes nested under [`/v1/database/:name_or_identity/route`](../../00300-resources/00200-http-api/00300-database.md#any-v1databasename_or_identityroutepath); these requests are resolved to routes defined by the database and then passed to the corresponding HTTP handler.
 
 :::warning
 ***HTTP handlers are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
