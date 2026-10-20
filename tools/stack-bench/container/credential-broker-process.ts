@@ -15,6 +15,7 @@ import { compiledEntrypoint } from '../src/package-root.js';
 import { killTree } from '../src/runtime/platform.js';
 import { ATTEMPT_CREATION_LABEL } from '../src/runtime/container-identity.js';
 import { BROKER_CONTAINER_RESOURCE_LIMITS } from '../src/composition/product-config.js';
+import type { ToolPolicy } from '../src/agents/tool-policy.js';
 
 const BROKER_DRAIN_TIMEOUT_MS = 30_000;
 const BROKER_DRAIN_POLL_MS = 100;
@@ -175,8 +176,9 @@ export function lookupCertificate(root: string, hostname: string): { keyPath: st
 }
 
 export async function startCredentialBroker(selectedAuth: ContainerAuth, { networkMode, deadlineMs,
-  model, providerRoute, maxOutputTokens, maxBudgetUsd = null, pricingRates = null, renewable = false,
+  model, providerRoute, maxOutputTokens, maxBudgetUsd = null, pricingRates = null, renewable = false, tools,
   env = process.env, docker }: { networkMode: string; deadlineMs: number; model: string; renewable?: boolean;
+  tools?: ToolPolicy;
   maxOutputTokens?: number; maxBudgetUsd?: number | null; pricingRates?: PricingRates | null;
   providerRoute?: string;
   env?: NodeJS.ProcessEnv; docker?: CredentialBrokerDockerOptions }): Promise<CredentialBroker> {
@@ -216,7 +218,8 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
       model, maxOutputTokens: maxOutputTokens ?? MAX_BROKER_OUTPUT_TOKENS,
-      ...(maxOutputTokens !== undefined ? { explicitOutputLimit: true } : {}), maxBudgetUsd, pricingRates };
+      ...(maxOutputTokens !== undefined ? { explicitOutputLimit: true } : {}), maxBudgetUsd, pricingRates,
+      ...(tools ? { tools } : {}) };
     const lookup = brokerProtocol(validateBrokerConfig(settings)).accountLookup;
     const certificate = lookup ? lookupCertificate(root, lookup.hostname) : null;
     const config = validateBrokerConfig({ ...settings,

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { codexArguments, parseCodexResult, runCodexProcess } from '../src/agents/codex-protocol.js';
+import { DEFAULT_TOOL_POLICY } from '../src/agents/tool-policy.js';
 
 test('Codex terminal receipt excludes cached input and requires a complete valid turn', () => {
   const events = [
@@ -37,13 +38,22 @@ test('a resumed Codex thread reports only what this invocation used', () => {
 
 test('Codex uses only the temporary broker token and preserves explicit resume identity', () => {
   const args = codexArguments({ model: 'gpt-test', effort: 'high', baseUrl: 'http://127.0.0.1:123',
-    resumeSession: '12345678-1234-4234-8234-123456789abc' });
+    resumeSession: '12345678-1234-4234-8234-123456789abc', tools: DEFAULT_TOOL_POLICY });
   assert.deepEqual(args.slice(0, 2), ['exec', 'resume']);
   assert.ok(args.includes('model_providers.model_proxy.env_key="MODEL_PROXY_TOKEN"'));
   assert.ok(args.includes('--ignore-user-config'));
-  assert.ok(args.includes('web_search="disabled"'));
-  assert.ok(args.includes('features.multi_agent=false'));
   assert.deepEqual(args.slice(-2), ['12345678-1234-4234-8234-123456789abc', '-']);
+});
+
+test('Codex web search and subagents follow the tool policy', () => {
+  const settings = (webSearch: boolean, subagents: boolean) => codexArguments({ model: 'gpt-test', effort: 'high',
+    baseUrl: 'http://127.0.0.1:123', resumeSession: null, tools: { webSearch, subagents } })
+    .filter(arg => arg.startsWith('web_search=') || arg.startsWith('features.multi_agent='));
+  // The default searches live and starts no other agents.
+  assert.deepEqual(settings(DEFAULT_TOOL_POLICY.webSearch, DEFAULT_TOOL_POLICY.subagents),
+    ['web_search="live"', 'features.multi_agent=false']);
+  assert.deepEqual(settings(false, false), ['web_search="disabled"', 'features.multi_agent=false']);
+  assert.deepEqual(settings(false, true), ['web_search="disabled"', 'features.multi_agent=true']);
 });
 
 test('Codex process capture runs without provider access', async () => {

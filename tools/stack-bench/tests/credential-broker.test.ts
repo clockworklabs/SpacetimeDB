@@ -253,8 +253,9 @@ test('Google requests reach the selected model with the real key and only file, 
     { usageMetadata: { promptTokenCount: 1000, cachedContentTokenCount: 400, candidatesTokenCount: 50,
       thoughtsTokenCount: 30, totalTokenCount: 1080 } }].map(event => `data: ${JSON.stringify(event)}\r\n\r\n`).join('');
   assert.deepEqual(protocol.responseUsage(Buffer.from(events)), { input_tokens: 600, output_tokens: 80,
-    cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
-  assert.equal(protocol.requestPricing({ tools: [{ googleSearch: {} }] }).unpriced, 'hosted-tool');
+    cache_read_input_tokens: 400, cache_creation_input_tokens: 0, web_search_calls: 0, unpriced_reason: null });
+  assert.equal(protocol.requestPricing({ tools: [{ googleSearch: {} }] }).requiresUsage, 'hosted-tool');
+  assert.equal(protocol.requestPricing({ tools: [{ urlContext: {} }] }).unpriced, 'hosted-tool');
   assert.equal(brokerHostname({ provider: 'google', mode: 'api-key' }), 'generativelanguage.googleapis.com');
 });
 
@@ -298,7 +299,8 @@ test('Google account requests reach Code Assist with the renewed token and only 
     sessionToken: 'y'.repeat(16), model: 'gemini-3.1-pro-preview-customtools', maxOutputTokens: 4096 } as const;
   assert.deepEqual(brokerProtocol(config).responseUsage(Buffer.from(usageEvent({ promptTokenCount: 1000,
     cachedContentTokenCount: 400, candidatesTokenCount: 50, thoughtsTokenCount: 30 }))), { input_tokens: 600,
-    output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0 });
+    output_tokens: 80, cache_read_input_tokens: 400, cache_creation_input_tokens: 0, web_search_calls: 0,
+    unpriced_reason: null });
   assert.throws(() => brokerProtocol({ ...config, model: 'test-model' }), /no Antigravity account model/);
   // The account names a model once per effort; another model's name is refused.
   const flash = brokerProtocol({ ...config, model: 'gemini-3.8-flash' });
@@ -1418,7 +1420,7 @@ test('OpenAI broker isolates credentials, bounds requests and reconciles cached 
       assert.equal(reconciled.receipt.exact, true);
       // Features whose charges or input the token rates do not cover are forwarded and marked.
       const unpriced: Array<[Record<string, unknown>, UnpricedReason]> = [
-        [{ tools: [{ type: 'web_search' }] }, 'hosted-tool'],
+        [{ tools: [{ type: 'file_search' }] }, 'hosted-tool'],
         [{ input: [{ type: 'item_reference', id: 'hidden-input' }] }, 'unpriced-input'],
         [{ input: [{ type: 'input_file', file_id: 'file-1' }] }, 'unpriced-input'],
         [{ input: [{ type: 'input_image', image_url: 'https://example.com/image.png' }] }, 'unpriced-input'],
@@ -1627,7 +1629,13 @@ test('Sol screenshot receipts require usage, not an image reservation bound', as
       usage: { ...usage, input_tokens: -1 } }, unknown: true },
     { name: 'HTTP refusal has no usage charge', body: { error: { message: 'unavailable' } }, status: 503, unknown: false },
     { name: 'hosted tool', body: { object: 'response', status: 'completed', usage },
-      tools: [{ type: 'web_search' }], unknown: true },
+      tools: [{ type: 'file_search' }], unknown: true },
+    // A web search is priced from tokens until the response shows one ran.
+    { name: 'unused web search', body: { object: 'response', status: 'completed', usage, output: [] },
+      tools: [{ type: 'web_search' }], unknown: false },
+    { name: 'web search', body: { object: 'response', status: 'completed', usage,
+      output: [{ id: 'ws_1', type: 'web_search_call', status: 'completed' }] },
+      tools: [{ type: 'web_search' }], unknown: true, searches: 1 },
   ];
   const evidence: unknown[] = [];
   try { for (const row of cases) await t.test(row.name, async () => {
@@ -1647,6 +1655,7 @@ test('Sol screenshot receipts require usage, not an image reservation bound', as
       assert.equal(reconciled.receipt.exact, !row.unknown);
       if (!row.unknown) assert.equal(reconciled.receipt.costUsd, row.status ? 0 : 0.0025);
       assert.equal(reconciled.receipt.unpricedRequests, row.unknown ? 1 : 0);
+      assert.equal(reconciled.receipt.webSearchCalls, row.searches ?? 0);
     }, { provider: 'openai', model: 'gpt-6-sol', accountId: 'test', ledgerPath,
       pricingRates: rates, maxBudgetUsd: 2,
       upstreamBody: JSON.stringify(row.body), upstreamStatus: row.status ?? 200 });

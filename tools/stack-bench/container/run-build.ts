@@ -41,6 +41,8 @@ import { ensureFreshAgyLogin } from '../src/agents/agy-login.js';
 import { agyRenewal } from './agy-renewal.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
+import { DEFAULT_TOOL_POLICY, parseToolPolicySwitch } from '../src/agents/tool-policy.js';
+import type { ToolPolicy } from '../src/agents/tool-policy.js';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -56,6 +58,7 @@ const { values } = parseArgs({ options: {
   'resume-session': { type: 'string' }, 'prior-session-usage': { type: 'string' },
   'recover-stopped-container': { type: 'boolean' },
   'completion-marker': { type: 'string' }, ports: { type: 'string' },
+  'web-search': { type: 'string' }, subagents: { type: 'string' },
 } });
 const prepareOnly = values['prepare-only'] ?? false;
 
@@ -104,6 +107,14 @@ const effort = values.effort ?? '';
 const model = values.model ?? '';
 if (!prepareOnly && (!effort || !model)) {
   console.error('run-build.js: --effort and --model are required');
+  process.exit(2);
+}
+let tools: ToolPolicy;
+try {
+  tools = { webSearch: parseToolPolicySwitch(values['web-search'], DEFAULT_TOOL_POLICY.webSearch, '--web-search'),
+    subagents: parseToolPolicySwitch(values.subagents, DEFAULT_TOOL_POLICY.subagents, '--subagents') };
+} catch (error) {
+  console.error(`run-build.js: ${errorMessage(error)}`);
   process.exit(2);
 }
 const maxBudgetUsd = values['max-budget-usd'] ?? null;
@@ -570,7 +581,7 @@ try {
   })() : undefined;
   credentialBroker = await startCredentialBroker(auth,
     { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS, model,
-      providerRoute, maxOutputTokens, renewable: renewAgyLogin !== null,
+      providerRoute, maxOutputTokens, renewable: renewAgyLogin !== null, tools,
       docker,
       maxBudgetUsd: maxBudgetUsd === null ? null : Number(maxBudgetUsd),
       pricingRates: maxBudgetUsd === null ? null : pricing!.rates });
@@ -590,7 +601,7 @@ args.push('-e', tokenEnvironment, ...codingProvider.environment(credentialBroker
   containerName, 'sh', '-c', sessionWrapper, CODING_CONTAINER_PROCESS_IDENTITY.sessionLabel,
   processRecord,
   codingProvider.executable, ...codingProvider.args({ model, effort, baseUrl: credentialBroker.baseUrl,
-    resumeSession, maxBudgetUsd }));
+    resumeSession, maxBudgetUsd, tools }));
 
 // MSYS_NO_PATHCONV: Git Bash rewrites container-side paths like /app into
 // Windows paths (C:/Program Files/Git/app) and every mount silently lands

@@ -44,6 +44,7 @@ import { campaignProviderContinuationContext, persistCampaignProviderInvocation,
   waitForCampaignProviderContinuation } from '../src/campaigns/campaign-provider-continuation.js';
 import type { CodingSessionRetryResult } from '../src/agents/coding-session-retry.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
+import { toolPolicyFromEnvironment, toolPolicySwitch } from '../src/agents/tool-policy.js';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
 import { resolveContainerAuth } from '../container/container-auth.js';
 import { CODING_PROVIDERS, parseCodingProvider } from '../container/coding-providers.js';
@@ -148,6 +149,9 @@ const fwd = (path: string): string => path.split('\\').join('/');
 const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 
 const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
+
+// A campaign sets the tool policy for every attempt; a run outside one gets the default.
+const TOOLS = toolPolicyFromEnvironment(process.env);
 
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 
@@ -877,6 +881,8 @@ async function main() {
           '--image', imageIdentity.id,
           '--effort', EFFORT,
           '--model', args.model,
+          '--web-search', toolPolicySwitch(TOOLS.webSearch),
+          '--subagents', toolPolicySwitch(TOOLS.subagents),
           ...(args.pricing ? ['--pricing-json', JSON.stringify(args.pricing)] : []),
           '--completion-marker', args.mode === 'fix' ? 'FIX_COMPLETE'
             : args.mode === 'upgrade' ? 'UPGRADE_COMPLETE'
@@ -933,6 +939,7 @@ async function main() {
       thinkingTokens: args.provider !== 'anthropic' ? null : THINKING_TOKENS ? Number(THINKING_TOKENS) : 'cli default',
       permissionMode: args.provider === 'anthropic' ? 'acceptEdits' : 'container-isolated',
       effort: EFFORT,
+      tools: TOOLS,
       skills: selectedSkills,
       cacheTier: args.provider === 'anthropic' ? '5m' : 'provider-managed',
       autoUpdater: 'disabled',

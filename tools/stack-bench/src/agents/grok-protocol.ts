@@ -1,18 +1,23 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { CodexUsage } from './codex-protocol.js';
+import type { ToolPolicy } from './tool-policy.js';
 
 export function grokTranscriptDirectory(appDir: string): string {
   return join(homedir(), '.grok', 'stack-bench', resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
 }
 
 // Files and a shell, as the other agents have. The allowlist governs only the file and
-// shell tools; the rest must be removed by name. Removed: subagent workflows (as
-// `--no-subagents`), media generation, MCP tools, and prompts for an absent user.
+// shell tools; the rest must be removed by name. Always removed: scripted workflows, media
+// generation, MCP tools, and prompts for an absent user. The web and subagent tools follow
+// the tool policy: allowed by name when on, and removed by their flags when off. The subagent
+// flag alone leaves the subagent tool callable, so off it also stays out of the allowlist.
 const GROK_TOOLS = ['run_terminal_command', 'monitor', 'read_file', 'search_replace', 'list_dir', 'grep', 'write',
   'todo_write'];
 const GROK_REMOVED_TOOLS = ['workflow', 'image_gen', 'image_edit', 'image_to_video', 'reference_to_video', 'search_tool',
   'use_tool', 'send_feedback', 'ask_user_question', 'enter_plan_mode', 'exit_plan_mode'];
+export const GROK_WEB_TOOLS = ['web_search', 'web_fetch'];
+export const GROK_SUBAGENT_TOOLS = ['task', 'spawn_subagent', 'get_task_output', 'kill_task'];
 
 // Claude's audit names for Grok's file and shell tools, and the input field holding the path.
 export const GROK_AUDIT_TOOLS: Readonly<Record<string, { name: string; path?: string }>> = {
@@ -24,12 +29,14 @@ export const GROK_AUDIT_TOOLS: Readonly<Record<string, { name: string; path?: st
 
 // The prompt arrives on stdin. The stream is in the Anthropic Messages shape, so it
 // is also the session's audited transcript.
-export function grokArguments({ model, effort, resumeSession }: {
-  model: string; effort: string; resumeSession: string | null;
+export function grokArguments({ model, effort, resumeSession, tools }: {
+  model: string; effort: string; resumeSession: string | null; tools: ToolPolicy;
 }): string[] {
+  const web = tools.webSearch ? GROK_WEB_TOOLS : [];
+  const subagents = tools.subagents ? GROK_SUBAGENT_TOOLS : [];
   return ['--prompt-file', '/dev/stdin', '--output-format', 'streaming-messages-json', '-m', model, '--effort', effort,
-    '--always-approve', '--disable-web-search', '--no-subagents', '--tools', GROK_TOOLS.join(','),
-    '--disallowed-tools', GROK_REMOVED_TOOLS.join(','),
+    '--always-approve', ...(tools.webSearch ? [] : ['--disable-web-search']), ...(tools.subagents ? [] : ['--no-subagents']),
+    '--tools', [...GROK_TOOLS, ...web, ...subagents].join(','), '--disallowed-tools', GROK_REMOVED_TOOLS.join(','),
     ...(resumeSession ? ['--resume', resumeSession] : [])];
 }
 

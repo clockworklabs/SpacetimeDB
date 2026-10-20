@@ -5,7 +5,7 @@ import { ANTHROPIC_UPSTREAMS, firstUnpricedReason } from './credential-broker-ac
 import type { BrokerConfig, UnpricedReason } from './credential-broker-accounting.js';
 import type { ProviderFailure } from '../src/agents/provider-failure.js';
 import { ANTIGRAVITY_ACCOUNT_CONTROL_PATHS, ANTIGRAVITY_ACCOUNT_HOST, ANTIGRAVITY_ACCOUNT_LOOKUP, ANTIGRAVITY_ACCOUNT_MODELS,
-  ANTIGRAVITY_ACCOUNT_HELPERS, ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, ANTIGRAVITY_TOOLS }
+  ANTIGRAVITY_ACCOUNT_HELPERS, ANTIGRAVITY_TITLE_MODEL, ANTIGRAVITY_TITLE_PROMPT, antigravityTools }
   from '../src/agents/antigravity-protocol.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -74,6 +74,12 @@ function anthropicRequestPricing(payload: JsonRecord): RequestPricing {
 // Server tools run inside the provider and return these content blocks.
 const serverBlock = (value: unknown): boolean => isRecord(value) && typeof value.type === 'string'
   && (value.type === 'server_tool_use' || value.type === 'mcp_tool_use' || value.type.endsWith('_tool_result'));
+
+// The web searches a response reports, which the provider charges per search.
+function anthropicWebSearches(usages: JsonRecord[]): number {
+  return Math.max(0, ...usages.map(usage => isRecord(usage.server_tool_use)
+    && Number.isSafeInteger(usage.server_tool_use.web_search_requests) ? usage.server_tool_use.web_search_requests as number : 0));
+}
 
 function anthropicResponseUnpriced(usages: JsonRecord[], serverBlocks: boolean): UnpricedReason | null {
   const serverToolUse = serverBlocks || usages.some(usage => isRecord(usage.server_tool_use)
@@ -172,6 +178,7 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
       ephemeral_1h_input_tokens: cacheWrite1h,
     },
     unpriced_reason: anthropicResponseUnpriced(values, serverBlocks),
+    web_search_calls: anthropicWebSearches(values),
   };
 }
 
@@ -240,12 +247,23 @@ function responsesRejection(body: Buffer, encoding?: string | string[]): Pick<Pr
   return produced ? null : rejection;
 }
 
+// A hosted web search appears in a Responses output as one `web_search_call` item per search,
+// streamed as it finishes and listed again in the final response.
+const WEB_SEARCH_TOOL = /^web_search/;
+const webSearchCall = (item: unknown): item is JsonRecord => isRecord(item) && item.type === 'web_search_call';
+
 function responsesUsage(body: Buffer, encoding?: string | string[], config?: BrokerConfig): JsonRecord | null {
   let response: JsonRecord | null = null;
   let failed = false;
   let metadata: JsonRecord | null = null;
+  const searches = new Set<string>();
+  let streamedUnnamed = 0;
   const accept = (value: unknown): void => {
     if (!isRecord(value)) return;
+    if (value.type === 'response.output_item.done' && webSearchCall(value.item)) {
+      if (typeof value.item.id === 'string') searches.add(value.item.id);
+      else streamedUnnamed += 1;
+    }
     if (isRecord(value.openrouter_metadata)) metadata = value.openrouter_metadata;
     if (value.type === 'error' || value.type === 'response.failed') failed = true;
     if ((value.type === 'response.completed' || value.type === 'response.incomplete'
@@ -271,13 +289,20 @@ function responsesUsage(body: Buffer, encoding?: string | string[], config?: Bro
   } catch { return null; }
   const usage = (response as JsonRecord | null)?.usage;
   if (failed || !isRecord(usage)) return null;
+  const items = (response as JsonRecord | null)?.output;
+  const listed = Array.isArray(items) ? items.filter(webSearchCall) : [];
+  for (const item of listed) if (typeof item.id === 'string') searches.add(item.id);
+  const webSearchCalls = searches.size
+    + Math.max(streamedUnnamed, listed.filter(item => typeof item.id !== 'string').length);
   const input = usage.input_tokens;
   const output = usage.output_tokens;
   const cached = isRecord(usage.input_tokens_details) ? usage.input_tokens_details.cached_tokens : 0;
   if (![input, output, cached].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
     || (cached as number) > (input as number)) return null;
+  // Searches are charged per call on top of tokens; OpenRouter's reported cost includes them.
   const normalized = { input_tokens: (input as number) - (cached as number), output_tokens: output,
-    cache_read_input_tokens: cached, cache_creation_input_tokens: 0 };
+    cache_read_input_tokens: cached, cache_creation_input_tokens: 0, web_search_calls: webSearchCalls,
+    unpriced_reason: webSearchCalls > 0 && config?.provider !== 'openrouter' ? 'hosted-tool' : null };
   if (config?.provider !== 'openrouter') return normalized;
   const final = response as JsonRecord | null;
   const route = (final?.openrouter_metadata ?? metadata) as JsonRecord | null;
@@ -335,6 +360,10 @@ export function imageTokenAdjustment(value: unknown, model: string): number {
   }, 0);
 }
 
+// A declared web search is priced when the response shows it unused.
+const declaresWebSearch = (payload: JsonRecord): boolean => Array.isArray(payload.tools)
+  && payload.tools.some(tool => isRecord(tool) && WEB_SEARCH_TOOL.test(String(tool.type)));
+
 // Responses usage covers tokens only. A requested tier, hosted tools, files,
 // remote images, non-text output, and stored context can add charges or
 // input that the broker neither prices nor reserves.
@@ -343,7 +372,8 @@ function responsesRequestFeature(payload: JsonRecord): UnpricedReason | null {
     payload.service_tier !== undefined && payload.service_tier !== 'default' && payload.service_tier !== 'auto'
       ? 'service-tier' : null,
     payload.tools !== undefined && (!Array.isArray(payload.tools)
-      || payload.tools.some(tool => !isRecord(tool) || !['function', 'custom'].includes(String(tool.type))))
+      || payload.tools.some(tool => !isRecord(tool)
+        || (!['function', 'custom'].includes(String(tool.type)) && !WEB_SEARCH_TOOL.test(String(tool.type)))))
       ? 'hosted-tool' : null,
     hasUnpricedInput(payload.input) || images(payload.input).some(image => inlineImageUrl(image) === null)
       ? 'unpriced-input' : null,
@@ -446,9 +476,10 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
       // reservation bound does not make complete usage unpriced. Without usage,
       // keep the unknown input flag; never treat the partial reservation as a ceiling.
       // https://developers.openai.com/api/docs/guides/images-vision#calculating-costs
+      const search = declaresWebSearch(payload);
       return { unpriced: router ? null : feature,
-        requiresUsage: !router && unboundedImage ? 'unpriced-input' : null,
-        bounded: feature === null && !unboundedImage };
+        requiresUsage: router ? null : firstUnpricedReason(search ? 'hosted-tool' : null, unboundedImage ? 'unpriced-input' : null),
+        bounded: feature === null && !unboundedImage && !search };
     },
     inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,
@@ -500,7 +531,8 @@ function grokProtocol(config: BrokerConfig): BrokerProtocol {
     },
     requestPricing: payload => {
       const feature = responsesRequestFeature(payload);
-      return { unpriced: feature, requiresUsage: null, bounded: feature === null };
+      const search = declaresWebSearch(payload);
+      return { unpriced: feature, requiresUsage: search ? 'hosted-tool' : null, bounded: feature === null && !search };
     },
     outputLimit: payload => (payload.max_output_tokens as number | undefined) ?? config.maxOutputTokens,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
@@ -519,21 +551,25 @@ function geminiRequest(request: JsonRecord, config: BrokerConfig, helperPrompt: 
   if (limit !== undefined && (!Number.isSafeInteger(limit) || (limit as number) < 1
     || (limit as number) > config.maxOutputTokens)) fail('invalid maxOutputTokens');
   request.generationConfig = { ...generation, maxOutputTokens: limit ?? config.maxOutputTokens };
-  // The CLI cannot remove a tool, so only the file, shell and task functions reach the model.
+  // The CLI cannot remove a tool, so only the file, shell and task functions, and those the tool
+  // policy turns on, reach the model.
+  const allowed = antigravityTools(config.tools);
   if (Array.isArray(request.tools)) request.tools = request.tools.map(tool => isRecord(tool)
     && Array.isArray(tool.functionDeclarations) ? { ...tool, functionDeclarations: tool.functionDeclarations
-      .filter(declaration => isRecord(declaration) && ANTIGRAVITY_TOOLS.includes(String(declaration.name))) } : tool);
+      .filter(declaration => isRecord(declaration) && allowed.includes(String(declaration.name))) } : tool);
   return request;
 }
 
+// Grounding with Google Search is priced when the response shows no search.
 function geminiPricing(request: JsonRecord): RequestPricing {
+  const search = Array.isArray(request.tools) && request.tools.some(tool => isRecord(tool) && tool.googleSearch !== undefined);
   const unpriced = firstUnpricedReason(
     Array.isArray(request.tools) && request.tools.some(tool => !isRecord(tool)
-      || Object.keys(tool).some(key => key !== 'functionDeclarations')) ? 'hosted-tool' : null,
+      || Object.keys(tool).some(key => key !== 'functionDeclarations' && key !== 'googleSearch')) ? 'hosted-tool' : null,
     request.cachedContent !== undefined ? 'stored-context' : null,
     JSON.stringify(request.contents ?? []).includes('"fileData"') ? 'unpriced-input' : null,
     request.serviceTier !== undefined && request.serviceTier !== 'standard' ? 'service-tier' : null);
-  return { unpriced, requiresUsage: null, bounded: unpriced === null };
+  return { unpriced, requiresUsage: search ? 'hosted-tool' : null, bounded: unpriced === null && !search };
 }
 
 function geminiOutputLimit(request: JsonRecord): number {
@@ -607,15 +643,24 @@ function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
 
 // The last streamed chunk carries the call's usage, wrapped in `response` by Code Assist.
 // Prompt tokens include cache reads; thinking is billed as output.
+// A grounded response names the searches it ran in its grounding metadata.
 function googleUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null {
   let usage: JsonRecord | null = null;
   let failed = false;
+  let grounded = false;
+  const queries = new Set<string>();
   const accept = (value: unknown): void => {
     for (const event of Array.isArray(value) ? value : [value]) {
       if (!isRecord(event)) continue;
       const item = isRecord(event.response) ? event.response : event;
       if (isRecord(event.error) || isRecord(item.error)) failed = true;
       if (isRecord(item.usageMetadata)) usage = item.usageMetadata;
+      for (const candidate of Array.isArray(item.candidates) ? item.candidates : []) {
+        if (!isRecord(candidate) || !isRecord(candidate.groundingMetadata)) continue;
+        grounded = true;
+        const asked = candidate.groundingMetadata.webSearchQueries;
+        if (Array.isArray(asked)) for (const query of asked) queries.add(String(query));
+      }
     }
   };
   try {
@@ -634,5 +679,6 @@ function googleUsage(body: Buffer, encoding?: string | string[]): JsonRecord | n
   if (![prompt, cached, output, thinking].every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
     || (cached as number) > (prompt as number)) return null;
   return { input_tokens: (prompt as number) - (cached as number), output_tokens: (output as number) + (thinking as number),
-    cache_read_input_tokens: cached, cache_creation_input_tokens: 0 };
+    cache_read_input_tokens: cached, cache_creation_input_tokens: 0, web_search_calls: queries.size,
+    unpriced_reason: grounded ? 'hosted-tool' : null };
 }

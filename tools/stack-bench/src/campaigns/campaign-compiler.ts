@@ -6,6 +6,8 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { validateProviderRoute, validateProviderOutputLimit } from '../agents/agent-adapter-contract.js';
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import type { AgentAdapterIdentity } from '../agents/agent-adapters.js';
+import { DEFAULT_TOOL_POLICY } from '../agents/tool-policy.js';
+import type { ToolPolicy } from '../agents/tool-policy.js';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { currentEngineIdentity } from '../evidence/artifacts.js';
@@ -103,6 +105,8 @@ export interface CampaignDefinition {
   selection: CampaignSelection;
   stacks: CampaignStackSelection[];
   agents: CampaignAgentSelection[];
+  // Compiling fills in the default, so every compiled campaign records it.
+  tools?: ToolPolicy;
   conditions: ConditionReference[];
   repetitions: number;
   ordering: { method: 'balanced-rotation'; seed: string };
@@ -243,6 +247,7 @@ export interface CampaignAttemptPlan extends UnknownRecord {
   effort?: CampaignAgentSelection['effort'];
   providerRoute?: string;
   maxOutputTokens?: number;
+  tools?: ToolPolicy;
   guidance: string;
   repetition: number;
   order: number;
@@ -349,7 +354,7 @@ const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
   'track', 'mode', 'repair', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
-  'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'featureCatalog']);
+  'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'featureCatalog', 'tools']);
 ROOT_FIELDS.add('runtime');
 const PACK_SELECTION_FIELDS = new Set(['packs', 'checks']);
 const MODULAR_SELECTION_FIELDS = new Set(['levels']);
@@ -358,6 +363,7 @@ const PROGRESSION_LEVEL_FIELDS = new Set(['level', 'recipe']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion', 'repetitions']);
 const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'effort', 'providerRoute', 'maxOutputTokens']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
+const TOOL_POLICY_FIELDS = new Set(['webSearch', 'subagents']);
 const BUDGET_FIELDS = new Set(['attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
 const PRICING_FIELDS = new Set(['currency', 'unit', 'capturedAt', 'source', 'models']);
@@ -559,6 +565,12 @@ export function validateCampaignDefinition(input: unknown,
     validateProviderOutputLimit(provider, agent.maxOutputTokens);
     return agent as unknown as CampaignAgentSelection;
   }, { nonEmpty: true, sort: true });
+  if (value.tools !== undefined) {
+    strict(value.tools, `${source}.tools`, TOOL_POLICY_FIELDS);
+    for (const field of TOOL_POLICY_FIELDS) {
+      if (typeof value.tools[field as keyof ToolPolicy] !== 'boolean') fail(`${source}.tools.${field}`, 'must be true or false');
+    }
+  }
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));
   if (new Set(agentKeys).size !== agentKeys.length) fail(`${source}.agents`, 'contains a duplicate configuration');
   value.conditions = exactArray(value.conditions, `${source}.conditions`, (condition, at) =>
@@ -811,6 +823,7 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
     ...(agent.effort ? { effort: agent.effort } : {}),
     ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
     ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}),
+    ...(definition.tools ? { tools: definition.tools } : {}),
     pricing: { unit: definition.pricing.unit,
       rates: definition.pricing.models[agent.model]! },
     condition,
@@ -1160,6 +1173,7 @@ export function compileCampaignFile(path: string, {
   if (sourceDefinition.mode.id === 'dependency') {
     sourceDefinition.mode.retainPriorContracts ??= true;
   }
+  sourceDefinition.tools ??= { ...DEFAULT_TOOL_POLICY };
   const requestedLevels = sourceDefinition.levels;
   const { bindings, stacks, agents, conditions, featureCatalog, dependencyPolicy } =
     resolveCampaignInputs(sourceDefinition, { stackBenchRoot, calibrationResolver, recipeResolver });

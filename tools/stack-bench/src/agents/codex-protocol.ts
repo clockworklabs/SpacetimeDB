@@ -1,20 +1,22 @@
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { ToolPolicy } from './tool-policy.js';
 
 export function codexTranscriptDirectory(appDir: string): string {
   return join(homedir(), '.codex', 'stack-bench', resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
 }
 
-export function codexArguments({ model, effort, baseUrl, resumeSession }: {
-  model: string; effort: string; baseUrl: string; resumeSession: string | null;
+// Web search runs live, as the other agents' searches do, rather than from OpenAI's cached index.
+export function codexArguments({ model, effort, baseUrl, resumeSession, tools }: {
+  model: string; effort: string; baseUrl: string; resumeSession: string | null; tools: ToolPolicy;
 }): string[] {
   return ['exec', ...(resumeSession ? ['resume'] : []), '--json',
     '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox',
     '--ignore-user-config', '--ignore-rules', '--model', model,
     '-c', `model_reasoning_effort=${JSON.stringify(effort)}`,
     '-c', 'model_provider="model_proxy"',
-    '-c', 'web_search="disabled"', '-c', 'features.multi_agent=false',
+    '-c', `web_search=${tools.webSearch ? '"live"' : '"disabled"'}`, '-c', `features.multi_agent=${tools.subagents}`,
     '-c', 'model_providers.model_proxy.name="Model API"',
     '-c', `model_providers.model_proxy.base_url=${JSON.stringify(baseUrl + '/v1')}`,
     '-c', 'model_providers.model_proxy.env_key="MODEL_PROXY_TOKEN"',

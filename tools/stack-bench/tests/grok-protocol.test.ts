@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { grokArguments, parseGrokResult } from '../src/agents/grok-protocol.js';
+import { GROK_SUBAGENT_TOOLS, GROK_WEB_TOOLS, grokArguments, parseGrokResult } from '../src/agents/grok-protocol.js';
+import { DEFAULT_TOOL_POLICY } from '../src/agents/tool-policy.js';
+
+const OFF = { webSearch: false, subagents: false };
 
 const SESSION = '01a112c6-39bd-7d52-a3a9-3158e1b76555';
 const stream = (result: Record<string, unknown>) => [
@@ -10,7 +13,7 @@ const stream = (result: Record<string, unknown>) => [
 ].map(event => JSON.stringify(event)).join('\n');
 
 test('Grok runs headless from stdin with files and a shell only, and resumes by session', () => {
-  const args = grokArguments({ model: 'grok-4.6', effort: 'medium', resumeSession: null });
+  const args = grokArguments({ model: 'grok-4.6', effort: 'medium', resumeSession: null, tools: OFF });
   assert.deepEqual(args.slice(0, 11), ['--prompt-file', '/dev/stdin', '--output-format', 'streaming-messages-json',
     '-m', 'grok-4.6', '--effort', 'medium', '--always-approve', '--disable-web-search', '--no-subagents']);
   const tools = args[args.indexOf('--tools') + 1]!.split(',');
@@ -20,8 +23,28 @@ test('Grok runs headless from stdin with files and a shell only, and resumes by 
   // The allowlist does not govern Grok's other built-in tools; they are removed by name.
   const removed = args[args.indexOf('--disallowed-tools') + 1]!.split(',');
   assert(removed.includes('workflow') && removed.includes('image_gen') && removed.includes('ask_user_question'));
-  assert.deepEqual(grokArguments({ model: 'grok-4.6', effort: 'high', resumeSession: SESSION }).slice(-2),
+  assert.deepEqual(grokArguments({ model: 'grok-4.6', effort: 'high', resumeSession: SESSION, tools: OFF }).slice(-2),
     ['--resume', SESSION]);
+});
+
+test('Grok web search and subagents follow the tool policy', () => {
+  const view = (tools: { webSearch: boolean; subagents: boolean }) => {
+    const args = grokArguments({ model: 'grok-4.6', effort: 'medium', resumeSession: null, tools });
+    return { flags: args.filter(arg => arg === '--disable-web-search' || arg === '--no-subagents'),
+      allowed: args[args.indexOf('--tools') + 1]!.split(','), removed: args[args.indexOf('--disallowed-tools') + 1]!.split(',') };
+  };
+  const byDefault = view(DEFAULT_TOOL_POLICY);
+  assert.deepEqual(byDefault.flags, ['--no-subagents']);
+  assert(GROK_WEB_TOOLS.every(tool => byDefault.allowed.includes(tool)));
+  assert(GROK_SUBAGENT_TOOLS.every(tool => !byDefault.allowed.includes(tool)));
+  const off = view(OFF);
+  assert.deepEqual(off.flags, ['--disable-web-search', '--no-subagents']);
+  assert(GROK_WEB_TOOLS.every(tool => !off.allowed.includes(tool)));
+  const on = view({ webSearch: true, subagents: true });
+  assert.deepEqual(on.flags, []);
+  assert(GROK_SUBAGENT_TOOLS.every(tool => on.allowed.includes(tool)));
+  // Scripted workflows, media and MCP tools stay removed whatever the policy.
+  for (const result of [byDefault, off, on]) assert(result.removed.includes('workflow') && result.removed.includes('search_tool'));
 });
 
 test('a completed Grok stream maps to the shared result, with cache reads kept separate', () => {

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SESSION_ENDED_AFTER_ANSWER } from './codex-protocol.js';
 import type { CodexUsage } from './codex-protocol.js';
+import type { ToolPolicy } from './tool-policy.js';
 
 export function antigravityTranscriptDirectory(appDir: string): string {
   return join(homedir(), '.gemini', 'stack-bench', resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
@@ -36,14 +37,23 @@ export const ANTIGRAVITY_ACCOUNT_CONTROL_PATHS = ['loadCodeAssist', 'retrieveUse
   'fetchAdminControls', 'fetchAvailableModels', 'listExperiments'].map(method => `/v1internal:${method}`);
 
 // Files and a shell, as the other agents have. The CLI has no flag to remove a tool, so the
-// broker drops every other function from the request: subagents, scheduling and messaging,
-// web search and fetch, and questions for an absent user.
+// broker drops every other function from the request: scheduling and messaging, the browser,
+// and questions for an absent user. Web search and fetch, and subagents, stay when the tool
+// policy turns them on.
 export const ANTIGRAVITY_TOOLS = ['view_file', 'run_command', 'write_to_file', 'replace_file_content', 'manage_task'];
+export const ANTIGRAVITY_WEB_TOOLS = ['search_web', 'read_url_content', 'view_content_chunk'];
+export const ANTIGRAVITY_SUBAGENT_TOOLS = ['invoke_subagent', 'manage_subagents', 'define_subagent'];
+
+export function antigravityTools(policy: ToolPolicy | undefined): string[] {
+  return [...ANTIGRAVITY_TOOLS, ...(policy?.webSearch ? ANTIGRAVITY_WEB_TOOLS : []),
+    ...(policy?.subagents ? ANTIGRAVITY_SUBAGENT_TOOLS : [])];
+}
 
 // Claude's audit names for Antigravity's file and shell tools, and the parameter holding the path.
 export const ANTIGRAVITY_AUDIT_TOOLS: Readonly<Record<string, { name: string; path?: string }>> = {
   run_command: { name: 'Bash' }, view_file: { name: 'Read', path: 'AbsolutePath' },
   write_to_file: { name: 'Edit', path: 'TargetFile' }, replace_file_content: { name: 'Edit', path: 'TargetFile' },
+  search_web: { name: 'WebSearch' }, read_url_content: { name: 'WebFetch' },
 };
 
 // The CLI reads a prompt from stdin only as a stream-json message, so the launcher wraps

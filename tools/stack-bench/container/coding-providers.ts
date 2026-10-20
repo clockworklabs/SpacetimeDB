@@ -7,6 +7,7 @@ import type { CodexUsage } from '../src/agents/codex-protocol.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { runTranscriptAwareProcess } from '../src/agents/claude-terminal-recovery.js';
 import type { PricingRates } from '../src/evidence/pricing-authority.js';
+import type { ToolPolicy } from '../src/agents/tool-policy.js';
 import { containerClaudeTranscriptReader } from './claude-transcript-reader.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
 import { validateAntigravityNativeSession, validateClaudeNativeSession, validateCodexNativeSession, validateGrokNativeSession }
@@ -17,7 +18,7 @@ import { ANTIGRAVITY_LAUNCHER, antigravityArguments, antigravityFinishedAnswer, 
   from '../src/agents/antigravity-protocol.js';
 
 type Invocation = { model: string; effort: string; baseUrl: string; resumeSession: string | null;
-  maxBudgetUsd: string | null };
+  maxBudgetUsd: string | null; tools: ToolPolicy };
 type ProcessOptions = Parameters<typeof runCodexProcess>[0] & {
   projects: string; containerId: string; marker: string; model: string;
   pricingRates: PricingRates | null; resumeSession: string | null;
@@ -121,6 +122,14 @@ const googleProvider: CodingProvider = {
   },
 };
 
+// Claude Code's web tools, and its subagent tool under both of its names, removed when the
+// tool policy turns them off.
+export const CLAUDE_WEB_TOOLS = ['WebSearch', 'WebFetch'];
+export const CLAUDE_SUBAGENT_TOOLS = ['Task', 'Agent'];
+export function claudeDeniedTools(tools: ToolPolicy): string[] {
+  return [...(tools.webSearch ? [] : CLAUDE_WEB_TOOLS), ...(tools.subagents ? [] : CLAUDE_SUBAGENT_TOOLS)];
+}
+
 export const CODING_PROVIDERS = {
   anthropic: {
     requiresBudget: false,
@@ -133,13 +142,15 @@ export const CODING_PROVIDERS = {
       resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase()),
     rates: claudeRatesForModel,
     validateContinuation: validateClaudeNativeSession,
-    args: ({ model, effort, maxBudgetUsd, resumeSession }) => {
+    args: ({ model, effort, maxBudgetUsd, resumeSession, tools }) => {
+      const denied = claudeDeniedTools(tools);
       return [
         '--print', '--output-format', 'json',
         // Isolate the session from project memory, plugins, and integrations.
         '--bare',
         '--permission-mode', 'acceptEdits',
         '--settings', JSON.stringify({ permissions: { allow: ['Bash'] } }),
+        ...(denied.length ? ['--disallowedTools', denied.join(',')] : []),
         '--effort', effort,
         '--model', model,
         ...(maxBudgetUsd !== null ? ['--max-budget-usd', maxBudgetUsd] : []),

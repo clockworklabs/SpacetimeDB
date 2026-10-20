@@ -32,6 +32,7 @@ import { readCampaignAdmission, runCampaignAdmission, delegateCampaignReservatio
 import { recoverCampaignReservations } from './campaign-admission.js';
 import { resolveExecutionCredentials, validateExecutionCredentialTargets } from '../agents/credential-profiles.js';
 import type { ExecutionCredentials } from '../agents/credential-profiles.js';
+import { TOOL_POLICY_ENVIRONMENT, toolPolicySwitch } from '../agents/tool-policy.js';
 import type { CampaignReservation } from './campaign-admission.js';
 import { campaignChildPath as contained } from './campaign-path.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
@@ -695,6 +696,11 @@ export async function executeCampaign(campaignFile: string, directory: string,
           if (pending.plan.effort) credentials.env.STACK_BENCH_EFFORT = pending.plan.effort;
           else delete credentials.env.STACK_BENCH_EFFORT;
           delete credentials.env.STACK_BENCH_THINKING;
+          // The plan alone chooses the agent's tools as well.
+          const tools = pending.plan.tools;
+          if (!tools) throw new Error(`attempt ${pending.plan.id} records no tool policy; compile the campaign again`);
+          credentials.env[TOOL_POLICY_ENVIRONMENT.webSearch] = toolPolicySwitch(tools.webSearch);
+          credentials.env[TOOL_POLICY_ENVIRONMENT.subagents] = toolPolicySwitch(tools.subagents);
           delete credentials.env.MAX_THINKING_TOKENS;
           const previousAssignment = pending.executions.at(-1)?.credentialAssignment;
           if (pending.executions.length && canonicalDefinitionJson(previousAssignment ?? null)

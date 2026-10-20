@@ -7,6 +7,7 @@ export interface CostReceiptEntry {
     exact?: boolean;
     estimatedRequests?: number;
     unpricedRequests?: number;
+    webSearchCalls?: number;
   };
   [key: string]: unknown;
 }
@@ -56,12 +57,15 @@ export interface CostLedgerRow {
   // False when a receipt includes a request whose charge the broker's rates do
   // not price; the row's cost is then unknown, with the priced part a lower bound.
   priced: boolean;
+  webSearchCalls: number;
 }
 
 export interface CostLedger {
   complete: boolean;
   exact: boolean;
   priced: boolean;
+  // Web searches the receipts count; each is charged on top of tokens.
+  webSearchCalls: number;
   differenceUsd: number;
   receiptCostUsd: number;
   reportedCostUsd: number;
@@ -187,6 +191,8 @@ export function durableCostLedger(run: CostRun, scope: 'run' | 'execution' = 'ru
       exact: row.receipts.every(entry => entry?.receipt?.exact === true),
       // Receipts before schema version 4 have no unpriced requests.
       priced: row.receipts.every(entry => (entry?.receipt?.unpricedRequests ?? 0) === 0),
+      // Receipts before web searches were counted report none.
+      webSearchCalls: row.receipts.reduce((sum, entry) => sum + (entry?.receipt?.webSearchCalls ?? 0), 0),
     };
   });
   const reportedCostUsd = roundUsd(cost(scope === 'execution' && run.progressionResume
@@ -205,6 +211,7 @@ export function durableCostLedger(run: CostRun, scope: 'run' | 'execution' = 'ru
       && Math.abs(differenceUsd) <= 0.0001,
     exact: rows.every(row => row.exact),
     priced: rows.every(row => row.priced),
+    webSearchCalls: rows.reduce((sum, row) => sum + row.webSearchCalls, 0),
     rows,
   };
 }

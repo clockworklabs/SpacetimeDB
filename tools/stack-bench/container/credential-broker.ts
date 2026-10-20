@@ -116,6 +116,7 @@ export function createCredentialBroker(configInput: unknown, {
   const estimatedByReason = noEstimates();
   let unpricedBillableRequests = 0;
   const unpricedByReason = noUnpriced();
+  let webSearchCalls = 0;
   let spentUsd = 0;
   let providerReportedCostUsd = 0;
   let providerIntegrityError: string | undefined;
@@ -137,6 +138,7 @@ export function createCredentialBroker(configInput: unknown, {
     estimatedByReason,
     unpricedBillableRequests,
     unpricedByReason,
+    webSearchCalls,
     spentUsd: Number(spentUsd.toFixed(6)),
     reservedUsd: Number(reservedUsd.toFixed(6)),
     usage: usageTotals,
@@ -341,6 +343,7 @@ export function createCredentialBroker(configInput: unknown, {
             }
             else try {
               if (typeof usage.upstream_provider === 'string') upstreamProviders.add(usage.upstream_provider);
+              if (Number.isSafeInteger(usage.web_search_calls)) webSearchCalls += usage.web_search_calls as number;
               settleBillable({ usage: normalizeClaudeUsage(usage),
                 reportedCost: typeof usage.provider_reported_cost_usd === 'number' ? usage.provider_reported_cost_usd : null,
                 unpriced: firstUnpricedReason(pricing.unpriced, usage.unpriced_reason as UnpricedReason | null) });

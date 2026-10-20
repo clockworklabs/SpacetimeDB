@@ -21,6 +21,7 @@ function key(attempt: CampaignAttemptPlan): string {
     model: attempt.model,
     agentAdapter: attempt.agentAdapter,
     repetition: attempt.repetition,
+    tools: attempt.tools ?? null,
     condition: { id: attempt.condition.id,
       guidance: attempt.condition.guidance, repair: attempt.condition.repair },
   });

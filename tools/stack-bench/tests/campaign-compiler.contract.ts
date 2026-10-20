@@ -55,6 +55,24 @@ test('campaign effort is retained per attempt, and campaign choices change campa
   assert.notEqual(reseeded.contentSha256, high.contentSha256);
 });
 
+test('every compiled campaign records its tool policy, and the policy changes campaign identity', () => {
+  const value = manifest('campaign.example.json');
+  value.stacks = (value.stacks as Array<{ id: string }>).filter(stack => stack.id === 'postgres');
+  const byDefault = compile(value);
+  assert.deepEqual(byDefault.definition.tools, { webSearch: true, subagents: false });
+  assert(byDefault.attempts.every(attempt => attempt.tools?.webSearch === true && attempt.tools.subagents === false));
+  assert.deepEqual(validateCompiledCampaignPlan(byDefault), byDefault);
+  const explicit = compile({ ...value, tools: { webSearch: true, subagents: false } });
+  assert.equal(explicit.contentSha256, byDefault.contentSha256);
+  const offline = compile({ ...value, tools: { webSearch: false, subagents: false } });
+  const delegating = compile({ ...value, tools: { webSearch: true, subagents: true } });
+  assert.equal(new Set([byDefault, offline, delegating].map(plan => plan.contentSha256)).size, 3);
+  assert(offline.attempts.every(attempt => attempt.tools?.webSearch === false));
+  for (const tools of [{ webSearch: 'yes', subagents: false }, { webSearch: true }, { webSearch: true, subagents: false, mcp: true }]) {
+    assert.throws(() => validateCampaignDefinition({ ...value, tools }), /tools/);
+  }
+});
+
 test('campaign repetitions use checked expansion rather than a hundred-run policy', () => {
   const value = manifest('campaign.example.json');
   const expanded = compile({ ...value, repetitions: 101 });

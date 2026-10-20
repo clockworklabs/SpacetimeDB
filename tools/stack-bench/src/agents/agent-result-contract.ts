@@ -11,8 +11,10 @@ export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
 type UnknownRecord = Record<string, unknown>;
 
 // Version 3 receipts predate unpriced requests; the broker then refused them.
-export type AgentCostReceipt = CredentialBrokerReceipt
-  | (Omit<CredentialBrokerReceipt, 'schemaVersion' | 'unpricedRequests' | 'unpricedByReason'> & { schemaVersion: 3 });
+// Receipts written before web searches were counted have no count.
+export type AgentCostReceipt = (Omit<CredentialBrokerReceipt, 'webSearchCalls'> & { webSearchCalls?: number })
+  | (Omit<CredentialBrokerReceipt, 'schemaVersion' | 'unpricedRequests' | 'unpricedByReason' | 'webSearchCalls'>
+    & { schemaVersion: 3 });
 
 export interface AgentCostReceiptEntry {
   invocation: number;
@@ -133,6 +135,7 @@ const receiptSchema = z.strictObject({
   unpricedRequests: nonNegativeInteger.optional(),
   unpricedByReason: z.strictObject(Object.fromEntries(UNPRICED_REASONS.map(reason =>
     [reason, nonNegativeInteger])) as Record<UnpricedReason, typeof nonNegativeInteger>).optional(),
+  webSearchCalls: nonNegativeInteger.optional(),
   complete: z.boolean(),
   reconciled: z.boolean(),
   error: z.string().min(1).nullable(),

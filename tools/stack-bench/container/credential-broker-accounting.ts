@@ -7,6 +7,7 @@ import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-u
 import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import { validatePricingRates as validateSharedPricingRates } from '../src/evidence/pricing-authority.js';
 import { formatZodError } from '../src/zod-error.js';
+import type { ToolPolicy } from '../src/agents/tool-policy.js';
 
 export const BROKER_LEDGER_SCHEMA_VERSION = 5;
 // Why a billable request was charged its cost ceiling instead of priced from
@@ -71,6 +72,9 @@ export type BrokerConfig = {
   explicitOutputLimit?: boolean;
   maxBudgetUsd?: number | null;
   pricingRates?: PricingRates;
+  // The agent's tool policy, for a protocol that removes tools itself. Without one only the
+  // file and shell tools remain.
+  tools?: ToolPolicy;
 };
 
 export type BrokerLedger = {
@@ -90,6 +94,9 @@ export type BrokerLedger = {
   estimatedByReason: EstimateCounts;
   unpricedBillableRequests: number;
   unpricedByReason: UnpricedCounts;
+  // Web searches the provider's responses report; each is charged on top of tokens. Absent
+  // from ledgers written before searches were counted.
+  webSearchCalls?: number;
   spentUsd: number;
   reservedUsd: number;
   usage: ClaudeUsage;
@@ -122,6 +129,7 @@ export interface CredentialBrokerReceipt {
   estimatedByReason: EstimateCounts;
   unpricedRequests: number;
   unpricedByReason: UnpricedCounts;
+  webSearchCalls: number;
   complete: boolean;
   reconciled: boolean;
   error: string | null;
@@ -165,6 +173,7 @@ const brokerConfigSchema = z.strictObject({
   explicitOutputLimit: z.boolean().optional(),
   maxBudgetUsd: positiveFinite.nullable().optional(),
   pricingRates: z.unknown().optional(),
+  tools: z.strictObject({ webSearch: z.boolean(), subagents: z.boolean() }).optional(),
 }).superRefine((value, context) => {
   if (value.provider === 'openrouter' && (value.mode !== 'api-key' || !value.providerRoute || value.maxBudgetUsd == null)) {
     context.addIssue({ code: 'custom', message: 'OpenRouter requires API-key auth, providerRoute, and a spend budget' });
@@ -213,6 +222,7 @@ const brokerLedgerSchema = z.strictObject({
   unpricedBillableRequests: nonNegativeSafeInteger.optional(),
   unpricedByReason: z.strictObject(Object.fromEntries(UNPRICED_REASONS.map(reason =>
     [reason, nonNegativeSafeInteger])) as Record<UnpricedReason, typeof nonNegativeSafeInteger>).optional(),
+  webSearchCalls: nonNegativeSafeInteger.optional(),
   spentUsd: nonNegativeFinite,
   reservedUsd: nonNegativeFinite,
   usage: usageSchema,
@@ -422,6 +432,7 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     estimatedByReason: verifiedLedger ? structuredClone(verifiedLedger.estimatedByReason) : noEstimates(),
     unpricedRequests,
     unpricedByReason: verifiedLedger ? structuredClone(verifiedLedger.unpricedByReason) : noUnpriced(),
+    webSearchCalls: verifiedLedger?.webSearchCalls ?? 0,
     complete: verifiedLedger?.complete === true,
     reconciled: issue === null,
     error: issue,
