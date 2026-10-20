@@ -13,6 +13,40 @@ metadata:
 
 # SpacetimeDB C# SDK Reference
 
+## Build Configuration (.NET 10)
+
+New .NET 10 modules build as managed libraries by default. Use the CLI for WASM
+builds, or select the runtime identifier explicitly when invoking dotnet:
+
+```sh
+spacetime init my-project --lang csharp --dotnet-version 10
+# From the generated module directory:
+dotnet build                              # managed DLL
+dotnet publish -c Release -r wasi-wasm     # NativeAOT-LLVM WASM
+spacetime build                           # CLI selects WASM automatically
+```
+
+- Do not set an unconditional `RuntimeIdentifier=wasi-wasm` in .NET 10 projects.
+  Keep WASM-only settings such as `PublishTrimmed`, `SelfContained`, and
+  `MSBuildEnableWorkloadResolver=false` conditional on that RID.
+- The module must reference both `Microsoft.DotNet.ILCompiler.LLVM` and
+  `runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM`
+  (version `10.0.0-*`) conditionally on `RuntimeIdentifier=wasi-wasm`.
+  The runtime package no longer supplies these dependencies transitively.
+  Keep the dotnet-experimental NuGet feed configured for WASM restores.
+- `spacetime build` and `spacetime publish` select WASM automatically. .NET 10
+  does not require `--native-aot` or an AOT environment variable.
+- Allow restore when switching between managed and WASM builds; do not reuse
+  `--no-restore` across modes. For multi-targeted projects, select `-f net10.0`
+  when publishing and restrict the LLVM 10 package references to .NET 10.
+- .NET 8 behavior is unchanged: WASM/JIT by default, with `--native-aot` selecting
+  NativeAOT where supported. The current flag is `SPACETIMEDB_WASM_AOT`; the CLI
+  also sets/clears `EXPERIMENTAL_WASM_AOT` for older projects. Do not manually
+  define the C# compiler symbol to choose a .NET 10 build mode.
+- Module dependencies use ordinary `ProjectReference` or packaged managed
+  assemblies. .NET 10 composition uses generated assembly descriptors, not the
+  dependency's standalone WASM exports; no special root/library build flag is needed.
+
 ## Module Structure
 
 Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:
