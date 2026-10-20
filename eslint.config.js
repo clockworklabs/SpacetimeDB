@@ -156,7 +156,7 @@ export default tseslint.config(
           selector:
             ':matches(ImportDeclaration, ExportAllDeclaration, ExportNamedDeclaration, ImportExpression)[source.value=/^\\.(?!.*\\.(ts|tsx|js)$)/]',
           message:
-            "Relative imports need an explicit extension (e.g. './foo.ts') so the published types resolve under NodeNext. `pnpm fix:import-extensions` adds them.",
+            "Relative imports need an explicit extension (e.g. './foo.ts') so the published types resolve under NodeNext.",
         },
       ],
     },
