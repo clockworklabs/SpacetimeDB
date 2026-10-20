@@ -369,8 +369,11 @@ impl YesOrNo {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         let input = input.trim().to_lowercase();
-        // Empty input includes EOF.
-        Ok((input.is_empty() && default) || input == "y" || input == "yes")
+        if input.is_empty() {
+          // Note that this includes EOF
+          return Ok(default)
+        }
+        Ok(input == "y" || input == "yes")
     }
 }
 
