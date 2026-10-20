@@ -18,7 +18,7 @@ Each guide will also get a short-format video (done later, once the written guid
 - [x] Make a turn-based game with turn timeouts
 - [x] Only sync what's near the player
 - [x] Hide information from players
-- [ ] Reset a leaderboard each season
+- [x] Reset a leaderboard each season
 
 ## Social
 
