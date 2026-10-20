@@ -329,10 +329,10 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// A yes/no prompt with a required message and explicit default.
+/// A yes/no prompt with a required message, force setting, and default.
 pub struct YesOrNo {
     message: String,
-    force: bool,
+    force: Option<bool>,
     default: Option<bool>,
 }
 
@@ -340,13 +340,13 @@ impl YesOrNo {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            force: false,
+            force: None,
             default: None,
         }
     }
 
     pub fn force(mut self, force: bool) -> Self {
-        self.force = force;
+        self.force = Some(force);
         self
     }
 
@@ -358,8 +358,9 @@ impl YesOrNo {
 
     pub fn prompt(self) -> anyhow::Result<bool> {
         assert!(!self.message.trim().is_empty(), "YesOrNo requires a message");
+        let force = self.force.expect("YesOrNo requires an explicit force setting");
         let default = self.default.expect("YesOrNo requires an explicit default");
-        if self.force {
+        if force {
             println!("Skipping confirmation due to --yes");
             return Ok(true);
         }
@@ -369,8 +370,11 @@ impl YesOrNo {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         let input = input.trim().to_lowercase();
-        // Empty input includes EOF.
-        Ok((input.is_empty() && default) || input == "y" || input == "yes")
+        if input.is_empty() {
+            // Note that this includes EOF
+            return Ok(default);
+        }
+        Ok(input == "y" || input == "yes")
     }
 }
 
@@ -406,6 +410,7 @@ pub async fn get_login_token_or_log_in(
     );
 
     let full_login = YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
+        .force(false)
         .default(true)
         .prompt()?;
 
@@ -422,6 +427,7 @@ pub async fn get_login_token_or_log_in(
                  We recommend logging in with spacetimedb.com, which also works with local servers.\n\
                  Continue with a server-issued identity?",
             )
+            .force(false)
             .default(false)
             .prompt()?,
             "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
@@ -489,6 +495,12 @@ mod yes_or_no_tests {
     #[should_panic(expected = "YesOrNo requires an explicit default")]
     fn missing_default_is_rejected_even_when_forced() {
         YesOrNo::new("Continue?").force(true).prompt().unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "YesOrNo requires an explicit force setting")]
+    fn missing_force_is_rejected() {
+        YesOrNo::new("Continue?").default(false).prompt().unwrap();
     }
 
     #[test]

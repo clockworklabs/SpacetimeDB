@@ -77,6 +77,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             }
             if force
                 || YesOrNo::new("Do you want to proceed deleting above databases?")
+                    .force(false)
                     .default(false)
                     .prompt()?
             {
