@@ -7,7 +7,8 @@ import test from 'node:test';
 import { runAuditNetworkContext } from '../commands/bench.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { auditTranscript, networkTargetsFromBash } from '../commands/leak-audit.js';
+import { auditTranscript, networkTargetsFromBash, STACKBENCH_SOURCE, stackBenchSourceReferences }
+  from '../commands/leak-audit.js';
 import { archiveTranscripts, transcriptDirectories } from '../src/agents/transcript-archive.js';
 import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
 
@@ -291,6 +292,108 @@ test('an Antigravity stream is audited through its tool steps', () => {
       ['/tools/stack-bench/grader/grade.ts', 'Bash'], ['/outside/notes.md', 'Read']]);
     assert.deepEqual(audit.refused.map(hit => [hit.path, hit.via]), [['/tools/stack-bench/tracks/spec.md', 'Read']]);
     assert.equal(audit.fileTool, 3, 'the in-app write is a file tool use, not a hit');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('StackBench source online is matched on any branch, by URL, gh and git, and nothing else of SpacetimeDB is', () => {
+  const flagged = [
+    'curl -sL https://raw.githubusercontent.com/clockworklabs/SpacetimeDB/master/tools/stack-bench/grader/grade.ts',
+    'curl https://raw.githubusercontent.com/clockworklabs/SpacetimeDB/refs/heads/bradley/stackbench-test/tools/stack-bench/README.md',
+    'wget https://github.com/clockworklabs/SpacetimeDB/blob/bradley/stackbench-test/tools/stack-bench/tracks/x.json',
+    'curl "https://api.github.com/repos/clockworklabs/SpacetimeDB/contents/tools%2Fstack-bench?ref=bradley/stackbench-test"',
+    'curl https://api.github.com/repos/clockworklabs/spacetimedb/contents/tools/stack-bench/grader?ref=master',
+    'curl -L https://github.com/clockworklabs/SpacetimeDB/pull/5766.diff',
+    'curl https://github.com/clockworklabs/SpacetimeDB/pull/5766/files',
+    'curl https://api.github.com/repos/clockworklabs/SpacetimeDB/pulls/5766/files',
+    'curl https://patch-diff.githubusercontent.com/raw/clockworklabs/SpacetimeDB/pull/5766.patch',
+    'gh pr diff 5766 --repo clockworklabs/SpacetimeDB',
+    'gh api repos/clockworklabs/SpacetimeDB/contents/tools/stack-bench',
+    'git fetch https://github.com/clockworklabs/SpacetimeDB pull/5766/head:pr',
+    '{"query":"clockworklabs/SpacetimeDB tools/stack-bench grader"}',
+  ];
+  for (const command of flagged) assert.equal(stackBenchSourceReferences(command).length > 0, true, command);
+  const allowed = [
+    'curl -sL https://raw.githubusercontent.com/clockworklabs/SpacetimeDB/master/crates/schema/src/auto_migrate.rs',
+    'curl https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings-typescript/README.md',
+    'git clone --depth 1 https://github.com/clockworklabs/SpacetimeDB',
+    'curl https://github.com/clockworklabs/SpacetimeDB/pull/5767',
+    'curl https://github.com/clockworklabs/SpacetimeDB/pull/57660',
+    'curl https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/main/tools/stack-bench',
+    'curl https://github.com/someone/benchmarks/tree/main/tools/stack-bench',
+    'curl https://example.com/clockworklabs/SpacetimeDB/tools/stack-bench',
+    'gh pr view 5766 --repo someone/other',
+    '{"query":"spacetimedb auto migration add column"}',
+  ];
+  for (const command of allowed) assert.deepEqual(stackBenchSourceReferences(command), [], command);
+});
+
+test('fetching StackBench source contaminates through each agent\'s web tools and shell', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-audit-'));
+  const raw = 'https://raw.githubusercontent.com/clockworklabs/SpacetimeDB/bradley/stackbench-test/tools/stack-bench/grader/grade.ts';
+  const allowed = 'https://raw.githubusercontent.com/clockworklabs/SpacetimeDB/master/crates/schema/src/auto_migrate.rs';
+  const use = (id: string, name: string, input: Record<string, unknown>) =>
+    ({ cwd: '/app', message: { content: [{ type: 'tool_use', id, name, input }] } });
+  const result = (id: string, is_error = false) =>
+    ({ message: { content: [{ type: 'tool_result', tool_use_id: id, is_error }] } });
+  const write = (name: string, events: unknown[]): string => {
+    const file = join(root, name);
+    writeFileSync(file, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+    return file;
+  };
+  const sources = (file: string) => {
+    const audit = auditTranscript(file, '/app');
+    const pick = (hits: typeof audit.hits) => hits.filter(hit => hit.kind === STACKBENCH_SOURCE)
+      .map(hit => [hit.path, hit.via]);
+    return { hits: pick(audit.hits), refused: pick(audit.refused), all: audit.hits };
+  };
+  try {
+    // Claude Code and Grok Build record tool calls as message content.
+    const claude = sources(write('claude.jsonl', [
+      use('f1', 'WebFetch', { url: raw, prompt: 'read it' }), result('f1'),
+      use('f2', 'WebFetch', { url: allowed, prompt: 'read it' }), result('f2'),
+      use('s1', 'WebSearch', { query: 'spacetimedb auto migrate' }), result('s1'),
+      use('b1', 'Bash', { command: 'curl -sL https://github.com/clockworklabs/SpacetimeDB/pull/5766.diff | head' }), result('b1'),
+      use('b2', 'Bash', { command: `curl -sL ${raw}` }), result('b2', true),
+      use('b3', 'Bash', { command: 'cat vendor/SpacetimeDB/tools/stack-bench/grader/grade.ts' }), result('b3'),
+    ]));
+    assert.deepEqual(claude.hits, [[raw, 'WebFetch network attempt'],
+      ['https://github.com/clockworklabs/SpacetimeDB/pull/5766.diff', 'Bash network attempt']]);
+    assert.deepEqual(claude.refused, [[raw, 'Bash network attempt']]);
+    // A local copy of the harness is never the app's own file.
+    assert.deepEqual(claude.all.filter(hit => hit.kind === 'GRADER / TEST SPECS').map(hit => hit.path),
+      ['/app/vendor/spacetimedb/tools/stack-bench/grader/grade.ts']);
+
+    const grok = sources(write('grok.events.jsonl', [
+      use('g1', 'web_fetch', { url: raw }), result('g1'),
+      use('g2', 'web_search', { query: 'spacetimedb typescript procedures' }), result('g2'),
+    ]));
+    assert.deepEqual(grok.hits, [[raw, 'web_fetch network attempt']]);
+
+    // Codex records its hosted search, and each page it opens, as an item.
+    const codex = sources(write('codex.events.jsonl', [
+      { type: 'stack_bench_context', cwd: '/app' },
+      { type: 'item.started', item: { id: 'w1', type: 'web_search', query: '' } },
+      { type: 'item.completed', item: { id: 'w1', type: 'web_search', query: raw,
+        action: { type: 'open_page', url: raw } } },
+      { type: 'item.completed', item: { id: 'w2', type: 'web_search', query: 'spacetimedb views',
+        action: { type: 'search', query: 'spacetimedb views' } } },
+    ]));
+    assert.deepEqual(codex.hits, [[raw, 'WebSearch network attempt']]);
+
+    // Antigravity reports each tool as a step that starts, then ends.
+    const id = '86eb1dda-1452-4d14-ab41-9afdc260bdd2';
+    const step = (index: number, state: string, name: string, parameters: Record<string, string>) =>
+      ({ event: 'step_update', step_update: { conversation_id: id, step_index: index, state, step_type: 'tool',
+        tool_name: name, tool_info: { name, parameters, ...(state === 'DONE' ? { output: 'x' } : {}) } } });
+    const antigravity = sources(write(`${id}.events.jsonl`, [
+      { event: 'init', conversation_id: id, init: { cwd: '/app' } },
+      step(1, 'ACTIVE', 'read_url_content', { Url: raw }), step(1, 'DONE', 'read_url_content', { Url: raw }),
+      step(2, 'ACTIVE', 'search_web', { query: 'spacetimedb auto migrate' }),
+      step(2, 'DONE', 'search_web', { query: 'spacetimedb auto migrate' }),
+    ]));
+    assert.deepEqual(antigravity.hits, [[raw, 'WebFetch network attempt']]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -76,6 +76,53 @@ const CLASSES: Array<readonly [RegExp, string]> = [
 const classify = (path: string): string => CLASSES.find(([pattern]) => pattern.test(path))?.[1]
   ?? 'other';
 
+// StackBench's own files online: anything under tools/stack-bench in clockworklabs/SpacetimeDB,
+// on any branch, and the pull request that carries it. The rest of SpacetimeDB's source is
+// fair to read.
+export const STACKBENCH_SOURCE = 'STACKBENCH SOURCE';
+const STACKBENCH_PULL_REQUEST = '5766';
+const GITHUB_HOST = /^(?:www\.)?(?:github\.com|raw\.githubusercontent\.com|api\.github\.com|codeload\.github\.com|patch-diff\.githubusercontent\.com)$/i;
+const REPOSITORY = /clockworklabs\/spacetimedb(?:\.git)?(?![\w.-])/;
+const HARNESS_PATH = /(?:^|[^\w-])tools\/stack-bench(?![\w-])/;
+const PULL_REQUEST = new RegExp(`(?:^|/)(?:pull|pulls|issues)/${STACKBENCH_PULL_REQUEST}(?![0-9])`);
+const ANY_URL = /https?:\/\/[^\s'"`<>)\]]+/gi;
+
+const decoded = (value: string): string => {
+  let text = value;
+  for (let round = 0; round < 3; round++) {
+    try { const next = decodeURIComponent(text); if (next === text) break; text = next; } catch { break; }
+  }
+  return text.toLowerCase();
+};
+
+// The StackBench references in a shell command, a fetched URL, or a search: GitHub URLs to the
+// harness path or the pull request, `gh` and git calls naming either, and a bare repository
+// path to the harness.
+export function stackBenchSourceReferences(text: unknown): string[] {
+  const value = String(text ?? '');
+  const found = new Set<string>();
+  for (const match of value.matchAll(ANY_URL)) {
+    let url: URL;
+    try { url = new URL(match[0]); } catch { continue; }
+    if (!GITHUB_HOST.test(url.hostname)) continue;
+    const path = decoded(`${url.pathname}${url.search}`);
+    if (REPOSITORY.test(path) && (HARNESS_PATH.test(path) || PULL_REQUEST.test(path))) found.add(match[0]);
+  }
+  const plain = decoded(value.replace(ANY_URL, ' '));
+  if (REPOSITORY.test(plain) && HARNESS_PATH.test(plain)) found.add('clockworklabs/SpacetimeDB tools/stack-bench');
+  if (/\bgh\s+(?:pr\s+(?:view|diff|checkout)|api)\b/.test(plain) && REPOSITORY.test(plain)
+    && new RegExp(`(?:\\s|/)${STACKBENCH_PULL_REQUEST}(?![0-9])`).test(plain)) {
+    found.add(`clockworklabs/SpacetimeDB#${STACKBENCH_PULL_REQUEST}`);
+  }
+  if (/\bgit\b/.test(plain) && new RegExp(`\\bpull/${STACKBENCH_PULL_REQUEST}/(?:head|merge)\\b`).test(plain)) {
+    found.add(`pull/${STACKBENCH_PULL_REQUEST}`);
+  }
+  return [...found];
+}
+
+// The agents' own web tools under their recorded names, audited for what they search and fetch.
+const WEB_TOOLS = new Set(['WebFetch', 'WebSearch', 'web_fetch', 'web_search']);
+
 // The shallowest recorded cwd is the app boundary when --app is absent.
 function sessionCwd(lines: string[]): string | null {
   const seen = new Set<string>();
@@ -136,7 +183,7 @@ interface TranscriptContent {
   id?: string;
   tool_use_id?: string;
   is_error?: boolean;
-  input?: { file_path?: string; path?: string; pattern?: string; command?: string };
+  input?: { file_path?: string; path?: string; pattern?: string; command?: string; [key: string]: unknown };
 }
 
 // Feed both CLIs through the same path, network, and refusal checks.
@@ -156,8 +203,8 @@ function antigravityContent(step: Record<string, unknown>): TranscriptContent[] 
   const id = `${String(step.conversation_id)}:${String(step.step_index)}`;
   if (step.state === 'ACTIVE') {
     const parameters = info?.parameters ?? {};
-    return [{ type: 'tool_use', id, name: tool.name,
-      input: tool.path ? { file_path: parameters[tool.path] } : { command: parameters.CommandLine } }];
+    return [{ type: 'tool_use', id, name: tool.name, input: WEB_TOOLS.has(tool.name) ? { ...parameters }
+      : tool.path ? { file_path: parameters[tool.path] } : { command: parameters.CommandLine } }];
   }
   return [{ type: 'tool_result', tool_use_id: id, is_error: step.state !== 'DONE' && !info?.output?.trim() }];
 }
@@ -174,7 +221,11 @@ function transcriptContent(event: Record<string, unknown>): TranscriptContent[] 
     changes?: { path: string }[] } | undefined;
   if (!item?.id) return [];
   const content: TranscriptContent[] = [];
-  if (item.type === 'command_execution') {
+  if (item.type === 'web_search') {
+    // Codex records its hosted search, and each page it opens, as one item.
+    const { id: _id, type: _type, ...search } = item as Record<string, unknown>;
+    content.push({ type: 'tool_use', id: item.id, name: 'WebSearch', input: search });
+  } else if (item.type === 'command_execution') {
     // Codex records the shell launcher around the command.
     const command = (item.command ?? '').replace(/^(?:\/\S+\/)?(?:bash|sh|zsh)\s+-[a-z]*c\s+(['"])([\s\S]*)\1$/, '$2');
     content.push({ type: 'tool_use', id: item.id, name: 'Bash', input: { command } });
@@ -241,6 +292,10 @@ export function auditTranscript(file: string, boundary: string | null,
           if (kind) network.push({ path: `${target.host}${target.port === null ? '' : `:${target.port}`}`, kind });
         }
       }
+      if (p.name === 'Bash' || WEB_TOOLS.has(p.name ?? '')) {
+        const fetched = p.name === 'Bash' ? p.input?.command ?? '' : JSON.stringify(p.input ?? {});
+        for (const reference of stackBenchSourceReferences(fetched)) network.push({ path: reference, kind: STACKBENCH_SOURCE });
+      }
       for (const raw of cand) {
         let n = norm(raw);
         if (!n || IGNORE.test(n)) continue;
@@ -251,8 +306,9 @@ export function auditTranscript(file: string, boundary: string | null,
         const absolute = /^[a-z]:/.test(n) || n.startsWith('/');
         if (!absolute && cwd) n = `${cwd}/${n.replace(/^\.\//, '')}`;
         n = posix.normalize(n);
+        // A copy of StackBench's own source is never the app's, wherever it was put.
         const privateHarnessPath = cwd
-          && (n === `${cwd}/stack-bench` || n.startsWith(`${cwd}/stack-bench/`));
+          && (n === `${cwd}/stack-bench` || n.startsWith(`${cwd}/stack-bench/`) || HARNESS_PATH.test(n));
         if (!privateHarnessPath && !absolute && !cwd) continue;
         if (!privateHarnessPath && cwd && (n === cwd || n.startsWith(`${cwd}/`))) continue;
         paths.push(n);

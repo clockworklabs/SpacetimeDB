@@ -494,7 +494,7 @@ function auditContamination(appDir: string, network: ReturnType<typeof runAuditN
           verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
       }
       const escapes = entries.flatMap(entry => entry.hits);
-      const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS|NETWORK/.test(h.kind));
+      const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS|NETWORK|STACKBENCH SOURCE/.test(h.kind));
       if (firstFailure) {
         console.error(`  warning: contamination audit passed on retry after: ${auditFailureSummary(firstFailure)}`);
       }
