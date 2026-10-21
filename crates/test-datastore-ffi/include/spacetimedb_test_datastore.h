@@ -24,6 +24,7 @@ extern "C" {
 #define STDB_TEST_DATASTORE_CLOSED 7u
 #define STDB_TEST_UNIQUE_VIOLATION 8u
 #define STDB_TEST_AUTO_INC_OVERFLOW 9u
+#define STDB_TEST_NOT_SELECT 10u
 
 typedef struct StdbTestDatastore StdbTestDatastore;
 typedef struct StdbTestTransaction StdbTestTransaction;
@@ -55,6 +56,23 @@ uint32_t STDB_TEST_CALL stdb_test_v1_datastore_create(
  * Null is a no-op. Invalid/stale pointers are caller errors, not checked handles.
  */
 uint32_t STDB_TEST_CALL stdb_test_v1_datastore_destroy(StdbTestDatastore *datastore);
+
+/* Execute one SELECT against committed state. sql is UTF-8, not NUL terminated.
+ * identity is exactly one BSATN Identity (32 bytes, little-endian), used as the
+ * database owner/caller, including :sender. This is not a caller-auth/RLS test.
+ * Results use table_scan's BSATN array<array<u8>> encoding, with each inner array
+ * encoding the projected product row. The caller supplies the result schema.
+ * Empty results are an encoded empty array, not an empty buffer.
+ * Queries open their own transaction. A pending explicit transaction returns
+ * TRANSACTION_ACTIVE without waiting for its lock. Non-SELECT statements are
+ * rejected without executing them (NOT_SELECT if compiled successfully; parse
+ * and validation errors return DATABASE_ERROR). Query failures release locks
+ * and leave the datastore usable. Outputs follow the normal ownership contract.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_query(
+    const StdbTestDatastore *datastore, const uint8_t *sql, uint64_t sql_len,
+    const uint8_t *identity, uint64_t identity_len,
+    StdbTestBuffer *out, StdbTestBuffer *error);
 
 /* One pending transaction per datastore. Nested begin returns TRANSACTION_ACTIVE
  * rather than waiting for the existing transaction's lock. All table operations
