@@ -45,7 +45,7 @@ fn run_publish(cmd: &mut Command, dry_run: bool) -> Result<PublishOutcome, Strin
     }
 }
 
-fn publish_with_backoff(
+fn publish_with_retries(
     crates: &[String],
     mut is_published: impl FnMut(&str) -> Result<bool, String>,
     mut publish: impl FnMut(&[&String]) -> Result<PublishOutcome, String>,
@@ -70,7 +70,9 @@ fn publish_with_backoff(
                 ));
             }
             PublishOutcome::RateLimited => {
-                let delay = Duration::from_secs(60 << retry);
+                // crates.io allows one new version of an existing crate per minute after the initial burst.
+                // https://crates.io/docs/rate-limits
+                let delay = Duration::from_secs(60);
                 println!(
                     "crates.io rate limited cargo publish; retrying in {} seconds ({}/{MAX_PUBLISH_RETRIES}).",
                     delay.as_secs(),
@@ -205,7 +207,7 @@ impl ReleaseTarget for CratesRelease {
                 .next()
                 .unwrap();
             // Recheck after every rate limit: Cargo may have uploaded part of the batch.
-            publish_with_backoff(
+            publish_with_retries(
                 &crates,
                 |crate_name| {
                     // Pace requests to respect crates.io's API guidance.
@@ -245,7 +247,7 @@ mod tests {
         let published = std::cell::RefCell::new(Vec::<String>::new());
         let mut batches = Vec::new();
         let mut delays = Vec::new();
-        publish_with_backoff(
+        publish_with_retries(
             &crates,
             |name| Ok(published.borrow().iter().any(|p| p == name)),
             |remaining| {
@@ -265,10 +267,10 @@ mod tests {
     }
 
     #[test]
-    fn persistent_rate_limit_has_bounded_exponential_backoff() {
+    fn persistent_rate_limit_retries_at_one_minute_intervals() {
         let mut attempts = 0;
         let mut delays = Vec::new();
-        let err = publish_with_backoff(
+        let err = publish_with_retries(
             &["crate".into()],
             |_| Ok(false),
             |_| {
@@ -280,13 +282,13 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("still rate limited"));
         assert_eq!(attempts, 6);
-        assert_eq!(delays, vec![60, 120, 240, 480, 960]);
+        assert_eq!(delays, vec![60, 60, 60, 60, 60]);
     }
 
     #[test]
     fn other_errors_stop_without_retrying() {
         for query_fails in [false, true] {
-            let err = publish_with_backoff(
+            let err = publish_with_retries(
                 &["crate".into()],
                 |_| {
                     if query_fails {
