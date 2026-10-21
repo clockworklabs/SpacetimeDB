@@ -3,7 +3,7 @@ use crate::client::{MeteredUnboundedReceiver, MeteredUnboundedSender};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::host::idc::{DeliveryStreams, StreamId};
 use crate::host::module_host::WeakModuleHost;
-use crate::host::module_host::{CallReducerParams, ModuleInfo};
+use crate::host::module_host::{CallReducerParams, ModuleInfo, TRANSACTION_CONFIRMATION_TIMEOUT};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{FunctionArgs, ReducerOutcome};
 use crate::worker_metrics::WORKER_METRICS;
@@ -19,6 +19,7 @@ use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext,
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StOutboundMsgRow, StOutboundStreamRow};
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{Hash, Identity, ProductValue, Timestamp};
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_metrics::utils::IntGaugeExt;
@@ -187,6 +188,9 @@ pub fn channel(database_identity: &Identity) -> (IdcActorStarter, IdcActorSender
 /// An outbox message and its metadata from the `st_outbound_*` tables.
 #[derive(Clone)]
 struct PendingMessage {
+    /// Transaction offset covering the outbox message and `ack_prefix`.
+    /// Must become durable before sending either to the receiver.
+    tx_offset: TxOffset,
     stream_id: StreamId,
     /// Primary key of the user outbox row.
     message_id: u64,
@@ -495,10 +499,11 @@ fn load_pending_message(
         .outbox_row(&tx, stream.outbox_table_id, message_row.msg_id)?
         .ok_or_else(|| anyhow::anyhow!("pending IDC message has no outbox row {}", message_row.msg_id))?;
     let reducer_args = encode_reducer_args(&outbox_row, &outbox.arg_columns).into();
-    let (_, metrics, reducer) = db.release_tx(tx);
+    let (tx_offset, metrics, reducer) = db.release_tx(tx);
     db.report_read_tx_metrics(reducer, metrics);
 
     let message = PendingMessage {
+        tx_offset,
         stream_id: StreamId(message_row.stream_id),
         message_id: message_row.msg_id,
         sequence: message_row.seq,
@@ -555,7 +560,19 @@ async fn deliver_message_and_record_result(
     let metrics = metrics.for_table(&msg.table_name);
     metrics.delivery_attempts.inc();
     let _timer = metrics.delivery_duration_seconds.start_timer();
-    let response = attempt_delivery(client, database_identity, config, &msg).await;
+    let response = async {
+        if let Some(mut durable) = db.durable_tx_offset() {
+            // The read transaction is already released. Its offset covers
+            // the insert and any cleanup that advanced ack_prefix. Confirm both
+            // before the receiver can execute the message or discard old results.
+            tokio::time::timeout(TRANSACTION_CONFIRMATION_TIMEOUT, durable.wait_for(msg.tx_offset))
+                .await
+                .context("IDC durability confirmation timed out")?
+                .context("IDC durability confirmation failed")?;
+        }
+        attempt_delivery(client, database_identity, config, &msg).await
+    }
+    .await;
     match response.and_then(|response| record_delivery_response(db, &msg, response)) {
         Ok(result) => Ok(result.map(|result| DeliveredMessage { message: msg, result })),
         Err(error) => {
@@ -857,6 +874,7 @@ fn cleanup_message(db: &RelationalDB, tx: &mut MutTxId, delivered: &DeliveredMes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::relational_db::Persistence;
     use axum::extract::{Path, Query};
     use axum::http::StatusCode;
     use axum::routing::post;
@@ -878,16 +896,47 @@ mod tests {
     use tokio::net::TcpListener;
 
     fn open_test_db() -> Arc<RelationalDB> {
+        open_test_db_with_persistence(None)
+    }
+
+    fn open_test_db_with_persistence(persistence: Option<Persistence>) -> Arc<RelationalDB> {
         let (db, _) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
             spacetimedb_durability::EmptyHistory::new(),
-            None,
+            persistence,
             None,
             PagePool::new_for_test(),
         )
         .expect("failed to open test database");
         Arc::new(db)
+    }
+
+    struct PendingDurability(tokio::sync::watch::Receiver<Option<TxOffset>>);
+
+    impl spacetimedb_durability::Durability for PendingDurability {
+        type TxData = crate::db::relational_db::Txdata;
+
+        fn append_tx(&self, _: spacetimedb_durability::PreparedTx<Self::TxData>) {}
+
+        fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
+            self.0.clone().into()
+        }
+
+        fn close(&self) -> spacetimedb_durability::Close {
+            Box::pin(std::future::ready(*self.0.borrow()))
+        }
+    }
+
+    fn open_pending_db() -> (Arc<RelationalDB>, tokio::sync::watch::Sender<Option<TxOffset>>) {
+        let (durable, rx) = tokio::sync::watch::channel(None);
+        let persistence = Persistence::new(
+            PendingDurability(rx),
+            || Ok(Default::default()),
+            None,
+            spacetimedb_runtime::Handle::tokio(tokio::runtime::Handle::current()),
+        );
+        (open_test_db_with_persistence(Some(persistence)), durable)
     }
 
     fn outbox_schema() -> TableSchema {
@@ -1012,6 +1061,136 @@ mod tests {
         };
         record_delivery_result(db, &message, &result)?;
         Ok(DeliveredMessage { message, result })
+    }
+
+    #[tokio::test]
+    async fn idc_actor_waits_for_message_and_ack_durability() -> anyhow::Result<()> {
+        let (requests_tx, mut requests_rx) = mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/v1/database/:target/call-from-database/:reducer",
+            post(move |Query(query): Query<HashMap<String, String>>| {
+                requests_tx.send(query).unwrap();
+                async { StatusCode::OK }
+            }),
+        );
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        let config = IdcConfig {
+            http_port: listener.local_addr()?.port(),
+            token_signer: Arc::new(crate::auth::JwtKeys::generate()?.private),
+        };
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let _server_abort = scopeguard::guard(server.abort_handle(), |handle| handle.abort());
+        let client = http_client();
+        let metrics = IdcMetrics::new(&Identity::ZERO);
+        let (db, durable) = open_pending_db();
+        let table = insert_outbox_message(&db, Identity::ONE, 42)?;
+        insert_outbox_row(&db, table, Identity::ONE, 8, 43)?;
+        let first = next_message(&db)?;
+        let first_offset = first.tx_offset;
+        durable.send_replace(Some(first_offset - 1));
+        let mut delivery = std::pin::pin!(deliver_message_and_record_result(
+            &db,
+            &client,
+            Identity::ZERO,
+            &config,
+            first,
+            &metrics
+        ));
+        assert!(tokio::time::timeout(Duration::from_millis(50), delivery.as_mut())
+            .await
+            .is_err());
+        assert!(requests_rx.try_recv().is_err());
+
+        // Waiting owns no transaction locks. A newer commit must not move the
+        // confirmation target: wait for the offset captured when this message was read.
+        let mut tx = db
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)
+            .unwrap();
+        let row = to_vec(&product![Identity::ONE, 9u64, 44u32])?;
+        let (_, row, _) = db.insert(&mut tx, table, &row)?;
+        let ptr = row.pointer();
+        tx.record_outbox_insert(table, ptr)?;
+        db.commit_tx(tx)?;
+        durable.send_replace(Some(first_offset));
+        let delivered = tokio::time::timeout(Duration::from_secs(5), delivery).await??.unwrap();
+        let request = requests_rx.try_recv()?;
+        assert_eq!(request["seq"], "1");
+        assert_eq!(request["ack_prefix"], "0");
+
+        cleanup_without_module(&db, delivered)?;
+        let second = next_message(&db)?;
+        assert_eq!(second.ack_prefix, 1);
+        assert!(second.tx_offset > first_offset);
+        let cleanup_offset = second.tx_offset;
+        // The second insert is already durable, but the cleanup advancing its
+        // ack_prefix is not. It must not reach the receiver yet.
+        durable.send_replace(Some(cleanup_offset - 1));
+        let mut delivery = std::pin::pin!(deliver_message_and_record_result(
+            &db,
+            &client,
+            Identity::ZERO,
+            &config,
+            second,
+            &metrics
+        ));
+        assert!(tokio::time::timeout(Duration::from_millis(50), delivery.as_mut())
+            .await
+            .is_err());
+        assert!(requests_rx.try_recv().is_err());
+        durable.send_replace(Some(cleanup_offset));
+        tokio::time::timeout(Duration::from_secs(5), delivery).await??;
+        let request = requests_rx.try_recv()?;
+        assert_eq!(request["seq"], "2");
+        assert_eq!(request["ack_prefix"], "1");
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn idc_actor_durability_failure_leaves_message_pending() -> anyhow::Result<()> {
+        struct NoDelivery;
+        impl IdcTokenSigner for NoDelivery {
+            fn sign(&self, _: Identity, _: Identity) -> anyhow::Result<String> {
+                panic!("must not attempt HTTP delivery before durability confirmation");
+            }
+        }
+        let config = IdcConfig {
+            http_port: 0,
+            token_signer: Arc::new(NoDelivery),
+        };
+        let client = http_client();
+        let metrics = IdcMetrics::new(&Identity::ZERO);
+        for durability_exits in [false, true] {
+            let (db, durable) = open_pending_db();
+            insert_outbox_message(&db, Identity::ONE, 42)?;
+            let msg = next_message(&db)?;
+            let stream_id = msg.stream_id;
+            let mut delivery = std::pin::pin!(deliver_message_and_record_result(
+                &db,
+                &client,
+                Identity::ZERO,
+                &config,
+                msg,
+                &metrics
+            ));
+            assert!(futures::poll!(&mut delivery).is_pending());
+            let expected = if durability_exits {
+                drop(durable);
+                "IDC durability confirmation failed"
+            } else {
+                tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT).await;
+                "IDC durability confirmation timed out"
+            };
+            let error = delivery.await.err().expect("unconfirmed delivery must fail");
+            assert!(error.to_string().contains(expected));
+            let tx = db.begin_tx(Workload::Internal);
+            let row = db.outbound_msg_by_stream_seq(&tx, stream_id.0, 1)?.unwrap();
+            let row = StOutboundMsgRow::try_from(row)?;
+            assert!(row.result_status.is_none());
+            assert_eq!(row.retry_count, 1);
+            assert!(row.last_transport_error.unwrap().contains(expected));
+            assert_eq!(db.st_outbound_stream_by_id(&tx, stream_id.0)?.unwrap().ack_prefix, 0);
+        }
+        Ok(())
     }
 
     #[test]
