@@ -68,6 +68,14 @@ jobs:
         if: ${{ env.PR_NUMBER }}
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
 
+      - name: Checkout trusted rustup action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -77,8 +85,6 @@ jobs:
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
-      - name: Check and update rustup
-        uses: ./.github/actions/ensure-rustup
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -232,6 +238,15 @@ jobs:
         shell: bash
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
 
+      - name: Checkout trusted rustup action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      # Rustup comes from the job container, so updating the fleet VM image does not update it.
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+
       - name: Checkout sources
         uses: actions/checkout@v3
         with:
@@ -241,9 +256,6 @@ jobs:
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
-      # Rustup comes from the job container, so updating the fleet VM image does not update it.
-      - name: Check and update rustup
-        uses: ./.github/actions/ensure-rustup
       - name: Install iai-callgrind-runner
         run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
