@@ -19,8 +19,12 @@ extern "C" {
 #define STDB_TEST_INVALID_SCHEMA 2u
 #define STDB_TEST_DATABASE_ERROR 3u
 #define STDB_TEST_INTERNAL_ERROR 4u
+#define STDB_TEST_TRANSACTION_FINISHED 5u
+#define STDB_TEST_TRANSACTION_ACTIVE 6u
+#define STDB_TEST_DATASTORE_CLOSED 7u
 
 typedef struct StdbTestDatastore StdbTestDatastore;
+typedef struct StdbTestTransaction StdbTestTransaction;
 typedef struct StdbTestBuffer {
     uint8_t *data;
     uint64_t len;
@@ -43,12 +47,63 @@ uint32_t STDB_TEST_CALL stdb_test_v1_datastore_create(
 
 /* Calls using a handle must be serialized by the caller, including destruction.
  * Handles may move between caller threads. Native state lives on a dedicated
- * owner thread so transactions can eventually be released from any caller thread
+ * owner thread so transactions can be released from any caller thread
  * (including a managed finalizer). Destroy waits for owner-thread cleanup.
  * A non-null handle is consumed even on failure and must never be reused.
  * Null is a no-op. Invalid/stale pointers are caller errors, not checked handles.
  */
 uint32_t STDB_TEST_CALL stdb_test_v1_datastore_destroy(StdbTestDatastore *datastore);
+
+/* One pending transaction per datastore. Nested begin returns TRANSACTION_ACTIVE
+ * rather than waiting for the existing transaction's lock. All table operations
+ * below use this explicit transaction; none open another transaction.
+ * All output slots and error are required and initialized on failure as well as
+ * success. Scalar outputs are zeroed and buffer/handle outputs are null/empty.
+ * Table names are UTF-8, not NUL terminated; IDs belong to this datastore.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_transaction_begin(
+    const StdbTestDatastore *datastore, StdbTestTransaction **out, StdbTestBuffer *error);
+
+/* Commit/rollback finish the transaction but do not free its handle, even if the
+ * database reports an error. Further operations return TRANSACTION_FINISHED.
+ * Argument errors do not finish it. Table-operation errors leave it pending;
+ * callers should roll back to discard any partial changes. An internal panic
+ * stops the worker and rolls back pending work; later calls report DATASTORE_CLOSED.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_transaction_commit(
+    const StdbTestTransaction *transaction, StdbTestBuffer *error);
+uint32_t STDB_TEST_CALL stdb_test_v1_transaction_rollback(
+    const StdbTestTransaction *transaction, StdbTestBuffer *error);
+
+/* Consumes the handle; rolls back if still pending. Null is a no-op. May run on
+ * any caller thread, but never concurrently with another call using this handle.
+ * Datastore destruction rolls back pending work even if transaction handles
+ * survive it. Those handles report DATASTORE_CLOSED and remain safe to destroy.
+ * Destroying a finished handle never affects a newer transaction.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_transaction_destroy(StdbTestTransaction *transaction);
+uint32_t STDB_TEST_CALL stdb_test_v1_table_id(
+    const StdbTestTransaction *transaction, const uint8_t *name, uint64_t name_len,
+    uint32_t *out, StdbTestBuffer *error);
+uint32_t STDB_TEST_CALL stdb_test_v1_table_count(
+    const StdbTestTransaction *transaction, uint32_t table_id,
+    uint64_t *out, StdbTestBuffer *error);
+
+/* Scan returns a snapshot encoded as BSATN array<array<u8>>, each inner array
+ * containing one BSATN row. Row order is unspecified. Free via buffer_free.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_table_scan(
+    const StdbTestTransaction *transaction, uint32_t table_id,
+    StdbTestBuffer *out, StdbTestBuffer *error);
+
+/* Insert borrows a BSATN row and returns the BSATN product of generated column
+ * values, in the engine's generated-column projection order. Apply these values
+ * to the caller's row; free the returned buffer even if writeback fails. A row
+ * with no generated values returns an empty product (zero bytes).
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_table_insert(
+    const StdbTestTransaction *transaction, uint32_t table_id,
+    const uint8_t *row, uint64_t row_len, StdbTestBuffer *out, StdbTestBuffer *error);
 
 /* Free an unmodified returned buffer exactly once, then zero the supplied slot.
  * Null and an empty buffer are no-ops. Copies of a buffer do not share ownership.
