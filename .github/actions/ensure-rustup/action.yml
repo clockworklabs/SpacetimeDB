@@ -3,6 +3,79 @@ description: Print rustup versions and update installations older than 1.29.2 wi
 runs:
   using: composite
   steps:
-    - name: Check and update rustup
+    - name: Print current rustup version
+      id: before
       shell: bash
-      run: bash "$GITHUB_ACTION_PATH/ensure-rustup.sh"
+      run: |
+        if ! command -v rustup >/dev/null 2>&1; then
+          echo "Rustup before: not installed"
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+          echo "outdated=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "installed=true" >> "$GITHUB_OUTPUT"
+        current="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
+        echo "Rustup before: $current"
+        if [[ "$current" =~ ^rustup[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$) ]] &&
+          (( 10#${BASH_REMATCH[1]} > 1 ||
+             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} > 29) ||
+             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} == 29 && 10#${BASH_REMATCH[3]} >= 2) )); then
+          echo "outdated=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "outdated=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Update outdated rustup
+      id: update
+      if: steps.before.outputs.installed == 'true' && steps.before.outputs.outdated == 'true'
+      continue-on-error: true
+      shell: bash
+      run: rustup self update
+
+    # Package-managed rustup can disable self-update. Install official binaries
+    # in CARGO_HOME in that case, reusing the existing Rust toolchains.
+    - name: Install official rustup on Linux or macOS
+      if: runner.os != 'Windows' && (steps.before.outputs.installed == 'false' || steps.update.outcome == 'failure')
+      shell: bash
+      run: |
+        curl --proto '=https' --tlsv1.2 --retry 3 -fsSL https://sh.rustup.rs \
+          | sh -s -- -y --no-modify-path --default-toolchain none
+
+    - name: Install official rustup on Windows
+      if: runner.os == 'Windows' && (steps.before.outputs.installed == 'false' || steps.update.outcome == 'failure')
+      shell: bash
+      run: |
+        install_dir="$(mktemp -d)"
+        trap 'rm -rf "$install_dir"' EXIT
+        case "$RUNNER_ARCH" in
+          X64) host_arch=x86_64 ;;
+          ARM64) host_arch=aarch64 ;;
+          *) echo "Unsupported Windows architecture: $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        curl --proto '=https' --tlsv1.2 --retry 3 -fsSL \
+          "https://win.rustup.rs/$host_arch" -o "$install_dir/rustup-init.exe"
+        "$install_dir/rustup-init.exe" -y --no-modify-path --default-toolchain none
+
+    - name: Add installed rustup to PATH
+      if: steps.before.outputs.installed == 'false' || steps.update.outcome == 'failure'
+      shell: bash
+      run: |
+        cargo_home="${CARGO_HOME:-${USERPROFILE:-$HOME}/.cargo}"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          cargo_home="$(cygpath -u "$cargo_home")"
+        fi
+        echo "$cargo_home/bin" >> "$GITHUB_PATH"
+
+    - name: Print and verify updated rustup version
+      shell: bash
+      run: |
+        current="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
+        echo "Rustup after: $current"
+        if [[ "$current" =~ ^rustup[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$) ]] &&
+          (( 10#${BASH_REMATCH[1]} > 1 ||
+             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} > 29) ||
+             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} == 29 && 10#${BASH_REMATCH[3]} >= 2) )); then
+          exit 0
+        fi
+        echo "::error::Rustup must be at least 1.29.2 after installation or update"
+        exit 1

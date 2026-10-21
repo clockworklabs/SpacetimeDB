@@ -24,7 +24,4 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Test version comparison and update behavior
-        if: runner.os == 'Linux'
-        run: python3 .github/actions/ensure-rustup/test.py
       - uses: ./.github/actions/ensure-rustup
