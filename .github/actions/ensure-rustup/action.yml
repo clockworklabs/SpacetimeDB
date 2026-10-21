@@ -1,21 +1,25 @@
 name: Ensure updated rustup
-description: Update rustup itself and print its version before and after, preserving Rust toolchains
+description: Update or install rustup and print its version, preserving Rust toolchains
 runs:
   using: composite
   steps:
-    - name: Print current rustup version
-      continue-on-error: true # Rustup may not be installed yet.
+    - name: Check whether rustup is installed
+      id: rustup
       shell: bash
-      run: RUSTUP_AUTO_INSTALL=0 rustup --version
+      run: |
+        if which rustup; then
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Update rustup
-      id: update
-      continue-on-error: true # Use the installer below if self-update is unavailable.
+      if: steps.rustup.outputs.installed == 'true'
       shell: bash
       run: rustup self update
 
     - name: Install rustup on Linux or macOS if needed
-      if: steps.update.outcome == 'failure' && runner.os != 'Windows'
+      if: steps.rustup.outputs.installed == 'false' && runner.os != 'Windows'
       shell: bash
       run: |
         curl --proto '=https' --tlsv1.2 --retry 3 -fsSL https://sh.rustup.rs \
@@ -23,7 +27,7 @@ runs:
         echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
 
     - name: Install rustup on Windows if needed
-      if: steps.update.outcome == 'failure' && runner.os == 'Windows'
+      if: steps.rustup.outputs.installed == 'false' && runner.os == 'Windows'
       shell: bash
       run: |
         case "$RUNNER_ARCH" in
@@ -39,4 +43,4 @@ runs:
 
     - name: Print updated rustup version
       shell: bash
-      run: RUSTUP_AUTO_INSTALL=0 rustup --version
+      run: rustup --version
