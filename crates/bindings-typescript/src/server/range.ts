@@ -15,6 +15,8 @@
  * const unboundedRange = new Range();
  * ```
  */
+const RANGE_BRAND: unique symbol = Symbol.for('spacetimedb.Range');
+
 export class Range<T> {
   #from: Bound<T>;
   #to: Bound<T>;
@@ -23,12 +25,30 @@ export class Range<T> {
     this.#to = to ?? { tag: 'unbounded' };
   }
 
+  public get [RANGE_BRAND](): true {
+    return true;
+  }
+
+  public static isRange(val: unknown): val is Range<any> {
+    return (
+      val instanceof Range ||
+      (typeof val === 'object' &&
+        val !== null &&
+        ((val as any)[RANGE_BRAND] === true ||
+          (val as any).constructor?.name === 'Range'))
+    );
+  }
+
   public get from(): Bound<T> {
     return this.#from;
   }
   public get to(): Bound<T> {
     return this.#to;
   }
+}
+
+export function isRange(val: unknown): val is Range<any> {
+  return Range.isRange(val);
 }
 
 /**

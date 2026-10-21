@@ -32,7 +32,7 @@ export { toCamelCase } from '../lib/util.ts';
 export type { Uuid } from '../lib/uuid.ts';
 export type { Random } from './rng.ts';
 export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views.ts';
-export { Range, type Bound } from './range.ts';
+export { Range, isRange, type Bound } from './range.ts';
 export {
   Headers,
   Request,
