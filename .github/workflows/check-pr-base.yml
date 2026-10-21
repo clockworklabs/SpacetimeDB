@@ -41,8 +41,6 @@ jobs:
         with:
           # We inspect local tags and git commits in order to determine whether things have been released
           fetch-depth: 0
-      - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
       - uses: dsherret/rust-toolchain-file@v1
       - name: Check release dependencies
         run: >-

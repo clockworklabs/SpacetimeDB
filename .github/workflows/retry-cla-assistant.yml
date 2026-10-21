@@ -40,8 +40,6 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
       - uses: dsherret/rust-toolchain-file@v1
 
       - name: Collect pull requests to check
