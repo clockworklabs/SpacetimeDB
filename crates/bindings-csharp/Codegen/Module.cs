@@ -517,10 +517,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             static {{typeName}}() { }
 
             [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-            public static {{typeName}} Get(int contextInstance) =>
-                __instances[contextInstance] ??= Create(contextInstance);
+            public static {{typeName}} __GetInstance(int contextInstance) =>
+                __instances[contextInstance] ??= __CreateInstance(contextInstance);
 
-            private static {{typeName}} Create(int contextInstance)
+            private static {{typeName}} __CreateInstance(int contextInstance)
             {
                 var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
                 assemblyIdentity,
@@ -544,7 +544,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     ) =>
         sharedContexts
             ? writable
-                ? $"__state.__{identifier.TrimStart('@')} ??= new(__state.InstanceId{(primaryKey ? ", __state" : "")})"
+                ? $"__state.__index_{identifier.TrimStart('@')} ??= new(__state.InstanceId{(primaryKey ? ", __state" : "")})"
                 : $"__{identifier.TrimStart('@')} ??= new(__instanceId)"
             : "new()";
 
@@ -556,12 +556,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         )
         {
             var identifier = constraint.Col.Identifier;
-            yield return $"internal {identifier}UniqueIndex? __{identifier.TrimStart('@')};";
+            yield return $"internal {identifier}UniqueIndex? __index_{identifier.TrimStart('@')};";
         }
         foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
         {
             var identifier = index.AccessorIdentifier;
-            yield return $"internal {identifier}Index? __{identifier.TrimStart('@')};";
+            yield return $"internal {identifier}Index? __index_{identifier.TrimStart('@')};";
         }
     }
 
@@ -666,20 +666,20 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     "Insert",
                     "Delete",
                     "Clear",
-                    "Get",
-                    "Create",
+                    "__GetInstance",
+                    "__CreateInstance",
                     "__instances",
                     "__instanceId",
                     "__state",
-                    "InstanceState",
+                    "__InstanceState",
                 }
             )
                 names.Add(writable, member, "generated table member");
             foreach (
                 var member in new[]
                 {
-                    "Get",
-                    "Create",
+                    "__GetInstance",
+                    "__CreateInstance",
                     "__instances",
                     "__instanceId",
                     "Count",
@@ -694,8 +694,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {
                     names.Add(scope, identifier, contributor);
                     names.Add(
-                        scope,
-                        "__" + identifier.TrimStart('@'),
+                        scope == writable ? writable + ".__InstanceState" : scope,
+                        (scope == writable ? "__index_" : "__") + identifier.TrimStart('@'),
                         $"cache field for {contributor}"
                     );
                     names.Add(
@@ -1031,7 +1031,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var rowArgument = sharedContexts ? "row, __state" : "row";
             var instanceMembers = sharedContexts
                 ? $$"""
-                    private sealed class InstanceState(int instanceId) : global::SpacetimeDB.Internal.TableHandle({{HandleLookupName(
+                    private sealed class __InstanceState(int instanceId) : global::SpacetimeDB.Internal.TableHandle({{HandleLookupName(
                         v.Name
                     )}})
                     {
@@ -1039,16 +1039,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {{string.Join("\n", WritableIndexCaches(v))}}
                     }
 
-                    private static readonly InstanceState?[] __instances = new InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
-                    private readonly InstanceState __state;
+                    private static readonly __InstanceState?[] __instances = new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
+                    private readonly __InstanceState __state;
                     static {{accessorIdentifier}}() { }
-                    public {{accessorIdentifier}}() : this(Get(0).__state) { }
-                    private {{accessorIdentifier}}(InstanceState state) { __state = state; }
+                    public {{accessorIdentifier}}() : this(__GetInstance(0).__state) { }
+                    private {{accessorIdentifier}}(__InstanceState state) { __state = state; }
 
                     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-                    public static {{accessorIdentifier}} Get(int contextInstance) => new(__instances[contextInstance] ??= Create(contextInstance));
+                    public static {{accessorIdentifier}} __GetInstance(int contextInstance) => new(__instances[contextInstance] ??= __CreateInstance(contextInstance));
 
-                    private static InstanceState Create(int contextInstance)
+                    private static __InstanceState __CreateInstance(int contextInstance)
                     {
                         var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
                         assemblyIdentity,
@@ -1121,7 +1121,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{{string.Join("\n", GenerateTableAccessorFilters(v))}}}
             }
             """,
-                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.Get(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
+                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
             );
         }
     }
@@ -1170,7 +1170,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     {{{readOnlyIndexDecls}}}
                 }
                 """,
-                $"{visibility} global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly {accessorIdentifier} => {(sharedContexts ? $"global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly.Get(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
+                $"{visibility} global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly {accessorIdentifier} => {(sharedContexts ? $"global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
             );
         }
     }

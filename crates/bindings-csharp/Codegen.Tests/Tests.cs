@@ -693,6 +693,23 @@ public static class GeneratorSnapshotTests
         using var dll = new MemoryStream();
         var emitted = valid.Emit(dll);
         Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+
+        foreach (var name in new[] { "Get", "Create", "InstanceState" })
+        {
+            foreach (var attribute in new[] { "PrimaryKey", "Unique", "Index.BTree" })
+            {
+                var (output, diagnostics) = Generate(
+                    $$"""
+                    [SpacetimeDB.Table(Accessor = "User")]
+                    public partial struct Row { [SpacetimeDB.{{attribute}}] public uint {{name}}; }
+                    """
+                );
+                Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+                using var assembly = new MemoryStream();
+                var result = output.Emit(assembly);
+                Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            }
+        }
     }
 #endif
 
