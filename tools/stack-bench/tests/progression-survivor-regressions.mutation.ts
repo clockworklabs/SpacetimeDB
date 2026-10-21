@@ -53,7 +53,7 @@ test('stock-alert uniqueness waits for the second restock update before counting
   assert.equal(steps[restockIndex + 1]?.do, 'expectActionOutcome');
   assert.equal(steps[restockIndex + 1]?.outcome, 'accepted');
   assert.equal(steps[restockIndex + 2]?.do, 'wait');
-  assert.equal(steps[restockIndex + 2]?.ms, 10000);
+  assert.equal(steps[restockIndex + 2]?.ms, 75000);
   assert.equal(steps[restockIndex + 3]?.do, 'freshClient');
   assert(finalCount, 'criterion 631a must end with a count check');
   assert.equal(finalCount.do, 'expectElementCount');

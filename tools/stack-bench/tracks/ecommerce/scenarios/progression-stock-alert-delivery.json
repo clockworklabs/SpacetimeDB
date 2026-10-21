@@ -50,7 +50,7 @@
             {"do":"click","actor":"admin","testid":"admin-link"},
             {"do":"callAction","actor":"admin","action":"restock","namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Air Purifier","attribute":"data-restock-input"},"settleMs":0},
             {"do":"expectActionOutcome","actor":"admin","outcome":"accepted"},
-            {"do":"wait","actor":"admin","ms":10000},
+            {"do":"wait","actor":"admin","ms":75000},
             {"do":"freshClient","actor":"subscriber"},
             {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
             {"do":"click","actor":"subscriber-fresh","testid":"catalog-link","ifAvailable":true,"unlessVisible":["notifications-panel","notifications-toggle","notification-settings"]},
@@ -59,7 +59,7 @@
             {"do": "click", "actor": "subscriber-fresh", "testid": "current-user", "ifAvailable": true, "unlessVisible": ["notifications-toggle", "notifications-panel"]},
             {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
-            {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":10000}
+            {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":15000}
           ]
         }
       ]

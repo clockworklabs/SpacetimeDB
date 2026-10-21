@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "b2d593adf408e8a897b06eb3dfcaf5c1cc8fc14ff7fea9f2d1e73fe01a3e8c80",
-    "executionSha256": "e7e4914bcd74966959b6af722866aa9622e567d842959eacd0fe8f0ff3f2f3f0",
-    "contentSha256": "10cfc190ceed45978e1b43cb7bce146716a3b505586e73d848d5618c1d8c2644"
+    "meaningSha256": "965ba5bd4b59ed814df7dda9cf563821d3e623cccf0da9d7e7270921aa79d5e5",
+    "executionSha256": "fcd65c32eee121fc103f6f0b21b73215636f652eda0db0d291f6349c552c59bc",
+    "contentSha256": "ae0dfd5d0ce1be803b9947039807f44de350bd773e07c5909dee5dcff2d8b9ad"
   },
   "fixture": {
     "id": "ecommerce.operations",
