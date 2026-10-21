@@ -2601,6 +2601,47 @@ public class Module : IIncrementalGenerator
             """;
     }
 
+    internal static IEnumerable<IAssemblySymbol> TraverseAssemblies(
+        IEnumerable<IAssemblySymbol> references,
+        CancellationToken cancellationToken
+    )
+    {
+        var visited = new HashSet<AssemblyIdentity>();
+        var pending = new Stack<IAssemblySymbol>(references);
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var reference = pending.Pop();
+            if (!visited.Add(reference.Identity))
+                continue;
+
+            yield return reference;
+            foreach (
+                var dependency in reference.Modules.SelectMany(module =>
+                    module.ReferencedAssemblySymbols
+                )
+            )
+                pending.Push(dependency);
+        }
+    }
+
+    internal static INamedTypeSymbol? GetModuleDescriptor(
+        IAssemblySymbol assembly,
+        INamedTypeSymbol markerType
+    )
+    {
+        var marker = assembly
+            .GetAttributes()
+            .FirstOrDefault(attribute =>
+                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
+            );
+        return
+            marker is { ConstructorArguments.Length: 1 }
+            && marker.ConstructorArguments[0].Kind == TypedConstantKind.Type
+            ? marker.ConstructorArguments[0].Value as INamedTypeSymbol
+            : null;
+    }
+
     private static EquatableArray<AssemblyDeclaration> DiscoverAssemblies(
         Compilation compilation,
         DiagReporter diag,
@@ -2624,41 +2665,16 @@ public class Module : IIncrementalGenerator
             return new(ImmutableArray<AssemblyDeclaration>.Empty);
         }
 
-        var visited = new HashSet<AssemblyIdentity> { compilation.Assembly.Identity };
-        var pending = new Stack<IAssemblySymbol>(
-            compilation.SourceModule.ReferencedAssemblySymbols
-        );
         var assemblies = new List<AssemblyDeclaration>();
         var symbols = new Dictionary<string, IAssemblySymbol>(StringComparer.Ordinal);
-        while (pending.Count > 0)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var assembly = pending.Pop();
-            if (!visited.Add(assembly.Identity))
-            {
-                continue;
-            }
-
-            // Unmarked utility assemblies may reference contributing modules.
-            foreach (var module in assembly.Modules)
-            {
-                foreach (var reference in module.ReferencedAssemblySymbols)
-                {
-                    pending.Push(reference);
-                }
-            }
-
-            var marker = assembly
-                .GetAttributes()
-                .FirstOrDefault(attribute =>
-                    SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
-                );
-            if (
-                marker is null
-                || marker.ConstructorArguments.Length != 1
-                || marker.ConstructorArguments[0].Kind != TypedConstantKind.Type
-                || marker.ConstructorArguments[0].Value is not INamedTypeSymbol descriptor
+        foreach (
+            var assembly in TraverseAssemblies(
+                compilation.SourceModule.ReferencedAssemblySymbols,
+                cancellationToken
             )
+        )
+        {
+            if (GetModuleDescriptor(assembly, markerType) is not { } descriptor)
             {
                 continue;
             }
@@ -2904,6 +2920,8 @@ public class Module : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        var isTestProject = TestModule.IsTestProject(context);
+        TestModule.Register(context, isTestProject);
         var settings = context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: typeof(SettingsAttribute).FullName,
@@ -3152,23 +3170,32 @@ public class Module : IIncrementalGenerator
             .Combine(environment)
             .Select(
                 (input, _) =>
-                    (
-                        input.Left.Name,
-                        input.Left.Identity,
-                        input.Left.SharedContexts,
-                        HasEnvironment: input.Right.HasDeclarations,
-                        EnvironmentRegistrations: input.Right.Registrations
-                    )
+                {
+                    var (assemblyInfo, environmentInfo) = input;
+                    return (
+                        assemblyInfo.Name,
+                        assemblyInfo.Identity,
+                        assemblyInfo.SharedContexts,
+                        HasEnvironment: environmentInfo.HasDeclarations,
+                        EnvironmentRegistrations: environmentInfo.Registrations
+                    );
+                }
             );
 
         var referencedAssemblies = context
-            .CompilationProvider.SelectMany(
-                (compilation, ct) =>
+            .CompilationProvider.Combine(isTestProject)
+            .SelectMany(
+                (input, ct) =>
                     new[]
                     {
                         DiagReporter.With(
                             Location.None,
-                            diag => DiscoverAssemblies(compilation, diag, ct)
+                            diag =>
+                                input.Right
+                                    ? new EquatableArray<AssemblyDeclaration>(
+                                        ImmutableArray<AssemblyDeclaration>.Empty
+                                    )
+                                    : DiscoverAssemblies(input.Left, diag, ct)
                         ),
                     }
             )
@@ -3188,23 +3215,26 @@ public class Module : IIncrementalGenerator
             .Combine(tableDecls)
             .SelectMany(
                 (input, ct) =>
-                    new[]
+                {
+                    var ((compilation, moduleAssemblies), tableDeclarations) = input;
+                    return new[]
                     {
                         DiagReporter.With(
                             Location.None,
                             diag =>
                                 NamespaceDeclaration.Parse(
-                                    input.Left.Left,
-                                    input.Left.Left.Assembly,
-                                    input.Left.Right.Select(assembly => assembly.Identity),
-                                    input.Right.SelectMany(t =>
+                                    compilation,
+                                    compilation.Assembly,
+                                    moduleAssemblies.Select(assembly => assembly.Identity),
+                                    tableDeclarations.SelectMany(t =>
                                         t.TableAccessors.Select(a => a.Name)
                                     ),
                                     diag,
                                     ct
                                 )
                         ),
-                    }
+                    };
+                }
             )
             .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Namespace.Parse")
@@ -3239,9 +3269,13 @@ public class Module : IIncrementalGenerator
             moduleOutputInputs
                 .Combine(extensionNamespace)
                 .Combine(referencedAssemblies)
-                .Combine(composition.Collect()),
+                .Combine(composition.Collect())
+                .Combine(isTestProject),
             (context, input) =>
             {
+                var (moduleInputs, testProject) = input;
+                if (testProject)
+                    return;
                 var (
                     (
                         (
@@ -3257,7 +3291,7 @@ public class Module : IIncrementalGenerator
                         assemblies
                     ),
                     compositions
-                ) = input;
+                ) = moduleInputs;
                 if (compositions.Length != 1 || !compositions[0].IsValid)
                 {
                     return;

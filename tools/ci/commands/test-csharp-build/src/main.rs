@@ -26,6 +26,7 @@ fn main() -> Result<()> {
         check_template(work, &cli, template, &version)
             .with_context(|| format!("Build checks failed for {template}"))?;
     }
+    check_test_references(work, &version).context("Test-project reference checks failed")?;
     check_net8(work, &cli).context(".NET 8 WASM build check failed")?;
     Ok(())
 }
@@ -146,6 +147,85 @@ fn check_managed(module: &Path, consumer: &Path) -> Result<()> {
         !libraries.keys().any(|name| name.contains("ILCompiler.LLVM")),
         "Managed module restored WASM-only ILCompiler.LLVM packages"
     );
+    Ok(())
+}
+
+fn check_test_references(work: &Path, version: &str) -> Result<()> {
+    println!("Checking test-project references to a module project and package");
+    let module = work.join("chat-console-cs/module/StdbModule.csproj");
+    let tests = work.join("chat-console-cs/tests");
+    let project = tests.join("Module.Tests.csproj");
+    fs::create_dir_all(&tests)?;
+    fs::write(
+        &project,
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1" PrivateAssets="all" />
+    <ProjectReference Include="../module/StdbModule.csproj" />
+  </ItemGroup>
+</Project>
+"#,
+    )?;
+    fs::write(
+        tests.join("ModuleReferenceTests.cs"),
+        r#"using System.Reflection;
+using SpacetimeDB;
+using Xunit;
+
+public class ModuleReferenceTests
+{
+    [Fact]
+    public void ReferencesModuleWithoutBecomingAModule()
+    {
+        var testAssembly = typeof(ModuleReferenceTests).Assembly;
+        Assert.Null(testAssembly.GetCustomAttribute<ModuleDescriptorAttribute>());
+        Assert.Null(testAssembly.GetType("ModuleRegistration"));
+    }
+
+    // Compile-time checks only; accessing live data still requires the testing backend.
+    public static ulong Count(ReducerContext ctx) => ctx.Db.Message.Count;
+    public static ulong Count(ViewContext ctx) => ctx.Db.Message.Count;
+    public static IQuery<global::Module.Message> Query(ViewContext ctx) => ctx.From.Message();
+}
+"#,
+    )?;
+    cmd!("dotnet", "test", &project, "-c", "Release")
+        .run()
+        .context("Module project reference failed")?;
+    cmd!(
+        "dotnet",
+        "pack",
+        &module,
+        "-c",
+        "Release",
+        "-p:PackageId=BuildTest.Module",
+        format!("-p:Version={version}"),
+        "-o",
+        work.join("packages")
+    )
+    .run()?;
+    cmd!("dotnet", "remove", &project, "reference", &module).run()?;
+    cmd!(
+        "dotnet",
+        "add",
+        &project,
+        "package",
+        "BuildTest.Module",
+        "--version",
+        version
+    )
+    .run()?;
+    cmd!("dotnet", "test", &project, "-c", "Release")
+        .run()
+        .context("Module package reference failed")?;
     Ok(())
 }
 

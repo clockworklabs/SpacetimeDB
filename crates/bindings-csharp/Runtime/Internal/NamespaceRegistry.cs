@@ -1,6 +1,9 @@
 namespace SpacetimeDB.Internal;
 
-/// <summary>Immutable assembly placement installed before module registration.</summary>
+/// <summary>
+/// Immutable assembly placement for one root composition. Only the WASM host installs it globally;
+/// independent managed fixtures retain their own registry.
+/// </summary>
 public sealed class NamespaceRegistry
 {
     private readonly Dictionary<
