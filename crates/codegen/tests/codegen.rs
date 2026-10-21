@@ -114,9 +114,21 @@ fn test_codegen_rust_outbox_fixture() {
     let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust).unwrap();
     let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
 
+    // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    fs_err::write(&path, root).unwrap();
+    let status = std::process::Command::new("rustfmt")
+        .arg("--config-path")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.rustfmt.toml"))
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
     // The bindings UI tests compile this generated fixture and check its column mappings.
     assert_eq!(
-        root.trim_end(),
+        fs_err::read_to_string(path).unwrap().trim_end(),
         include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
     );
 }

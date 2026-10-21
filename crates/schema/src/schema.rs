@@ -1024,7 +1024,7 @@ impl Schema for TableSchema {
             target_column: outbox.target_column,
             arg_columns: outbox.arg_columns.clone(),
             on_result_reducer: outbox.on_result_reducer.clone(),
-            signature_hash: outbox.signature_hash.clone(),
+            signature_hash: outbox.signature_hash,
         });
 
         TableSchema::new(
