@@ -1,7 +1,6 @@
 # Use a base image that supports multi-arch
 FROM rust:bookworm AS builder
 
-# Update rustup itself while preserving the pinned Rust toolchain.
 RUN rustup --version && rustup self update && rustup --version
 
 WORKDIR /usr/src/app
@@ -20,7 +19,6 @@ RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked
 
 FROM rust:bookworm
 
-# Update rustup itself while preserving the pinned Rust toolchain.
 RUN rustup --version && rustup self update && rustup --version
 
 # Install dependencies

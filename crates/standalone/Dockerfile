@@ -4,7 +4,6 @@ ARG CARGO_PROFILE=release
 # !rust-toolchain-sync
 FROM rust:1.97.1 AS chef
 
-# Update rustup itself while preserving the pinned Rust toolchain.
 RUN rustup --version && rustup self update && rustup --version
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin

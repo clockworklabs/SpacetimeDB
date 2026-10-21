@@ -5,7 +5,6 @@
 # !rust-toolchain-sync
 FROM rust:1.97.1
 
-# Update rustup itself while preserving the pinned Rust toolchain.
 RUN rustup --version && rustup self update && rustup --version
 
 RUN apt-get update && \
