@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SpacetimeDB.Testing</AssemblyName>
+    <RootNamespace>SpacetimeDB.Testing</RootNamespace>
+    <Version>2.13.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Native NuGet assets are added in the packaging stage. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Runtime/Runtime.csproj" />
+    <InternalsVisibleTo Include="SpacetimeDB.Testing.Tests" />
+  </ItemGroup>
+</Project>
