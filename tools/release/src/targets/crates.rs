@@ -1,12 +1,87 @@
 use crate::targets::{util, ReleaseTarget};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", "spacetimedb-devops"];
 const CRATES_IO_API: &str = "https://crates.io/api/v1";
+const MAX_PUBLISH_RETRIES: u32 = 5;
+
+#[derive(Debug, PartialEq, Eq)]
+enum PublishOutcome {
+    Complete,
+    RateLimited,
+}
+
+fn run_publish(cmd: &mut Command, dry_run: bool) -> Result<PublishOutcome, String> {
+    util::print_command(cmd);
+    let mut child = cmd
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
+    let mut rate_limited = false;
+    // Keep Cargo's progress visible while watching for the registry's HTTP 429 response.
+    let read_result = BufReader::new(child.stderr.take().unwrap())
+        .lines()
+        .try_for_each(|line| {
+            let line = line?;
+            eprintln!("{line}");
+            rate_limited |= line.contains("429 Too Many Requests");
+            Ok::<_, std::io::Error>(())
+        });
+    let status = child
+        .wait()
+        .map_err(|err| format!("Failed to wait for cargo publish: {err}"))?;
+    read_result.map_err(|err| format!("Failed to read cargo publish output: {err}"))?;
+    if status.success() {
+        Ok(PublishOutcome::Complete)
+    } else if rate_limited && !dry_run {
+        Ok(PublishOutcome::RateLimited)
+    } else {
+        Err(format!("cargo publish failed: {status}"))
+    }
+}
+
+fn publish_with_backoff(
+    crates: &[String],
+    mut is_published: impl FnMut(&str) -> Result<bool, String>,
+    mut publish: impl FnMut(&[&String]) -> Result<PublishOutcome, String>,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), String> {
+    for retry in 0..=MAX_PUBLISH_RETRIES {
+        let mut unpublished = Vec::new();
+        println!("Checking for already-published crates..");
+        for crate_name in crates {
+            if is_published(crate_name)? {
+                println!("Crate {crate_name} already published; skipping.");
+            } else {
+                println!("Crate {crate_name} must be published.");
+                unpublished.push(crate_name);
+            }
+        }
+        match publish(&unpublished)? {
+            PublishOutcome::Complete => return Ok(()),
+            PublishOutcome::RateLimited if retry == MAX_PUBLISH_RETRIES => {
+                return Err(format!(
+                    "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries"
+                ));
+            }
+            PublishOutcome::RateLimited => {
+                let delay = Duration::from_secs(60 << retry);
+                println!(
+                    "crates.io rate limited cargo publish; retrying in {} seconds ({}/{MAX_PUBLISH_RETRIES}).",
+                    delay.as_secs(),
+                    retry + 1,
+                );
+                sleep(delay);
+            }
+        }
+    }
+    unreachable!()
+}
 
 pub struct CratesRelease {
     pub version: String,
@@ -18,10 +93,10 @@ impl CratesRelease {
         Self { version, dry_run }
     }
 
-    fn publish_crates(&self, workspace_root: &Path, crates: &[&String]) -> Result<(), String> {
+    fn publish_crates(&self, workspace_root: &Path, crates: &[&String]) -> Result<PublishOutcome, String> {
         if crates.is_empty() {
             println!("All selected crates are already published; nothing to publish.");
-            return Ok(());
+            return Ok(PublishOutcome::Complete);
         }
         // Workaround for some weird bug where dry runs fail if you don't run them in a sterile home dir
         let cargo_home = if self.dry_run {
@@ -43,14 +118,7 @@ impl CratesRelease {
         if let Some(home) = &cargo_home {
             cmd.env("CARGO_HOME", home.path());
         }
-        util::print_command(&cmd);
-        let status = cmd
-            .status()
-            .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
-        if !status.success() {
-            return Err(format!("cargo publish failed: {status}"));
-        }
-        Ok(())
+        run_publish(&mut cmd, self.dry_run)
     }
 
     fn add_crate_owners(&self, crate_name: &str) -> Result<(), String> {
@@ -121,9 +189,8 @@ impl ReleaseTarget for CratesRelease {
         }
 
         println!("\nStarting publish process...");
-        let mut unpublished = Vec::new();
         if self.dry_run {
-            unpublished.extend(&crates);
+            self.publish_crates(&workspace_root, &crates.iter().collect::<Vec<_>>())?;
         } else {
             let client = Client::builder()
                 .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
@@ -137,21 +204,18 @@ impl ReleaseTarget for CratesRelease {
                 .split('-')
                 .next()
                 .unwrap();
-            // We must only publish unpublished crates, otherwise our publish invocation will fail.
-            // This comes up in the context of re-running partially-completed releases if we hit an issue partway through.
-            println!("Checking for already-published crates..");
-            for crate_name in &crates {
-                // Pace requests to respect crates.io's API guidance.
-                std::thread::sleep(Duration::from_secs(1));
-                if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
-                    println!("Crate {crate_name} already published; skipping.");
-                } else {
-                    println!("Crate {crate_name} must be published.");
-                    unpublished.push(crate_name);
-                }
-            }
+            // Recheck after every rate limit: Cargo may have uploaded part of the batch.
+            publish_with_backoff(
+                &crates,
+                |crate_name| {
+                    // Pace requests to respect crates.io's API guidance.
+                    std::thread::sleep(Duration::from_secs(1));
+                    is_published(&client, CRATES_IO_API, crate_name, crates_io_version)
+                },
+                |unpublished| self.publish_crates(&workspace_root, unpublished),
+                std::thread::sleep,
+            )?;
         }
-        self.publish_crates(&workspace_root, &unpublished)?;
         if !self.dry_run {
             for crate_name in &crates {
                 self.add_crate_owners(crate_name)?;
@@ -174,6 +238,106 @@ impl ReleaseTarget for CratesRelease {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retries_only_remaining_crates_after_partial_publish() {
+        let crates = vec!["first".to_owned(), "second".to_owned()];
+        let published = std::cell::RefCell::new(Vec::<String>::new());
+        let mut batches = Vec::new();
+        let mut delays = Vec::new();
+        publish_with_backoff(
+            &crates,
+            |name| Ok(published.borrow().iter().any(|p| p == name)),
+            |remaining| {
+                batches.push(remaining.iter().map(|name| name.to_string()).collect::<Vec<_>>());
+                if batches.len() == 1 {
+                    published.borrow_mut().push("first".into());
+                    Ok(PublishOutcome::RateLimited)
+                } else {
+                    Ok(PublishOutcome::Complete)
+                }
+            },
+            |delay| delays.push(delay.as_secs()),
+        )
+        .unwrap();
+        assert_eq!(batches, vec![vec!["first", "second"], vec!["second"]]);
+        assert_eq!(delays, vec![60]);
+    }
+
+    #[test]
+    fn persistent_rate_limit_has_bounded_exponential_backoff() {
+        let mut attempts = 0;
+        let mut delays = Vec::new();
+        let err = publish_with_backoff(
+            &["crate".into()],
+            |_| Ok(false),
+            |_| {
+                attempts += 1;
+                Ok(PublishOutcome::RateLimited)
+            },
+            |delay| delays.push(delay.as_secs()),
+        )
+        .unwrap_err();
+        assert!(err.contains("still rate limited"));
+        assert_eq!(attempts, 6);
+        assert_eq!(delays, vec![60, 120, 240, 480, 960]);
+    }
+
+    #[test]
+    fn other_errors_stop_without_retrying() {
+        for query_fails in [false, true] {
+            let err = publish_with_backoff(
+                &["crate".into()],
+                |_| {
+                    if query_fails {
+                        Err("query failed".into())
+                    } else {
+                        Ok(false)
+                    }
+                },
+                |_| Err("publish failed".into()),
+                |_| panic!("unexpected retry"),
+            )
+            .unwrap_err();
+            assert_eq!(err, if query_fails { "query failed" } else { "publish failed" });
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cargo_exit_status_and_rate_limit_output_control_retries() {
+        for (stderr, exit, dry_run, expected) in [
+            (
+                "error: status 429 Too Many Requests",
+                101,
+                false,
+                Some(PublishOutcome::RateLimited),
+            ),
+            ("error: status 429 Too Many Requests", 101, true, None),
+            ("error: status 403 Forbidden", 101, false, None),
+            (
+                "warning: 429 Too Many Requests",
+                0,
+                false,
+                Some(PublishOutcome::Complete),
+            ),
+            ("Uploaded crate", 0, false, Some(PublishOutcome::Complete)),
+        ] {
+            let mut cmd = Command::new("sh");
+            cmd.args([
+                "-c",
+                "printf '%s\\n' \"$1\" >&2; exit \"$2\"",
+                "publish",
+                stderr,
+                &exit.to_string(),
+            ]);
+            let result = run_publish(&mut cmd, dry_run);
+            match expected {
+                Some(outcome) => assert_eq!(result.unwrap(), outcome),
+                None => assert!(result.unwrap_err().contains("cargo publish failed")),
+            }
+        }
+    }
 
     #[test]
     fn empty_selection_skips_cargo_in_both_modes() {
