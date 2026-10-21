@@ -710,7 +710,7 @@ Routes from named submodules are ignored. Register handlers explicitly on the ro
 
 ### Row-level security belongs in the root
 
-Define [row-level security](../../00300-resources/00100-how-to/00400-row-level-security.md) filters in the root, referring to canonical qualified table names. Filters declared inside named submodules do not protect their tables.
+Define [row-level security](../../00250-how-to/00400-row-level-security.md) filters in the root, referring to canonical qualified table names. Filters declared inside named submodules do not protect their tables.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
