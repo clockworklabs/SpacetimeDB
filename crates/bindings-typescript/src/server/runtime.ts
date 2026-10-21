@@ -73,7 +73,7 @@ import {
 } from './query';
 import type { DbView, ReadonlyDbView } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
-import { Range, type Bound } from './range';
+import { Range, isRange, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
 import type { SubmoduleDispatchInfo, SchemaInner } from './schema';
 import { hostBackend, type DatastoreBackend } from './backend';
@@ -1507,7 +1507,7 @@ export function makeTableView(
       const rawIndex = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const buf = LEAF_BUF;
-          if (serializeSingleRange && range instanceof Range) {
+          if (serializeSingleRange && isRange(range)) {
             const args = serializeSingleRange(buf, range);
             const iter_id = backend.datastoreIndexScanRangeBsatn(
               index_id,
@@ -1526,7 +1526,7 @@ export function makeTableView(
         },
         delete: (range: any): u32 => {
           const buf = LEAF_BUF;
-          if (serializeSingleRange && range instanceof Range) {
+          if (serializeSingleRange && isRange(range)) {
             const args = serializeSingleRange(buf, range);
             return backend.datastoreDeleteByIndexScanRangeBsatn(
               index_id,
@@ -1576,10 +1576,7 @@ export function makeTableView(
         // Preserve the point-scan path only for complete scalar keys.
         // A complete key with a Range in the final position is still a range
         // scan over that column with equality over the preceding prefix.
-        return (
-          range.length === numColumns &&
-          !(range[range.length - 1] instanceof Range)
-        );
+        return range.length === numColumns && !isRange(range[range.length - 1]);
       };
 
       const serializeRange = (
@@ -1597,7 +1594,7 @@ export function makeTableView(
         const rstartOffset = writer.offset;
         const term = range[range.length - 1];
         const serializeTerm = indexSerializers[range.length - 1];
-        if (term instanceof Range) {
+        if (isRange(term)) {
           const writeBound = (bound: Bound<any>) => {
             const tags = { included: 0, excluded: 1, unbounded: 2 };
             writer.writeU8(tags[bound.tag]);
