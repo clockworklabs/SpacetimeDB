@@ -578,12 +578,15 @@ public static class GeneratorSnapshotTests
             Assert.Empty(GetCompilationErrors(output));
             return (CSharpCompilation)output;
         }
+        var images = new Dictionary<string, byte[]>();
         MetadataReference Emit(CSharpCompilation compilation)
         {
             using var dll = new MemoryStream();
             var result = compilation.Emit(dll);
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
-            return MetadataReference.CreateFromImage(dll.ToArray());
+            var image = dll.ToArray();
+            images[compilation.AssemblyName!] = image;
+            return MetadataReference.CreateFromImage(image);
         }
         string Table(string name) =>
             $$"""
@@ -642,7 +645,7 @@ public static class GeneratorSnapshotTests
 
         string[] Calls(CSharpCompilation compilation) =>
             [
-                .. Method(compilation, "Initialize")
+                .. Method(compilation, "RegisterModule")
                     .DescendantNodes()
                     .OfType<InvocationExpressionSyntax>()
                     .Select(call => call.Expression.ToString())
@@ -656,7 +659,7 @@ public static class GeneratorSnapshotTests
             .ToArray();
         if (mounted)
         {
-            var init = Method(root, "Initialize");
+            var init = Method(root, "RegisterModule");
             var submodules = init.DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
                 .Where(call => call.Expression.ToString().EndsWith(".RegisterSubmodule"))
@@ -668,6 +671,88 @@ public static class GeneratorSnapshotTests
         }
         Assert.Equal(expected, Calls(root));
         Assert.Equal(expected, Calls(reordered));
+
+        // Execute schema registration without entering Main or installing host state.
+        var check = root.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(
+                $$"""
+                using SpacetimeDB.Internal;
+                public static class SchemaCheck {
+                    public static string[] Run() {
+                        var builder = new ModuleBuilder();
+                        {{Descriptor(root)}}.RegisterModule(builder);
+                        var namespaces = {{Descriptor(root)}}.CreateNamespaces();
+                        if (namespaces.Resolve({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaRow") != {{SymbolDisplay.FormatLiteral(
+                    mounted ? "Auth.AlphaRow" : "AlphaRow",
+                    true
+                )}})
+                            throw new Exception("Incorrect namespace placement");
+                        if (Module.RootBuilder.BuildModuleDefinition().Sections.OfType<RawModuleDefV10Section.Tables>().Any())
+                            throw new Exception("Schema registration modified the global builder");
+                        try {
+                            Module.ResolveName("Root", "RootRow");
+                            throw new Exception("Schema registration installed global namespaces");
+                        } catch (InvalidOperationException) { }
+                        var schema = builder.BuildModuleDefinition();
+                        return schema.Sections.OfType<RawModuleDefV10Section.Tables>()
+                            .SelectMany(section => section.Tables_).Select(table => table.SourceName)
+                            .Concat(schema.Sections.OfType<RawModuleDefV10Section.Submodules>()
+                                .SelectMany(section => section.Submodules_)
+                                .SelectMany(child => child.Module.Sections.OfType<RawModuleDefV10Section.Tables>()
+                                    .SelectMany(section => section.Tables_)
+                                    .Select(table => child.Namespace + "." + table.SourceName)))
+                            .OrderBy(name => name).ToArray();
+                    }
+                }
+                """,
+                fixture.ParseOptions
+            )
+        );
+        Emit(check);
+        void EmitDependencies(Compilation compilation)
+        {
+            foreach (var reference in compilation.References.OfType<CompilationReference>())
+            {
+                if (!images.ContainsKey(reference.Compilation.AssemblyName!))
+                {
+                    EmitDependencies(reference.Compilation);
+                    Emit((CSharpCompilation)reference.Compilation);
+                }
+            }
+        }
+        EmitDependencies(root);
+        var loadContext = new System.Runtime.Loader.AssemblyLoadContext(
+            "SchemaRegistration",
+            isCollectible: true
+        );
+        loadContext.Resolving += (context, name) =>
+        {
+            if (images.TryGetValue(name.Name!, out var image))
+                return context.LoadFromStream(new MemoryStream(image));
+            var reference = fixture
+                .SampleCompilation.References.OfType<PortableExecutableReference>()
+                .Single(r => Path.GetFileNameWithoutExtension(r.FilePath) == name.Name);
+            return context.LoadFromAssemblyPath(reference.FilePath!);
+        };
+        try
+        {
+            var assembly = loadContext.LoadFromStream(new MemoryStream(images["Root"]));
+            var tables = (string[])
+                assembly.GetType("SchemaCheck")!.GetMethod("Run")!.Invoke(null, null)!;
+            string[] expectedTables = mounted
+                ? ["Auth.AlphaRow", "class.BetaRow", "SharedRow"]
+                : ["AlphaRow", "BetaRow", "SharedRow"];
+            Assert.Equal(
+                expectedTables
+                    .Concat(rootHasTable ? ["RootRow"] : Array.Empty<string>())
+                    .OrderBy(name => name),
+                tables
+            );
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
 
         if (rootHasTable || mounted)
         {
@@ -707,7 +792,7 @@ public static class GeneratorSnapshotTests
             );
             Assert.DoesNotContain(
                 "RegisterSubmodule",
-                Method(publicConsumer, "Initialize").ToString()
+                Method(publicConsumer, "RegisterModule").ToString()
             );
         }
 

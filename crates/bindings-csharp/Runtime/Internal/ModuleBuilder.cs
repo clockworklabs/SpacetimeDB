@@ -251,7 +251,7 @@ public sealed class ModuleBuilder
     public void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
         explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
 
-    internal RawModuleDefV10 BuildModuleDefinition()
+    public RawModuleDefV10 BuildModuleDefinition()
     {
         var builtTables = new List<RawTableDefV10>(tableDefs.Count);
         foreach (var table in tableDefs)

@@ -1038,8 +1038,21 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             global::SpacetimeDB.Internal.BytesSink sink
         ) => global::ModuleRegistration.CallLocalAnonymousView(id, args, sink);
 
+        /// <summary>Registers only this assembly's declarations.</summary>
         public static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder) =>
             global::ModuleRegistration.Register(builder);
+
+        /// <summary>Registers this root and its dependencies without initializing the WASM host.</summary>
+        public static void RegisterModule(global::SpacetimeDB.Internal.ModuleBuilder builder) =>
+            global::ModuleRegistration.RegisterModule(builder);
+
+        /// <summary>Creates this root's assembly placements without installing global state.</summary>
+        public static global::SpacetimeDB.Internal.NamespaceRegistry CreateNamespaces() =>
+            new global::SpacetimeDB.Internal.NamespaceRegistry(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                global::SpacetimeDB.CaseConversionPolicy.SnakeCase,
+                new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] { }
+            );
 
         public readonly struct Tables
         {
@@ -4683,19 +4696,20 @@ static class ModuleRegistration
 
 #if NET10_0_OR_GREATER
         global::SpacetimeDB.Internal.Module.InstallNamespaces(
-            new global::SpacetimeDB.Internal.NamespaceRegistry(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                global::SpacetimeDB.CaseConversionPolicy.SnakeCase,
-                new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] { }
-            )
+            global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.CreateNamespaces()
         );
-        global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Register(
-            global::SpacetimeDB.Internal.Module.RootBuilder
-        );
+        RegisterModule(global::SpacetimeDB.Internal.Module.RootBuilder);
 #else
         Register(global::SpacetimeDB.Internal.Module.RootBuilder);
 #endif
     }
+
+#if NET10_0_OR_GREATER
+    internal static void RegisterModule(global::SpacetimeDB.Internal.ModuleBuilder builder)
+    {
+        global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Register(builder);
+    }
+#endif
 
     internal static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder)
     {
