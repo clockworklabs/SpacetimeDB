@@ -22,6 +22,8 @@ extern "C" {
 #define STDB_TEST_TRANSACTION_FINISHED 5u
 #define STDB_TEST_TRANSACTION_ACTIVE 6u
 #define STDB_TEST_DATASTORE_CLOSED 7u
+#define STDB_TEST_UNIQUE_VIOLATION 8u
+#define STDB_TEST_AUTO_INC_OVERFLOW 9u
 
 typedef struct StdbTestDatastore StdbTestDatastore;
 typedef struct StdbTestTransaction StdbTestTransaction;
@@ -104,6 +106,61 @@ uint32_t STDB_TEST_CALL stdb_test_v1_table_scan(
 uint32_t STDB_TEST_CALL stdb_test_v1_table_insert(
     const StdbTestTransaction *transaction, uint32_t table_id,
     const uint8_t *row, uint64_t row_len, StdbTestBuffer *out, StdbTestBuffer *error);
+
+/* Index names are UTF-8; IDs are local to the datastore. A point key is encoded
+ * as the index key type: a scalar for a single column, a product for multiple
+ * columns. Scan buffers have the same array<array<u8>> encoding as table_scan.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_index_id(
+    const StdbTestTransaction *transaction, const uint8_t *name, uint64_t name_len,
+    uint32_t *out, StdbTestBuffer *error);
+uint32_t STDB_TEST_CALL stdb_test_v1_index_scan_point(
+    const StdbTestTransaction *transaction, uint32_t index_id,
+    const uint8_t *point, uint64_t point_len, StdbTestBuffer *out, StdbTestBuffer *error);
+uint32_t STDB_TEST_CALL stdb_test_v1_index_delete_point(
+    const StdbTestTransaction *transaction, uint32_t index_id,
+    const uint8_t *point, uint64_t point_len, uint32_t *out, StdbTestBuffer *error);
+
+/* A range fixes the first prefix_elems index columns to a BSATN product prefix.
+ * start/end are BSATN Bound values on the next index column, using the engine's
+ * encoding: tag 0 = Included(value), 1 = Excluded(value), 2 = Unbounded.
+ * Any later columns are unrestricted. The bound value has that column's type.
+ * An empty prefix uses prefix_elems = 0 and
+ * zero bytes. Bounds are required, including the tag for Unbounded.
+ * Delete operations return the number of rows deleted.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_index_scan_range(
+    const StdbTestTransaction *transaction, uint32_t index_id,
+    const uint8_t *prefix, uint64_t prefix_len, uint16_t prefix_elems,
+    const uint8_t *start, uint64_t start_len, const uint8_t *end, uint64_t end_len,
+    StdbTestBuffer *out, StdbTestBuffer *error);
+uint32_t STDB_TEST_CALL stdb_test_v1_index_delete_range(
+    const StdbTestTransaction *transaction, uint32_t index_id,
+    const uint8_t *prefix, uint64_t prefix_len, uint16_t prefix_elems,
+    const uint8_t *start, uint64_t start_len, const uint8_t *end, uint64_t end_len,
+    uint32_t *out, StdbTestBuffer *error);
+
+/* Update locates the old row via the unique index using key fields from the
+ * supplied full row. It returns generated columns exactly as table_insert does.
+ * Insert/update report UNIQUE_VIOLATION and AUTO_INC_OVERFLOW as structured
+ * statuses; diagnostic text is not a machine-readable error discriminator.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_table_update(
+    const StdbTestTransaction *transaction, uint32_t table_id, uint32_t index_id,
+    const uint8_t *row, uint64_t row_len, StdbTestBuffer *out, StdbTestBuffer *error);
+
+/* Delete matches the entire row, not merely its primary key; returns 0 or 1.
+ * Clear returns the row count removed, preserving schema and sequence state.
+ * Both participate in the transaction and can be rolled back.
+ * Event rows remain visible in their transaction but are not retained at commit;
+ * the engine handles this for both automatic and explicit transactions.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_table_delete_row(
+    const StdbTestTransaction *transaction, uint32_t table_id,
+    const uint8_t *row, uint64_t row_len, uint32_t *out, StdbTestBuffer *error);
+uint32_t STDB_TEST_CALL stdb_test_v1_table_clear(
+    const StdbTestTransaction *transaction, uint32_t table_id,
+    uint64_t *out, StdbTestBuffer *error);
 
 /* Free an unmodified returned buffer exactly once, then zero the supplied slot.
  * Null and an empty buffer are no-ops. Copies of a buffer do not share ownership.
