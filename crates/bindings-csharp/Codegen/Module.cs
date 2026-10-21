@@ -512,7 +512,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     private string HandleCache(string typeName) =>
         $$"""
-            private static readonly {{typeName}}?[] __instances = new {{typeName}}?[global::SpacetimeDB.Internal.Module.InstanceCount];
+            private static {{typeName}}?[] __instances => field ??= new {{typeName}}?[global::SpacetimeDB.Internal.Module.InstanceCount];
             private readonly int __instanceId;
             static {{typeName}}() { }
 
@@ -1039,7 +1039,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {{string.Join("\n", WritableIndexCaches(v))}}
                     }
 
-                    private static readonly __InstanceState?[] __instances = new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
+                    private static __InstanceState?[] __instances => field ??= new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
                     private readonly __InstanceState __state;
                     static {{accessorIdentifier}}() { }
                     public {{accessorIdentifier}}() : this(__GetInstance(0).__state) { }
@@ -3479,22 +3479,21 @@ public class Module : IIncrementalGenerator
                             ?? "SnakeCase";
                 string BuilderName(CompositionNode node) =>
                     node.Id == 0
-                        ? "global::SpacetimeDB.Internal.Module.RootBuilder"
+                        ? "builder"
                         : $"child{node.Id - 1}";
 
-                var compositionRegistration = new List<string>
-                {
+                var namespaceRegistry =
                     !sharedContexts
-                        ? $"global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry({SymbolDisplay.FormatLiteral(identity, true)}, global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{}}));"
-                        : "global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry(new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[] {"
+                        ? $"new global::SpacetimeDB.Internal.NamespaceRegistry({SymbolDisplay.FormatLiteral(identity, true)}, global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{}})"
+                        : "new global::SpacetimeDB.Internal.NamespaceRegistry(new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[] {"
                             + string.Join(
                                 ",",
                                 nodes.Select(node =>
                                     $"({node.ParentId ?? -1}, {SymbolDisplay.FormatLiteral(node.Mount?.Accessor ?? "", true)}, {(node.Mount?.Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, global::SpacetimeDB.CaseConversionPolicy.{Policy(node)}, new string[] {{ {string.Join(",", node.Contributors.Select(contributor => SymbolDisplay.FormatLiteral(contributor, true)))} }})"
                                 )
                             )
-                            + "}));",
-                };
+                            + "})";
+                var compositionRegistration = new List<string>();
                 foreach (var node in nodes)
                 {
                     if (node.Id != 0)
@@ -4003,9 +4002,19 @@ public class Module : IIncrementalGenerator
                                 id, args, sink{{instanceArgument}}
                             );
 
+                            /// <summary>Registers only this assembly's declarations.</summary>
                             public static void Register(
                                 global::SpacetimeDB.Internal.ModuleBuilder builder)
                                 => global::ModuleRegistration.Register(builder);
+
+                            /// <summary>Registers this root and its dependencies without initializing the WASM host.</summary>
+                            public static void RegisterModule(
+                                global::SpacetimeDB.Internal.ModuleBuilder builder)
+                                => global::ModuleRegistration.RegisterModule(builder);
+
+                            /// <summary>Creates this root's assembly placements without installing global state.</summary>
+                            public static global::SpacetimeDB.Internal.NamespaceRegistry CreateNamespaces()
+                                => {{namespaceRegistry}};
 
                             public readonly struct Tables {
                                 {{IndentGeneratedCode(sharedContexts ? "private readonly int __instanceId;\npublic Tables(int instanceId) { __instanceId = instanceId; }" : "", 12)}}
@@ -4109,11 +4118,20 @@ public class Module : IIncrementalGenerator
                             #endif
 
                             #if NET10_0_OR_GREATER
-                            {{IndentGeneratedCode(string.Join("\n", compositionRegistration), 8)}}
+                            global::SpacetimeDB.Internal.Module.InstallNamespaces(global::{{extensionNamespaceName}}.AssemblyDescriptor.CreateNamespaces());
+                            RegisterModule(global::SpacetimeDB.Internal.Module.RootBuilder);
                             #else
                             Register(global::SpacetimeDB.Internal.Module.RootBuilder);
                             #endif
                         }
+
+                        #if NET10_0_OR_GREATER
+                        internal static void RegisterModule(
+                            global::SpacetimeDB.Internal.ModuleBuilder builder)
+                        {
+                            {{IndentGeneratedCode(string.Join("\n", compositionRegistration), 8)}}
+                        }
+                        #endif
 
                         internal static void Register(
                             global::SpacetimeDB.Internal.ModuleBuilder builder)

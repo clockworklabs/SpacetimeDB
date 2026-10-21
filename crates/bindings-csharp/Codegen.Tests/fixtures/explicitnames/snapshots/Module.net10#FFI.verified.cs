@@ -440,8 +440,31 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
             int instanceId = 0
         ) => global::ModuleRegistration.CallLocalAnonymousView(id, args, sink, instanceId);
 
+        /// <summary>Registers only this assembly's declarations.</summary>
         public static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder) =>
             global::ModuleRegistration.Register(builder);
+
+        /// <summary>Registers this root and its dependencies without initializing the WASM host.</summary>
+        public static void RegisterModule(global::SpacetimeDB.Internal.ModuleBuilder builder) =>
+            global::ModuleRegistration.RegisterModule(builder);
+
+        /// <summary>Creates this root's assembly placements without installing global state.</summary>
+        public static global::SpacetimeDB.Internal.NamespaceRegistry CreateNamespaces() =>
+            new global::SpacetimeDB.Internal.NamespaceRegistry(
+                new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[]
+                {
+                    (
+                        -1,
+                        "",
+                        null,
+                        global::SpacetimeDB.CaseConversionPolicy.SnakeCase,
+                        new string[]
+                        {
+                            "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        }
+                    ),
+                }
+            );
 
         public readonly struct Tables
         {
@@ -603,9 +626,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
             internal ByIdIndex? __index_ById;
         }
 
-        private static readonly __InstanceState?[] __instances = new __InstanceState?[
-            global::SpacetimeDB.Internal.Module.InstanceCount
-        ];
+        private static __InstanceState?[] __instances =>
+            field ??= new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
         private readonly __InstanceState __state;
 
         static DemoTable() { }
@@ -808,9 +830,8 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles
     public sealed class DemoTableReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::DemoTable>
     {
-        private static readonly DemoTableReadOnly?[] __instances = new DemoTableReadOnly?[
-            global::SpacetimeDB.Internal.Module.InstanceCount
-        ];
+        private static DemoTableReadOnly?[] __instances =>
+            field ??= new DemoTableReadOnly?[global::SpacetimeDB.Internal.Module.InstanceCount];
         private readonly int __instanceId;
 
         static DemoTableReadOnly() { }
@@ -1007,29 +1028,22 @@ static class ModuleRegistration
 
 #if NET10_0_OR_GREATER
         global::SpacetimeDB.Internal.Module.InstallNamespaces(
-            new global::SpacetimeDB.Internal.NamespaceRegistry(
-                new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[]
-                {
-                    (
-                        -1,
-                        "",
-                        null,
-                        global::SpacetimeDB.CaseConversionPolicy.SnakeCase,
-                        new string[]
-                        {
-                            "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        }
-                    ),
-                }
-            )
+            global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.AssemblyDescriptor.CreateNamespaces()
         );
-        global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.AssemblyDescriptor.Register(
-            global::SpacetimeDB.Internal.Module.RootBuilder
-        );
+        RegisterModule(global::SpacetimeDB.Internal.Module.RootBuilder);
 #else
         Register(global::SpacetimeDB.Internal.Module.RootBuilder);
 #endif
     }
+
+#if NET10_0_OR_GREATER
+    internal static void RegisterModule(global::SpacetimeDB.Internal.ModuleBuilder builder)
+    {
+        global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.AssemblyDescriptor.Register(
+            builder
+        );
+    }
+#endif
 
     internal static void Register(global::SpacetimeDB.Internal.ModuleBuilder builder)
     {
