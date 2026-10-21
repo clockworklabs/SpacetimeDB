@@ -146,26 +146,26 @@ impl ReleaseTarget for CratesRelease {
         }
 
         println!("\nStarting publish process...");
-        if self.dry_run {
-            self.publish_crates(&workspace_root, &crates.iter().collect::<Vec<_>>())?;
-        } else {
-            let client = Client::builder()
-                .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
-                .timeout(Duration::from_secs(30))
-                .build()
-                .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
-            let crates_io_version = self
-                .version
-                .strip_prefix('v')
-                .unwrap_or(&self.version)
-                .split('-')
-                .next()
-                .unwrap();
-            // Recheck after every rate limit: Cargo may have uploaded part of the batch.
-            let mut retries = 0;
-            let mut previous_remaining = None;
-            loop {
-                let mut unpublished = Vec::new();
+        // Recheck after every rate limit: Cargo may have uploaded part of the batch.
+        let mut retries = 0;
+        let mut previous_remaining = None;
+        loop {
+            let mut unpublished = Vec::new();
+            if self.dry_run {
+                unpublished.extend(&crates);
+            } else {
+                let client = Client::builder()
+                    .user_agent("spacetimedb-release (https://github.com/clockworklabs/SpacetimeDB)")
+                    .timeout(Duration::from_secs(30))
+                    .build()
+                    .map_err(|err| format!("Failed to create crates.io API client: {err}"))?;
+                let crates_io_version = self
+                    .version
+                    .strip_prefix('v')
+                    .unwrap_or(&self.version)
+                    .split('-')
+                    .next()
+                    .unwrap();
                 println!("Checking for already-published crates..");
                 for crate_name in &crates {
                     // Pace requests to respect crates.io's API guidance.
@@ -177,34 +177,34 @@ impl ReleaseTarget for CratesRelease {
                         unpublished.push(crate_name);
                     }
                 }
-                // Only count retries without progress. Check again even after the last allowed
-                // retry, since that attempt may have uploaded more crates before hitting the limit.
-                if let Some(previous) = previous_remaining {
-                    if unpublished.len() < previous {
-                        retries = 0;
-                    }
-                    if !unpublished.is_empty() {
-                        if retries == MAX_PUBLISH_RETRIES {
-                            return Err(format!(
-                                "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries without progress"
-                            ));
-                        }
-                        retries += 1;
-                        // crates.io allows one new version of an existing crate per minute after the initial burst.
-                        // https://crates.io/docs/rate-limits
-                        let delay = Duration::from_secs(60);
-                        println!(
-                            "crates.io rate limited cargo publish; retrying in {} seconds ({retries}/{MAX_PUBLISH_RETRIES} without progress).",
-                            delay.as_secs(),
-                        );
-                        std::thread::sleep(delay);
-                    }
+            }
+            // Only count retries without progress. Check again even after the last allowed
+            // retry, since that attempt may have uploaded more crates before hitting the limit.
+            if let Some(previous) = previous_remaining {
+                if unpublished.len() < previous {
+                    retries = 0;
                 }
-                previous_remaining = Some(unpublished.len());
-                match self.publish_crates(&workspace_root, &unpublished)? {
-                    PublishOutcome::Complete => break,
-                    PublishOutcome::RateLimited => continue,
+                if !unpublished.is_empty() {
+                    if retries == MAX_PUBLISH_RETRIES {
+                        return Err(format!(
+                            "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries without progress"
+                        ));
+                    }
+                    retries += 1;
+                    // crates.io allows one new version of an existing crate per minute after the initial burst.
+                    // https://crates.io/docs/rate-limits
+                    let delay = Duration::from_secs(60);
+                    println!(
+                        "crates.io rate limited cargo publish; retrying in {} seconds ({retries}/{MAX_PUBLISH_RETRIES} without progress).",
+                        delay.as_secs(),
+                    );
+                    std::thread::sleep(delay);
                 }
+            }
+            previous_remaining = Some(unpublished.len());
+            match self.publish_crates(&workspace_root, &unpublished)? {
+                PublishOutcome::Complete => break,
+                PublishOutcome::RateLimited => continue,
             }
         }
         if !self.dry_run {
