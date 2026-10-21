@@ -19,6 +19,22 @@ pub fn spec() -> BenchmarkSpec {
                 timeout: Duration::from_secs(10),
             },
         ));
+        scorers.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                let (outsider, _) = s.new_user()?;
+                s.rows_as(&outsider, "my_safe_note", &["id", "title"], serde_json::json!([]))?;
+                let (status, _) = s.sql_as(
+                    &outsider,
+                    &format!("SELECT * FROM \"{}\"", table_name("secret_note", s.lang)),
+                )?;
+                anyhow::ensure!((400..500).contains(&status), "private table exposed: HTTP {status}");
+                Ok(())
+            },
+        ));
         scorers
     })
 }

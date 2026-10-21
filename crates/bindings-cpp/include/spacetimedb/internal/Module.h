@@ -79,6 +79,8 @@ public:
 
     static int16_t __call_http_handler__(
         uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        BytesSource sender_jwt,
         uint64_t timestamp_microseconds,
         BytesSource request_source,
         BytesSource request_body_source,

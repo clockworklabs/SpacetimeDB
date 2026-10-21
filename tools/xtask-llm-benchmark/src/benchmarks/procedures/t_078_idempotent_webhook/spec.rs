@@ -30,6 +30,29 @@ pub fn spec() -> BenchmarkSpec {
             "webhook_state_is_current",
             Duration::from_secs(10),
         ));
+        scorers.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                // This older task defines all repeated event IDs as no-ops, even with a changed payload.
+                s.expect_http("/webhook", "evt-1|99|changed", 200, "duplicate")?;
+                s.rows(
+                    "webhook_state",
+                    &["key", "last_sequence", "value"],
+                    serde_json::json!([["account", 2, "new"]]),
+                )?;
+                s.expect_http("/webhook", "evt-3|3|latest", 200, "applied")?;
+                s.expect_http("/webhook", "evt-4|2|stale", 200, "stale")?;
+                s.rows(
+                    "webhook_state",
+                    &["key", "last_sequence", "value"],
+                    serde_json::json!([["account", 3, "latest"]]),
+                )?;
+                Ok(())
+            },
+        ));
         scorers
     })
 }
