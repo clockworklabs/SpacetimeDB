@@ -4,18 +4,12 @@
 
 partial struct MultiTableRow
 {
-    private static class __ScheduleInsertMultiDataName
-    {
-        internal static readonly string Name =
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(InsertMultiData),
-                null
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static __ScheduleInsertMultiDataName() { }
-    }
+    private static string __ScheduleInsertMultiDataName =>
+        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(InsertMultiData),
+            null
+        );
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateInsertMultiData(MultiTableRow data)
@@ -24,8 +18,44 @@ partial struct MultiTableRow
         using var writer = new BinaryWriter(stream);
         new MultiTableRow.BSATN().Write(writer, data);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleInsertMultiDataName.Name,
+            __ScheduleInsertMultiDataName,
             stream
         );
+    }
+
+    private static string?[] __ScheduleInsertMultiDataNames =>
+        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
+
+    private static string __ResolveScheduleInsertMultiDataName(int contextInstance)
+    {
+        var names = __ScheduleInsertMultiDataNames;
+        if (names[contextInstance] is { } name)
+        {
+            return name;
+        }
+        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
+            contextInstance,
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        );
+        return names[contextInstance] = names[instance] ??=
+            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                instance,
+                nameof(InsertMultiData),
+                null
+            );
+    }
+
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+    public static void VolatileNonatomicScheduleImmediateInsertMultiData<__Context>(
+        __Context __context,
+        MultiTableRow data
+    )
+        where __Context : global::SpacetimeDB.Internal.IModuleContext
+    {
+        var __name = __ResolveScheduleInsertMultiDataName(__context.InstanceId);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        new MultiTableRow.BSATN().Write(writer, data);
+        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
     }
 } // MultiTableRow
