@@ -166,7 +166,8 @@ void UDbConnectionBase::Disconnect()
 
 bool UDbConnectionBase::IsActive() const
 {
-	return !bEnded && !bReconnecting && WebSocket && WebSocket->IsConnected();
+	// Matches C#/TS: with reconnect, calls wait for InitialConnection, so none can be lost to an initial failure.
+	return !bEnded && !bReconnecting && (!bAutomaticReconnect || bEstablished) && WebSocket && WebSocket->IsConnected();
 }
 
 bool UDbConnectionBase::TryGetIdentity(FSpacetimeDBIdentity& OutIdentity) const
@@ -249,7 +250,11 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 	const uint64 Id = NextIncomingId++;
 	const uint64 Generation = ConnectionGeneration;
 	TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
-	const FDeserializerMap Deserializers = TableDeserializers;
+	TSharedPtr<const FDeserializerMap, ESPMode::ThreadSafe> Deserializers;
+	{
+		FScopeLock Lock(&TableDeserializersMutex);
+		Deserializers = TableDeserializers;
+	}
 	// Parsing owns only bytes and value types. Never dereference a UObject on the worker.
 	Async(
 	    EAsyncExecution::ThreadPool,
@@ -263,7 +268,7 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 			    {
 				    // Each message owns its decoded rows, so out-of-order workers cannot
 				    // consume another message's rows or contaminate a replacement socket.
-				    PreProcessServerMessage(Event.Message, Deserializers, Event.TableData);
+				    PreProcessServerMessage(Event.Message, *Deserializers, Event.TableData);
 			    }
 		    }
 		    catch (const std::exception&)

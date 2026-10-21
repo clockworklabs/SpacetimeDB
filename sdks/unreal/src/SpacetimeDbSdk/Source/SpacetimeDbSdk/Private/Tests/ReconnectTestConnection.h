@@ -132,7 +132,7 @@ public:
 		// Same row preprocessing the background parser does.
 		FIncomingEvent Event;
 		Event.Message = Message;
-		PreProcessServerMessage(Message, TableDeserializers, Event.TableData);
+		PreProcessServerMessage(Message, *TableDeserializers, Event.TableData);
 		AcceptIncomingEvent(ConnectionGeneration, NextIncomingId++, MoveTemp(Event));
 		FrameTick();
 	}

@@ -181,9 +181,12 @@ public:
 
 	template <typename RowType> void RegisterTable(const FString& TableName)
 	{
+		// Copy on write: each incoming message captures the current map by reference count, not by copy.
 		FScopeLock Lock(&TableDeserializersMutex);
-		TableDeserializers.Add(TableName,
-		                       MakeShared<UE::SpacetimeDB::TTableRowDeserializer<RowType>, ESPMode::ThreadSafe>());
+		TSharedRef<FDeserializerMap, ESPMode::ThreadSafe> Next =
+		    MakeShared<FDeserializerMap, ESPMode::ThreadSafe>(*TableDeserializers);
+		Next->Add(TableName, MakeShared<UE::SpacetimeDB::TTableRowDeserializer<RowType>, ESPMode::ThreadSafe>());
+		TableDeserializers = Next;
 	}
 
 	/** Internal interface for applying table updates generically */
@@ -409,7 +412,8 @@ protected:
 	FOnConnectBaseDelegate OnAutomaticReconnectBaseDelegate;
 
 	// Map of table name to row deserializer
-	TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer, ESPMode::ThreadSafe>> TableDeserializers;
+	TSharedRef<const FDeserializerMap, ESPMode::ThreadSafe> TableDeserializers =
+	    MakeShared<FDeserializerMap, ESPMode::ThreadSafe>();
 	FCriticalSection TableDeserializersMutex;
 
 	// Map from table update pointer to preprocessed data
