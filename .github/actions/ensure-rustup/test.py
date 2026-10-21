@@ -59,7 +59,12 @@ class EnsureRustupTests(unittest.TestCase):
                     self.assertIn("Rustup before:", result.stdout)
                     self.assertIn("Rustup after:", result.stdout)
 
-    def test_missing_rustup_is_installed_without_a_toolchain(self):
+    def test_installer_handles_missing_and_package_managed_rustup(self):
+        for package_managed in [False, True]:
+            with self.subTest(package_managed=package_managed):
+                self.check_installer(package_managed)
+
+    def check_installer(self, package_managed):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             binary_dir = root / "bin"
@@ -69,6 +74,17 @@ class EnsureRustupTests(unittest.TestCase):
             # Exclude the real rustup while retaining the tools used by the script.
             for tool in ["bash", "sh", "cat"]:
                 (binary_dir / tool).symlink_to(shutil.which(tool))
+            if package_managed:
+                rustup = binary_dir / "rustup"
+                rustup.write_text("""#!/bin/sh
+if [ "$*" = --version ]; then
+  echo 'rustup 1.29.0 (package managed)'
+else
+  echo 'self-update is disabled for this build of rustup' >&2
+  exit 1
+fi
+""")
+                rustup.chmod(0o755)
             curl = binary_dir / "curl"
             curl.write_text("""#!/bin/sh
 cat <<'INSTALLER'
@@ -91,7 +107,11 @@ INSTALLER
                 ["/bin/bash", str(SCRIPT)], env=env, capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("Rustup before: not installed", result.stdout)
+            if package_managed:
+                self.assertIn("Self-update unavailable", result.stdout)
+            else:
+                self.assertIn("Rustup before: not installed", result.stdout)
+            self.assertIn("Rustup after: rustup 1.29.2", result.stdout)
             self.assertEqual(github_path.read_text().strip(), str(cargo_home / "bin"))
 
 

@@ -20,15 +20,7 @@ version_is_current() {
   done
 }
 
-if command -v rustup >/dev/null 2>&1; then
-  before="$(rustup --version)"
-  echo "Rustup before: $before"
-  if ! version_is_current "$before"; then
-    echo "Updating rustup to meet minimum version $minimum_version"
-    rustup self update
-  fi
-else
-  echo "Rustup before: not installed"
+install_rustup() {
   cargo_home="${CARGO_HOME:-${USERPROFILE:-$HOME}/.cargo}"
   if [[ "${RUNNER_OS:-}" == Windows ]]; then
     cargo_home="$(cygpath -u "$cargo_home")"
@@ -48,9 +40,25 @@ else
   fi
   export PATH="$cargo_home/bin:$PATH"
   echo "$cargo_home/bin" >> "$GITHUB_PATH"
+  hash -r
+}
+
+if command -v rustup >/dev/null 2>&1; then
+  before="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
+  echo "Rustup before: $before"
+  if ! version_is_current "$before"; then
+    echo "Updating rustup to meet minimum version $minimum_version"
+    if ! rustup self update; then
+      echo "Self-update unavailable; installing official rustup in CARGO_HOME"
+      install_rustup
+    fi
+  fi
+else
+  echo "Rustup before: not installed"
+  install_rustup
 fi
 
-after="$(rustup --version)"
+after="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
 echo "Rustup after: $after"
 if ! version_is_current "$after"; then
   echo "::error::Rustup must be at least $minimum_version after installation or update"
