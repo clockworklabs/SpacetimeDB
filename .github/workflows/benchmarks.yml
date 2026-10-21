@@ -78,7 +78,7 @@ jobs:
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
+        uses: ./.github/actions/ensure-rustup
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -202,14 +202,10 @@ jobs:
         run: |
           rm -fr /stdb/*
 
-      # Rustup comes from the job container, so updating the fleet VM image does not update it.
-      - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
-      - name: Install valgrind & iai-callgrind-runner
+      - name: Install benchmark system dependencies
         run: |
           apt-get update
           apt-get install -y valgrind protobuf-compiler bash sudo curl gh
-          cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
           git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
 
       # can't do this off self hosted:
@@ -244,6 +240,12 @@ jobs:
           # that we can compare results from it to HEAD (in the "Fetch markdown
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
+
+      # Rustup comes from the job container, so updating the fleet VM image does not update it.
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+      - name: Install iai-callgrind-runner
+        run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
       - name: Unbork GitHub Actions state
         shell: bash

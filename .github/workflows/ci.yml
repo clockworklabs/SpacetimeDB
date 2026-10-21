@@ -1580,7 +1580,7 @@ jobs:
       # Fleet VM images maintain rustup; only update it here for the other runners in this matrix.
       - name: Check and update rustup
         if: ${{ matrix.runner != 'spacetimedb-linux-small' }}
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
+        uses: ./.github/actions/ensure-rustup
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1672,7 +1672,7 @@ jobs:
           ref: ${{ env.GIT_REF }}
       # Rustup comes from the job container, so updating the fleet VM image does not update it.
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
+        uses: ./.github/actions/ensure-rustup
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
