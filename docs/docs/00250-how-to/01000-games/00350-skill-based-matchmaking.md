@@ -336,7 +336,7 @@ SPACETIMEDB_SCHEDULE(matchmaking_timer, 1, match_players)  // Column 1 is schedu
 
 ## Join the queue
 
-Insert the timer row from the `init` reducer, so `match_players` runs every second. As with any schedule table, `init` only runs when the database is created: see the note in [Run a fixed-rate game tick](./00200-fixed-rate-game-tick.md#start-the-tick) to start the timer on an existing database.
+Insert the timer row from the `init` reducer, so `match_players` runs every second. `init` only runs when the database is created. Publishing new code to an existing database doesn't run it again: to start matchmaking there, insert the timer row from another reducer, once.
 
 Then change `join_queue`. It gives new players OpenSkill's default rating, and adds the caller to the queue with their current `mu`. It no longer creates matches: `match_players` does.
 
@@ -661,7 +661,7 @@ SPACETIMEDB_REDUCER(match_players, ReducerContext ctx, MatchmakingTimer timer) {
 </TabItem>
 </Tabs>
 
-`match_players` sorts the whole queue every second, which stays fast with thousands of waiting players. Like `tick` in the fixed-rate tick guide, it's a scheduled reducer, so clients can't call it.
+`match_players` sorts the whole queue every second, which stays fast with thousands of waiting players. It's a scheduled reducer, so clients can't call it.
 
 :::tip Larger teams
 The same code works for any team size: set `TEAM_SIZE` to 5 for 5v5 matches. The more players a match needs, the wider their skill gap tends to be, so players wait longer for a match. Raise `STARTING_GAP` or `GAP_GROWTH_PER_SECOND` to keep waits short.

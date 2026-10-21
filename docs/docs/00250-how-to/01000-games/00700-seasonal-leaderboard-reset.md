@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 :::note Prerequisites
-This guide builds on the [top 100 leaderboard](./00100-top-100-leaderboard.md) guide, so read it first. You also need a module and a client connected to it: if you don't have them yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language.
+You need a module and a client connected to it. If you don't have them yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
 :::
 
 In this guide, you'll split a top 100 leaderboard into seasons that last 4 weeks each. When a season ends, its 3 best players go into a hall of fame, and the leaderboard starts over. You'll use a [schedule table](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) to end each season on time, and give each score the season it was set in, so that ending a season doesn't delete anything.
@@ -27,7 +27,7 @@ Ending a season never deletes a score. Deleting every score at the end of a seas
 
 Add four tables, all private:
 
-- `player_score` has one row per player: their best score, and the season they set it in. It has an index on `season`, which the views use to read the current season's scores.
+- `player_score` has one row per player: their best score, and the season they set it in. It has an index on `season`: views can't scan a whole table with `iter()`, so they read the current season's scores through this index.
 - `season` has a single row, with `id` 0, that holds the current season's number and when it ends.
 - `season_timer` is the schedule table that ends the season.
 - `season_winner` holds the 3 best players of each finished season.
@@ -343,7 +343,7 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
 
 ## Submit a score
 
-The `submit_score` reducer works like the one in the top 100 guide, with one difference: if the player's stored score is from an earlier season, the new score replaces it, even if it's lower. A player's first score of a season always counts.
+Add a `submit_score` reducer that players call with their name and score. It keeps each player's best score of the current season, and ignores lower ones. If the player's stored score is from an earlier season, the new score replaces it, even if it's lower: a player's first score of a season always counts.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -466,7 +466,7 @@ SPACETIMEDB_REDUCER(submit_score, ReducerContext ctx, std::string name, uint64_t
 
 Add the `end_season` reducer, which SpacetimeDB calls when the season's timer fires. It does two things:
 
-1. **It records the season's best players.** It reads the season's scores through the `season` index, sorts them from highest to lowest, and copies the first 3 into `season_winner`. As in the top 100 guide, sort explicitly rather than relying on the order of the index.
+1. **It records the season's best players.** It reads the season's scores through the `season` index, sorts them from highest to lowest, and copies the first 3 into `season_winner`. Always sort the rows yourself rather than relying on the order of the index: the rows written by the current transaction can come out of the index before all the others.
 2. **It starts the next season.** It increments the season number, and schedules the next end one season after the previous end, rather than one season after now. A timer can fire a few milliseconds late, and counting from now would make each season start a little later than the last.
 
 `end_season` reads all of the season's scores, but only once per season. Clients can't call it: scheduled reducers are private, so only the scheduler, the database owner and team collaborators can run them.
@@ -611,7 +611,7 @@ SPACETIMEDB_REDUCER(end_season, ReducerContext ctx, SeasonTimer timer) {
 
 Add three public anonymous views. They return the same rows to every player, so SpacetimeDB computes each one once and shares it with every subscribed client.
 
-- `top_100` works like the view in the top 100 guide, but only reads the current season's scores, through the `season` index.
+- `top_100` reads the current season's scores through the `season` index, sorts them from highest to lowest, and returns the first 100. Like `end_season`, it sorts the rows itself rather than relying on the order of the index.
 - `current_season` returns the `season` row, so clients can show when the season ends.
 - `hall_of_fame` returns every row of `season_winner`.
 

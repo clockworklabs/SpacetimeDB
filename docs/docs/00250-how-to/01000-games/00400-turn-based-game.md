@@ -250,7 +250,7 @@ Add two functions:
 - `set_turn_timer` replaces the game's timer with one that fires once, at the turn's deadline. Starting a game and every move both use it.
 - `start_game` creates a game between two players, gives the first turn to X, and starts the timer.
 
-`start_game` isn't a reducer, so clients can't call it. Call it from your matchmaking when two players are matched. For example, in the [matchmaking queue](./00300-matchmaking-queue.md) guide, set the match size to 2 and call `start_game` with the two players when a match is created. When the game ends, in `make_move` or `turn_timeout` below, delete both players' `match_player` rows so they can join the queue again.
+`start_game` isn't a reducer, so clients can't call it. Call it from your matchmaking when two players are matched. See the [matchmaking queue](./00300-matchmaking-queue.md) guide.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
