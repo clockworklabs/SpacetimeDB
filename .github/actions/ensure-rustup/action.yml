@@ -1,0 +1,8 @@
+name: Ensure updated rustup
+description: Print rustup versions and update installations older than 1.29.2 without changing Rust toolchains
+runs:
+  using: composite
+  steps:
+    - name: Check and update rustup
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/ensure-rustup.sh"
