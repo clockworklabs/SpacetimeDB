@@ -166,6 +166,8 @@ impl ReleaseTarget for CratesRelease {
                     .split('-')
                     .next()
                     .unwrap();
+                // We must only publish unpublished crates, otherwise our publish invocation will fail.
+                // This comes up in the context of re-running partially-completed releases if we hit an issue partway through.
                 println!("Checking for already-published crates..");
                 for crate_name in &crates {
                     // Pace requests to respect crates.io's API guidance.
