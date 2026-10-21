@@ -24,7 +24,7 @@ Each guide will also get a short-format video (done later, once the written guid
 
 - [x] Keep usernames unique and block offensive ones
 - [x] Build a friends or follow list
-- [ ] Chat rooms and private DMs
+- [x] Chat rooms and private DMs
 - [ ] Typing indicators and other short-lived signals
 - [ ] Unread counts and notifications
 
