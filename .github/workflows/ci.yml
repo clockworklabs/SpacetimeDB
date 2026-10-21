@@ -78,7 +78,7 @@ jobs:
 
       # The merge queue coordinator is part of cargo ci and needs the repository's pinned Rust toolchain.
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
         if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
       - uses: dsherret/rust-toolchain-file@v1
         if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
@@ -161,7 +161,7 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - &set-default-rust-toolchain
         name: Set default rust toolchain
@@ -315,7 +315,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -408,7 +408,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -606,7 +606,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -685,7 +685,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -753,7 +753,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -877,7 +877,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -984,7 +984,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -1075,7 +1075,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -1117,7 +1117,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -1204,7 +1204,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -1248,7 +1248,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
@@ -1346,7 +1346,7 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1371,7 +1371,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1423,7 +1423,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1459,7 +1459,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1494,7 +1494,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
@@ -1516,7 +1516,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1581,7 +1581,7 @@ jobs:
 
       - uses: actions/checkout@v3
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1619,7 +1619,7 @@ jobs:
       - *checkout-sources
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1710,7 +1710,7 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1804,7 +1804,7 @@ jobs:
           run_install: true
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1887,7 +1887,7 @@ jobs:
           cat Cargo.toml
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1996,7 +1996,7 @@ jobs:
           global-json-file: global.json
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
@@ -2073,7 +2073,7 @@ jobs:
           cat Cargo.toml
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -2199,7 +2199,7 @@ jobs:
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -2293,7 +2293,7 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -2340,7 +2340,7 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -2373,7 +2373,7 @@ jobs:
           run_install: true
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -2417,7 +2417,7 @@ jobs:
           run_install: true
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -2493,7 +2493,7 @@ jobs:
           run_install: true
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain

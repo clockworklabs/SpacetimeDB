@@ -45,7 +45,7 @@ jobs:
           fetch-depth: 1
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Restore rusty_v8

@@ -78,7 +78,7 @@ jobs:
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -203,7 +203,7 @@ jobs:
           rm -fr /stdb/*
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
       - name: Install valgrind & iai-callgrind-runner
         run: |
           apt-get update
