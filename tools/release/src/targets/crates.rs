@@ -51,7 +51,9 @@ fn publish_with_retries(
     mut publish: impl FnMut(&[&String]) -> Result<PublishOutcome, String>,
     mut sleep: impl FnMut(Duration),
 ) -> Result<(), String> {
-    for retry in 0..=MAX_PUBLISH_RETRIES {
+    let mut retries = 0;
+    let mut previous_remaining = None;
+    loop {
         let mut unpublished = Vec::new();
         println!("Checking for already-published crates..");
         for crate_name in crates {
@@ -62,27 +64,35 @@ fn publish_with_retries(
                 unpublished.push(crate_name);
             }
         }
-        match publish(&unpublished)? {
-            PublishOutcome::Complete => return Ok(()),
-            PublishOutcome::RateLimited if retry == MAX_PUBLISH_RETRIES => {
-                return Err(format!(
-                    "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries"
-                ));
+        // Only count retries without progress. Check again even after the last allowed
+        // retry, since that attempt may have uploaded more crates before hitting the limit.
+        if let Some(previous) = previous_remaining {
+            if unpublished.len() < previous {
+                retries = 0;
             }
-            PublishOutcome::RateLimited => {
+            if !unpublished.is_empty() {
+                if retries == MAX_PUBLISH_RETRIES {
+                    return Err(format!(
+                        "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries without progress"
+                    ));
+                }
+                retries += 1;
                 // crates.io allows one new version of an existing crate per minute after the initial burst.
                 // https://crates.io/docs/rate-limits
                 let delay = Duration::from_secs(60);
                 println!(
-                    "crates.io rate limited cargo publish; retrying in {} seconds ({}/{MAX_PUBLISH_RETRIES}).",
+                    "crates.io rate limited cargo publish; retrying in {} seconds ({retries}/{MAX_PUBLISH_RETRIES} without progress).",
                     delay.as_secs(),
-                    retry + 1,
                 );
                 sleep(delay);
             }
         }
+        previous_remaining = Some(unpublished.len());
+        match publish(&unpublished)? {
+            PublishOutcome::Complete => return Ok(()),
+            PublishOutcome::RateLimited => continue,
+        }
     }
-    unreachable!()
 }
 
 pub struct CratesRelease {
@@ -283,6 +293,58 @@ mod tests {
         assert!(err.contains("still rate limited"));
         assert_eq!(attempts, 6);
         assert_eq!(delays, vec![60, 60, 60, 60, 60]);
+    }
+
+    #[test]
+    fn progress_on_last_retry_resets_the_limit_until_all_crates_are_published() {
+        let crates = vec!["first".to_owned(), "second".to_owned(), "third".to_owned()];
+        let published = std::cell::RefCell::new(Vec::<String>::new());
+        let mut attempts = 0;
+        let mut delays = Vec::new();
+        publish_with_retries(
+            &crates,
+            |name| Ok(published.borrow().iter().any(|p| p == name)),
+            |remaining| {
+                if remaining.is_empty() {
+                    return Ok(PublishOutcome::Complete);
+                }
+                attempts += 1;
+                // Make progress only on the last allowed attempt of each cycle.
+                if [6, 11, 16].contains(&attempts) {
+                    published.borrow_mut().push(remaining[0].clone());
+                }
+                Ok(PublishOutcome::RateLimited)
+            },
+            |delay| delays.push(delay.as_secs()),
+        )
+        .unwrap();
+        assert_eq!(attempts, 16);
+        assert_eq!(*published.borrow(), crates);
+        assert_eq!(delays, vec![60; 15]);
+    }
+
+    #[test]
+    fn progress_does_not_allow_unlimited_stalled_retries() {
+        let crates = vec!["first".to_owned(), "second".to_owned()];
+        let published = std::cell::RefCell::new(Vec::<String>::new());
+        let mut attempts = 0;
+        let mut delays = Vec::new();
+        let err = publish_with_retries(
+            &crates,
+            |name| Ok(published.borrow().iter().any(|p| p == name)),
+            |remaining| {
+                attempts += 1;
+                if attempts == 6 {
+                    published.borrow_mut().push(remaining[0].clone());
+                }
+                Ok(PublishOutcome::RateLimited)
+            },
+            |delay| delays.push(delay.as_secs()),
+        )
+        .unwrap_err();
+        assert!(err.contains("without progress"));
+        assert_eq!(attempts, 11);
+        assert_eq!(delays, vec![60; 10]);
     }
 
     #[test]
