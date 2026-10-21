@@ -437,4 +437,13 @@ internal static class ErrorDescriptor
                 $"Root assembly '{ctx.root}' uses case conversion policy '{ctx.rootPolicy}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the shared public scope. Use the same policy, remove the dependency's setting to inherit the root policy, or mount the dependency in a distinct namespace.",
             _ => Location.None
         );
+
+    public static readonly ErrorDescriptor<string> AmbiguousTestModule =
+        new(
+            group,
+            "Ambiguous test module root",
+            roots =>
+                $"The test project references multiple independent SpacetimeDB module roots: {roots}. Use a separate test project for each root module.",
+            _ => Location.None
+        );
 }

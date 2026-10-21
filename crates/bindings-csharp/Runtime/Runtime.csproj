@@ -36,6 +36,8 @@
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="build/*" Pack="true" PackagePath="build" />
+    <!-- NuGet prefers buildTransitive props over build props. Keep .NET 8 on its existing early WASI configuration. -->
+    <None Include="buildTransitive/net10.0/*" Pack="true" PackagePath="buildTransitive/net10.0" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
     <!-- We want all users who depends on Runtime to automatically get the Roslyn codegen component as well. -->

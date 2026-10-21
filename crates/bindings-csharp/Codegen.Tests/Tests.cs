@@ -7,6 +7,9 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
+#if NET10_0_OR_GREATER
+using Microsoft.CodeAnalysis.Diagnostics;
+#endif
 
 /// <summary>
 /// Snapshot tests for the <c>SpacetimeDB.Codegen</c> library.
@@ -21,6 +24,24 @@ using Microsoft.CodeAnalysis.Text;
 public static class GeneratorSnapshotTests
 {
 #if NET10_0_OR_GREATER
+    private sealed class TestProjectOptions : AnalyzerConfigOptionsProvider
+    {
+        private sealed class Options : AnalyzerConfigOptions
+        {
+            public override bool TryGetValue(string key, out string value)
+            {
+                value = "true";
+                return key == "build_property.IsTestProject";
+            }
+        }
+
+        public override AnalyzerConfigOptions GlobalOptions { get; } = new Options();
+
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => GlobalOptions;
+
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => GlobalOptions;
+    }
+
     private const string ModuleTargetFramework = "net10.0";
 #else
     private const string ModuleTargetFramework = "net8.0";
@@ -592,8 +613,20 @@ public static class GeneratorSnapshotTests
             $$"""
                 namespace {{name}} {
                     public class Sentinel { }
-                    [SpacetimeDB.Table]
-                    public partial struct {{name}}Row { public uint Id; }
+                    [SpacetimeDB.Table(Scheduled = "{{name}}Reducer")]
+                    public partial struct {{name}}Row {
+                        [SpacetimeDB.PrimaryKey, SpacetimeDB.AutoInc] public ulong Id;
+                        public SpacetimeDB.ScheduleAt ScheduledAt;
+                        [SpacetimeDB.Default(7U)] public uint Value;
+                    }
+                    public static partial class Functions {
+                        [SpacetimeDB.Reducer]
+                        public static void {{name}}Reducer(SpacetimeDB.ReducerContext ctx, {{name}}Row row) { }
+                        [SpacetimeDB.View(Accessor = "{{name}}View", Public = true)]
+                        public static {{name}}Row? {{name}}View(SpacetimeDB.ViewContext ctx) => null;
+                        [SpacetimeDB.View(Accessor = "{{name}}AnonymousView", Public = true)]
+                        public static {{name}}Row? {{name}}AnonymousView(SpacetimeDB.AnonymousViewContext ctx) => null;
+                    }
                 }
                 """;
         string Descriptor(CSharpCompilation compilation) =>
@@ -631,7 +664,10 @@ public static class GeneratorSnapshotTests
         var utility = Emit(
             Create("Utility", "public class UtilityLink { public Shared.Sentinel Value; }", shared)
         );
-        var rootSource = rootHasTable ? Table("Root") : "";
+        var rootSource = rootHasTable
+            ? Table("Root")
+                + "[SpacetimeDB.Env] public struct RootEnvironment { public string TEST_SETTING; }"
+            : "";
         if (mounted)
         {
             rootSource =
@@ -672,16 +708,162 @@ public static class GeneratorSnapshotTests
         Assert.Equal(expected, Calls(root));
         Assert.Equal(expected, Calls(reordered));
 
-        // Execute schema registration without entering Main or installing host state.
-        var check = root.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText(
-                $$"""
+        var otherRoot = Generate(
+            Create(
+                "OtherRoot",
+                "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"OtherAuth\", Name = \"other_auth\")]\n"
+                    + Table("OtherRoot"),
+                alpha,
+                shared
+            )
+        );
+        var otherRootReference = Emit(otherRoot);
+
+        GeneratorDriver TestDriver() =>
+            CSharpGeneratorDriver.Create(
+                [
+                    new Type().AsSourceGenerator(),
+                    new Module().AsSourceGenerator(),
+                    new EnvironmentGenerator().AsSourceGenerator(),
+                ],
+                parseOptions: fixture.ParseOptions,
+                optionsProvider: new TestProjectOptions()
+            );
+        var rootReference = Emit(root);
+        var testCompilation = Create(
+            "ModuleTests",
+            $$"""
+            public static class Tests {
+                public static void Insert(SpacetimeDB.ReducerContext ctx) =>
+                    ctx.Db.{{(mounted ? "Auth." : "")}}AlphaRow.Insert(new Alpha.AlphaRow());
+                public static ulong Count(SpacetimeDB.ViewContext ctx) =>
+                    ctx.Db.{{(mounted ? "Auth." : "")}}AlphaRow.Count;
+                public static SpacetimeDB.IQuery<Alpha.AlphaRow> Query(SpacetimeDB.ViewContext ctx) =>
+                    ctx.From.{{(mounted ? "Auth." : "")}}AlphaRow();
+                {{(
+                rootHasTable
+                    ? "public static string Environment(SpacetimeDB.ReducerContext ctx) => ctx.Env.TEST_SETTING;"
+                    : ""
+            )}}
+            }
+            """,
+            rootReference,
+            alpha,
+            beta,
+            shared,
+            utility
+        );
+        TestDriver()
+            .RunGeneratorsAndUpdateCompilation(
+                testCompilation,
+                out var testOutput,
+                out var testDiagnostics
+            );
+        Assert.Empty(testDiagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(GetCompilationErrors(testOutput));
+        Assert.Empty(testOutput.GetSymbolsWithName("ModuleRegistration", SymbolFilter.Type));
+        Assert.Empty(testOutput.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
+        Assert.DoesNotContain(
+            testOutput.Assembly.GetAttributes(),
+            a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.ModuleDescriptorAttribute"
+        );
+        if (rootHasTable && mounted)
+        {
+            var ambiguous = TestDriver()
+                .RunGenerators(testCompilation.AddReferences(otherRootReference))
+                .GetRunResult();
+            var ambiguity = Assert.Single(
+                ambiguous.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)
+            );
+            Assert.Contains(
+                "multiple independent SpacetimeDB module roots",
+                ambiguity.GetMessage()
+            );
+            Assert.Contains("OtherRoot", ambiguity.GetMessage());
+            Assert.Empty(ambiguous.GeneratedTrees);
+
+            var noModule = TestDriver()
+                .RunGenerators(Create("UtilityTests", "public class Tests { }"))
+                .GetRunResult();
+            Assert.Empty(noModule.Diagnostics);
+            Assert.Empty(noModule.GeneratedTrees);
+        }
+
+        // Both roots share the same dependency assemblies and runtime in one load context.
+        var check = root.AddReferences(otherRootReference)
+            .AddSyntaxTrees(
+                CSharpSyntaxTree.ParseText(
+                    $$"""
                 using SpacetimeDB.Internal;
+                using SpacetimeDB.BSATN;
                 public static class SchemaCheck {
+                    private static RawModuleDefV10 Build(Action<ModuleBuilder> register) {
+                        var builder = new ModuleBuilder();
+                        register(builder);
+                        return builder.BuildModuleDefinition();
+                    }
+
+                    private static void Mutate(RawModuleDefV10 schema) {
+                        foreach (var section in schema.Sections) {
+                            switch (section) {
+                                case RawModuleDefV10Section.Tables(var tables):
+                                    foreach (var table in tables) {
+                                        table.SourceName = "changed";
+                                        table.PrimaryKey.Clear();
+                                        table.Indexes.Clear();
+                                        table.Sequences.Clear();
+                                        table.DefaultValues.Clear();
+                                    }
+                                    break;
+                                case RawModuleDefV10Section.Typespace(var typespace):
+                                    typespace.Types.Clear();
+                                    break;
+                                case RawModuleDefV10Section.Views(var views):
+                                    foreach (var view in views) view.Index = 999;
+                                    break;
+                                case RawModuleDefV10Section.Reducers(var reducers):
+                                    foreach (var reducer in reducers) {
+                                        reducer.Params.Clear();
+                                        reducer.Visibility = FunctionVisibility.ClientCallable;
+                                    }
+                                    break;
+                                case RawModuleDefV10Section.Schedules(var schedules):
+                                    foreach (var schedule in schedules) schedule.FunctionName = "changed";
+                                    break;
+                                case RawModuleDefV10Section.Submodules(var children):
+                                    foreach (var child in children) Mutate(child.Module);
+                                    break;
+                            }
+                        }
+                    }
+
+                    private static void CheckIndependent(Action<ModuleBuilder> register) {
+                        var first = Build(register);
+                        var expected = IStructuralReadWrite.ToBytes(first);
+                        var second = Build(register);
+                        Mutate(first);
+                        if (!expected.SequenceEqual(IStructuralReadWrite.ToBytes(second)))
+                            throw new Exception("Registrations share mutable schema state");
+                        System.Threading.Tasks.Parallel.For(0, 4, _ => {
+                            if (!expected.SequenceEqual(IStructuralReadWrite.ToBytes(Build(register))))
+                                throw new Exception("Repeated registration changed the schema");
+                        });
+                    }
+
                     public static string[] Run() {
                         var builder = new ModuleBuilder();
                         {{Descriptor(root)}}.RegisterModule(builder);
                         var namespaces = {{Descriptor(root)}}.CreateNamespaces();
+                        var before = IStructuralReadWrite.ToBytes(builder.BuildModuleDefinition());
+                        CheckIndependent({{Descriptor(otherRoot)}}.RegisterModule);
+                        CheckIndependent({{Descriptor(root)}}.RegisterModule);
+                        if (!before.SequenceEqual(IStructuralReadWrite.ToBytes(builder.BuildModuleDefinition())))
+                            throw new Exception("Another composition changed the original schema");
+                        var otherNamespaces = {{Descriptor(otherRoot)}}.CreateNamespaces();
+                        if (otherNamespaces.Resolve({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaRow") != "OtherAuth.AlphaRow"
+                            || otherNamespaces.ResolveSqlName({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaRow").Namespace != "OtherAuth"
+                            || otherNamespaces.ResolveFunction({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaReducer", null) != "other_auth.alpha_reducer")
+                            throw new Exception("Incorrect alternate root placement");
                         if (namespaces.Resolve({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaRow") != {{SymbolDisplay.FormatLiteral(
                     mounted ? "Auth.AlphaRow" : "AlphaRow",
                     true
@@ -693,6 +875,11 @@ public static class GeneratorSnapshotTests
                             Module.ResolveName("Root", "RootRow");
                             throw new Exception("Schema registration installed global namespaces");
                         } catch (InvalidOperationException) { }
+                        Module.InstallNamespaces(namespaces);
+                        CheckIndependent({{Descriptor(otherRoot)}}.RegisterModule);
+                        if (Module.ResolveName({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaRow")
+                            != namespaces.Resolve({{SymbolDisplay.FormatLiteral(alphaCompilation.Assembly.Identity.ToString(), true)}}, "AlphaRow"))
+                            throw new Exception("Registration replaced the installed host namespaces");
                         var schema = builder.BuildModuleDefinition();
                         return schema.Sections.OfType<RawModuleDefV10Section.Tables>()
                             .SelectMany(section => section.Tables_).Select(table => table.SourceName)
@@ -705,9 +892,9 @@ public static class GeneratorSnapshotTests
                     }
                 }
                 """,
-                fixture.ParseOptions
-            )
-        );
+                    fixture.ParseOptions
+                )
+            );
         Emit(check);
         void EmitDependencies(Compilation compilation)
         {

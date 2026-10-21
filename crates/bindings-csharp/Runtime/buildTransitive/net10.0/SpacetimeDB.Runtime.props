@@ -1,0 +1,6 @@
+<Project>
+  <!-- Reach ordinary test projects through their module reference, without WASM build settings. -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="IsTestProject" />
+  </ItemGroup>
+</Project>

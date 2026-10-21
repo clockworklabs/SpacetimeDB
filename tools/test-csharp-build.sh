@@ -68,6 +68,53 @@ EOF
     done
 done
 
+# Ordinary test projects consume the module through either project or package references.
+module="$work/chat-console-cs/module"
+tests="$work/chat-console-cs/tests"
+mkdir -p "$tests"
+cat > "$tests/Module.Tests.csproj" <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1" PrivateAssets="all" />
+    <ProjectReference Include="../module/StdbModule.csproj" />
+  </ItemGroup>
+</Project>
+EOF
+cat > "$tests/ModuleReferenceTests.cs" <<'EOF'
+using System.Reflection;
+using SpacetimeDB;
+using Xunit;
+
+public class ModuleReferenceTests
+{
+    [Fact]
+    public void ReferencesModuleWithoutBecomingAModule()
+    {
+        var testAssembly = typeof(ModuleReferenceTests).Assembly;
+        Assert.Null(testAssembly.GetCustomAttribute<ModuleDescriptorAttribute>());
+        Assert.Null(testAssembly.GetType("ModuleRegistration"));
+    }
+
+    // Compile-time checks only; accessing live data still requires the testing backend.
+    public static ulong Count(ReducerContext ctx) => ctx.Db.Message.Count;
+    public static ulong Count(ViewContext ctx) => ctx.Db.Message.Count;
+    public static IQuery<global::Module.Message> Query(ViewContext ctx) => ctx.From.Message();
+}
+EOF
+dotnet test "$tests/Module.Tests.csproj" -c Release
+dotnet pack "$module/StdbModule.csproj" -c Release -p:PackageId=BuildTest.Module -p:Version="$version" -o "$work/packages"
+dotnet remove "$tests/Module.Tests.csproj" reference "$module/StdbModule.csproj"
+dotnet add "$tests/Module.Tests.csproj" package BuildTest.Module --version "$version"
+dotnet test "$tests/Module.Tests.csproj" -c Release
+
 # Exercise the .NET 8 SDK's WASI import order, not just our final property values.
 module="$work/net8/module"
 mkdir -p "$module"
