@@ -5,8 +5,6 @@
 # !rust-toolchain-sync
 FROM rust:1.97.1
 
-RUN rustup --version && rustup self update && rustup --version
-
 RUN apt-get update && \
     apt-get install -y valgrind bash && \
     rm -rf /var/lib/apt/lists/*

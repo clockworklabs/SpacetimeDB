@@ -1,7 +1,5 @@
 # Minimal Dockerfile that just wraps pre-built binaries, so we can test the server inside docker
 FROM rust:1.93.0
-
-RUN rustup --version && rustup self update && rustup --version
 RUN mkdir -p /stdb/data
 COPY ./target/debug/spacetimedb-standalone ./target/debug/spacetimedb-cli /usr/local/bin/
 COPY ./crates/standalone/config.toml /stdb/data/config.toml
