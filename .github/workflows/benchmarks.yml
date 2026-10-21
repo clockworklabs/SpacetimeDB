@@ -247,6 +247,9 @@ jobs:
       - name: Check and update rustup
         uses: ./.github/actions/ensure-rustup
 
+      - name: Install iai-callgrind-runner
+        run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
+
       - name: Checkout sources
         uses: actions/checkout@v3
         with:
@@ -255,9 +258,6 @@ jobs:
           # that we can compare results from it to HEAD (in the "Fetch markdown
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
-
-      - name: Install iai-callgrind-runner
-        run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
       - name: Unbork GitHub Actions state
         shell: bash
