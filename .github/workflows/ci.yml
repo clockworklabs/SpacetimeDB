@@ -95,7 +95,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -283,7 +283,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Windows)
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
