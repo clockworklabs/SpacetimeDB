@@ -435,7 +435,7 @@ fn restore_pending_streams(db: &RelationalDB, streams: &mut DeliveryStreams) -> 
 }
 
 fn read_pending_streams(db: &RelationalDB) -> anyhow::Result<Vec<StreamId>> {
-    let tx = db.begin_tx(Workload::Internal);
+    let tx = db.begin_tx(Workload::Idc);
     let mut pending = Vec::new();
     for stream in db.st_outbound_streams(&tx)? {
         let stream = stream?;
@@ -453,7 +453,7 @@ fn read_next_message(
     stream_id: StreamId,
     after_seq: Option<u64>,
 ) -> anyhow::Result<Option<LoadedMessage>> {
-    let tx = db.begin_tx(Workload::Internal);
+    let tx = db.begin_tx(Workload::Idc);
     // An insert may have rolled back or cleanup may have finished before we read its notification.
     let Some(stream) = db.st_outbound_stream_by_id(&tx, stream_id.0)? else {
         return Ok(None);
@@ -660,7 +660,7 @@ fn record_delivery_response(
             // Check that here. This reply cannot replace a missing result or tell
             // us whether the reducer succeeded. Do not advance ack_prefix or call
             // on_result again.
-            let tx = db.begin_tx(Workload::Internal);
+            let tx = db.begin_tx(Workload::Idc);
             let retired = db
                 .st_outbound_stream_by_id(&tx, msg.stream_id.0)?
                 .is_some_and(|stream| msg.sequence <= stream.ack_prefix);
@@ -681,7 +681,7 @@ fn record_delivery_response(
 /// Save the receiver's result and clear the last transport error. Keep the message
 /// until its callback and acknowledgment are handled.
 fn record_delivery_result(db: &RelationalDB, msg: &PendingMessage, result: &MessageResult) -> anyhow::Result<()> {
-    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
     tx.record_outbound_idc_result(msg.stream_id.0, msg.sequence, result.status, result.payload.clone())?;
     db.commit_tx(tx)?;
     Ok(())
@@ -690,7 +690,7 @@ fn record_delivery_result(db: &RelationalDB, msg: &PendingMessage, result: &Mess
 /// Save the latest transport error and increment the retry count. Keep the message
 /// pending even if saving the error fails.
 fn record_transport_error(db: &RelationalDB, msg: &PendingMessage, reason: String) {
-    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
     if let Err(e) = tx.record_outbound_idc_transport_error(msg.stream_id.0, msg.sequence, reason) {
         log::error!(
             "idc_actor: sender_identity={} stream_id={} sequence={}: failed to record transport error: {e:#}",
@@ -726,7 +726,7 @@ pub(super) fn run_callback_and_cleanup(
     let sequence = msg.message.sequence;
     let mut trapped = false;
     let result = (|| {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
         if !message_exists(db, &tx, &msg.message)? {
             return Ok(());
         }
@@ -799,7 +799,7 @@ pub(super) fn run_callback_and_cleanup(
         // The callback transaction rolled back. Start a new transaction for cleanup.
         // If cleanup also fails, the message remains pending and a later attempt
         // can run the failed callback again.
-        let cleanup_tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let cleanup_tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
         let (result, cleanup_trapped) = cleanup_message_with_views(cleanup_tx, info, &msg, common, inst);
         trapped |= cleanup_trapped;
         result

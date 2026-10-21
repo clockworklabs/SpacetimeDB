@@ -2755,7 +2755,7 @@ impl ModuleHost {
             ..
         } = delivery;
 
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
 
         let tx = match Self::check_idc_delivery(stdb, tx, delivery)? {
             ControlFlow::Continue(tx) => tx,
@@ -2906,7 +2906,7 @@ impl ModuleHost {
             return Ok(());
         }
         let db = self.relational_db();
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
         let (tx, ()) = db
             .with_auto_rollback(tx, |tx| {
                 tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)

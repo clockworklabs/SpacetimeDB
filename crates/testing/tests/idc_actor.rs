@@ -9,7 +9,7 @@ use serde::Deserialize;
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::host::idc_actor::{self, IdcConfig};
 use spacetimedb::host::ModuleHost;
-use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::system_tables::{StOutboundMsgRow, StOutboundStreamRow, ST_OUTBOUND_STREAM_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -86,8 +86,13 @@ fn idc_actor_bounds_active_messages_and_reports_metrics() {
 
 async fn run_bounded_actor_test(host: ModuleHost) -> anyhow::Result<()> {
     use spacetimedb::worker_metrics::WORKER_METRICS;
+    use spacetimedb_datastore::db_metrics::DB_METRICS;
 
     let identity = &host.info.database_identity;
+    let transactions = DB_METRICS
+        .rdb_num_txns
+        .with_label_values(&WorkloadType::Idc, identity, "", &true);
+    let initial_transactions = transactions.get();
     let db = host.relational_db().clone();
     let table = create_outbox(&db)?;
     let active = WORKER_METRICS.idc_in_flight_messages.with_label_values(identity);
@@ -180,6 +185,7 @@ async fn run_bounded_actor_test(host: ModuleHost) -> anyhow::Result<()> {
     assert_eq!(retries.get() - initial.2, 1);
     assert_eq!(duration.get_sample_count() - initial.3, count as u64 + 1);
     assert_eq!(errors.get(), initial.4);
+    assert!(transactions.get() > initial_transactions);
     assert!(requests_rx.try_recv().is_err());
 
     // Aborting an actor also releases its gauge contributions, even while HTTP
