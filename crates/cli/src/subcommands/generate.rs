@@ -6,8 +6,8 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
-    UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, ImportExtension, Lang, OutputFile, Rust,
+    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::RawModuleDef;
@@ -49,6 +49,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("namespace").generate_entry_specific())
         .key(Key::new("unreal_module_name").generate_entry_specific())
         .key(Key::new("module_prefix").generate_entry_specific())
+        .key(Key::new("import_extension").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
@@ -242,6 +243,12 @@ pub fn cli() -> clap::Command {
                 .help("The module prefix to use for generated types (only used with --lang unrealcpp)")
         )
         .arg(
+            Arg::new("import_extension")
+                .long("import-extension")
+                .value_parser(["none", "js", "ts"])
+                .help("The extension TypeScript bindings add to their imports of each other: `none` (the default) for bundlers, `js` for `moduleResolution: \"nodenext\"`, `ts` for runtimes that run TypeScript directly (only used with --lang typescript)"),
+        )
+        .arg(
             Arg::new("lang")
                 .long("lang")
                 .short('l')
@@ -302,6 +309,7 @@ pub struct GenerateRunConfig {
     pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
+    pub import_extension: Option<ImportExtension>,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -384,6 +392,17 @@ fn prepare_generate_run_configs<'a>(
             .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
+        let import_extension = command_config
+            .get_one::<String>("import_extension")?
+            .map(|ext| match ext.as_str() {
+                "none" => Ok(ImportExtension::None),
+                "js" => Ok(ImportExtension::Js),
+                "ts" => Ok(ImportExtension::Ts),
+                other => Err(anyhow::anyhow!(
+                    "Unknown import extension {other:?}: use none, js or ts"
+                )),
+            })
+            .transpose()?;
 
         runs.push(GenerateRunConfig {
             project_path,
@@ -397,6 +416,7 @@ fn prepare_generate_run_configs<'a>(
             dotnet_version,
             out_dir,
             include_private,
+            import_extension,
         });
     }
 
@@ -484,6 +504,11 @@ pub async fn run_prepared_generate_configs(
         if namespace_from_cli && run.lang != Language::Csharp {
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
         }
+        if run.import_extension.is_some() && run.lang != Language::TypeScript {
+            return Err(anyhow::anyhow!(
+                "--import-extension is only supported with --lang typescript"
+            ));
+        }
 
         let module: ModuleDef = if let Some(paths) = &json_module {
             let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = paths.first() {
@@ -525,6 +550,7 @@ pub async fn run_prepared_generate_configs(
 
         let csharp_lang;
         let unreal_cpp_lang;
+        let typescript_lang;
         let gen_lang = match run.lang {
             Language::Csharp => {
                 csharp_lang = Csharp {
@@ -541,7 +567,12 @@ pub async fn run_prepared_generate_configs(
                 &unreal_cpp_lang as &dyn Lang
             }
             Language::Rust => &Rust,
-            Language::TypeScript => &TypeScript,
+            Language::TypeScript => {
+                typescript_lang = TypeScript {
+                    import_extension: run.import_extension.unwrap_or_default(),
+                };
+                &typescript_lang as &dyn Lang
+            }
         };
 
         for OutputFile { filename, code } in generate(&module, gen_lang, &options) {

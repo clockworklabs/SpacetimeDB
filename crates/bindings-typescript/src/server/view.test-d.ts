@@ -192,3 +192,47 @@ spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
     .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id))
     .build();
 });
+
+// Views can take params, which are passed to the function as an object.
+spacetime.anonymousView(
+  { name: 'personById', public: true },
+  { id: t.u32() },
+  arrayRetValue,
+  (ctx, { id }) => {
+    const _id: number = id;
+    // @ts-expect-error `id` is a number.
+    const _notAString: string = id;
+    return ctx.from.person.where(row => row.id.eq(id)).build();
+  }
+);
+
+spacetime.view(
+  { name: 'personByName', public: true },
+  { name: t.string() },
+  optionalPerson,
+  (ctx, { name }) => {
+    const _sender = ctx.sender;
+    for (const row of ctx.db.person.iter()) {
+      if (row.name === name) {
+        return row;
+      }
+    }
+    return undefined;
+  }
+);
+
+spacetime.anonymousView(
+  { name: 'unknownParam', public: true },
+  { id: t.u32() },
+  arrayRetValue,
+  // @ts-expect-error `name` is not one of this view's params.
+  (_ctx, { name: _name }) => []
+);
+
+// @ts-expect-error the multiple-primary-key check also applies to views with params.
+spacetime.anonymousView(
+  { name: 'multiplePrimaryRowsWithParams', public: true },
+  { id: t.u32() },
+  multiplePrimaryKeyRows,
+  () => []
+);

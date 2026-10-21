@@ -187,7 +187,7 @@ class AuthCtxImpl implements AuthCtx {
     if (this._initializedJWT) return;
     this._initializedJWT = true;
 
-    const token = this._jwtSource();
+    const token = this.isInternal ? null : this._jwtSource();
     if (!token) {
       this._jwtClaims = null;
     } else {
@@ -218,26 +218,21 @@ class AuthCtxImpl implements AuthCtx {
     });
   }
 
-  /** If there is a connection id, look up the JWT payload from the system tables. */
-  static fromBackend(
-    connectionId: ConnectionId | null,
+  /**
+   * Create the context of an invocation by `sender`,
+   * which is internal when `sender` is this database,
+   * and otherwise reads the JWT payload from `jwtPayload` on first use.
+   */
+  static forSender(
     sender: Identity,
-    backend: DatastoreBackend
+    databaseIdentity: Identity,
+    jwtPayload: () => Uint8Array | null
   ): AuthCtx {
-    if (connectionId === null) {
-      return new AuthCtxImpl({
-        isInternal: false,
-        jwtSource: () => null,
-        senderIdentity: sender,
-      });
-    }
     return new AuthCtxImpl({
-      isInternal: false,
+      isInternal: sender.isEqual(databaseIdentity),
       jwtSource: () => {
-        const payloadBuf = backend.getJwtPayload(
-          connectionId.__connection_id__
-        );
-        if (payloadBuf.length === 0) return null;
+        const payloadBuf = jwtPayload();
+        if (payloadBuf === null || payloadBuf.length === 0) return null;
         const payloadStr = new TextDecoder().decode(payloadBuf);
         return payloadStr;
       },
@@ -245,12 +240,31 @@ class AuthCtxImpl implements AuthCtx {
     });
   }
 
+  /** If there is a connection id, look up the JWT payload from the system tables. */
+  static fromBackend(
+    connectionId: ConnectionId | null,
+    sender: Identity,
+    databaseIdentity: Identity,
+    backend: DatastoreBackend
+  ): AuthCtx {
+    return AuthCtxImpl.forSender(sender, databaseIdentity, () =>
+      connectionId === null
+        ? null
+        : backend.getJwtPayload(connectionId.__connection_id__)
+    );
+  }
+
   /** If there is a connection id, look up the JWT payload from the host system tables. */
   static fromSystemTables(
     connectionId: ConnectionId | null,
     sender: Identity
   ): AuthCtx {
-    return AuthCtxImpl.fromBackend(connectionId, sender, hostBackend);
+    return AuthCtxImpl.fromBackend(
+      connectionId,
+      sender,
+      new Identity(hostBackend.identity()),
+      hostBackend
+    );
   }
 }
 
@@ -369,6 +383,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     return (this.#senderAuth ??= AuthCtxImpl.fromBackend(
       this.connectionId,
       this.sender,
+      this.databaseIdentity,
       this.#backend
     ));
   }
@@ -819,12 +834,16 @@ class ModuleHooksImpl implements ModuleHooks {
     id: u32,
     timestamp: bigint,
     request: Uint8Array,
-    body: Uint8Array
+    body: Uint8Array,
+    sender: u256,
+    senderJwt: Uint8Array
   ): [response: Uint8Array, body: Uint8Array] {
     const moduleCtx = this.#schema;
     const handler = moduleCtx.httpHandlers[id];
     const ctx = new HandlerContextImpl(
+      new Identity(sender),
       new Timestamp(timestamp),
+      senderJwt,
       () => this.#dbView,
       this.#schema.submoduleDispatchInfos
     );
@@ -851,6 +870,8 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
 {
   readonly env = environment as EnvironmentFor<S>;
   #identity: Identity | undefined;
+  #senderJwt: Uint8Array;
+  #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
@@ -860,12 +881,24 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   readonly http = httpClient;
 
   constructor(
+    readonly sender: Identity,
     readonly timestamp: Timestamp,
+    senderJwt: Uint8Array,
     dbView: () => DbView<any>,
     dispatches: SubmoduleDispatchInfo[] = []
   ) {
+    this.#senderJwt = senderJwt;
     this.#dbView = dbView;
     this.#dispatches = dispatches;
+  }
+
+  /** The `AuthCtx` of `me.sender`, which the transactions that `me` opens share. */
+  static senderAuth(me: HandlerContextImpl): AuthCtx {
+    return (me.#senderAuth ??= AuthCtxImpl.forSender(
+      me.sender,
+      me.identity,
+      () => me.#senderJwt
+    ));
   }
 
   get identity() {
@@ -888,10 +921,12 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
     const dispatches = this.#dispatches;
     return runWithTx(timestamp => {
       const tx = new ReducerCtxImpl(
-        Identity.zero(),
+        this.sender,
         timestamp,
         null,
-        this.#dbView()
+        this.#dbView(),
+        hostBackend,
+        HandlerContextImpl.senderAuth(this)
       );
       if (dispatches.length > 0) {
         tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
@@ -996,6 +1031,9 @@ function buildHandlerAliasCtx(
     namePrefix
   );
   return {
+    get sender() {
+      return parent.sender;
+    },
     get timestamp() {
       return parent.timestamp;
     },
@@ -1012,13 +1050,15 @@ function buildHandlerAliasCtx(
     withTx(body: any) {
       return runWithTx((ts: Timestamp) => {
         const tx = new ReducerCtxImpl(
-          Identity.zero(),
+          parent.sender,
           ts,
           null,
           (nsDb_ ??= buildDbViewForDispatch(
             dispatch,
             namePrefix
-          ) as DbView<any>)
+          ) as DbView<any>),
+          hostBackend,
+          HandlerContextImpl.senderAuth(parent)
         );
         assignTxAliasViews(tx, dispatch.subDispatches, namePrefix);
         return tx;

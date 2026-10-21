@@ -6,6 +6,11 @@ partial struct TestAutoIncNotInteger
     : System.IEquatable<TestAutoIncNotInteger>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         AutoIncField = BSATN.AutoIncFieldRW.Read(reader);

@@ -536,34 +536,37 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): ViewExport<F>;
+  view<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ViewFn<S, Params, Ret>,
+  >(
+    opts: ViewOpts,
+    params: Params,
+    ret: Ret,
+    fn: F,
+    // The same primary-key guard as above.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F>;
+  view<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ViewFn<S, Params, Ret>,
+  >(opts: ViewOpts, ...args: [Ret, F] | [Params, Ret, F]): ViewExport<F> {
+    let params = {} as Params,
+      ret: Ret,
+      fn: F;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3:
+        [params, ret, fn] = args;
+        break;
+    }
+    return makeViewExport<S, Params, Ret, F>(this.#ctx, opts, params, ret, fn);
   }
-
-  // TODO: re-enable once parameterized views are supported in SQL
-  // view<Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   ret: Ret,
-  //   fn: ViewFn<S, {}, Ret>
-  // ): void;
-  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   params: Params,
-  //   ret: Ret,
-  //   fn: ViewFn<S, {}, Ret>
-  // ): void;
-  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   paramsOrRet: Ret | Params,
-  //   retOrFn: ViewFn<S, {}, Ret> | Ret,
-  //   maybeFn?: ViewFn<S, Params, Ret>
-  // ): void {
-  //   if (typeof retOrFn === 'function') {
-  //     defineView(name, false, {}, paramsOrRet as Ret, retOrFn);
-  //   } else {
-  //     defineView(name, false, paramsOrRet as Params, retOrFn, maybeFn!);
-  //   }
-  // }
 
   anonymousView<
     Ret extends ViewReturnTypeBuilder,
@@ -576,34 +579,43 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): ViewExport<F>;
+  anonymousView<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, Params, Ret>,
+  >(
+    opts: ViewOpts,
+    params: Params,
+    ret: Ret,
+    fn: F,
+    // The same primary-key guard as above.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F>;
+  anonymousView<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, Params, Ret>,
+  >(opts: ViewOpts, ...args: [Ret, F] | [Params, Ret, F]): ViewExport<F> {
+    let params = {} as Params,
+      ret: Ret,
+      fn: F;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3:
+        [params, ret, fn] = args;
+        break;
+    }
+    return makeAnonViewExport<S, Params, Ret, F>(
+      this.#ctx,
+      opts,
+      params,
+      ret,
+      fn
+    );
   }
-
-  // TODO: re-enable once parameterized views are supported in SQL
-  // anonymousView<Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   ret: Ret,
-  //   fn: AnonymousViewFn<S, {}, Ret>
-  // ): void;
-  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   params: Params,
-  //   ret: Ret,
-  //   fn: AnonymousViewFn<S, {}, Ret>
-  // ): void;
-  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   paramsOrRet: Ret | Params,
-  //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
-  //   maybeFn?: AnonymousViewFn<S, Params, Ret>
-  // ): void {
-  //   if (typeof retOrFn === 'function') {
-  //     defineView(name, true, {}, paramsOrRet as Ret, retOrFn);
-  //   } else {
-  //     defineView(name, true, paramsOrRet as Params, retOrFn, maybeFn!);
-  //   }
-  // }
 
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     params: Params,

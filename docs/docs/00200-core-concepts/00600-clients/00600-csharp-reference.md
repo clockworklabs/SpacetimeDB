@@ -539,7 +539,7 @@ class SubscriptionBuilder
 
 Subscribe to a set of queries. `queries` should be an array of SQL query strings.
 
-See [the SpacetimeDB SQL Reference](../../00300-resources/00200-reference/00400-sql-reference.md#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
+See [the SpacetimeDB SQL Reference](../../00300-resources/00400-sql-reference.md#subscriptions) for information on the queries SpacetimeDB supports as subscriptions.
 
 For typed query subscriptions, use [`AddQuery`](#method-addquery).
 
