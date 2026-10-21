@@ -6,7 +6,13 @@ using System.Diagnostics.CodeAnalysis;
 #pragma warning disable STDB_UNSTABLE
 #pragma warning disable CA1822 // Preserve the existing instance-based context API.
 
-public sealed class Local : LocalBase { }
+public sealed class Local : LocalBase
+{
+    public Local() { }
+
+    internal Local(Internal.DatabaseAccess access)
+        : base(access) { }
+}
 
 public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
 {
@@ -19,7 +25,16 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
 
     // **Note:** must be 0..=u32::MAX
     internal int CounterUuid;
-    public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
+    public Identity DatabaseIdentity
+    {
+        get
+        {
+            if (Db.Access is not { } access)
+                return Internal.IReducerContext.GetDatabaseIdentity();
+            access.CheckActive();
+            return access.Backend.DatabaseIdentity;
+        }
+    }
 
     // We keep this property for compatibility with existing module code.
     [global::System.Obsolete(
@@ -34,12 +49,30 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
         Timestamp time,
         AuthCtx? senderAuth = null
     )
+        : this(
+            new Local(),
+            identity,
+            connectionId,
+            random,
+            time,
+            senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity)
+        ) { }
+
+    internal ReducerContext(
+        Local db,
+        Identity identity,
+        ConnectionId? connectionId,
+        Random random,
+        Timestamp time,
+        AuthCtx senderAuth
+    )
+        : base(db)
     {
         Sender = identity;
         ConnectionId = connectionId;
         Rng = random;
         Timestamp = time;
-        SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
+        SenderAuth = senderAuth;
         CounterUuid = 0;
     }
 

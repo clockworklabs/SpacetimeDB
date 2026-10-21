@@ -443,7 +443,14 @@ public static class Module
 /// </summary>
 public partial class Local
 {
-    // Intentionally empty – generated code adds table handles here.
+#if NET10_0_OR_GREATER
+    // Null retains the host path without allocating a managed backend or scope.
+    internal DatabaseAccess? Access { get; }
+
+    public Local() { }
+
+    internal Local(DatabaseAccess access) => Access = access;
+#endif
 }
 
 /// <summary>
@@ -451,4 +458,13 @@ public partial class Local
 /// On .NET 10 the generator provides assembly-scoped extension properties.
 /// On .NET 8 generated modules declare their own type with table accessors.
 /// </summary>
-public sealed partial class LocalReadOnly { }
+public sealed partial class LocalReadOnly
+{
+#if NET10_0_OR_GREATER
+    internal DatabaseAccess? Access { get; }
+
+    public LocalReadOnly() { }
+
+    internal LocalReadOnly(DatabaseAccess access) => Access = access;
+#endif
+}

@@ -109,7 +109,15 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
     public Random Rng => Inner.Rng;
 }
 
-public abstract class LocalBase : Internal.Local { }
+public abstract class LocalBase : Internal.Local
+{
+#if NET10_0_OR_GREATER
+    protected LocalBase() { }
+
+    internal LocalBase(Internal.DatabaseAccess access)
+        : base(access) { }
+#endif
+}
 
 internal sealed partial class RuntimeProcedureContext(
     Identity sender,
