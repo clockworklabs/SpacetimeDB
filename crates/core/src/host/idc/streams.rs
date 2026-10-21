@@ -125,7 +125,9 @@ impl DeliveryStreams {
     pub fn next_retry_delay(&self) -> Option<(StreamId, Duration)> {
         self.streams
             .iter()
-            .filter(|(_, state)| state.active_seq.is_none())
+            // A due retry may remain queued while the actor is at capacity.
+            // Waking it again would spin without making progress.
+            .filter(|(id, state)| state.active_seq.is_none() && !self.queued.contains(*id))
             .filter_map(|(&id, state)| state.blocked_until.map(|deadline| (id, deadline)))
             .min_by_key(|(_, deadline)| *deadline)
             .map(|(id, deadline)| (id, deadline.saturating_duration_since(Instant::now())))
@@ -183,6 +185,8 @@ mod tests {
         streams.streams.get_mut(&second).unwrap().blocked_until = Some(now - INITIAL_BACKOFF);
         assert_eq!(streams.next_retry_delay(), Some((second, Duration::ZERO)));
         streams.wake(second);
+        // Queued retries no longer need a timer, even before they can start.
+        assert_eq!(streams.next_retry_delay(), Some((first, Duration::ZERO)));
         assert_eq!(streams.pop_ready(), Some(second));
         streams.start(second, 1);
         assert_eq!(streams.next_retry_delay(), Some((first, Duration::ZERO)));

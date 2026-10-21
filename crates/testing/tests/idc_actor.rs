@@ -73,21 +73,165 @@ fn idc_actor_streams_progress_independently_and_preserve_order() {
     );
 }
 
-fn outbox_schema() -> TableSchema {
+#[test]
+#[serial_test::serial]
+fn idc_actor_bounds_active_messages_and_reports_metrics() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |module| async move {
+            run_bounded_actor_test(module.client.module()).await.unwrap();
+        },
+    );
+}
+
+async fn run_bounded_actor_test(host: ModuleHost) -> anyhow::Result<()> {
+    use spacetimedb::worker_metrics::WORKER_METRICS;
+
+    let identity = &host.info.database_identity;
+    let db = host.relational_db().clone();
+    let table = create_outbox(&db)?;
+    let active = WORKER_METRICS.idc_in_flight_messages.with_label_values(identity);
+    let bytes = WORKER_METRICS.idc_in_flight_bytes.with_label_values(identity);
+    let queued = WORKER_METRICS.idc_notification_queue_depth.with_label_values(identity);
+    let attempts = WORKER_METRICS
+        .idc_delivery_attempts
+        .with_label_values(identity, "outbox");
+    let failures = WORKER_METRICS
+        .idc_delivery_failures
+        .with_label_values(identity, "outbox");
+    let retries = WORKER_METRICS.idc_retries.with_label_values(identity, "outbox");
+    let duration = WORKER_METRICS
+        .idc_delivery_duration_seconds
+        .with_label_values(identity, "outbox");
+    let errors = WORKER_METRICS.idc_actor_errors.with_label_values(identity);
+    let initial = (
+        attempts.get(),
+        failures.get(),
+        retries.get(),
+        duration.get_sample_count(),
+        errors.get(),
+    );
+
+    let (requests_tx, mut requests_rx) = mpsc::unbounded_channel();
+    let app = Router::new().route(
+        "/v1/database/:target_db/call-from-database/:reducer",
+        post(move || {
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<StatusCode>();
+            requests_tx.send(reply_tx).unwrap();
+            async move { reply_rx.await.unwrap() }
+        }),
+    );
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+    let config = IdcConfig {
+        http_port: listener.local_addr()?.port(),
+        token_signer: Arc::new(spacetimedb::auth::JwtKeys::generate()?.private),
+    };
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let _server_abort = scopeguard::guard(server.abort_handle(), |handle| handle.abort());
+    let (starter, notify_tx) = idc_actor::channel(identity);
+    let count = idc_actor::MAX_IN_FLIGHT_MESSAGES + 2;
+    for i in 0..count {
+        let target = Identity::from_byte_array([i as u8; 32]);
+        notify_tx.send(insert_outbox_row(&db, table, target)?)?;
+    }
+    assert_eq!(queued.get(), count as i64);
+    let _actor = starter.start(
+        db.clone(),
+        *identity,
+        idc_actor::http_client(),
+        config.clone(),
+        host.downgrade(),
+    )?;
+
+    let mut replies = Vec::new();
+    for _ in 0..idc_actor::MAX_IN_FLIGHT_MESSAGES {
+        replies.push(tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap());
+    }
+    assert!(tokio::time::timeout(Duration::from_millis(50), requests_rx.recv())
+        .await
+        .is_err());
+    assert_eq!(active.get(), idc_actor::MAX_IN_FLIGHT_MESSAGES as i64);
+    assert!(bytes.get() > 0);
+
+    // A failed attempt frees a slot during backoff. Older queued streams get
+    // their turn before the retry; completing another attempt frees the next slot.
+    replies.pop().unwrap().send(StatusCode::SERVICE_UNAVAILABLE).unwrap();
+    replies.push(tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap());
+    assert_eq!(active.get(), idc_actor::MAX_IN_FLIGHT_MESSAGES as i64);
+    replies.pop().unwrap().send(StatusCode::OK).unwrap();
+    replies.push(tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap());
+    assert_eq!(active.get(), idc_actor::MAX_IN_FLIGHT_MESSAGES as i64);
+
+    for reply in replies {
+        reply.send(StatusCode::OK).unwrap();
+    }
+    let retry = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+    retry.send(StatusCode::OK).unwrap();
+    for i in 0..count {
+        wait_for_ack(&db, Identity::from_byte_array([i as u8; 32]), 1).await?;
+    }
+    notify_tx.close();
+    tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
+    assert_eq!(active.get(), 0);
+    assert_eq!(bytes.get(), 0);
+    assert_eq!(queued.get(), 0);
+    assert_eq!(attempts.get() - initial.0, count as u64 + 1);
+    assert_eq!(failures.get() - initial.1, 1);
+    assert_eq!(retries.get() - initial.2, 1);
+    assert_eq!(duration.get_sample_count() - initial.3, count as u64 + 1);
+    assert_eq!(errors.get(), initial.4);
+    assert!(requests_rx.try_recv().is_err());
+
+    // Aborting an actor also releases its gauge contributions, even while HTTP
+    // is blocked. The message stays in the database for the next actor.
+    let target = Identity::from_byte_array([174; 32]);
+    let other_table = create_named_outbox(&db, "other_outbox")?;
+    let other_attempts = WORKER_METRICS
+        .idc_delivery_attempts
+        .with_label_values(identity, "other_outbox");
+    let initial_other_attempts = other_attempts.get();
+    insert_outbox_row(&db, other_table, target)?;
+    let (starter, notify_tx) = idc_actor::channel(identity);
+    let actor = starter.start(
+        db.clone(),
+        *identity,
+        idc_actor::http_client(),
+        config,
+        host.downgrade(),
+    )?;
+    let reply = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+    assert_eq!(active.get(), 1);
+    assert!(bytes.get() > 0);
+    assert_eq!(other_attempts.get() - initial_other_attempts, 1);
+    assert_eq!(attempts.get() - initial.0, count as u64 + 1);
+    drop(actor);
+    tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
+    assert_eq!(active.get(), 0);
+    assert_eq!(bytes.get(), 0);
+    assert_eq!(queued.get(), 0);
+    wait_for_ack(&db, target, 0).await?;
+    let _ = reply.send(StatusCode::OK);
+    Ok(())
+}
+
+fn outbox_schema(name: &str) -> TableSchema {
     TableSchema::new(
         TableId::SENTINEL,
-        TableName::for_test("outbox"),
+        TableName::for_test(name),
         None,
         vec![
             ColumnSchema::for_test(0, "target", AlgebraicType::identity()),
             ColumnSchema::for_test(1, "msg_id", AlgebraicType::U64),
             ColumnSchema::for_test(2, "value", AlgebraicType::U32),
         ],
-        vec![IndexSchema::for_test("outbox_msg_id", BTreeAlgorithm::from(1))],
-        vec![ConstraintSchema::unique_for_test("outbox_msg_id_unique", 1)],
+        vec![IndexSchema::for_test(
+            &format!("{name}_msg_id"),
+            BTreeAlgorithm::from(1),
+        )],
+        vec![ConstraintSchema::unique_for_test(&format!("{name}_msg_id_unique"), 1)],
         vec![SequenceSchema {
             sequence_id: SequenceId::SENTINEL,
-            sequence_name: "outbox_msg_id_seq".into(),
+            sequence_name: format!("{name}_msg_id_seq").into(),
             table_id: TableId::SENTINEL,
             col_pos: ColId(1),
             start: 1,
@@ -116,8 +260,12 @@ fn outbox_schema() -> TableSchema {
 }
 
 fn create_outbox(db: &RelationalDB) -> anyhow::Result<TableId> {
+    create_named_outbox(db, "outbox")
+}
+
+fn create_named_outbox(db: &RelationalDB, name: &str) -> anyhow::Result<TableId> {
     let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-    let table_id = db.create_table(&mut tx, outbox_schema())?;
+    let table_id = db.create_table(&mut tx, outbox_schema(name))?;
     db.commit_tx(tx)?;
     Ok(table_id)
 }
@@ -216,7 +364,7 @@ async fn run_actor_test(host: ModuleHost) -> anyhow::Result<()> {
     let slow_second = insert_outbox_row(&db, table_id, SLOW_TARGET)?;
     assert_eq!(slow_first.seq, 1);
     assert_eq!(slow_second.seq, slow_first.seq + 1);
-    let (starter, notify_tx) = idc_actor::channel();
+    let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
     let config = IdcConfig {
         http_port,
         token_signer: Arc::new(keys.private),
@@ -407,7 +555,7 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
 
     // A shutdown already requested at startup must not dispatch recovered messages.
     {
-        let (starter, notify_tx) = idc_actor::channel();
+        let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
         notify_tx.close();
         let _actor = starter.start(
             db.clone(),
@@ -423,7 +571,7 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
     // A failed attempt remains pending. Restart retries it; a successful attempt
     // finishes local cleanup before shutdown returns, leaving the next row pending.
     for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::OK] {
-        let (starter, notify_tx) = idc_actor::channel();
+        let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
         let _actor = starter.start(
             db.clone(),
             host.info.database_identity,
@@ -478,7 +626,7 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
     }
 
     // Startup discovers the untouched second message without a notification.
-    let (starter, notify_tx) = idc_actor::channel();
+    let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
     let _actor = starter.start(
         db.clone(),
         host.info.database_identity,

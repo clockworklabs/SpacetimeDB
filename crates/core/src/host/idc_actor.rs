@@ -1,31 +1,43 @@
 use crate::auth::idc::IdcTokenSigner;
+use crate::client::{MeteredUnboundedReceiver, MeteredUnboundedSender};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::host::idc::{DeliveryStreams, StreamId};
 use crate::host::module_host::WeakModuleHost;
 use crate::host::module_host::{CallReducerParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{FunctionArgs, ReducerOutcome};
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use parking_lot::Mutex;
+use prometheus::{Histogram, IntCounter, IntGauge};
+use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::idc::IdcResponse;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StOutboundMsgRow, StOutboundStreamRow};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{Hash, Identity, ProductValue, Timestamp};
+use spacetimedb_memory_usage::MemoryUsage;
+use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::reducer_name::ReducerName;
+use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 const NOTIFICATION_BATCH_SIZE: usize = 16;
 
+/// Maximum messages per actor in delivery, callback execution, or cleanup.
+/// Pending messages stay in the database until a slot is available.
+pub const MAX_IN_FLIGHT_MESSAGES: usize = 64;
+
 #[derive(Clone)]
 pub struct IdcActorSender {
-    tx: mpsc::UnboundedSender<StOutboundMsgRow>,
+    tx: MeteredUnboundedSender<StOutboundMsgRow>,
     shutdown: mpsc::UnboundedSender<()>,
 }
 
@@ -54,6 +66,58 @@ pub struct IdcConfig {
     pub token_signer: Arc<dyn IdcTokenSigner>,
 }
 
+/// Actor-wide handles and lazily cached per-outbox delivery handles.
+struct IdcMetrics {
+    in_flight_messages: IntGauge,
+    in_flight_bytes: IntGauge,
+    actor_errors: IntCounter,
+    database_identity: Identity,
+    by_table: Mutex<FxHashMap<TableName, IdcDeliveryMetrics>>,
+}
+
+#[derive(Clone)]
+struct IdcDeliveryMetrics {
+    delivery_attempts: IntCounter,
+    delivery_failures: IntCounter,
+    delivery_duration_seconds: Histogram,
+    retries: IntCounter,
+}
+
+impl IdcMetrics {
+    fn new(database_identity: &Identity) -> Self {
+        Self {
+            in_flight_messages: WORKER_METRICS
+                .idc_in_flight_messages
+                .with_label_values(database_identity),
+            in_flight_bytes: WORKER_METRICS.idc_in_flight_bytes.with_label_values(database_identity),
+            actor_errors: WORKER_METRICS.idc_actor_errors.with_label_values(database_identity),
+            database_identity: *database_identity,
+            by_table: Mutex::new(FxHashMap::default()),
+        }
+    }
+
+    fn for_table(&self, table_name: &TableName) -> IdcDeliveryMetrics {
+        self.by_table
+            .lock()
+            .entry(table_name.clone())
+            .or_insert_with(|| IdcDeliveryMetrics {
+                delivery_attempts: WORKER_METRICS
+                    .idc_delivery_attempts
+                    .with_label_values(&self.database_identity, table_name),
+                delivery_failures: WORKER_METRICS
+                    .idc_delivery_failures
+                    .with_label_values(&self.database_identity, table_name),
+                delivery_duration_seconds: WORKER_METRICS
+                    .idc_delivery_duration_seconds
+                    .with_label_values(&self.database_identity, table_name),
+                retries: WORKER_METRICS
+                    .idc_retries
+                    .with_label_values(&self.database_identity, table_name),
+            })
+            .clone()
+    }
+}
+
 pub struct IdcActor {
     task: tokio::task::JoinHandle<()>,
 }
@@ -65,7 +129,7 @@ impl Drop for IdcActor {
 }
 
 pub struct IdcActorStarter {
-    rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
+    rx: MeteredUnboundedReceiver<StOutboundMsgRow>,
     shutdown_rx: mpsc::UnboundedReceiver<()>,
 }
 
@@ -79,7 +143,8 @@ impl IdcActorStarter {
         module_host: WeakModuleHost,
     ) -> anyhow::Result<IdcActor> {
         let mut streams = DeliveryStreams::default();
-        restore_pending_streams(&db, &mut streams)?;
+        let metrics = IdcMetrics::new(&database_identity);
+        restore_pending_streams(&db, &mut streams).inspect_err(|_| metrics.actor_errors.inc())?;
         let task = tokio::spawn(async move {
             if let Err(error) = run_idc_loop(
                 db,
@@ -90,9 +155,11 @@ impl IdcActorStarter {
                 self.rx,
                 streams,
                 self.shutdown_rx,
+                &metrics,
             )
             .await
             {
+                metrics.actor_errors.inc();
                 log::error!(
                     "idc_actor: sender_identity={}: stopped: {error:#}",
                     database_identity.to_hex(),
@@ -104,8 +171,15 @@ impl IdcActorStarter {
 }
 
 /// Create the channels used to notify and stop an actor, which is started separately.
-pub fn channel() -> (IdcActorStarter, IdcActorSender) {
+pub fn channel(database_identity: &Identity) -> (IdcActorStarter, IdcActorSender) {
+    // TODO(idc): Bound the notification channel. Notifications are sent while holding
+    // the transaction lock, so waiting for channel capacity could deadlock the actor.
     let (tx, rx) = mpsc::unbounded_channel();
+    let gauge = WORKER_METRICS
+        .idc_notification_queue_depth
+        .with_label_values(database_identity);
+    let tx = MeteredUnboundedSender::with_gauge(tx, gauge.clone());
+    let rx = MeteredUnboundedReceiver::with_gauge(rx, gauge);
     let (shutdown, shutdown_rx) = mpsc::unbounded_channel();
     (IdcActorStarter { rx, shutdown_rx }, IdcActorSender { tx, shutdown })
 }
@@ -118,6 +192,7 @@ struct PendingMessage {
     message_id: u64,
     sequence: u64,
     outbox_table_id: TableId,
+    table_name: TableName,
     target_identity: Identity,
     /// All sequences through this value are complete. The receiver can discard their results.
     ack_prefix: u64,
@@ -188,9 +263,10 @@ async fn run_idc_loop(
     client: reqwest::Client,
     config: IdcConfig,
     module_host: WeakModuleHost,
-    mut notify_rx: mpsc::UnboundedReceiver<StOutboundMsgRow>,
+    mut notify_rx: MeteredUnboundedReceiver<StOutboundMsgRow>,
     mut streams: DeliveryStreams,
     mut shutdown: mpsc::UnboundedReceiver<()>,
+    metrics: &IdcMetrics,
 ) -> anyhow::Result<()> {
     let mut in_flight = FuturesUnordered::new();
     let mut notifications = Vec::with_capacity(NOTIFICATION_BATCH_SIZE);
@@ -204,13 +280,19 @@ async fn run_idc_loop(
             }
 
             // Start ready messages. Each future includes delivery, callback, and cleanup.
-            while let Some(msg) = take_ready_message(&db, &mut streams)? {
+            while in_flight.len() < MAX_IN_FLIGHT_MESSAGES {
+                let Some(msg) = take_ready_message(&db, &mut streams)? else {
+                    break;
+                };
                 let stream_id = msg.message().stream_id;
                 let seq = msg.message().sequence;
+                let table_name = msg.message().table_name.clone();
                 let (db, client, config, module_host) = (&db, &client, &config, &module_host);
+                let active = metrics.in_flight_messages.inc_scope();
                 in_flight.push(async move {
-                    let result = handle_message(db, client, database_identity, config, module_host, msg).await;
-                    (stream_id, seq, result)
+                    let _active = active;
+                    let result = handle_message(db, client, database_identity, config, module_host, msg, metrics).await;
+                    (stream_id, seq, table_name, result)
                 });
             }
 
@@ -227,13 +309,14 @@ async fn run_idc_loop(
                 Some(()) = shutdown.recv() => break Ok(()),
 
                 // Start the next message after cleanup succeeds. Retry failed attempts after backoff.
-                Some((stream_id, seq, result)) = in_flight.next(), if !in_flight.is_empty() => {
+                Some((stream_id, seq, table_name, result)) = in_flight.next(), if !in_flight.is_empty() => {
                     match result {
                         Ok(()) => {
                             streams.finish(stream_id, seq);
                         }
                         Err(error) => {
                             let delay = streams.fail(stream_id, seq);
+                            metrics.for_table(&table_name).retries.inc();
                             log::warn!(
                                 "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {delay:?}: {error:#}",
                                 database_identity.to_hex(),
@@ -273,12 +356,13 @@ async fn run_idc_loop(
     // Submitted callbacks continue on the module executor even if their futures
     // are dropped. Drain them before the caller can shut down the database.
     // Failed attempts remain pending; shutdown must not schedule another retry.
-    while let Some((stream_id, seq, result)) = in_flight.next().await {
+    while let Some((stream_id, seq, _table, result)) = in_flight.next().await {
         if let Err(error) = result {
             log::warn!("idc_actor: stream_id={stream_id} sequence={seq}: left pending during shutdown: {error:#}");
         }
     }
     // Closing the shutdown channel reports completion only after active work drains.
+    drop(notify_rx);
     drop(shutdown);
     result
 }
@@ -292,10 +376,15 @@ async fn handle_message(
     config: &IdcConfig,
     module_host: &WeakModuleHost,
     msg: LoadedMessage,
+    metrics: &IdcMetrics,
 ) -> anyhow::Result<()> {
+    let message = msg.message();
+    let bytes = (message.outbox_row.heap_usage() + message.reducer_args.len()) as i64;
+    metrics.in_flight_bytes.add(bytes);
+    let mut bytes = scopeguard::guard(bytes, |bytes| metrics.in_flight_bytes.sub(bytes));
     let delivered = match msg {
         LoadedMessage::Pending(msg) => {
-            deliver_message_and_record_result(db, client, database_identity, config, msg).await?
+            deliver_message_and_record_result(db, client, database_identity, config, msg, metrics).await?
         }
         LoadedMessage::Delivered(msg) => Some(msg),
     };
@@ -304,6 +393,9 @@ async fn handle_message(
         return Ok(());
     };
 
+    let result_bytes = delivered.result.payload.len() as i64;
+    metrics.in_flight_bytes.add(result_bytes);
+    *bytes += result_bytes;
     let host = module_host
         .upgrade()
         .context("IDC module host is no longer available")?;
@@ -411,6 +503,7 @@ fn load_pending_message(
         message_id: message_row.msg_id,
         sequence: message_row.seq,
         outbox_table_id: stream.outbox_table_id,
+        table_name: schema.table_name.clone(),
         target_identity: stream.target_identity.0,
         ack_prefix: stream.ack_prefix,
         target_reducer: outbox.remote_reducer.clone(),
@@ -457,11 +550,16 @@ async fn deliver_message_and_record_result(
     database_identity: Identity,
     config: &IdcConfig,
     msg: PendingMessage,
+    metrics: &IdcMetrics,
 ) -> anyhow::Result<Option<DeliveredMessage>> {
+    let metrics = metrics.for_table(&msg.table_name);
+    metrics.delivery_attempts.inc();
+    let _timer = metrics.delivery_duration_seconds.start_timer();
     let response = attempt_delivery(client, database_identity, config, &msg).await;
     match response.and_then(|response| record_delivery_response(db, &msg, response)) {
         Ok(result) => Ok(result.map(|result| DeliveredMessage { message: msg, result })),
         Err(error) => {
+            metrics.delivery_failures.inc();
             log::warn!(
                 "idc_actor: sender_identity={} stream_id={} sequence={} target_identity={} outbox_table_id={:?}: delivery failed: {error:#}",
                 database_identity.to_hex(),
@@ -628,6 +726,8 @@ pub(super) fn run_callback_and_cleanup(
         let params = match params {
             Ok(params) => params,
             Err(error) => {
+                info.metrics
+                    .record_idc_callback_failure(info.database_identity, &msg.message.table_name);
                 log::error!(
                     "idc_actor: sender_identity={sender_identity} stream_id={stream_id} sequence={sequence}: cannot prepare on_result: {error:#}"
                 );
@@ -675,6 +775,9 @@ pub(super) fn run_callback_and_cleanup(
                 );
             }
         }
+
+        info.metrics
+            .record_idc_callback_failure(info.database_identity, &msg.message.table_name);
 
         // The callback transaction rolled back. Start a new transaction for cleanup.
         // If cleanup also fails, the message remains pending and a later attempt
@@ -859,6 +962,36 @@ mod tests {
         Ok(message)
     }
 
+    #[tokio::test]
+    async fn idc_notification_metric_tracks_receives_and_receiver_drop() -> anyhow::Result<()> {
+        let db = open_test_db();
+        insert_outbox_message(&db, Identity::ONE, 42)?;
+        let message = next_message(&db)?;
+        let tx = db.begin_tx(Workload::Internal);
+        let row = db
+            .outbound_msg_by_stream_seq(&tx, message.stream_id.0, message.sequence)?
+            .unwrap();
+        let row = StOutboundMsgRow::try_from(row)?;
+        let _ = db.release_tx(tx);
+        let identity = Identity::from_byte_array([173; 32]);
+        let gauge = WORKER_METRICS.idc_notification_queue_depth.with_label_values(&identity);
+        let (mut starter, sender) = channel(&identity);
+        for _ in 0..3 {
+            sender.send(row.clone())?;
+        }
+        assert_eq!(gauge.get(), 3);
+        starter.rx.try_recv()?;
+        assert_eq!(gauge.get(), 2);
+        let mut batch = Vec::new();
+        assert_eq!(starter.rx.recv_many(&mut batch, 1).await, 1);
+        assert_eq!(gauge.get(), 1);
+        drop(starter);
+        assert_eq!(gauge.get(), 0);
+        assert!(sender.send(row).is_err());
+        assert_eq!(gauge.get(), 0);
+        Ok(())
+    }
+
     // These tests cover delivery and queue state without a module instance.
     // They do not exercise callbacks, view refresh, or subscription updates.
     fn cleanup_without_module(db: &RelationalDB, msg: DeliveredMessage) -> anyhow::Result<()> {
@@ -923,7 +1056,7 @@ mod tests {
         let first = store_success(&db, next_message(&db)?)?;
         let (mut env, _runtime) = super::super::instance_env::test::instance_env(db.clone())?;
         // Delivery must wait until the insert commits.
-        let (mut starter, sender) = channel();
+        let (mut starter, sender) = channel(&db.database_identity());
         env.idc_sender = sender;
 
         let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -1064,6 +1197,7 @@ mod tests {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let http_port = listener.local_addr()?.port();
         let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let metrics = IdcMetrics::new(&Identity::ZERO);
         let mut config = IdcConfig {
             http_port,
             token_signer: Arc::new(keys.private),
@@ -1086,7 +1220,7 @@ mod tests {
             let msg = next_message(&db)?;
             let seq = msg.sequence;
             response_status.store(http_status, Ordering::Relaxed);
-            let delivered = deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg)
+            let delivered = deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg, &metrics)
                 .await?
                 .expect("terminal response must produce a delivered message");
             assert_eq!(delivered.result.status, stored_status);
@@ -1121,7 +1255,7 @@ mod tests {
             insert_outbox_message(&db, Identity::ONE, 42)?;
             let msg = next_message(&db)?;
             response_status.store(status, Ordering::Relaxed);
-            let error = deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg)
+            let error = deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg, &metrics)
                 .await
                 .err()
                 .expect("response must leave the message pending");
@@ -1149,7 +1283,7 @@ mod tests {
         cleanup_without_module(&db, store_success(&db, stale.clone())?)?;
         response_status.store(208, Ordering::Relaxed);
         assert!(
-            deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, stale)
+            deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, stale, &metrics)
                 .await?
                 .is_none()
         );
@@ -1187,7 +1321,7 @@ mod tests {
             let msg = next_message(&db)?;
             config.http_port = http_port;
             assert!(
-                deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg)
+                deliver_message_and_record_result(&db, &client, Identity::ZERO, &config, msg, &metrics)
                     .await
                     .is_err()
             );

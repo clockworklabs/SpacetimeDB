@@ -1129,7 +1129,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         .await
         .map(Arc::new)?;
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
-        let (idc_starter, idc_sender) = idc_actor::channel();
+        let (idc_starter, idc_sender) = idc_actor::channel(&replica_ctx.database_identity);
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
@@ -1602,7 +1602,7 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
-        let (idc_starter, idc_sender) = idc_actor::channel();
+        let (idc_starter, idc_sender) = idc_actor::channel(&replica_ctx.database_identity);
 
         let (program, module) = make_module_host(
             runtimes.clone(),

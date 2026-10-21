@@ -1557,7 +1557,7 @@ pub(super) mod test {
     /// An `InstanceEnv` used for testing the database syscalls.
     pub(in crate::host) fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
-        let (_, idc_sender) = crate::host::idc_actor::channel();
+        let (_, idc_sender) = crate::host::idc_actor::channel(&db.database_identity());
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
         Ok((
             InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
@@ -1656,7 +1656,7 @@ pub(super) mod test {
     fn module_http_config_disables_requests() -> Result<()> {
         let db = relational_db()?;
         let (scheduler, _) = Scheduler::open(db.clone());
-        let (_, idc_sender) = crate::host::idc_actor::channel();
+        let (_, idc_sender) = crate::host::idc_actor::channel(&db.database_identity());
         let (replica_context, _runtime) = replica_ctx(db, crate::config::ModuleHttpConfig { enabled: false })?;
         let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender);
         let request = st_http::Request {

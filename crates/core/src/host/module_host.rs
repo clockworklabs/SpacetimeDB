@@ -265,6 +265,7 @@ pub struct ModuleMetrics {
     pub request_round_trip_unsubscribe: Histogram,
     pub request_round_trip_sql: Histogram,
     scheduled_function_delay: ScheduledFunctionDelayMetrics,
+    idc_callback_failures: Mutex<FxHashMap<TableName, prometheus::IntCounter>>,
 }
 
 #[derive(Debug)]
@@ -330,7 +331,16 @@ impl ModuleMetrics {
             request_round_trip_unsubscribe,
             request_round_trip_sql,
             scheduled_function_delay,
+            idc_callback_failures: Mutex::new(FxHashMap::default()),
         }
+    }
+
+    pub(in crate::host) fn record_idc_callback_failure(&self, db: Identity, table_name: &TableName) {
+        self.idc_callback_failures
+            .lock()
+            .entry(table_name.clone())
+            .or_insert_with(|| WORKER_METRICS.idc_callback_failures.with_label_values(&db, table_name))
+            .inc();
     }
 
     pub(in crate::host) fn observe_scheduled_function_delay(&self, function_name: &str, delay: Duration) {
