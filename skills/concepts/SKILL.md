@@ -99,6 +99,18 @@ Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
 
+## Reusable Modules and Configuration
+
+TypeScript and C# support same-language submodule composition. A namespace has a language accessor and a canonical database name; SQL, CLI calls, and HTTP calls use the canonical name. Changing the canonical namespace re-creates its tables, so pin it when renaming an accessor. TypeScript supports nested submodules; C# composition requires 2.13+, .NET 10/C# 14 and root-controlled assembly placement without nested mounts. See the respective server skills for registration and helper-context rules.
+
+Database environment variables are declared, validated string configuration, including secrets. Publishing preserves unspecified values; environment-only publishing changes configuration without replacing the module. Required values are validated before initialization/migration. Named submodules cannot declare their own environment or read the root environment through host-dispatched entry points. C# dependencies registered in `public` instead contribute to the root schema. Private storage does not prevent module code from exposing a secret through results or logs.
+
+## Views with Arguments and Module Tests
+
+Views can accept arguments in 2.13+, queried as `SELECT * FROM view_name(42)`. Currently argument-bearing views do not support outer filters, projections, joins, floating-point arguments, or primary keys. Subscribe-all skips them; subscribe explicitly. See server skills for definitions and client skills for subscription syntax.
+
+Rust and TypeScript provide in-memory module unit-test harnesses in 2.12+: run native `cargo test` or Vitest with the module-test plugin. These use the real datastore but do not simulate clients, subscriptions, RLS enforcement, lifecycle events, or timer execution. Test those host behaviors against a running database.
+
 ## Identity
 
 - **Identity**: A long-lived, globally unique identifier for a user.

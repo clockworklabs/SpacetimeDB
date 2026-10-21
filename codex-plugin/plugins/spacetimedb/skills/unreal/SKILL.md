@@ -254,6 +254,8 @@ Handle->GetQuerySqls();  // get the SQL queries
 
 ---
 
+Views with arguments (2.13+) are excluded from subscribe-all. Subscribe explicitly with raw SQL such as `SELECT * FROM by_id(42)`; argument-bearing views currently reject outer filters, projections, joins, floating-point arguments, and primary keys. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input.
+
 ## Reading the Client Cache
 
 Access tables through `Conn->Db`:

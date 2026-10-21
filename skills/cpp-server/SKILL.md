@@ -167,6 +167,27 @@ ctx.rng()              // Deterministic RNG
 ctx.sender_auth()      // AuthCtx with JWT claims
 ```
 
+## Environment Variables
+
+Declare the environment in a dedicated `environment.h`:
+
+```cpp
+#pragma once
+#include <spacetimedb/environment_declaration.h>
+
+SPACETIMEDB_ENV(
+    (API_KEY, std::string),
+    (MODE, std::string, ("development", "production")),
+    (LOG_LEVEL, std::optional<std::string>)
+)
+// In a root entry point: ctx.env.API_KEY(), ctx.env.LOG_LEVEL()
+// String-key lookup: ctx.env.get("LOG_LEVEL")
+```
+
+Set `SPACETIMEDB_ENV_HEADER` to this header's full path in CMake **before** adding the SpacetimeDB module library directory, so the library and module see the same context declaration. Including it manually in only one source file is insufficient. `std::string` is required; `std::optional<std::string>` permits absence. The optional third tuple element restricts allowed strings.
+
+Environment keys are exact, case-sensitive strings. Declare every key module code reads; undeclared reads fail even if a value is stored. Values are read-only strings supplied at publish time, not process environment variables. Required declarations must have values before initialization or migration; optional declarations permit absence. Reads inside a transaction share its snapshot. Host-dispatched entry points in named submodules cannot read the root environment, but ordinary helper calls retain the caller's access. Do not return or log secret values.
+
 ## Scheduled Tables
 
 ```cpp
