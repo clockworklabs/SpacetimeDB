@@ -1715,9 +1715,6 @@ jobs:
               if ! command -v cargo >/dev/null 2>&1; then
                 curl -sSf https://sh.rustup.rs | sh -s -- -y
               fi
-              rustup --version
-              rustup self update
-              rustup --version
               rustup show >/dev/null
               git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
 
