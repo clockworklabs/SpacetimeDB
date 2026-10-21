@@ -31,8 +31,7 @@ Each guide will also get a short-format video (done later, once the written guid
 ## Common app patterns
 
 - [x] Paginate or infinite-scroll a large table
-- [ ] Admin and moderator roles without SpacetimeAuth
-- [ ] Admin and moderator roles with SpacetimeAuth
+- [x] Admin and moderator roles
 - [ ] Send an email from your module
 - [ ] Call an external API from your module
 - [x] Call an AI model from your module
