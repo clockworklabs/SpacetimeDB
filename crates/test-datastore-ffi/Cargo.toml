@@ -12,6 +12,7 @@ bench = false
 
 [dependencies]
 spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
 spacetimedb-test-datastore = { path = "../test-datastore", version = "=2.13.0", default-features = false }
 
 [lints]

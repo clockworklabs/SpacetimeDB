@@ -8,11 +8,17 @@ use std::thread::{self, JoinHandle};
 use spacetimedb_lib::{bsatn, RawModuleDef};
 use spacetimedb_test_datastore::{TestDatastore, TestDatastoreError};
 
+mod transaction;
+use transaction::Worker;
+
 const OK: u32 = 0;
 const INVALID_ARGUMENT: u32 = 1;
 const INVALID_SCHEMA: u32 = 2;
 const DATABASE_ERROR: u32 = 3;
 const INTERNAL_ERROR: u32 = 4;
+const TRANSACTION_FINISHED: u32 = 5;
+const TRANSACTION_ACTIVE: u32 = 6;
+const DATASTORE_CLOSED: u32 = 7;
 
 #[repr(C)]
 pub struct StdbTestBuffer {
@@ -27,7 +33,14 @@ impl StdbTestBuffer {
     };
 
     fn from_message(message: String) -> Self {
-        let bytes = message.into_bytes().into_boxed_slice();
+        Self::from_bytes(message.into_bytes())
+    }
+
+    fn from_bytes(bytes: Vec<u8>) -> Self {
+        if bytes.is_empty() {
+            return Self::EMPTY;
+        }
+        let bytes = bytes.into_boxed_slice();
         let len = bytes.len() as u64;
         Self {
             data: Box::into_raw(bytes).cast(),
@@ -36,14 +49,91 @@ impl StdbTestBuffer {
     }
 }
 
-// Only the channel and join handle cross threads. In particular, a future
+impl Default for StdbTestBuffer {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+// Only the channel and join handle cross threads. In particular, a
 // TestTransaction must stay on the owner thread: MutTxId is explicitly !Send.
 pub struct StdbTestDatastore {
-    shutdown: Sender<()>,
+    requests: Sender<Command>,
     worker: JoinHandle<()>,
 }
 
 type Failure = (u32, String);
+
+enum Command {
+    Run(Box<dyn FnOnce(&mut Worker) -> bool + Send>),
+    Shutdown,
+}
+
+fn request<T: Send + 'static>(
+    requests: &Sender<Command>,
+    f: impl FnOnce(&mut Worker) -> Result<T, Failure> + Send + 'static,
+) -> Result<T, Failure> {
+    let (reply, response) = mpsc::sync_channel(1);
+    requests
+        .send(Command::Run(Box::new(move |state| {
+            let result = contain_panic(|| f(state));
+            // A panicking operation may have left the transaction inconsistent.
+            // Stop this worker, rolling back before accepting any further work.
+            let healthy = !matches!(&result, Err((INTERNAL_ERROR, _)));
+            let _ = reply.send(result);
+            healthy
+        })))
+        .map_err(|_| (DATASTORE_CLOSED, "Datastore is closed".into()))?;
+    response
+        .recv()
+        .map_err(|_| (DATASTORE_CLOSED, "Datastore worker stopped".into()))?
+}
+
+fn database_error(err: TestDatastoreError) -> Failure {
+    (DATABASE_ERROR, err.to_string())
+}
+
+/// Initialize output slots before performing an operation, including on failure.
+/// Callers must supply valid, nonoverlapping storage, as described in the header.
+unsafe fn with_output<T: Default>(
+    out: *mut T,
+    error: *mut StdbTestBuffer,
+    f: impl FnOnce() -> Result<T, Failure>,
+) -> u32 {
+    let result = contain_panic(|| {
+        if !out.is_null() {
+            unsafe { out.write(T::default()) };
+        }
+        if !error.is_null() {
+            unsafe { error.write(StdbTestBuffer::EMPTY) };
+        }
+        if out.is_null() || error.is_null() {
+            return Err((INVALID_ARGUMENT, "Null output slot".into()));
+        }
+        unsafe { out.write(f()?) };
+        Ok(())
+    });
+    match result {
+        Ok(()) => OK,
+        Err((status, message)) => {
+            if !error.is_null() {
+                unsafe { error.write(StdbTestBuffer::from_message(message)) };
+            }
+            status
+        }
+    }
+}
+
+unsafe fn input_bytes<'a>(data: *const u8, len: u64) -> Result<&'a [u8], Failure> {
+    if (data.is_null() && len != 0) || len > isize::MAX as u64 {
+        return Err((INVALID_ARGUMENT, "Invalid input pointer or length".into()));
+    }
+    Ok(if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(data, len as usize) }
+    })
+}
 
 fn contain_panic<T>(f: impl FnOnce() -> Result<T, Failure>) -> Result<T, Failure> {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|payload| {
@@ -64,7 +154,7 @@ fn create(schema: &[u8]) -> Result<StdbTestDatastore, Failure> {
     }
 
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
-    let (shutdown, requests) = mpsc::channel();
+    let (requests, commands) = mpsc::channel();
     let worker = thread::Builder::new()
         .name("stdb-test-datastore".into())
         .spawn(move || {
@@ -80,10 +170,15 @@ fn create(schema: &[u8]) -> Result<StdbTestDatastore, Failure> {
             });
             match result {
                 Ok(datastore) => {
+                    let mut state = Worker::new(datastore);
                     if ready_tx.send(Ok(())).is_ok() {
-                        let _ = requests.recv();
+                        while let Ok(Command::Run(run)) = commands.recv() {
+                            if !run(&mut state) {
+                                break;
+                            }
+                        }
                     }
-                    drop(datastore);
+                    drop(state);
                 }
                 Err(err) => {
                     let _ = ready_tx.send(Err(err));
@@ -96,13 +191,13 @@ fn create(schema: &[u8]) -> Result<StdbTestDatastore, Failure> {
         .recv()
         .unwrap_or_else(|err| Err((INTERNAL_ERROR, err.to_string())));
     if let Err(err) = result {
-        drop(shutdown);
+        drop(requests);
         if let Err(payload) = worker.join() {
             std::panic::resume_unwind(payload);
         }
         return Err(err);
     }
-    Ok(StdbTestDatastore { shutdown, worker })
+    Ok(StdbTestDatastore { requests, worker })
 }
 
 #[unsafe(no_mangle)]
@@ -119,36 +214,11 @@ pub unsafe extern "C" fn stdb_test_v1_datastore_create(
     out: *mut *mut StdbTestDatastore,
     error: *mut StdbTestBuffer,
 ) -> u32 {
-    let result = contain_panic(|| {
-        if !out.is_null() {
-            unsafe { out.write(ptr::null_mut()) };
-        }
-        if !error.is_null() {
-            unsafe { error.write(StdbTestBuffer::EMPTY) };
-        }
-        if out.is_null() || error.is_null() || (schema.is_null() && schema_len != 0) || schema_len > isize::MAX as u64 {
-            return Err((
-                INVALID_ARGUMENT,
-                "Invalid schema pointer, length, or output slot".into(),
-            ));
-        }
-        let bytes = if schema_len == 0 {
-            &[]
-        } else {
-            unsafe { std::slice::from_raw_parts(schema, schema_len as usize) }
-        };
-        let datastore = create(bytes)?;
-        unsafe { out.write(Box::into_raw(Box::new(datastore))) };
-        Ok(())
-    });
-    match result {
-        Ok(()) => OK,
-        Err((status, message)) => {
-            if !error.is_null() {
-                unsafe { error.write(StdbTestBuffer::from_message(message)) };
-            }
-            status
-        }
+    unsafe {
+        with_output(out, error, || {
+            let datastore = create(input_bytes(schema, schema_len)?)?;
+            Ok(Box::into_raw(Box::new(datastore)))
+        })
     }
 }
 
@@ -158,8 +228,9 @@ pub unsafe extern "C" fn stdb_test_v1_datastore_create(
 pub unsafe extern "C" fn stdb_test_v1_datastore_destroy(datastore: *mut StdbTestDatastore) -> u32 {
     contain_panic(|| {
         if !datastore.is_null() {
-            let StdbTestDatastore { shutdown, worker } = *unsafe { Box::from_raw(datastore) };
-            drop(shutdown);
+            let StdbTestDatastore { requests, worker } = *unsafe { Box::from_raw(datastore) };
+            let _ = requests.send(Command::Shutdown);
+            drop(requests);
             if let Err(payload) = worker.join() {
                 std::panic::resume_unwind(payload);
             }

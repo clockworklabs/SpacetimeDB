@@ -9154,6 +9154,7 @@ name = "spacetimedb-test-datastore-ffi"
 version = "2.13.0"
 dependencies = [
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-test-datastore",
 ]
 
