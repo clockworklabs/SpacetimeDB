@@ -5,9 +5,6 @@
 
 use spacetimedb::spacetimedb_lib as __lib;
 
-
-
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Identity(pub spacetimedb::Identity);
 
@@ -20,29 +17,16 @@ impl spacetimedb::SpacetimeType for Identity {
 }
 
 impl spacetimedb::Serialize for Identity {
-    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(
-        &self,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         <spacetimedb::Identity as spacetimedb::Serialize>::serialize(&self.0, serializer)
     }
 }
 
 impl<'de> spacetimedb::Deserialize<'de> for Identity {
-    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
     }
 }
-
-
-
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct RemoteModule;
-
-
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -50,7 +34,6 @@ pub struct ReceivePingArgs {
     pub target: Identity,
     pub body: String,
 }
-
 
 #[doc(hidden)]
 macro_rules! __spacetimedb_typecheck_outbox_receive_ping_target_reject_duplicate {
@@ -93,7 +76,6 @@ macro_rules! __spacetimedb_typecheck_outbox_receive_ping_target {
 #[doc(hidden)]
 pub(crate) use __spacetimedb_typecheck_outbox_receive_ping_target;
 
-
 #[doc(hidden)]
 macro_rules! __spacetimedb_typecheck_outbox_receive_ping_body_reject_duplicate {
     ($module:ident;) => {};
@@ -135,7 +117,6 @@ macro_rules! __spacetimedb_typecheck_outbox_receive_ping_body {
 #[doc(hidden)]
 pub(crate) use __spacetimedb_typecheck_outbox_receive_ping_body;
 
-
 #[doc(hidden)]
 macro_rules! __spacetimedb_typecheck_outbox_receive_ping {
     ($module:path, { $($columns:tt)* }) => {{
@@ -149,7 +130,6 @@ macro_rules! __spacetimedb_typecheck_outbox_receive_ping {
 #[doc(hidden)]
 pub(crate) use __spacetimedb_typecheck_outbox_receive_ping;
 
-
 #[allow(non_camel_case_types)]
 pub struct receive_ping;
 
@@ -159,12 +139,9 @@ impl spacetimedb::rt::RemoteReducer for receive_ping {
     type Args = ReceivePingArgs;
 }
 
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct NoopArgs {
-    }
-
+pub struct NoopArgs {}
 
 #[doc(hidden)]
 macro_rules! __spacetimedb_typecheck_outbox_noop {
@@ -177,7 +154,6 @@ macro_rules! __spacetimedb_typecheck_outbox_noop {
 
 #[doc(hidden)]
 pub(crate) use __spacetimedb_typecheck_outbox_noop;
-
 
 #[allow(non_camel_case_types)]
 pub struct noop;
