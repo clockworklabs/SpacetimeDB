@@ -10,89 +10,9 @@ const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", 
 const CRATES_IO_API: &str = "https://crates.io/api/v1";
 const MAX_PUBLISH_RETRIES: u32 = 5;
 
-#[derive(Debug, PartialEq, Eq)]
 enum PublishOutcome {
     Complete,
     RateLimited,
-}
-
-fn run_publish(cmd: &mut Command, dry_run: bool) -> Result<PublishOutcome, String> {
-    util::print_command(cmd);
-    let mut child = cmd
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
-    let mut rate_limited = false;
-    // Keep Cargo's progress visible while watching for the registry's HTTP 429 response.
-    let read_result = BufReader::new(child.stderr.take().unwrap())
-        .lines()
-        .try_for_each(|line| {
-            let line = line?;
-            eprintln!("{line}");
-            rate_limited |= line.contains("429 Too Many Requests");
-            Ok::<_, std::io::Error>(())
-        });
-    let status = child
-        .wait()
-        .map_err(|err| format!("Failed to wait for cargo publish: {err}"))?;
-    read_result.map_err(|err| format!("Failed to read cargo publish output: {err}"))?;
-    if status.success() {
-        Ok(PublishOutcome::Complete)
-    } else if rate_limited && !dry_run {
-        Ok(PublishOutcome::RateLimited)
-    } else {
-        Err(format!("cargo publish failed: {status}"))
-    }
-}
-
-fn publish_with_retries(
-    crates: &[String],
-    mut is_published: impl FnMut(&str) -> Result<bool, String>,
-    mut publish: impl FnMut(&[&String]) -> Result<PublishOutcome, String>,
-    mut sleep: impl FnMut(Duration),
-) -> Result<(), String> {
-    let mut retries = 0;
-    let mut previous_remaining = None;
-    loop {
-        let mut unpublished = Vec::new();
-        println!("Checking for already-published crates..");
-        for crate_name in crates {
-            if is_published(crate_name)? {
-                println!("Crate {crate_name} already published; skipping.");
-            } else {
-                println!("Crate {crate_name} must be published.");
-                unpublished.push(crate_name);
-            }
-        }
-        // Only count retries without progress. Check again even after the last allowed
-        // retry, since that attempt may have uploaded more crates before hitting the limit.
-        if let Some(previous) = previous_remaining {
-            if unpublished.len() < previous {
-                retries = 0;
-            }
-            if !unpublished.is_empty() {
-                if retries == MAX_PUBLISH_RETRIES {
-                    return Err(format!(
-                        "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries without progress"
-                    ));
-                }
-                retries += 1;
-                // crates.io allows one new version of an existing crate per minute after the initial burst.
-                // https://crates.io/docs/rate-limits
-                let delay = Duration::from_secs(60);
-                println!(
-                    "crates.io rate limited cargo publish; retrying in {} seconds ({retries}/{MAX_PUBLISH_RETRIES} without progress).",
-                    delay.as_secs(),
-                );
-                sleep(delay);
-            }
-        }
-        previous_remaining = Some(unpublished.len());
-        match publish(&unpublished)? {
-            PublishOutcome::Complete => return Ok(()),
-            PublishOutcome::RateLimited => continue,
-        }
-    }
 }
 
 pub struct CratesRelease {
@@ -130,7 +50,32 @@ impl CratesRelease {
         if let Some(home) = &cargo_home {
             cmd.env("CARGO_HOME", home.path());
         }
-        run_publish(&mut cmd, self.dry_run)
+        util::print_command(&cmd);
+        let mut child = cmd
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| format!("Failed to execute cargo publish: {err}"))?;
+        let mut rate_limited = false;
+        // Keep Cargo's progress visible while watching for the registry's HTTP 429 response.
+        let read_result = BufReader::new(child.stderr.take().unwrap())
+            .lines()
+            .try_for_each(|line| {
+                let line = line?;
+                eprintln!("{line}");
+                rate_limited |= line.contains("429 Too Many Requests");
+                Ok::<_, std::io::Error>(())
+            });
+        let status = child
+            .wait()
+            .map_err(|err| format!("Failed to wait for cargo publish: {err}"))?;
+        read_result.map_err(|err| format!("Failed to read cargo publish output: {err}"))?;
+        if status.success() {
+            Ok(PublishOutcome::Complete)
+        } else if rate_limited && !self.dry_run {
+            Ok(PublishOutcome::RateLimited)
+        } else {
+            Err(format!("cargo publish failed: {status}"))
+        }
     }
 
     fn add_crate_owners(&self, crate_name: &str) -> Result<(), String> {
@@ -217,16 +162,50 @@ impl ReleaseTarget for CratesRelease {
                 .next()
                 .unwrap();
             // Recheck after every rate limit: Cargo may have uploaded part of the batch.
-            publish_with_retries(
-                &crates,
-                |crate_name| {
+            let mut retries = 0;
+            let mut previous_remaining = None;
+            loop {
+                let mut unpublished = Vec::new();
+                println!("Checking for already-published crates..");
+                for crate_name in &crates {
                     // Pace requests to respect crates.io's API guidance.
                     std::thread::sleep(Duration::from_secs(1));
-                    is_published(&client, CRATES_IO_API, crate_name, crates_io_version)
-                },
-                |unpublished| self.publish_crates(&workspace_root, unpublished),
-                std::thread::sleep,
-            )?;
+                    if is_published(&client, CRATES_IO_API, crate_name, crates_io_version)? {
+                        println!("Crate {crate_name} already published; skipping.");
+                    } else {
+                        println!("Crate {crate_name} must be published.");
+                        unpublished.push(crate_name);
+                    }
+                }
+                // Only count retries without progress. Check again even after the last allowed
+                // retry, since that attempt may have uploaded more crates before hitting the limit.
+                if let Some(previous) = previous_remaining {
+                    if unpublished.len() < previous {
+                        retries = 0;
+                    }
+                    if !unpublished.is_empty() {
+                        if retries == MAX_PUBLISH_RETRIES {
+                            return Err(format!(
+                                "cargo publish still rate limited after {MAX_PUBLISH_RETRIES} retries without progress"
+                            ));
+                        }
+                        retries += 1;
+                        // crates.io allows one new version of an existing crate per minute after the initial burst.
+                        // https://crates.io/docs/rate-limits
+                        let delay = Duration::from_secs(60);
+                        println!(
+                            "crates.io rate limited cargo publish; retrying in {} seconds ({retries}/{MAX_PUBLISH_RETRIES} without progress).",
+                            delay.as_secs(),
+                        );
+                        std::thread::sleep(delay);
+                    }
+                }
+                previous_remaining = Some(unpublished.len());
+                match self.publish_crates(&workspace_root, &unpublished)? {
+                    PublishOutcome::Complete => break,
+                    PublishOutcome::RateLimited => continue,
+                }
+            }
         }
         if !self.dry_run {
             for crate_name in &crates {
