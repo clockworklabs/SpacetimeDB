@@ -6,12 +6,12 @@ compile_error!("spacetimedb-test-datastore is only supported for native module t
 use std::cell::RefCell;
 use std::sync::Arc;
 
-#[cfg(feature = "queries")]
-use spacetimedb_core::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
 #[cfg(feature = "queries")]
 use spacetimedb_datastore::{execution_context::Workload, traits::IsolationLevel};
 use spacetimedb_engine::error::{DBError, DatastoreError, IndexError, SequenceError};
+#[cfg(feature = "queries")]
+use spacetimedb_engine::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_engine::relational_db::{tests_utils, MutTx, RelationalDB, Tx};
 #[cfg(feature = "queries")]
 use spacetimedb_engine::sql::ast::SchemaViewer;
@@ -28,7 +28,6 @@ use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_query::{compile_sql_stmt, execute_select_stmt};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use thiserror::Error;
 
 /// A [`RelationalDB`] initialized from a module definition for native unit tests.
@@ -52,9 +51,9 @@ impl TestDatastore {
         let db = test_db.db;
 
         tests_utils::with_auto_commit(&db, |tx| {
-            for table in module_def.tables() {
-                let schema = TableSchema::from_module_def(&module_def, table, (), TableId::SENTINEL);
-                db.create_table(tx, schema)?;
+            for (prefix, owning_def, table) in module_def.all_tables_with_prefix() {
+                spacetimedb_engine::update::create_table_from_def_with_prefix(&db, tx, owning_def, table, &prefix)
+                    .map_err(DBError::Other)?;
             }
             Ok::<(), TestDatastoreError>(())
         })?;
@@ -264,22 +263,16 @@ impl TestDatastore {
         });
 
         let mut metrics = ExecutionMetrics::default();
-        let rows = execute_select_stmt(
-            &auth,
-            stmt,
-            &spacetimedb_core::subscription::tx::DeltaTx::from(&*tx),
-            &mut metrics,
-            |plan| {
-                check_row_limit(
-                    &[&plan],
-                    &self.db,
-                    &tx,
-                    |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
-                    &auth,
-                )?;
-                Ok(plan)
-            },
-        )
+        let rows = execute_select_stmt(&auth, stmt, &*tx, &mut metrics, |plan| {
+            check_row_limit(
+                &[&plan],
+                &self.db,
+                &tx,
+                |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
+                &auth,
+            )?;
+            Ok(plan)
+        })
         .map_err(TestDatastoreError::Query)?;
 
         tx.metrics.merge(metrics);

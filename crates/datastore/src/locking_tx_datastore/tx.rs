@@ -10,8 +10,10 @@ use crate::error::IndexError;
 use crate::execution_context::ExecutionContext;
 use crate::traits::TxOffset;
 #[cfg(feature = "execution")]
-use spacetimedb_execution::Datastore;
+use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::metrics::ExecutionMetrics;
+#[cfg(feature = "execution")]
+use spacetimedb_lib::ProductValue;
 #[cfg(feature = "execution")]
 use spacetimedb_primitives::IndexId;
 use spacetimedb_primitives::{ColList, TableId};
@@ -83,6 +85,42 @@ impl Datastore for TxId {
         point: &AlgebraicValue,
     ) -> anyhow::Result<Self::PointIndexIter<'a>> {
         self.with_index(table_id, index_id, |i| i.seek_point_via_algebraic_value(point))
+    }
+}
+
+// A plain read-only transaction has no subscription delta. This lets SELECT
+// evaluation use it directly, without the server's DeltaTx subscription wrapper.
+#[cfg(feature = "execution")]
+impl DeltaStore for TxId {
+    fn num_inserts(&self, _: TableId) -> usize {
+        0
+    }
+    fn num_deletes(&self, _: TableId) -> usize {
+        0
+    }
+    fn inserts_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
+        None
+    }
+    fn deletes_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
+        None
+    }
+    fn index_scan_range_for_delta(
+        &self,
+        _: TableId,
+        _: IndexId,
+        _: spacetimedb_lib::query::Delta,
+        _: impl RangeBounds<AlgebraicValue>,
+    ) -> impl Iterator<Item = Row<'_>> {
+        std::iter::empty()
+    }
+    fn index_scan_point_for_delta(
+        &self,
+        _: TableId,
+        _: IndexId,
+        _: spacetimedb_lib::query::Delta,
+        _: &AlgebraicValue,
+    ) -> impl Iterator<Item = Row<'_>> {
+        std::iter::empty()
     }
 }
 

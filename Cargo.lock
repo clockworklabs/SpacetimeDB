@@ -8617,7 +8617,9 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
+ "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-runtime",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -9138,7 +9140,6 @@ version = "2.13.0"
 dependencies = [
  "anyhow",
  "scopeguard",
- "spacetimedb-core",
  "spacetimedb-datastore",
  "spacetimedb-engine",
  "spacetimedb-expr",

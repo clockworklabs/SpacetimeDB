@@ -1,4 +1,5 @@
 use super::*;
+use spacetimedb_lib::{bsatn::ToBsatn, Identity};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_test_datastore::TestTransaction;
 
@@ -44,6 +45,60 @@ impl Worker {
 pub struct StdbTestTransaction {
     requests: Sender<Command>,
     id: u64,
+}
+
+/// # Safety
+/// Pointers must satisfy the ownership and memory contract in the C header.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stdb_test_v1_query(
+    datastore: *const StdbTestDatastore,
+    sql: *const u8,
+    sql_len: u64,
+    identity: *const u8,
+    identity_len: u64,
+    out: *mut StdbTestBuffer,
+    error: *mut StdbTestBuffer,
+) -> u32 {
+    unsafe {
+        with_output(out, error, || {
+            let datastore = datastore
+                .as_ref()
+                .ok_or_else(|| (INVALID_ARGUMENT, "Null datastore".into()))?;
+            let sql = std::str::from_utf8(input_bytes(sql, sql_len)?)
+                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?
+                .to_owned();
+            let identity = input_bytes(identity, identity_len)?;
+            if identity.len() != 32 {
+                return Err((
+                    INVALID_ARGUMENT,
+                    "Database identity must be a 32-byte BSATN Identity".into(),
+                ));
+            }
+            let identity: Identity = bsatn::from_slice(identity).map_err(|err| (INVALID_ARGUMENT, err.to_string()))?;
+            let bytes = request(&datastore.requests, move |state| {
+                if state.transaction.is_some() {
+                    return Err((
+                        TRANSACTION_ACTIVE,
+                        "Queries cannot run while a transaction is active".into(),
+                    ));
+                }
+                let rows = state.datastore.run_select_query(&sql, identity).map_err(|err| {
+                    if matches!(err, TestDatastoreError::NonSelectQuery) {
+                        (NOT_SELECT, err.to_string())
+                    } else {
+                        database_error(err)
+                    }
+                })?;
+                let rows = rows
+                    .iter()
+                    .map(ToBsatn::to_bsatn_vec)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|err| database_error(err.into()))?;
+                bsatn::to_vec(&rows).map_err(|err| database_error(err.into()))
+            })?;
+            Ok(StdbTestBuffer::from_bytes(bytes))
+        })
+    }
 }
 
 impl StdbTestTransaction {

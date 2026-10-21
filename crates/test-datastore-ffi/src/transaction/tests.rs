@@ -22,6 +22,29 @@ fn take_buffer(mut buffer: StdbTestBuffer) -> Vec<u8> {
 }
 
 impl Database {
+    fn query(&self, sql: &str, identity: Identity, expected: u32) -> Vec<Vec<u8>> {
+        let identity = bsatn::to_vec(&identity).unwrap();
+        let mut output = StdbTestBuffer::EMPTY;
+        call(expected, |error| unsafe {
+            stdb_test_v1_query(
+                self.0,
+                sql.as_ptr(),
+                sql.len() as u64,
+                identity.as_ptr(),
+                identity.len() as u64,
+                &mut output,
+                error,
+            )
+        });
+        let bytes = take_buffer(output);
+        if expected != OK {
+            assert!(bytes.is_empty());
+            vec![]
+        } else {
+            bsatn::from_slice(&bytes).unwrap()
+        }
+    }
+
     fn new() -> Self {
         let mut builder = RawModuleDefV10Builder::new();
         builder
@@ -54,6 +77,84 @@ impl Database {
         });
         Transaction(handle)
     }
+}
+
+#[test]
+fn queries_use_committed_state_and_release_locks_on_failure() {
+    let db = Database::new();
+    let tx = db.begin();
+    let id = tx.insert(42);
+    db.query("SELECT * FROM person", Identity::ZERO, TRANSACTION_ACTIVE);
+    tx.commit();
+    for (sql, expected) in [
+        (r#"UPDATE person SET value = 99"#, NOT_SELECT),
+        (r#"INSERT INTO person (id, value) VALUES (999, 99)"#, NOT_SELECT),
+        (r#"DELETE FROM person"#, NOT_SELECT),
+        (r#"SELECT * FROM missing"#, DATABASE_ERROR),
+        (r#"SELECT"#, DATABASE_ERROR),
+        (r#"SELECT * FROM person; DELETE FROM person"#, DATABASE_ERROR),
+    ] {
+        db.query(sql, Identity::ZERO, expected);
+        let rows = db.query("SELECT * FROM person", Identity::ZERO, OK);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(bsatn::from_slice::<(u64, i64)>(&rows[0]).unwrap(), (id, 42));
+        // A write transaction must also remain usable after query failure.
+        assert_eq!(db.begin().count(), 1);
+    }
+    assert!(db
+        .query("SELECT * FROM person WHERE value = 0", Identity::ZERO, OK)
+        .is_empty());
+}
+
+#[test]
+fn queries_resolve_mounted_tables_and_database_identity() {
+    let mut library = RawModuleDefV10Builder::new();
+    library
+        .build_table_with_new_type(
+            "entries",
+            ProductType::from([("id", AlgebraicType::U64), ("owner", AlgebraicType::identity())]),
+            true,
+        )
+        .finish();
+    let mut root = RawModuleDefV10Builder::new();
+    root.add_submodule("audit", library.finish());
+    let db = Database::from_schema(root);
+    let tx = db.begin();
+    let mut table = 0;
+    call(OK, |error| unsafe {
+        stdb_test_v1_table_id(tx.0, b"audit.entries".as_ptr(), 13, &mut table, error)
+    });
+    let identity = Identity::from_byte_array(std::array::from_fn(|i| i as u8 + 1));
+    for (id, owner) in [(7_u64, identity), (8, Identity::ZERO)] {
+        let row = bsatn::to_vec(&(id, owner)).unwrap();
+        let mut output = StdbTestBuffer::EMPTY;
+        call(OK, |error| unsafe {
+            stdb_test_v1_table_insert(tx.0, table, row.as_ptr(), row.len() as u64, &mut output, error)
+        });
+        assert!(take_buffer(output).is_empty());
+    }
+    tx.commit();
+    let sql = r#"SELECT id FROM "audit"."entries" WHERE owner = :sender"#;
+    for (owner, expected) in [(identity, 7_u64), (Identity::ZERO, 8)] {
+        let rows = db.query(sql, owner, OK);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(bsatn::from_slice::<(u64,)>(&rows[0]).unwrap(), (expected,));
+    }
+    let identity = bsatn::to_vec(&identity).unwrap();
+    let mut output = StdbTestBuffer::EMPTY;
+    call(INVALID_ARGUMENT, |error| unsafe {
+        stdb_test_v1_query(
+            db.0,
+            sql.as_ptr(),
+            sql.len() as u64,
+            identity.as_ptr(),
+            31,
+            &mut output,
+            error,
+        )
+    });
+    assert!(take_buffer(output).is_empty());
+    assert_eq!(db.query(sql, Identity::ZERO, OK).len(), 1);
 }
 
 impl Drop for Database {

@@ -21,6 +21,7 @@ const TRANSACTION_ACTIVE: u32 = 6;
 const DATASTORE_CLOSED: u32 = 7;
 const UNIQUE_VIOLATION: u32 = 8;
 const AUTO_INC_OVERFLOW: u32 = 9;
+const NOT_SELECT: u32 = 10;
 
 #[repr(C)]
 pub struct StdbTestBuffer {
