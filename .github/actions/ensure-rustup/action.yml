@@ -5,24 +5,26 @@ runs:
   steps:
     - name: Print current rustup version
       id: before
-      shell: bash
-      run: |
-        if ! command -v rustup >/dev/null 2>&1; then
-          echo "Rustup before: not installed"
-          echo "installed=false" >> "$GITHUB_OUTPUT"
-          echo "outdated=true" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        echo "installed=true" >> "$GITHUB_OUTPUT"
-        current="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
-        echo "Rustup before: $current"
-        version="$(awk '{print $2}' <<< "$current")"
-        if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
-          [[ "$(printf '%s\n' 1.29.2 "$version" | sort -V | head -n1)" == 1.29.2 ]]; then
-          echo "outdated=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "outdated=true" >> "$GITHUB_OUTPUT"
-        fi
+      uses: actions/github-script@v7
+      env:
+        ENSURE_RUSTUP_ACTION_PATH: ${{ github.action_path }}
+      with:
+        script: |
+          const semver = require(`${process.env.ENSURE_RUSTUP_ACTION_PATH}/semver.cjs`);
+          const installed = Boolean(await io.which('rustup'));
+          core.setOutput('installed', installed);
+          if (!installed) {
+            core.info('Rustup before: not installed');
+            core.setOutput('outdated', true);
+            return;
+          }
+          const { stdout } = await exec.getExecOutput('rustup', ['--version'], {
+            env: { ...process.env, RUSTUP_AUTO_INSTALL: '0' },
+            silent: true,
+          });
+          core.info(`Rustup before: ${stdout.trim()}`);
+          const version = stdout.trim().split(/\s+/)[1];
+          core.setOutput('outdated', !semver.valid(version) || semver.lt(version, '1.29.2'));
 
     - name: Update outdated rustup
       id: update
@@ -66,14 +68,18 @@ runs:
         echo "$cargo_home/bin" >> "$GITHUB_PATH"
 
     - name: Print and verify updated rustup version
-      shell: bash
-      run: |
-        current="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
-        echo "Rustup after: $current"
-        version="$(awk '{print $2}' <<< "$current")"
-        if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
-          [[ "$(printf '%s\n' 1.29.2 "$version" | sort -V | head -n1)" == 1.29.2 ]]; then
-          exit 0
-        fi
-        echo "::error::Rustup must be at least 1.29.2 after installation or update"
-        exit 1
+      uses: actions/github-script@v7
+      env:
+        ENSURE_RUSTUP_ACTION_PATH: ${{ github.action_path }}
+      with:
+        script: |
+          const semver = require(`${process.env.ENSURE_RUSTUP_ACTION_PATH}/semver.cjs`);
+          const { stdout } = await exec.getExecOutput('rustup', ['--version'], {
+            env: { ...process.env, RUSTUP_AUTO_INSTALL: '0' },
+            silent: true,
+          });
+          core.info(`Rustup after: ${stdout.trim()}`);
+          const version = stdout.trim().split(/\s+/)[1];
+          if (!semver.valid(version) || semver.lt(version, '1.29.2')) {
+            core.setFailed('Rustup must be at least 1.29.2 after installation or update');
+          }
