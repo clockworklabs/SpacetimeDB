@@ -202,6 +202,7 @@ jobs:
         run: |
           rm -fr /stdb/*
 
+      # Rustup comes from the job container, so updating the fleet VM image does not update it.
       - name: Check and update rustup
         uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
       - name: Install valgrind & iai-callgrind-runner
