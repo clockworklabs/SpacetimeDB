@@ -14,6 +14,8 @@ public partial struct Entry
 
 public static class Schema
 {
+    public static NamespaceRegistry CreateNamespaces() => AssemblyDescriptor.CreateNamespaces();
+
     public static byte[] Build()
     {
         var builder = new ModuleBuilder();

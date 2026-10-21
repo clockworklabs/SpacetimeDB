@@ -45,6 +45,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SpacetimeDB.Testing" />
+    <InternalsVisibleTo Include="SpacetimeDB.Testing.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <UpToDateCheckInput Include="bindings.c" />
     <UpToDateCheckInput Include="driver.h" />
   </ItemGroup>

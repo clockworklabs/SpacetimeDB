@@ -8,6 +8,11 @@ using System.Diagnostics.CodeAnalysis;
 
 public sealed class Local : LocalBase
 {
+    public Local() { }
+
+    internal Local(Internal.DatabaseAccess access)
+        : base(access) { }
+
     private static readonly Local Root = new();
 
     private static Local?[] Instances => field ??= new Local?[Internal.Module.InstanceCount];
@@ -31,7 +36,12 @@ public sealed record ReducerContext
         {
             return this;
         }
-        var selected = this with { Db = Local.ForInstance(instanceId) };
+        var selected = this with
+        {
+            Db = Db.Access is { } access
+                ? new Local(access) { InstanceId = instanceId }
+                : Local.ForInstance(instanceId),
+        };
         selected.selectionSource = selectionSource ?? this;
         return selected;
     }
@@ -46,7 +56,16 @@ public sealed record ReducerContext
 
     // **Note:** must be 0..=u32::MAX
     internal int CounterUuid;
-    public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
+    public Identity DatabaseIdentity
+    {
+        get
+        {
+            if (Db.Access is not { } access)
+                return Internal.IReducerContext.GetDatabaseIdentity();
+            access.CheckActive();
+            return access.Backend.DatabaseIdentity;
+        }
+    }
 
     // We keep this property for compatibility with existing module code.
     [global::System.Obsolete(
@@ -62,13 +81,30 @@ public sealed record ReducerContext
         AuthCtx? senderAuth = null,
         int instanceId = 0
     )
-        : base(Local.ForInstance(instanceId))
+        : this(
+            Local.ForInstance(instanceId),
+            identity,
+            connectionId,
+            random,
+            time,
+            senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity)
+        ) { }
+
+    internal ReducerContext(
+        Local db,
+        Identity identity,
+        ConnectionId? connectionId,
+        Random random,
+        Timestamp time,
+        AuthCtx senderAuth
+    )
+        : base(db)
     {
         Sender = identity;
         ConnectionId = connectionId;
         Rng = random;
         Timestamp = time;
-        SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
+        SenderAuth = senderAuth;
         CounterUuid = 0;
     }
 

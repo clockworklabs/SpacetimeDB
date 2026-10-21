@@ -556,6 +556,13 @@ public partial class Local
 {
 #if NET10_0_OR_GREATER
     internal int InstanceId { get; init; }
+
+    // Null retains the host path without allocating a managed backend or scope.
+    internal DatabaseAccess? Access { get; }
+
+    public Local() { }
+
+    internal Local(DatabaseAccess access) => Access = access;
 #endif
 }
 
@@ -575,5 +582,11 @@ public sealed partial class LocalReadOnly
 
     internal static LocalReadOnly ForInstance(int instanceId) =>
         instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
+
+    internal DatabaseAccess? Access { get; }
+
+    public LocalReadOnly() { }
+
+    internal LocalReadOnly(DatabaseAccess access) => Access = access;
 #endif
 }
