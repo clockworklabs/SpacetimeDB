@@ -49,7 +49,7 @@ jobs:
               - '!docs/**'
 
       - name: Check and update rustup
-        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@7b062ebe7346a35385911a3e9484a52632fe243d # rustup >= 1.29.2
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
         if: steps.filter.outputs.non_docs == 'true'
       - id: dispatch
         name: Select or trigger tests
