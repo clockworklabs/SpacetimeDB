@@ -4175,8 +4175,7 @@ impl MutTxId {
 
         // Mark every row in the committed state as deleted.
         for row in commit_table.scan_rows(commit_bs) {
-            delete_table.insert(row.pointer());
-            rows_removed += 1;
+            rows_removed += u64::from(delete_table.insert(row.pointer()));
         }
 
         Ok(rows_removed)

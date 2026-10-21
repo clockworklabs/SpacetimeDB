@@ -19,6 +19,8 @@ const INTERNAL_ERROR: u32 = 4;
 const TRANSACTION_FINISHED: u32 = 5;
 const TRANSACTION_ACTIVE: u32 = 6;
 const DATASTORE_CLOSED: u32 = 7;
+const UNIQUE_VIOLATION: u32 = 8;
+const AUTO_INC_OVERFLOW: u32 = 9;
 
 #[repr(C)]
 pub struct StdbTestBuffer {
@@ -90,7 +92,13 @@ fn request<T: Send + 'static>(
 }
 
 fn database_error(err: TestDatastoreError) -> Failure {
-    (DATABASE_ERROR, err.to_string())
+    use spacetimedb_primitives::errno;
+    let status = match err.insert_errno_code() {
+        Some(code) if code == errno::UNIQUE_ALREADY_EXISTS.get() => UNIQUE_VIOLATION,
+        Some(code) if code == errno::AUTO_INC_OVERFLOW.get() => AUTO_INC_OVERFLOW,
+        _ => DATABASE_ERROR,
+    };
+    (status, err.to_string())
 }
 
 /// Initialize output slots before performing an operation, including on failure.

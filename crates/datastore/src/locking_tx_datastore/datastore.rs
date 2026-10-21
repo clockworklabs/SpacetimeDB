@@ -2147,6 +2147,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_clear_counts_only_visible_rows() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+        let first = u32_str_u32(1, "First", 18);
+        insert(&datastore, &mut tx, table_id, &first)?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Second", 19))?;
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(datastore.delete_by_rel_mut_tx(&mut tx, table_id, [first]), 1);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(3, "Third", 20))?;
+        assert_eq!(tx.clear_table(table_id)?, 2);
+        assert_eq!(tx.clear_table(table_id)?, 0);
+        assert!(all_rows(&datastore, &tx, table_id).is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(1, "Foo", 18); // 0 will be ignored.

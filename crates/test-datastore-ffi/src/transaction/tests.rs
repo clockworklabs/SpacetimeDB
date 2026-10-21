@@ -32,7 +32,13 @@ impl Database {
             )
             .with_auto_inc_primary_key(0)
             .with_index_no_accessor_name(btree(0), "person_id_idx")
+            .with_index_no_accessor_name(btree(1), "person_value_idx")
+            .with_index_no_accessor_name(btree([1, 0]), "person_value_id_idx")
             .finish();
+        Self::from_schema(builder)
+    }
+
+    fn from_schema(builder: RawModuleDefV10Builder) -> Self {
         let schema = bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap();
         let mut handle = ptr::null_mut();
         call(OK, |error| unsafe {
@@ -63,6 +69,51 @@ impl Drop for Transaction {
 }
 
 impl Transaction {
+    fn index(&self, name: &str) -> u32 {
+        let mut id = 0;
+        call(OK, |error| unsafe {
+            stdb_test_v1_index_id(self.0, name.as_ptr(), name.len() as u64, &mut id, error)
+        });
+        id
+    }
+
+    fn point(&self, index: u32, point: &[u8]) -> Vec<(u64, i64)> {
+        let mut output = StdbTestBuffer::EMPTY;
+        call(OK, |error| unsafe {
+            stdb_test_v1_index_scan_point(self.0, index, point.as_ptr(), point.len() as u64, &mut output, error)
+        });
+        decode_rows(output)
+    }
+
+    fn range(&self, index: u32, prefix: &[u8], prefix_elems: u16, start: &[u8], end: &[u8]) -> Vec<(u64, i64)> {
+        let mut output = StdbTestBuffer::EMPTY;
+        call(OK, |error| unsafe {
+            stdb_test_v1_index_scan_range(
+                self.0,
+                index,
+                prefix.as_ptr(),
+                prefix.len() as u64,
+                prefix_elems,
+                start.as_ptr(),
+                start.len() as u64,
+                end.as_ptr(),
+                end.len() as u64,
+                &mut output,
+                error,
+            )
+        });
+        decode_rows(output)
+    }
+
+    fn update(&self, index: u32, row: (u64, i64), expected: u32) -> Vec<u8> {
+        let table = self.table();
+        let row = bsatn::to_vec(&row).unwrap();
+        let mut output = StdbTestBuffer::EMPTY;
+        call(expected, |error| unsafe {
+            stdb_test_v1_table_update(self.0, table, index, row.as_ptr(), row.len() as u64, &mut output, error)
+        });
+        take_buffer(output)
+    }
     fn table(&self) -> u32 {
         let mut id = 0;
         call(OK, |error| unsafe {
@@ -104,6 +155,175 @@ impl Transaction {
     fn commit(&self) {
         call(OK, |error| unsafe { stdb_test_v1_transaction_commit(self.0, error) });
     }
+}
+
+fn decode_rows(output: StdbTestBuffer) -> Vec<(u64, i64)> {
+    let rows: Vec<Vec<u8>> = bsatn::from_slice(&take_buffer(output)).unwrap();
+    rows.iter().map(|row| bsatn::from_slice(row).unwrap()).collect()
+}
+
+#[test]
+fn point_and_composite_range_scans_and_deletes() {
+    use std::ops::Bound::{Excluded, Included, Unbounded};
+    let db = Database::new();
+    let tx = db.begin();
+    let first = tx.insert(10);
+    let second = tx.insert(10);
+    let third = tx.insert(20);
+    tx.commit();
+    let tx = db.begin();
+    let primary = tx.index("person_id_idx");
+    assert_eq!(tx.point(primary, &bsatn::to_vec(&first).unwrap()), [(first, 10)]);
+    let composite = tx.index("person_value_id_idx");
+    assert_eq!(
+        tx.point(composite, &bsatn::to_vec(&(10_i64, second)).unwrap()),
+        [(second, 10)]
+    );
+    let prefix = bsatn::to_vec(&(10_i64,)).unwrap();
+    let start = bsatn::to_vec(&Included(first)).unwrap();
+    let end = bsatn::to_vec(&Excluded(second)).unwrap();
+    assert_eq!(tx.range(primary, &[], 0, &start, &end), [(first, 10)]);
+    assert_eq!(tx.range(composite, &prefix, 1, &start, &end), [(first, 10)]);
+    let unbounded = bsatn::to_vec(&Unbounded::<u64>).unwrap();
+    let mut all = tx.range(composite, &prefix, 1, &unbounded, &unbounded);
+    all.sort();
+    assert_eq!(all, [(first, 10), (second, 10)]);
+    let mut deleted = 0;
+    call(OK, |error| unsafe {
+        stdb_test_v1_index_delete_range(
+            tx.0,
+            composite,
+            prefix.as_ptr(),
+            prefix.len() as u64,
+            1,
+            start.as_ptr(),
+            start.len() as u64,
+            end.as_ptr(),
+            end.len() as u64,
+            &mut deleted,
+            error,
+        )
+    });
+    assert_eq!(deleted, 1);
+    let point = bsatn::to_vec(&10_i64).unwrap();
+    let value_index = tx.index("person_value_idx");
+    call(OK, |error| unsafe {
+        stdb_test_v1_index_delete_point(
+            tx.0,
+            value_index,
+            point.as_ptr(),
+            point.len() as u64,
+            &mut deleted,
+            error,
+        )
+    });
+    assert_eq!(deleted, 1);
+    assert_eq!(tx.rows(), [(third, 20)]);
+    call(OK, |error| unsafe { stdb_test_v1_transaction_rollback(tx.0, error) });
+    let tx = db.begin();
+    assert_eq!(tx.count(), 3);
+    call(OK, |error| unsafe {
+        stdb_test_v1_index_delete_point(
+            tx.0,
+            value_index,
+            point.as_ptr(),
+            point.len() as u64,
+            &mut deleted,
+            error,
+        )
+    });
+    assert_eq!(deleted, 2);
+    tx.commit();
+    assert_eq!(db.begin().rows(), [(third, 20)]);
+}
+
+#[test]
+fn full_row_delete_and_clear_preserve_transaction_and_sequence_semantics() {
+    let db = Database::new();
+    let tx = db.begin();
+    let first = tx.insert(10);
+    tx.insert(20);
+    tx.commit();
+    let tx = db.begin();
+    let table = tx.table();
+    let mut deleted = 0;
+    for (value, expected) in [(99_i64, 0), (10, 1), (10, 0)] {
+        let row = bsatn::to_vec(&(first, value)).unwrap();
+        call(OK, |error| unsafe {
+            stdb_test_v1_table_delete_row(tx.0, table, row.as_ptr(), row.len() as u64, &mut deleted, error)
+        });
+        assert_eq!(deleted, expected);
+    }
+    // Decode the full row before mutating anything.
+    call(DATABASE_ERROR, |error| unsafe {
+        stdb_test_v1_table_delete_row(tx.0, table, ptr::null(), 0, &mut deleted, error)
+    });
+    assert_eq!(deleted, 0);
+    let mut cleared = 0;
+    call(OK, |error| unsafe {
+        stdb_test_v1_table_clear(tx.0, table, &mut cleared, error)
+    });
+    assert_eq!(cleared, 1);
+    assert_eq!(tx.count(), 0);
+    call(OK, |error| unsafe { stdb_test_v1_transaction_rollback(tx.0, error) });
+    let tx = db.begin();
+    assert_eq!(tx.count(), 2);
+    call(OK, |error| unsafe {
+        stdb_test_v1_table_clear(tx.0, table, &mut cleared, error)
+    });
+    assert_eq!(cleared, 2);
+    tx.commit();
+    let tx = db.begin();
+    assert_eq!(tx.count(), 0);
+    assert!(tx.insert(30) > first);
+    tx.commit();
+    assert_eq!(db.begin().count(), 1);
+}
+
+#[test]
+fn indexed_update_returns_generated_columns_and_structured_constraint_errors() {
+    let mut builder = RawModuleDefV10Builder::new();
+    builder
+        .build_table_with_new_type(
+            "person",
+            ProductType::from([("id", AlgebraicType::U64), ("value", AlgebraicType::I64)]),
+            true,
+        )
+        .with_auto_inc_primary_key(0)
+        .with_unique_constraint(1)
+        .with_index_no_accessor_name(btree(0), "person_id_idx")
+        .with_index_no_accessor_name(btree(1), "person_value_idx")
+        .finish();
+    let db = Database::from_schema(builder);
+    let tx = db.begin();
+    let first = tx.insert(10);
+    let second = tx.insert(20);
+    let value_index = tx.index("person_value_idx");
+    assert!(tx.update(value_index, (first, 20), UNIQUE_VIOLATION).is_empty());
+    let bytes = tx.update(value_index, (0, 20), OK);
+    let (generated,): (u64,) = bsatn::from_slice(&bytes).unwrap();
+    assert_ne!(generated, second);
+    let primary = tx.index("person_id_idx");
+    assert_eq!(
+        tx.point(primary, &bsatn::to_vec(&generated).unwrap()),
+        [(generated, 20)]
+    );
+    assert!(tx.update(primary, (generated, 30), OK).is_empty());
+    tx.commit();
+    let tx = db.begin();
+    let mut rows = tx.rows();
+    rows.sort();
+    assert_eq!(rows, [(first, 10), (generated, 30)]);
+    let mut missing = 123;
+    call(DATABASE_ERROR, |error| unsafe {
+        stdb_test_v1_index_id(tx.0, b"missing".as_ptr(), 7, &mut missing, error)
+    });
+    assert_eq!(missing, 0);
+    let mut output = StdbTestBuffer::EMPTY;
+    call(DATABASE_ERROR, |error| unsafe {
+        stdb_test_v1_index_scan_point(tx.0, primary, ptr::null(), 0, &mut output, error)
+    });
+    assert!(take_buffer(output).is_empty());
 }
 
 #[test]
@@ -189,7 +409,7 @@ fn errors_do_not_open_nested_transactions_or_leave_outputs_uninitialized() {
     });
     assert_eq!(id, 0);
     assert_eq!(tx.count(), 0);
-    for (value, expected) in [(10_i64, OK), (11, DATABASE_ERROR)] {
+    for (value, expected) in [(10_i64, OK), (11, UNIQUE_VIOLATION)] {
         let row = bsatn::to_vec(&(999_u64, value)).unwrap();
         call(expected, |error| unsafe {
             stdb_test_v1_table_insert(tx.0, table, row.as_ptr(), row.len() as u64, &mut output, error)
