@@ -1414,8 +1414,13 @@ fn generate_delegates(output: &mut UnrealCppAutogen, module_prefix: &str) {
     writeln!(output, "\tFSpacetimeDBIdentity, Identity,");
     writeln!(output, "\tconst FString&, Token);");
     writeln!(output);
-    writeln!(output, "DECLARE_DYNAMIC_DELEGATE_FiveParams(");
+    writeln!(output, "DECLARE_DYNAMIC_DELEGATE_TwoParams(");
     writeln!(output, "\tF{module_prefix}OnDisconnectDelegate,");
+    writeln!(output, "\tU{module_prefix}DbConnection*, Connection,");
+    writeln!(output, "\tconst FString&, Error);");
+    writeln!(output);
+    writeln!(output, "DECLARE_DYNAMIC_DELEGATE_FiveParams(");
+    writeln!(output, "\tF{module_prefix}OnDisconnectWithReconnectDelegate,");
     writeln!(output, "\tU{module_prefix}DbConnection*, Connection,");
     writeln!(output, "\tconst FString&, Error,");
     writeln!(
@@ -4042,7 +4047,17 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
         output,
+        "    U{module_prefix}DbConnectionBuilder* OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback);"
+    );
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(
+        output,
         "    U{module_prefix}DbConnectionBuilder* OnDisconnect(F{module_prefix}OnDisconnectDelegate Callback);"
+    );
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(
+        output,
+        "    U{module_prefix}DbConnectionBuilder* OnDisconnectWithReconnect(F{module_prefix}OnDisconnectWithReconnectDelegate Callback);"
     );
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(output, "    U{module_prefix}DbConnection* Build();");
@@ -4081,6 +4096,10 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
     writeln!(
         output,
         "    UPROPERTY() F{module_prefix}OnDisconnectDelegate OnDisconnectDelegateInternal;"
+    );
+    writeln!(
+        output,
+        "    UPROPERTY() F{module_prefix}OnDisconnectWithReconnectDelegate OnDisconnectWithReconnectDelegateInternal;"
     );
     writeln!(output, "}};");
     writeln!(output);
@@ -4133,6 +4152,10 @@ fn generate_db_connection_class(
     writeln!(
         output,
         "    UPROPERTY() F{module_prefix}OnDisconnectDelegate OnDisconnectDelegate;"
+    );
+    writeln!(
+        output,
+        "    UPROPERTY() F{module_prefix}OnDisconnectWithReconnectDelegate OnDisconnectWithReconnectDelegate;"
     );
     writeln!(output);
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")");
@@ -4839,10 +4862,28 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
+        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback)"
+    );
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "\treturn Cast<U{module_prefix}DbConnectionBuilder>(OnConnectErrorWithReconnectBase(Callback));"
+    );
+    writeln!(output, "}}");
+    writeln!(
+        output,
         "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnDisconnect(F{module_prefix}OnDisconnectDelegate Callback)"
     );
     writeln!(output, "{{");
     writeln!(output, "\tOnDisconnectDelegateInternal = Callback;");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(
+        output,
+        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnDisconnectWithReconnect(F{module_prefix}OnDisconnectWithReconnectDelegate Callback)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tOnDisconnectWithReconnectDelegateInternal = Callback;");
     writeln!(output, "\treturn this;");
     writeln!(output, "}}");
     writeln!(
@@ -4871,6 +4912,10 @@ fn generate_client_implementation(
         output,
         "\tConnection->OnDisconnectDelegate = OnDisconnectDelegateInternal;"
     );
+    writeln!(
+        output,
+        "\tConnection->OnDisconnectWithReconnectDelegate = OnDisconnectWithReconnectDelegateInternal;"
+    );
     writeln!(output);
     writeln!(output, "\t// Wrap delegates so the base builder can bind them");
     writeln!(output, "\tFOnConnectBaseDelegate BaseConnect;");
@@ -4881,13 +4926,16 @@ fn generate_client_implementation(
     writeln!(output, "\tConnection->SetOnConnectDelegate(BaseConnect);");
     writeln!(output, "\tOnConnectBase(BaseConnect);");
     writeln!(output);
-    writeln!(output, "\tFOnDisconnectBaseDelegate BaseDisconnect;");
+    writeln!(output, "\tFOnDisconnectWithReconnectBaseDelegate BaseDisconnect;");
     writeln!(
         output,
         "\tBaseDisconnect.BindUFunction(Connection, TEXT(\"ForwardOnDisconnect\"));"
     );
-    writeln!(output, "\tConnection->SetOnDisconnectDelegate(BaseDisconnect);");
-    writeln!(output, "\tOnDisconnectBase(BaseDisconnect);");
+    writeln!(
+        output,
+        "\tConnection->SetOnDisconnectWithReconnectDelegate(BaseDisconnect);"
+    );
+    writeln!(output, "\tOnDisconnectWithReconnectBase(BaseDisconnect);");
     writeln!(output);
     writeln!(
         output,
@@ -4942,7 +4990,11 @@ fn generate_client_implementation(
     writeln!(output, "\t}}");
     writeln!(output, "\tif (OnDisconnectDelegate.IsBound())");
     writeln!(output, "\t{{");
-    writeln!(output, "\t\tOnDisconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);");
+    writeln!(output, "\t\tOnDisconnectDelegate.Execute(this, Error);");
+    writeln!(output, "\t}}");
+    writeln!(output, "\tif (OnDisconnectWithReconnectDelegate.IsBound())");
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\tOnDisconnectWithReconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);");
     writeln!(output, "\t}}");
     writeln!(output, "}}");
     writeln!(output);

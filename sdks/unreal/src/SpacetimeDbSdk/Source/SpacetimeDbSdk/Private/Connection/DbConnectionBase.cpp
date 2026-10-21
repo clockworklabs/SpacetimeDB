@@ -16,7 +16,6 @@
 #include "HAL/PlatformTime.h"
 #include <exception>
 #include <stdexcept>
-#include "Internationalization/Regex.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -74,6 +73,25 @@ namespace
 		}
 		return Out;
 	}
+
+	/** Inserts for every applied replay set, merged so each table appears once. */
+	static FDatabaseUpdateType ReplayInsertsToDatabaseUpdate(const FSubscribeBatchAppliedType& Batch)
+	{
+		FQuerySetUpdateType Applied;
+		for (const FSubscribeSetResultType& Result : Batch.Results)
+		{
+			if (Result.Outcome.IsApplied())
+			{
+				Applied.Tables.Append(QueryRowsToDatabaseUpdate(Result.Outcome.GetAsApplied(), false).Tables);
+			}
+		}
+		FTransactionUpdateType Transaction;
+		Transaction.QuerySets.Add(Applied);
+		return TransactionUpdateToDatabaseUpdate(Transaction);
+	}
+
+	/** Close code the server uses to refuse a socket while the previous one in the session is still tearing down. */
+	constexpr int32 SessionBusyCloseCode = 4000;
 
 	static FString DecodeReducerErrorMessage(const TArray<uint8>& ErrorBytes)
 	{
@@ -143,7 +161,7 @@ void UDbConnectionBase::Disconnect()
 	ResetTransport();
 	SuspendSubscriptions(true);
 	ClearPendingOperations(TEXT("Connection closed before the result was received"));
-	OnDisconnectBaseDelegate.ExecuteIfBound(this, FString(), false, 0, 0.0f);
+	BroadcastDisconnect(FString(), false, 0, 0.0f);
 }
 
 bool UDbConnectionBase::IsActive() const
@@ -183,7 +201,7 @@ USubscriptionBuilderBase* UDbConnectionBase::SubscriptionBuilderBase()
 	return NewObject<USubscriptionBuilderBase>();
 }
 
-void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool bAuth)
+void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy)
 {
 	if (bEnded)
 	{
@@ -194,24 +212,22 @@ void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool 
 	Event.bFailure = true;
 	Event.bTerminal = bTerminal;
 	Event.bAuth = bAuth;
+	Event.bSessionBusy = bSessionBusy;
 	IncomingEvents.Add(NextIncomingId++, MoveTemp(Event));
 }
 
 void UDbConnectionBase::HandleWSError(const FString& Error)
 {
-	// Unreal's WebSocket API exposes HTTP upgrade failures as text, not status codes.
-	// Match a status in an HTTP diagnostic, never digits in a URL or port.
-	const FRegexPattern StatusPattern(TEXT("(?i)(?:HTTP(?:/[0-9.]+)?|status(?: code)?|response(?: code)?|ws upgrade "
-	                                       "not 101, was)[^0-9\\r\\n]{0,24}(400|401|403)(?:[^0-9]|$)"));
-	FRegexMatcher StatusMatch(StatusPattern, Error);
-	const bool bAuth = StatusMatch.FindNext();
-	QueueFailure(Error, false, bAuth);
+	// IWebSocket reports upgrade failures as backend-specific text, so credential
+	// rejection is detected by the token check in StartSocket instead.
+	QueueFailure(Error, false);
 }
 
 void UDbConnectionBase::HandleWSClosed(int32 StatusCode, const FString& Reason, bool /*bWasClean*/)
 {
 	const bool bTerminal = StatusCode == 1002 || StatusCode == 1003 || StatusCode == 1007 || StatusCode == 1008;
-	QueueFailure(Reason.IsEmpty() ? TEXT("Connection closed") : Reason, bTerminal);
+	QueueFailure(Reason.IsEmpty() ? TEXT("Connection closed") : Reason, bTerminal, false,
+	             StatusCode == SessionBusyCloseCode);
 }
 
 void UDbConnectionBase::HandleProtocolViolation(const FString& ErrorMessage)
@@ -247,38 +263,7 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 			    {
 				    // Each message owns its decoded rows, so out-of-order workers cannot
 				    // consume another message's rows or contaminate a replacement socket.
-				    switch (Event.Message.Tag)
-				    {
-					    case EServerMessageTag::SubscribeApplied:
-						    PreProcessDatabaseUpdate(
-						        QueryRowsToDatabaseUpdate(Event.Message.GetAsSubscribeApplied().Rows, false),
-						        Deserializers, Event.TableData);
-						    break;
-					    case EServerMessageTag::UnsubscribeApplied:
-						    if (Event.Message.GetAsUnsubscribeApplied().Rows.IsSet())
-						    {
-							    PreProcessDatabaseUpdate(
-							        QueryRowsToDatabaseUpdate(Event.Message.GetAsUnsubscribeApplied().Rows.Value, true),
-							        Deserializers, Event.TableData);
-						    }
-						    break;
-					    case EServerMessageTag::TransactionUpdate:
-						    PreProcessDatabaseUpdate(
-						        TransactionUpdateToDatabaseUpdate(Event.Message.GetAsTransactionUpdate()),
-						        Deserializers, Event.TableData);
-						    break;
-					    case EServerMessageTag::ReducerResult:
-						    if (Event.Message.GetAsReducerResult().Result.IsOk())
-						    {
-							    PreProcessDatabaseUpdate(
-							        TransactionUpdateToDatabaseUpdate(
-							            Event.Message.GetAsReducerResult().Result.GetAsOk().TransactionUpdate),
-							        Deserializers, Event.TableData);
-						    }
-						    break;
-					    default:
-						    break;
-				    }
+				    PreProcessServerMessage(Event.Message, Deserializers, Event.TableData);
 			    }
 		    }
 		    catch (const std::exception&)
@@ -315,7 +300,7 @@ void UDbConnectionBase::FrameTick()
 		++NextReleaseId;
 		if (Event.bFailure)
 		{
-			ConnectionLost(Event.Error, Event.bTerminal, Event.bAuth);
+			ConnectionLost(Event.Error, Event.bTerminal, Event.bAuth, Event.bSessionBusy);
 		}
 		else
 		{
@@ -391,9 +376,27 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 			{
 				OnConnectBaseDelegate.ExecuteIfBound(this, Identity, Token);
 			}
-			if (bWasReconnecting && !bEnded && ConnectionGeneration == Generation)
+			if (bEnded || ConnectionGeneration != Generation)
+			{
+				break;
+			}
+			if (bWasReconnecting)
 			{
 				ReplaySubscriptions();
+			}
+			else
+			{
+				// Subscriptions made before the connection was established.
+				const TArray<uint32> Queued = MoveTemp(QueuedSubscriptions);
+				QueuedSubscriptions.Empty();
+				for (const uint32 QuerySetId : Queued)
+				{
+					const TObjectPtr<USubscriptionHandleBase>* Found = ActiveSubscriptions.Find(QuerySetId);
+					if (Found && *Found && !(*Found)->bEnded && !(*Found)->bUnsubscribeCalled)
+					{
+						SendSubscribe(*Found);
+					}
+				}
 			}
 			break;
 		}
@@ -644,14 +647,20 @@ void UDbConnectionBase::ClearPendingOperations(const FString& Reason)
 			ReducerEvent(Event);
 			ReducerEventFailed(Event, Reason);
 		}
-		FProcedureEvent Event;
-		Event.CallError = ESpacetimeDBCallError::UnknownResult;
-		Event.Status = FProcedureStatusType::InternalError(Reason);
-		ProcedureCallbacks->FailAllCallbacks(FSpacetimeDBEvent::Procedure(Event));
 	}
-	else if (ProcedureCallbacks)
+	if (ProcedureCallbacks)
 	{
-		ProcedureCallbacks->ClearAllCallbacks();
+		if (bAutomaticReconnect)
+		{
+			FProcedureEvent Event;
+			Event.CallError = ESpacetimeDBCallError::UnknownResult;
+			Event.Status = FProcedureStatusType::InternalError(Reason);
+			ProcedureCallbacks->FailAllCallbacks(FSpacetimeDBEvent::Procedure(Event));
+		}
+		else
+		{
+			ProcedureCallbacks->ClearAllCallbacks();
+		}
 	}
 
 	if (!Reason.IsEmpty())
@@ -669,7 +678,9 @@ void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Upda
 		const auto* Found = Deserializers.Find(TableUpdate.TableName);
 		if (!Found)
 		{
-			throw std::runtime_error("Unknown table in server update");
+			// Bindings older than the module: skip the table rather than drop the connection.
+			UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("No deserializer found for table %s"), *TableUpdate.TableName);
+			continue;
 		}
 		auto Data = (*Found)->PreProcess(TableUpdate.Rows, TableUpdate.TableName);
 		if (!Data.IsValid())
@@ -680,10 +691,42 @@ void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Upda
 	}
 }
 
-void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update)
+void UDbConnectionBase::PreProcessServerMessage(const FServerMessageType& Message,
+                                                const FDeserializerMap& Deserializers, FTableDataMap& Out)
 {
-	PreprocessedTableData.Empty();
-	PreProcessDatabaseUpdate(Update, TableDeserializers, PreprocessedTableData);
+	switch (Message.Tag)
+	{
+		case EServerMessageTag::SubscribeApplied:
+			PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Message.GetAsSubscribeApplied().Rows, false),
+			                         Deserializers, Out);
+			break;
+		case EServerMessageTag::UnsubscribeApplied:
+			if (Message.GetAsUnsubscribeApplied().Rows.IsSet())
+			{
+				PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Message.GetAsUnsubscribeApplied().Rows.Value, true),
+				                         Deserializers, Out);
+			}
+			break;
+		case EServerMessageTag::TransactionUpdate:
+			PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Message.GetAsTransactionUpdate()),
+			                         Deserializers, Out);
+			break;
+		case EServerMessageTag::ReducerResult:
+			if (Message.GetAsReducerResult().Result.IsOk())
+			{
+				PreProcessDatabaseUpdate(
+				    TransactionUpdateToDatabaseUpdate(Message.GetAsReducerResult().Result.GetAsOk().TransactionUpdate),
+				    Deserializers, Out);
+			}
+			break;
+		case EServerMessageTag::SubscribeBatchApplied:
+			// Only the replayed inserts; ApplyReplay adds deletes for the cached rows on the game thread.
+			PreProcessDatabaseUpdate(ReplayInsertsToDatabaseUpdate(Message.GetAsSubscribeBatchApplied()), Deserializers,
+			                         Out);
+			break;
+		default:
+			break;
+	}
 }
 
 bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FServerMessageType& OutMessage)
@@ -753,10 +796,19 @@ void UDbConnectionBase::StartSubscription(USubscriptionHandleBase* Handle)
 	{
 		return;
 	}
+	if (!bEstablished)
+	{
+		QueuedSubscriptions.Add(QuerySetId);
+		return;
+	}
+	SendSubscribe(Handle);
+}
 
+void UDbConnectionBase::SendSubscribe(USubscriptionHandleBase* Handle)
+{
 	FSubscribeType SubMsg;
 	SubMsg.RequestId = GetNextRequestId();
-	SubMsg.QuerySetId.Id = QuerySetId;
+	SubMsg.QuerySetId.Id = Handle->QuerySetId;
 	SubMsg.QueryStrings = Handle->QuerySqls;
 
 	FClientMessageType Msg = FClientMessageType::Subscribe(SubMsg);
@@ -774,7 +826,8 @@ void UDbConnectionBase::UnsubscribeInternal(USubscriptionHandleBase* Handle)
 		return;
 	}
 
-	if (bEnded || bReconnecting || bPreparingReplay)
+	// Nothing was sent for this set on the current socket, so end it locally.
+	if (bEnded || !bEstablished || bReconnecting || bPreparingReplay)
 	{
 		EndSubscription(Handle);
 		return;
@@ -798,6 +851,19 @@ uint32 UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uin
 	if (!IsActive())
 	{
 		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call reducer, not connected to server!"));
+		if (bAutomaticReconnect)
+		{
+			// Matches C#/TS rejecting the call. Not routed through ReducerEvent: no request id was
+			// assigned, so generated bindings have no typed reducer to match it against.
+			FReducerEvent Event;
+			Event.ReducerCall.ReducerName = Reducer;
+			Event.ReducerCall.Args = MoveTemp(Args);
+			Event.CallerIdentity = Identity;
+			Event.CallerConnectionId = ConnectionId;
+			Event.Status = FSpacetimeDBStatus::Failed(TEXT("Disconnected"));
+			Event.CallError = ESpacetimeDBCallError::Disconnected;
+			ReducerEventFailed(Event, TEXT("Disconnected"));
+		}
 		return 0;
 	}
 
@@ -904,11 +970,13 @@ void UDbConnectionBase::ResetTransport()
 	ReplayRequestId = 0;
 	ReplayQueryIds.Empty();
 	bPreparingReplay = false;
+	QueuedSubscriptions.Empty();
 }
 
 void UDbConnectionBase::StartSocket()
 {
-	if (!bAutomaticReconnect || Token.IsEmpty())
+	// The initial connection is never retried, so it gains nothing from the check below.
+	if (!bReconnecting || Token.IsEmpty())
 	{
 		OpenSocket();
 		return;
@@ -916,6 +984,7 @@ void UDbConnectionBase::StartSocket()
 	// IWebSocket does not reliably expose HTTP upgrade status codes (notably on
 	// Windows). Validate credentials through the same endpoint the browser SDK
 	// uses, so a rejected token can trigger refresh or terminate on every backend.
+	// Any other outcome (proxy without this route, server error) falls through to the socket.
 	FString HttpUri = Uri;
 	if (HttpUri.StartsWith(TEXT("wss://")))
 	{
@@ -941,21 +1010,20 @@ void UDbConnectionBase::StartSocket()
 		    }
 		    auto* Conn = WeakThis.Get();
 		    Conn->TokenValidation.Reset();
-		    const int32 Status = Response.IsValid() ? Response->GetResponseCode() : 0;
-		    if (bSuccess && Status >= 200 && Status < 300)
+		    const int32 Status = bSuccess && Response.IsValid() ? Response->GetResponseCode() : 0;
+		    if (Status == 400 || Status == 401 || Status == 403)
 		    {
-			    Conn->OpenSocket();
+			    Conn->QueueFailure(FString::Printf(TEXT("Token rejected (HTTP %d)"), Status), false, true);
 		    }
 		    else
 		    {
-			    const bool bAuth = Status == 400 || Status == 401 || Status == 403;
-			    Conn->QueueFailure(FString::Printf(TEXT("Token validation failed (HTTP %d)"), Status), false, bAuth);
+			    Conn->OpenSocket();
 		    }
 	    });
 	if (!TokenValidation->ProcessRequest())
 	{
 		TokenValidation.Reset();
-		QueueFailure(TEXT("Could not start token validation"), false);
+		OpenSocket();
 	}
 }
 
@@ -969,7 +1037,7 @@ void UDbConnectionBase::OpenSocket()
 	WebSocket->Connect(WebSocketUrl);
 }
 
-void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, bool bAuth)
+void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy)
 {
 	if (bEnded)
 	{
@@ -988,8 +1056,14 @@ void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, boo
 	double Delay = 0;
 	if (bRetry)
 	{
-		ReconnectAttempt = ReconnectAttempt < MAX_int32 ? ReconnectAttempt + 1 : MAX_int32;
-		Delay = ReconnectOptions.Delay(ReconnectAttempt, FMath::FRand());
+		// A busy session means the server is still tearing down our previous socket: retry
+		// at the base delay without counting it as a failed attempt.
+		const bool bBusy = bSessionBusy && !bWasEstablished;
+		if (!bBusy)
+		{
+			ReconnectAttempt = ReconnectAttempt < MAX_int32 ? ReconnectAttempt + 1 : MAX_int32;
+		}
+		Delay = ReconnectOptions.Delay(bBusy ? 1 : ReconnectAttempt, FMath::FRand());
 		ReconnectAt = FPlatformTime::Seconds() + Delay;
 	}
 	SuspendSubscriptions(!bRetry);
@@ -1000,12 +1074,24 @@ void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, boo
 	} // A callback cancelled recovery.
 	if (bWasEstablished)
 	{
-		OnDisconnectBaseDelegate.ExecuteIfBound(this, Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
+		BroadcastDisconnect(Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
 	}
 	else
 	{
-		OnConnectErrorDelegate.ExecuteIfBound(Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
+		BroadcastConnectError(Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
 	}
+}
+
+void UDbConnectionBase::BroadcastConnectError(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay)
+{
+	OnConnectErrorDelegate.ExecuteIfBound(Error);
+	OnConnectErrorWithReconnectDelegate.ExecuteIfBound(Error, bWillReconnect, Attempt, Delay);
+}
+
+void UDbConnectionBase::BroadcastDisconnect(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay)
+{
+	OnDisconnectBaseDelegate.ExecuteIfBound(this, Error);
+	OnDisconnectWithReconnectBaseDelegate.ExecuteIfBound(this, Error, bWillReconnect, Attempt, Delay);
 }
 
 bool UDbConnectionBase::TokenNeedsRefresh() const
@@ -1166,28 +1252,25 @@ void UDbConnectionBase::ApplyReplay(const FSubscribeBatchAppliedType& Batch)
 	}
 	ReplayRequestId = 0;
 	ReplayQueryIds.Empty();
-	FTransactionUpdateType Transaction;
-	FQuerySetUpdateType Reconciliation;
-	for (const auto& Pair : RegisteredTables)
+	// The worker already decoded the replayed inserts, one entry per table. Reconcile by
+	// deleting every cached reference against them; the deletes reuse the cached rows,
+	// so nothing is decoded on the game thread.
+	FDatabaseUpdateType Update = ReplayInsertsToDatabaseUpdate(Batch);
 	{
-		FTableUpdateType Table;
-		Table.TableName = Pair.Key;
-		FPersistentTableRowsType Rows;
-		Pair.Value->AppendCachedRows(Pair.Key, Rows.Deletes);
-		Table.Rows.Add(FTableUpdateRowsType::PersistentTable(Rows));
-		Reconciliation.Tables.Add(Table);
-	}
-	for (const auto& Result : Batch.Results)
-	{
-		if (Result.Outcome.IsApplied())
+		FScopeLock Lock(&PreprocessedDataMutex);
+		for (const auto& Pair : RegisteredTables)
 		{
-			Reconciliation.Tables.Append(QueryRowsToDatabaseUpdate(Result.Outcome.GetAsApplied(), false).Tables);
+			Pair.Value->AddCachedDeletes(Pair.Key, PreprocessedTableData.FindOrAdd(FPreprocessedTableKey(Pair.Key)));
+			if (!Update.Tables.ContainsByPredicate([&](const FTableUpdateType& Table)
+			                                       { return Table.TableName == Pair.Key; }))
+			{
+				FTableUpdateType Table;
+				Table.TableName = Pair.Key;
+				Update.Tables.Add(Table);
+			}
 		}
 	}
-	Transaction.QuerySets.Add(Reconciliation);
-	const FDatabaseUpdateType Update = TransactionUpdateToDatabaseUpdate(Transaction);
 	const uint64 Generation = ConnectionGeneration;
-	PreProcessDatabaseUpdate(Update);
 	// Apply every table before any row or subscription callback observes the cache.
 	DbUpdate(Update, FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit()));
 	for (const auto& Result : Batch.Results)

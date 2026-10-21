@@ -41,8 +41,14 @@ public:
 	/** Register a callback for connection errors. */
 	UDbConnectionBuilderBase* OnConnectErrorBase(FOnConnectErrorDelegate Callback);
 
+	/** Register a callback for connection errors that also receives the automatic reconnect schedule. */
+	UDbConnectionBuilderBase* OnConnectErrorWithReconnectBase(FOnConnectErrorWithReconnectDelegate Callback);
+
 	/** Register a callback for disconnect. */
 	UDbConnectionBuilderBase* OnDisconnectBase(FOnDisconnectBaseDelegate Callback);
+
+	/** Register a callback for disconnect that also receives the automatic reconnect schedule. */
+	UDbConnectionBuilderBase* OnDisconnectWithReconnectBase(FOnDisconnectWithReconnectBaseDelegate Callback);
 
 	/** Generic C++ helper for building child types (not visible to Blueprints) */
 	UDbConnectionBase* BuildConnection(UDbConnectionBase* Connection);
@@ -66,4 +72,8 @@ private:
 	FOnConnectBaseDelegate OnConnectCallback;
 	UPROPERTY()
 	FOnDisconnectBaseDelegate OnDisconnectCallback;
+	UPROPERTY()
+	FOnConnectErrorWithReconnectDelegate OnConnectErrorWithReconnectCallback;
+	UPROPERTY()
+	FOnDisconnectWithReconnectBaseDelegate OnDisconnectWithReconnectCallback;
 };

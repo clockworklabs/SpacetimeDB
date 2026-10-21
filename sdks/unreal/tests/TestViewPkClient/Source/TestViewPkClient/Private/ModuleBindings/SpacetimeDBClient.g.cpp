@@ -41,7 +41,6 @@ bool FContextBase::IsReconnecting() const
 {
 	return Conn && Conn->IsReconnecting();
 }
-
 bool FContextBase::IsActive() const
 {
 	return Conn->IsActive();
@@ -583,9 +582,18 @@ UDbConnectionBuilder* UDbConnectionBuilder::OnConnectError(FOnConnectErrorDelega
 {
 	return Cast<UDbConnectionBuilder>(OnConnectErrorBase(Callback));
 }
+UDbConnectionBuilder* UDbConnectionBuilder::OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback)
+{
+	return Cast<UDbConnectionBuilder>(OnConnectErrorWithReconnectBase(Callback));
+}
 UDbConnectionBuilder* UDbConnectionBuilder::OnDisconnect(FOnDisconnectDelegate Callback)
 {
 	OnDisconnectDelegateInternal = Callback;
+	return this;
+}
+UDbConnectionBuilder* UDbConnectionBuilder::OnDisconnectWithReconnect(FOnDisconnectWithReconnectDelegate Callback)
+{
+	OnDisconnectWithReconnectDelegateInternal = Callback;
 	return this;
 }
 UDbConnection* UDbConnectionBuilder::Build()
@@ -599,6 +607,7 @@ UDbConnection* UDbConnectionBuilder::Build()
 	BaseReconnect.BindUFunction(Connection, TEXT("ForwardOnAutomaticReconnect"));
 	OnAutomaticReconnectBase(BaseReconnect);
 	Connection->OnDisconnectDelegate = OnDisconnectDelegateInternal;
+	Connection->OnDisconnectWithReconnectDelegate = OnDisconnectWithReconnectDelegateInternal;
 
 	// Wrap delegates so the base builder can bind them
 	FOnConnectBaseDelegate BaseConnect;
@@ -606,10 +615,10 @@ UDbConnection* UDbConnectionBuilder::Build()
 	Connection->SetOnConnectDelegate(BaseConnect);
 	OnConnectBase(BaseConnect);
 
-	FOnDisconnectBaseDelegate BaseDisconnect;
+	FOnDisconnectWithReconnectBaseDelegate BaseDisconnect;
 	BaseDisconnect.BindUFunction(Connection, TEXT("ForwardOnDisconnect"));
-	Connection->SetOnDisconnectDelegate(BaseDisconnect);
-	OnDisconnectBase(BaseDisconnect);
+	Connection->SetOnDisconnectWithReconnectDelegate(BaseDisconnect);
+	OnDisconnectWithReconnectBase(BaseDisconnect);
 
 	return Cast<UDbConnection>(BuildConnection(Connection));
 }
@@ -652,7 +661,11 @@ void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const
 	}
 	if (OnDisconnectDelegate.IsBound())
 	{
-		OnDisconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);
+		OnDisconnectDelegate.Execute(this, Error);
+	}
+	if (OnDisconnectWithReconnectDelegate.IsBound())
+	{
+		OnDisconnectWithReconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);
 	}
 }
 

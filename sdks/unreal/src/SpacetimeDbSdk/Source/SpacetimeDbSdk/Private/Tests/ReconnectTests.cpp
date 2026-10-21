@@ -8,8 +8,10 @@ void UReconnectTestConnection::Initialize(bool bEnable)
 	ReconnectOptions.Resolve();
 	OnConnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Connected);
 	OnAutomaticReconnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Reconnected);
-	OnDisconnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Disconnected);
-	OnConnectErrorDelegate.BindDynamic(this, &UReconnectTestConnection::ConnectError);
+	OnDisconnectWithReconnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Disconnected);
+	OnConnectErrorWithReconnectDelegate.BindDynamic(this, &UReconnectTestConnection::ConnectError);
+	OnDisconnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::LegacyDisconnected);
+	OnConnectErrorDelegate.BindDynamic(this, &UReconnectTestConnection::LegacyConnectError);
 }
 
 void UReconnectTestConnection::ConnectIdentity(const FString& Hex, const FString& NewToken)
@@ -98,6 +100,10 @@ bool FReconnectLifecycle::RunTest(const FString&)
 	TestTrue(TEXT("reducer result unknown"),
 	         Conn->CallErrors.Num() == 1 && Conn->CallErrors[0] == ESpacetimeDBCallError::UnknownResult);
 	TestEqual(TEXT("procedure settled once"), ProcedureCompletions, 1);
+	AddExpectedError(TEXT("Cannot call reducer, not connected to server!"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("reducer during recovery not sent"), Conn->CallReducer(), 0u);
+	TestTrue(TEXT("reducer during recovery reported"),
+	         Conn->FailedCallErrors.Num() == 2 && Conn->FailedCallErrors[1] == ESpacetimeDBCallError::Disconnected);
 	Conn->RetryNow();
 	TestEqual(TEXT("anonymous credentials retained"), Conn->SentToken, FString(TEXT("retained")));
 	Conn->ConnectIdentity();
@@ -129,6 +135,36 @@ bool FReconnectLifecycle::RunTest(const FString&)
 	Cancel->ConnectIdentity();
 	TestFalse(TEXT("cancel in callback stays ended"), Cancel->IsActive());
 	TestEqual(TEXT("no replay after callback cancellation"), Cancel->Sent.Num(), 0);
+
+	TestEqual(TEXT("legacy connect error still fires"), InitialFailure->LegacyErrors, 1);
+	TestEqual(TEXT("legacy disconnect still fires"), Conn->LegacyDisconnects, Conn->Disconnects);
+
+	auto* Busy = NewObject<UReconnectTestConnection>();
+	Busy->Initialize();
+	Busy->ConnectIdentity();
+	Busy->Drop();
+	Busy->RetryNow();
+	Busy->DropSessionBusy();
+	TestTrue(TEXT("session busy retries"), Busy->IsReconnecting());
+	TestEqual(TEXT("session busy does not count as an attempt"), Busy->Attempt(), 1);
+	Busy->RetryNow();
+	Busy->Drop();
+	TestEqual(TEXT("ordinary failure still counts"), Busy->Attempt(), 2);
+	Busy->Disconnect();
+
+	auto* Early = NewObject<UReconnectTestConnection>();
+	Early->Initialize();
+	auto* Queued = Early->Subscribe({TEXT("SELECT * FROM a")});
+	auto* Cancelled = Early->Subscribe({TEXT("SELECT * FROM b")});
+	Cancelled->Unsubscribe();
+	TestEqual(TEXT("nothing sent before InitialConnection"), Early->Sent.Num(), 0);
+	TestTrue(TEXT("unsent subscription ends locally"), Cancelled->IsEnded());
+	TestFalse(TEXT("early subscription keeps the connection"), Early->IsReconnecting() || Early->Errors > 0);
+	Early->ConnectIdentity();
+	TestTrue(TEXT("queued subscription sent after connect"),
+	         Early->Sent.Num() == 1 && Early->Sent[0].IsSubscribe() &&
+	             Early->Sent[0].GetAsSubscribe().QueryStrings == Queued->GetQuerySqls());
+	Early->Disconnect();
 	return true;
 }
 
@@ -197,6 +233,21 @@ static FQueryRowsType Rows(const FString& Table, std::initializer_list<FReconnec
 	return Query;
 }
 
+static TArray<FTableUpdateType> QueryRowsToTableUpdates(const FQueryRowsType& Query)
+{
+	TArray<FTableUpdateType> Tables;
+	for (const auto& TableRows : Query.Tables)
+	{
+		FTableUpdateType Table;
+		Table.TableName = TableRows.Table;
+		FPersistentTableRowsType Persistent;
+		Persistent.Inserts = TableRows.Rows;
+		Table.Rows.Add(FTableUpdateRowsType::PersistentTable(Persistent));
+		Tables.Add(Table);
+	}
+	return Tables;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReconnectCacheReplay, "SpacetimeDB.TestClient.ReconnectCacheReplay",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FReconnectCacheReplay::RunTest(const FString&)
@@ -219,6 +270,15 @@ bool FReconnectCacheReplay::RunTest(const FString&)
 	Initial.QuerySetId = SecondId;
 	Initial.Rows = Rows(TEXT("a"), {{1, 10}});
 	Conn->Inject(FServerMessageType::SubscribeApplied(Initial));
+	// A table the bindings do not know is skipped, as before reconnect support.
+	AddExpectedError(TEXT("No deserializer found for table missing"), EAutomationExpectedErrorFlags::Contains, 1);
+	FQuerySetUpdateType Unknown;
+	Unknown.QuerySetId = FirstId;
+	Unknown.Tables = QueryRowsToTableUpdates(Rows(TEXT("missing"), {{9, 90}}));
+	FTransactionUpdateType UnknownTx;
+	UnknownTx.QuerySets.Add(Unknown);
+	Conn->Inject(FServerMessageType::TransactionUpdate(UnknownTx));
+	TestTrue(TEXT("unknown table keeps the connection"), Conn->IsActive());
 	int32 Inserts = 0, Deletes = 0, Updates = 0;
 	auto CheckAtomic = [&]()
 	{

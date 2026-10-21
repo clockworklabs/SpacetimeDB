@@ -65,12 +65,13 @@ class UReconnectTestConnection : public UDbConnectionBase
 	GENERATED_BODY()
 public:
 	int32 Connects = 0, Reconnects = 0, Disconnects = 0, Errors = 0, Starts = 0, Applied = 0, ProviderCalls = 0;
+	int32 LegacyDisconnects = 0, LegacyErrors = 0;
 	bool bLastRetry = false, bFailProvider = false, bHoldProvider = false, bCancelOnReconnect = false;
 	int32 LastAttempt = 0;
 	float LastDelay = 0;
 	bool bLive = false;
 	FString SentToken, ProviderToken;
-	void StartLive(const FString& Uri, const FString& Database);
+	void StartLive(const FString& InUri, const FString& InDatabase);
 	void DropSocket()
 	{
 		WebSocket->Disconnect();
@@ -86,6 +87,7 @@ public:
 	}
 	TArray<FClientMessageType> Sent;
 	TArray<ESpacetimeDBCallError> CallErrors;
+	TArray<ESpacetimeDBCallError> FailedCallErrors;
 	UPROPERTY()
 	TObjectPtr<UReconnectTokenRequest> HeldRequest;
 
@@ -127,10 +129,21 @@ public:
 	}
 	void Inject(const FServerMessageType& Message)
 	{
+		// Same row preprocessing the background parser does.
 		FIncomingEvent Event;
 		Event.Message = Message;
+		PreProcessServerMessage(Message, TableDeserializers, Event.TableData);
 		AcceptIncomingEvent(ConnectionGeneration, NextIncomingId++, MoveTemp(Event));
 		FrameTick();
+	}
+	void DropSessionBusy()
+	{
+		QueueFailure(TEXT("session busy"), false, false, true);
+		FrameTick();
+	}
+	int32 Attempt() const
+	{
+		return ReconnectAttempt;
 	}
 	USubscriptionHandleBase* Subscribe(const TArray<FString>& Queries);
 	void TrackReducer()
@@ -138,6 +151,10 @@ public:
 		FReducerCallInfoType Info;
 		Info.ReducerName = TEXT("test");
 		PendingReducerCalls.Add(GetNextRequestId(), Info);
+	}
+	uint32 CallReducer()
+	{
+		return InternalCallReducer(TEXT("test"), TArray<uint8>());
 	}
 	void TrackProcedure(const FOnProcedureCompleteDelegate& Callback)
 	{
@@ -171,11 +188,13 @@ protected:
 	{
 		FEventContextBase Context;
 		Context.Event = Event;
-		// Injected messages bypass the background parser.
-		PreProcessDatabaseUpdate(Update);
 		ApplyRegisteredTableUpdates(Update, &Context);
 	}
 	virtual void ReducerEvent(const FReducerEvent& Event) override;
+	virtual void ReducerEventFailed(const FReducerEvent& Event, const FString ErrorMessage) override
+	{
+		FailedCallErrors.Add(Event.CallError);
+	}
 	UFUNCTION()
 	void Connected(UDbConnectionBase* Connection, FSpacetimeDBIdentity InIdentity, const FString& InToken)
 	{
@@ -191,20 +210,30 @@ protected:
 		}
 	}
 	UFUNCTION()
-	void Disconnected(UDbConnectionBase* Connection, const FString& Error, bool bRetry, int32 Attempt, float Delay)
+	void Disconnected(UDbConnectionBase* Connection, const FString& Error, bool bRetry, int32 InAttempt, float Delay)
 	{
 		++Disconnects;
 		bLastRetry = bRetry;
-		LastAttempt = Attempt;
+		LastAttempt = InAttempt;
 		LastDelay = Delay;
 	}
 	UFUNCTION()
-	void ConnectError(const FString& Error, bool bRetry, int32 Attempt, float Delay)
+	void ConnectError(const FString& Error, bool bRetry, int32 InAttempt, float Delay)
 	{
 		++Errors;
 		bLastRetry = bRetry;
-		LastAttempt = Attempt;
+		LastAttempt = InAttempt;
 		LastDelay = Delay;
+	}
+	UFUNCTION()
+	void LegacyDisconnected(UDbConnectionBase* Connection, const FString& Error)
+	{
+		++LegacyDisconnects;
+	}
+	UFUNCTION()
+	void LegacyConnectError(const FString& Error)
+	{
+		++LegacyErrors;
 	}
 	UFUNCTION()
 	void SubscriptionApplied(const FSubscriptionEventContextBase& Context)

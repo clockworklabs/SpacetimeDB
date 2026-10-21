@@ -164,9 +164,9 @@ Automatic reconnect is opt-in. Both reconnect methods enable it; the options met
 
 `WithTokenProvider` supplies credentials when a retained token is near expiry, unreadable, or rejected. Bind a `UFUNCTION` taking `UReconnectTokenRequest*`. It may complete asynchronously by calling `Request->Complete(NewToken, FString())`; to report failure, supply an empty token and an error string. Completion after cancellation is ignored. Use `WithToken` for the initial token: the provider is only used during recovery. Refreshed tokens must have the original identity.
 
-Initial connection failures are terminal. `Disconnect()` cancels pending retries and credential requests. Calls are never replayed; interrupted reducer and procedure callbacks carry `CallError == ESpacetimeDBCallError::UnknownResult`. New subscriptions queue while reconnecting, and cancellation excludes a set from replay.
+Initial connection failures are terminal. `Disconnect()` cancels pending retries and credential requests. Calls are never replayed; interrupted reducer and procedure callbacks carry `CallError == ESpacetimeDBCallError::UnknownResult`. While reconnecting, reducer calls are not sent (they return `0` and raise `OnUnhandledReducerError` with `CallError == ESpacetimeDBCallError::Disconnected`), and procedure callbacks complete immediately with `CallError == ESpacetimeDBCallError::Disconnected`. New subscriptions queue while reconnecting, and cancellation excludes a set from replay.
 
-Regenerate module bindings when upgrading to this API. The server must support session replacement and batch subscriptions.
+Regenerate module bindings to get these builder methods. Existing `OnConnectError` and `OnDisconnect` callbacks keep their signatures. The server must support session replacement and batch subscriptions.
 
 #### Callback `OnConnectError`
 
@@ -178,7 +178,9 @@ class UDbConnectionBuilder
 };
 ```
 
-Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when a connection attempt fails. Its parameters are `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. Initial failures are not retried.
+Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when your connection fails.
+
+With automatic reconnect, use `.OnConnectErrorWithReconnect(callback)` to also learn whether another attempt is scheduled. Its parameters are `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. You can register both callbacks. Initial failures are not retried.
 
 #### Callback `OnDisconnect`
 
@@ -190,7 +192,9 @@ class UDbConnectionBuilder
 };
 ```
 
-Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `UDbConnection` disconnects from the remote database, either as a result of a call to `Disconnect` or due to an error. Its parameters are `UDbConnection* Connection`, `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. Retry attempts start at one; when no retry is scheduled, the last three arguments are `false`, `0`, and `0`.
+Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `UDbConnection` disconnects from the remote database, either as a result of a call to `Disconnect` or due to an error.
+
+With automatic reconnect, use `.OnDisconnectWithReconnect(callback)` to also learn whether recovery is scheduled. Its parameters are `UDbConnection* Connection`, `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. Retry attempts start at one; when no retry is scheduled, the last three arguments are `false`, `0`, and `0`. You can register both callbacks.
 
 #### Method `Build`
 
@@ -953,7 +957,7 @@ void AMyActor::SendMessage(const FString& Text)
     }
 }
 
-void AMyActor::OnDisconnected(UDbConnection* Connection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
+void AMyActor::OnDisconnected(UDbConnection* Connection, const FString& Error)
 {
     UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB: %s"), *Error);
 }

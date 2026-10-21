@@ -39,8 +39,13 @@ DECLARE_DYNAMIC_DELEGATE_ThreeParams(
 	FSpacetimeDBIdentity, Identity,
 	const FString&, Token);
 
-DECLARE_DYNAMIC_DELEGATE_FiveParams(
+DECLARE_DYNAMIC_DELEGATE_TwoParams(
 	FOnDisconnectDelegate,
+	UDbConnection*, Connection,
+	const FString&, Error);
+
+DECLARE_DYNAMIC_DELEGATE_FiveParams(
+	FOnDisconnectWithReconnectDelegate,
 	UDbConnection*, Connection,
 	const FString&, Error,
 	bool, bWillReconnect, int32, NextReconnectAttempt, float, NextReconnectDelaySeconds);
@@ -784,7 +789,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* OnConnectError(FOnConnectErrorDelegate Callback);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* OnDisconnect(FOnDisconnectDelegate Callback);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* OnDisconnectWithReconnect(FOnDisconnectWithReconnectDelegate Callback);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnection* Build();
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
@@ -802,6 +811,7 @@ private:
     UPROPERTY() FOnConnectDelegate OnConnectDelegateInternal;
     UPROPERTY() FOnConnectDelegate OnAutomaticReconnectDelegateInternal;
     UPROPERTY() FOnDisconnectDelegate OnDisconnectDelegateInternal;
+    UPROPERTY() FOnDisconnectWithReconnectDelegate OnDisconnectWithReconnectDelegateInternal;
 };
 
 // Main DbConnection class
@@ -827,6 +837,7 @@ public:
     UPROPERTY() FOnConnectDelegate OnConnectDelegate;
     UPROPERTY() FOnConnectDelegate OnAutomaticReconnectDelegate;
     UPROPERTY() FOnDisconnectDelegate OnDisconnectDelegate;
+    UPROPERTY() FOnDisconnectWithReconnectDelegate OnDisconnectWithReconnectDelegate;
 
     UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
     USubscriptionBuilder* SubscriptionBuilder();

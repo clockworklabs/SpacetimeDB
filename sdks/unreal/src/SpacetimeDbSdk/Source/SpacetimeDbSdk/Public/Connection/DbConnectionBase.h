@@ -33,16 +33,27 @@ class IHttpRequest;
 	DelegateVar.Remove(Object, GET_FUNCTION_NAME_CHECKED(ClassType, FunctionName))
 
 /** Delegate called when the connection attempt fails. */
-DECLARE_DYNAMIC_DELEGATE_FourParams(FOnConnectErrorDelegate, const FString&, ErrorMessage, bool, bWillReconnect, int32,
-                                    NextReconnectAttempt, float, NextReconnectDelaySeconds);
+DECLARE_DYNAMIC_DELEGATE_OneParam(
+	FOnConnectErrorDelegate,
+	const FString&, ErrorMessage);
+
+/** Delegate called when a connection attempt fails, with the automatic reconnect schedule. */
+DECLARE_DYNAMIC_DELEGATE_FourParams(FOnConnectErrorWithReconnectDelegate, const FString&, ErrorMessage, bool,
+                                    bWillReconnect, int32, NextReconnectAttempt, float, NextReconnectDelaySeconds);
 
 /** Called when a connection is established. */
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnConnectBaseDelegate, UDbConnectionBase*, Connection, FSpacetimeDBIdentity,
                                      Identity, const FString&, Token);
 
 /** Called when a connection closes. */
-DECLARE_DYNAMIC_DELEGATE_FiveParams(FOnDisconnectBaseDelegate, UDbConnectionBase*, Connection, const FString&, Error,
-                                    bool, bWillReconnect, int32, NextReconnectAttempt, float,
+DECLARE_DYNAMIC_DELEGATE_TwoParams(
+	FOnDisconnectBaseDelegate,
+	UDbConnectionBase*, Connection,
+	const FString&, Error);
+
+/** Called when a connection closes, with the automatic reconnect schedule. */
+DECLARE_DYNAMIC_DELEGATE_FiveParams(FOnDisconnectWithReconnectBaseDelegate, UDbConnectionBase*, Connection,
+                                    const FString&, Error, bool, bWillReconnect, int32, NextReconnectAttempt, float,
                                     NextReconnectDelaySeconds);
 
 /** Runtime-compatible database update wrapper used by table-update pipeline. */
@@ -182,7 +193,9 @@ public:
 		virtual ~ITableUpdateHandler()
 		{
 		}
-		virtual void AppendCachedRows(const FString& TableName, FBsatnRowListType& Rows) const = 0;
+		/** Add one delete per cached reference to the table's preprocessed data, reusing the cached rows. */
+		virtual void AddCachedDeletes(const FString& TableName,
+		                              TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>& Queue) const = 0;
 
 		/** Update the in-memory cache for the table and store the diff */
 		virtual void UpdateCache(UDbConnectionBase* Conn, const FTableUpdateType& Update, void* Context) = 0;
@@ -199,22 +212,30 @@ public:
 		{
 		}
 
-		virtual void AppendCachedRows(const FString& TableName, FBsatnRowListType& Rows) const override
+		virtual void AddCachedDeletes(const FString& TableName,
+		                              TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>& Queue) const override
 		{
-			TArray<uint64> Offsets;
-			const auto Cache = Table->Data->GetTable(TableName);
-			if (Cache.IsValid())
+			if (Queue.IsEmpty())
 			{
-				for (const auto& Pair : Cache->Entries)
+				Queue.Add(MakeShared<UE::SpacetimeDB::TPreprocessedTableData<RowType>>());
+			}
+			auto Data = StaticCastSharedPtr<UE::SpacetimeDB::TPreprocessedTableData<RowType>>(Queue[0]);
+			const auto Cache = Table->Data->GetTable(TableName);
+			if (!Cache.IsValid())
+			{
+				return;
+			}
+			for (const auto& Pair : Cache->Entries)
+			{
+				if (!Pair.Value.Row.IsValid())
 				{
-					for (int32 Ref = 0; Ref < Pair.Value.RefCount; ++Ref)
-					{
-						Offsets.Add(Rows.RowsData.Num());
-						Rows.RowsData.Append(Pair.Key);
-					}
+					continue;
+				}
+				for (int32 Ref = 0; Ref < Pair.Value.RefCount; ++Ref)
+				{
+					Data->Deletes.Add(FWithBsatn<RowType>(Pair.Key, *Pair.Value.Row));
 				}
 			}
-			Rows.SizeHint = FRowSizeHintType::RowOffsets(Offsets);
 		}
 
 		//** Update the in-memory cache for the table and store the diff */
@@ -297,6 +318,10 @@ protected:
 	{
 		OnDisconnectBaseDelegate = Delegate;
 	}
+	void SetOnDisconnectWithReconnectDelegate(const FOnDisconnectWithReconnectBaseDelegate& Delegate)
+	{
+		OnDisconnectWithReconnectBaseDelegate = Delegate;
+	}
 
 	UFUNCTION()
 	void HandleWSError(const FString& Error);
@@ -313,7 +338,9 @@ protected:
 	using FDeserializerMap = TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer, ESPMode::ThreadSafe>>;
 	static void PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update, const FDeserializerMap& Deserializers,
 	                                     FTableDataMap& Out);
-	void PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update);
+	/** Deserialize the rows a server message carries. Touches no UObject, so it is safe on a worker thread. */
+	static void PreProcessServerMessage(const FServerMessageType& Message, const FDeserializerMap& Deserializers,
+	                                    FTableDataMap& Out);
 
 	/** Decompress and parse a raw message. */
 	static bool PreProcessMessage(const TArray<uint8>& Message, FServerMessageType& OutMessage);
@@ -333,15 +360,22 @@ protected:
 		bool bFailure = false;
 		bool bTerminal = false;
 		bool bAuth = false;
+		bool bSessionBusy = false;
 	};
 	TMap<uint64, FIncomingEvent> IncomingEvents;
 	uint64 NextIncomingId = 0;
 	uint64 NextReleaseId = 0;
 	uint64 ConnectionGeneration = 0;
 	void AcceptIncomingEvent(uint64 Generation, uint64 Id, FIncomingEvent Event);
-	void QueueFailure(const FString& Error, bool bTerminal, bool bAuth = false);
+	void QueueFailure(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false);
 	void ResetTransport();
-	void ConnectionLost(const FString& Error, bool bTerminal, bool bAuth = false);
+	void ConnectionLost(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false);
+	void BroadcastConnectError(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay);
+	void BroadcastDisconnect(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay);
+	/** Send a Subscribe for a handle whose query set id is already registered. */
+	void SendSubscribe(USubscriptionHandleBase* Handle);
+	/** Query set ids subscribed before InitialConnection; sent once the connection is established. */
+	TArray<uint32> QueuedSubscriptions;
 	virtual void StartSocket();
 	void OpenSocket();
 	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> TokenValidation;
@@ -479,7 +513,11 @@ protected:
 	UPROPERTY()
 	FOnConnectErrorDelegate OnConnectErrorDelegate;
 	UPROPERTY()
+	FOnConnectErrorWithReconnectDelegate OnConnectErrorWithReconnectDelegate;
+	UPROPERTY()
 	FOnDisconnectBaseDelegate OnDisconnectBaseDelegate;
+	UPROPERTY()
+	FOnDisconnectWithReconnectBaseDelegate OnDisconnectWithReconnectBaseDelegate;
 	UPROPERTY()
 	FOnConnectBaseDelegate OnConnectBaseDelegate;
 

@@ -68,9 +68,23 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::OnConnectErrorBase(FOnConnec
 	return this;
 }
 
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::OnConnectErrorWithReconnectBase(
+    FOnConnectErrorWithReconnectDelegate Callback)
+{
+	OnConnectErrorWithReconnectCallback = Callback;
+	return this;
+}
+
 UDbConnectionBuilderBase* UDbConnectionBuilderBase::OnDisconnectBase(FOnDisconnectBaseDelegate Callback)
 {
 	OnDisconnectCallback = Callback;
+	return this;
+}
+
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::OnDisconnectWithReconnectBase(
+    FOnDisconnectWithReconnectBaseDelegate Callback)
+{
+	OnDisconnectWithReconnectCallback = Callback;
 	return this;
 }
 
@@ -118,6 +132,8 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 	Connection->OnConnectBaseDelegate = OnConnectCallback;
 	Connection->OnConnectErrorDelegate = OnConnectErrorCallback;
 	Connection->OnDisconnectBaseDelegate = OnDisconnectCallback;
+	Connection->OnConnectErrorWithReconnectDelegate = OnConnectErrorWithReconnectCallback;
+	Connection->OnDisconnectWithReconnectBaseDelegate = OnDisconnectWithReconnectCallback;
 
 	Connection->bAutomaticReconnect = bAutomaticReconnect;
 	Connection->ReconnectOptions = ReconnectOptions;

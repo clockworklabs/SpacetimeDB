@@ -46,13 +46,22 @@ fn unreal_reconnect_builder_and_callback_forwarding() {
             format!("U{prefix}DbConnectionBuilder* WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options);"),
             format!("U{prefix}DbConnectionBuilder* WithTokenProvider(FTokenProviderDelegate Provider);"),
             format!("U{prefix}DbConnectionBuilder* OnAutomaticReconnect(F{prefix}OnConnectDelegate Callback);"),
+            // The original lifecycle callbacks keep their signatures; reconnect details are additive.
+            format!("U{prefix}DbConnectionBuilder* OnConnectError(FOnConnectErrorDelegate Callback);"),
+            format!("U{prefix}DbConnectionBuilder* OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback);"),
+            format!("U{prefix}DbConnectionBuilder* OnDisconnect(F{prefix}OnDisconnectDelegate Callback);"),
+            format!("U{prefix}DbConnectionBuilder* OnDisconnectWithReconnect(F{prefix}OnDisconnectWithReconnectDelegate Callback);"),
+            format!("DECLARE_DYNAMIC_DELEGATE_TwoParams(\n\tF{prefix}OnDisconnectDelegate,\n\tU{prefix}DbConnection*, Connection,\n\tconst FString&, Error);"),
             format!("static bool IsReconnecting(const F{prefix}ContextBase& Ctx)\n\t{{\n\t\treturn Ctx.IsReconnecting();\n\t}}"),
         ] {
             assert!(header.contains(&signature), "missing API: {signature}");
         }
         assert!(header.contains("bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds"));
         assert!(source.contains("OnAutomaticReconnectDelegate.ExecuteIfBound(this, InIdentity, InToken)"));
-        assert!(source.contains("OnDisconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds)"));
+        assert!(source.contains("OnDisconnectDelegate.Execute(this, Error);"));
+        assert!(source.contains(
+            "OnDisconnectWithReconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds)"
+        ));
         assert!(source.contains("OnAutomaticReconnectBase(BaseReconnect)"));
         assert!(source.contains("ReducerEvent.CallError          = Event.CallError"));
         assert!(source.contains("ProcedureEvent.CallError          = Event.CallError"));

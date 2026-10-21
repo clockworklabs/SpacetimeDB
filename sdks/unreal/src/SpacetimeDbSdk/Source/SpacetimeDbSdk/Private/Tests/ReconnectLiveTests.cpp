@@ -4,7 +4,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
-void UReconnectTestConnection::StartLive(const FString& Uri, const FString& Database)
+void UReconnectTestConnection::StartLive(const FString& InUri, const FString& InDatabase)
 {
 	Initialize();
 	bLive = true;
@@ -12,14 +12,14 @@ void UReconnectTestConnection::StartLive(const FString& Uri, const FString& Data
 	Options.MinDelaySeconds = 0.5f;
 	Options.MaxDelaySeconds = 1;
 	NewObject<UDbConnectionBuilderBase>()
-	    ->WithUriBase(Uri)
-	    ->WithDatabaseNameBase(Database)
+	    ->WithUriBase(InUri)
+	    ->WithDatabaseNameBase(InDatabase)
 	    ->WithAutomaticReconnectOptionsBase(Options)
 	    ->WithTokenProviderBase(TokenProvider)
 	    ->OnConnectBase(OnConnectBaseDelegate)
 	    ->OnAutomaticReconnectBase(OnAutomaticReconnectBaseDelegate)
-	    ->OnDisconnectBase(OnDisconnectBaseDelegate)
-	    ->OnConnectErrorBase(OnConnectErrorDelegate)
+	    ->OnDisconnectWithReconnectBase(OnDisconnectWithReconnectBaseDelegate)
+	    ->OnConnectErrorWithReconnectBase(OnConnectErrorWithReconnectDelegate)
 	    ->BuildConnection(this);
 }
 
