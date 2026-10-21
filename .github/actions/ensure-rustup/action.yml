@@ -16,10 +16,9 @@ runs:
         echo "installed=true" >> "$GITHUB_OUTPUT"
         current="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
         echo "Rustup before: $current"
-        if [[ "$current" =~ ^rustup[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$) ]] &&
-          (( 10#${BASH_REMATCH[1]} > 1 ||
-             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} > 29) ||
-             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} == 29 && 10#${BASH_REMATCH[3]} >= 2) )); then
+        version="$(awk '{print $2}' <<< "$current")"
+        if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+          [[ "$(printf '%s\n' 1.29.2 "$version" | sort -V | head -n1)" == 1.29.2 ]]; then
           echo "outdated=false" >> "$GITHUB_OUTPUT"
         else
           echo "outdated=true" >> "$GITHUB_OUTPUT"
@@ -71,10 +70,9 @@ runs:
       run: |
         current="$(RUSTUP_AUTO_INSTALL=0 rustup --version)"
         echo "Rustup after: $current"
-        if [[ "$current" =~ ^rustup[[:space:]]+([0-9]+)\.([0-9]+)\.([0-9]+)([[:space:]]|$) ]] &&
-          (( 10#${BASH_REMATCH[1]} > 1 ||
-             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} > 29) ||
-             (10#${BASH_REMATCH[1]} == 1 && 10#${BASH_REMATCH[2]} == 29 && 10#${BASH_REMATCH[3]} >= 2) )); then
+        version="$(awk '{print $2}' <<< "$current")"
+        if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+          [[ "$(printf '%s\n' 1.29.2 "$version" | sort -V | head -n1)" == 1.29.2 ]]; then
           exit 0
         fi
         echo "::error::Rustup must be at least 1.29.2 after installation or update"
