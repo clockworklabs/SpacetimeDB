@@ -335,6 +335,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                         RawModuleDefV10Section::Tables(_)
                             | RawModuleDefV10Section::Types(_)
                             | RawModuleDefV10Section::Typespace(_)
+                            | RawModuleDefV10Section::ExplicitNames(_)
                     )
                 })
                 .then_some(())
