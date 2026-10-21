@@ -1,85 +1,42 @@
 name: Ensure updated rustup
-description: Print rustup versions and update installations older than 1.29.2 without changing Rust toolchains
+description: Update rustup itself and print its version before and after, preserving Rust toolchains
 runs:
   using: composite
   steps:
     - name: Print current rustup version
-      id: before
-      uses: actions/github-script@v7
-      env:
-        ENSURE_RUSTUP_ACTION_PATH: ${{ github.action_path }}
-      with:
-        script: |
-          const semver = require(`${process.env.ENSURE_RUSTUP_ACTION_PATH}/semver.cjs`);
-          const installed = Boolean(await io.which('rustup'));
-          core.setOutput('installed', installed);
-          if (!installed) {
-            core.info('Rustup before: not installed');
-            core.setOutput('outdated', true);
-            return;
-          }
-          const { stdout } = await exec.getExecOutput('rustup', ['--version'], {
-            env: { ...process.env, RUSTUP_AUTO_INSTALL: '0' },
-            silent: true,
-          });
-          core.info(`Rustup before: ${stdout.trim()}`);
-          const version = stdout.trim().split(/\s+/)[1];
-          core.setOutput('outdated', !semver.valid(version) || semver.lt(version, '1.29.2'));
+      continue-on-error: true # Rustup may not be installed yet.
+      shell: bash
+      run: RUSTUP_AUTO_INSTALL=0 rustup --version
 
-    - name: Update outdated rustup
+    - name: Update rustup
       id: update
-      if: steps.before.outputs.installed == 'true' && steps.before.outputs.outdated == 'true'
-      continue-on-error: true
+      continue-on-error: true # Use the installer below if self-update is unavailable.
       shell: bash
       run: rustup self update
 
-    # Package-managed rustup can disable self-update. Install official binaries
-    # in CARGO_HOME in that case, reusing the existing Rust toolchains.
-    - name: Install official rustup on Linux or macOS
-      if: runner.os != 'Windows' && (steps.before.outputs.installed == 'false' || steps.update.outcome == 'failure')
+    - name: Install rustup on Linux or macOS if needed
+      if: steps.update.outcome == 'failure' && runner.os != 'Windows'
       shell: bash
       run: |
         curl --proto '=https' --tlsv1.2 --retry 3 -fsSL https://sh.rustup.rs \
           | sh -s -- -y --no-modify-path --default-toolchain none
+        echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
 
-    - name: Install official rustup on Windows
-      if: runner.os == 'Windows' && (steps.before.outputs.installed == 'false' || steps.update.outcome == 'failure')
+    - name: Install rustup on Windows if needed
+      if: steps.update.outcome == 'failure' && runner.os == 'Windows'
       shell: bash
       run: |
-        install_dir="$(mktemp -d)"
-        trap 'rm -rf "$install_dir"' EXIT
         case "$RUNNER_ARCH" in
           X64) host_arch=x86_64 ;;
           ARM64) host_arch=aarch64 ;;
           *) echo "Unsupported Windows architecture: $RUNNER_ARCH" >&2; exit 1 ;;
         esac
+        installer="$(mktemp -d)/rustup-init.exe"
         curl --proto '=https' --tlsv1.2 --retry 3 -fsSL \
-          "https://win.rustup.rs/$host_arch" -o "$install_dir/rustup-init.exe"
-        "$install_dir/rustup-init.exe" -y --no-modify-path --default-toolchain none
+          "https://win.rustup.rs/$host_arch" -o "$installer"
+        "$installer" -y --no-modify-path --default-toolchain none
+        echo "$(cygpath -u "${CARGO_HOME:-$USERPROFILE/.cargo}")/bin" >> "$GITHUB_PATH"
 
-    - name: Add installed rustup to PATH
-      if: steps.before.outputs.installed == 'false' || steps.update.outcome == 'failure'
+    - name: Print updated rustup version
       shell: bash
-      run: |
-        cargo_home="${CARGO_HOME:-${USERPROFILE:-$HOME}/.cargo}"
-        if [[ "$RUNNER_OS" == Windows ]]; then
-          cargo_home="$(cygpath -u "$cargo_home")"
-        fi
-        echo "$cargo_home/bin" >> "$GITHUB_PATH"
-
-    - name: Print and verify updated rustup version
-      uses: actions/github-script@v7
-      env:
-        ENSURE_RUSTUP_ACTION_PATH: ${{ github.action_path }}
-      with:
-        script: |
-          const semver = require(`${process.env.ENSURE_RUSTUP_ACTION_PATH}/semver.cjs`);
-          const { stdout } = await exec.getExecOutput('rustup', ['--version'], {
-            env: { ...process.env, RUSTUP_AUTO_INSTALL: '0' },
-            silent: true,
-          });
-          core.info(`Rustup after: ${stdout.trim()}`);
-          const version = stdout.trim().split(/\s+/)[1];
-          if (!semver.valid(version) || semver.lt(version, '1.29.2')) {
-            core.setFailed('Rustup must be at least 1.29.2 after installation or update');
-          }
+      run: RUSTUP_AUTO_INSTALL=0 rustup --version
