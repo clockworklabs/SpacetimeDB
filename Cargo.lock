@@ -9140,12 +9140,21 @@ dependencies = [
  "scopeguard",
  "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-engine",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-query",
  "spacetimedb-schema",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-test-datastore-ffi"
+version = "2.13.0"
+dependencies = [
+ "spacetimedb-lib",
+ "spacetimedb-test-datastore",
 ]
 
 [[package]]

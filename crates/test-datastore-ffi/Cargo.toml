@@ -1,0 +1,18 @@
+[package]
+name = "spacetimedb-test-datastore-ffi"
+version.workspace = true
+edition.workspace = true
+license-file = "../test-datastore/LICENSE"
+rust-version.workspace = true
+description = "Native C ABI for SpacetimeDB module test datastores."
+
+[lib]
+crate-type = ["cdylib"]
+bench = false
+
+[dependencies]
+spacetimedb-lib.workspace = true
+spacetimedb-test-datastore = { path = "../test-datastore", version = "=2.13.0", default-features = false }
+
+[lints]
+workspace = true

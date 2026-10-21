@@ -6,19 +6,24 @@ compile_error!("spacetimedb-test-datastore is only supported for native module t
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use spacetimedb_core::db::relational_db::{MutTx, RelationalDB, Tx};
-use spacetimedb_core::db::sql::ast::SchemaViewer;
-use spacetimedb_core::error::{DBError, DatastoreError, IndexError, SequenceError};
+#[cfg(feature = "queries")]
 use spacetimedb_core::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
+#[cfg(feature = "queries")]
 use spacetimedb_datastore::{execution_context::Workload, traits::IsolationLevel};
+use spacetimedb_engine::error::{DBError, DatastoreError, IndexError, SequenceError};
+use spacetimedb_engine::relational_db::{tests_utils, MutTx, RelationalDB, Tx};
+#[cfg(feature = "queries")]
+use spacetimedb_engine::sql::ast::SchemaViewer;
+#[cfg(feature = "queries")]
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::bsatn::ToBsatn;
-use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{Identity, ProductValue, RawModuleDef};
+#[cfg(feature = "queries")]
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, Identity};
+use spacetimedb_lib::{ProductValue, RawModuleDef};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+#[cfg(feature = "queries")]
 use spacetimedb_query::{compile_sql_stmt, execute_select_stmt};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
@@ -42,10 +47,10 @@ impl TestDatastore {
     /// Create an in-memory datastore initialized with the tables in `raw`.
     pub fn from_module_def(raw: RawModuleDef) -> Result<Self, TestDatastoreError> {
         let module_def = ModuleDef::try_from(raw)?;
-        let test_db = spacetimedb_core::db::relational_db::tests_utils::TestDB::in_memory()?;
+        let test_db = tests_utils::TestDB::in_memory()?;
         let db = test_db.db;
 
-        spacetimedb_core::db::relational_db::tests_utils::with_auto_commit(&db, |tx| {
+        tests_utils::with_auto_commit(&db, |tx| {
             for table in module_def.tables() {
                 let schema = TableSchema::from_module_def(&module_def, table, (), TableId::SENTINEL);
                 db.create_table(tx, schema)?;
@@ -68,9 +73,7 @@ impl TestDatastore {
 
     /// Resolve a table name to its datastore id.
     pub fn table_id(&self, table_name: &str) -> Result<TableId, TestDatastoreError> {
-        let id = spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, |tx| {
-            self.db.table_id_from_name(tx, table_name)
-        })?;
+        let id = tests_utils::with_read_only(&self.db, |tx| self.db.table_id_from_name(tx, table_name))?;
 
         id.ok_or_else(|| TestDatastoreError::MissingTable(table_name.into()))
     }
@@ -85,7 +88,7 @@ impl TestDatastore {
 
     /// Execute a read-only operation against the datastore.
     pub fn with_read_only<T>(&self, f: impl FnOnce(&mut Tx) -> T) -> T {
-        spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, f)
+        tests_utils::with_read_only(&self.db, f)
     }
 
     /// Execute a mutable operation and commit it if `f` succeeds.
@@ -93,7 +96,7 @@ impl TestDatastore {
         &self,
         f: impl FnOnce(&mut MutTx) -> Result<T, TestDatastoreError>,
     ) -> Result<T, TestDatastoreError> {
-        spacetimedb_core::db::relational_db::tests_utils::with_auto_commit(&self.db, f)
+        tests_utils::with_auto_commit(&self.db, f)
     }
 
     /// Begin an explicit mutable transaction.
@@ -103,9 +106,7 @@ impl TestDatastore {
     pub fn begin_mut_tx(&self) -> TestTransaction {
         TestTransaction {
             db: self.db.clone(),
-            tx: RefCell::new(Some(spacetimedb_core::db::relational_db::tests_utils::begin_mut_tx(
-                &self.db,
-            ))),
+            tx: RefCell::new(Some(tests_utils::begin_mut_tx(&self.db))),
         }
     }
 
@@ -133,7 +134,7 @@ impl TestDatastore {
 
     /// Collect every row in `table_id` as [`ProductValue`]s.
     pub fn table_rows(&self, table_id: TableId) -> Result<Vec<ProductValue>, TestDatastoreError> {
-        spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, |tx| {
+        tests_utils::with_read_only(&self.db, |tx| {
             let rows = self
                 .db
                 .iter(tx, table_id)?
@@ -145,7 +146,7 @@ impl TestDatastore {
 
     /// Collect every row in `table_id` as BSATN-encoded row bytes.
     pub fn table_rows_bsatn(&self, table_id: TableId) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
-        spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, |tx| {
+        tests_utils::with_read_only(&self.db, |tx| {
             let rows = self
                 .db
                 .iter(tx, table_id)?
@@ -235,6 +236,7 @@ impl TestDatastore {
     }
 
     /// Execute a read-only SQL select against the current datastore state.
+    #[cfg(feature = "queries")]
     pub fn run_select_query(
         &self,
         sql: &str,
@@ -566,6 +568,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "queries")]
     fn run_select_query_returns_rows() {
         let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
         let person = datastore.table_id("person").unwrap();
@@ -584,6 +587,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "queries")]
     fn run_select_query_filters_rows() {
         let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
         let person = datastore.table_id("person").unwrap();
@@ -602,6 +606,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "queries")]
     fn run_select_query_supports_joins() {
         let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
         let person = datastore.table_id("person").unwrap();
@@ -627,6 +632,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "queries")]
     fn run_select_query_rejects_non_select_sql() {
         let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
         let err = datastore
@@ -637,6 +643,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "queries")]
     fn run_select_query_returns_query_errors() {
         let datastore = TestDatastore::from_module_def(raw_module_def()).unwrap();
         let err = datastore

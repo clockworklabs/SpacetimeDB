@@ -12,17 +12,24 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.13.0", features = ["test"] }
+spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.13.0", optional = true }
+spacetimedb-engine = { workspace = true, features = ["test"] }
 spacetimedb-datastore.workspace = true
-spacetimedb-expr.workspace = true
+spacetimedb-expr = { workspace = true, optional = true }
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-query.workspace = true
+spacetimedb-query = { workspace = true, optional = true }
 spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
-scopeguard.workspace = true
+scopeguard = { workspace = true, optional = true }
 thiserror.workspace = true
+
+[features]
+default = ["queries"]
+# The SQL adapter still uses server-core helpers, whose V8 dependency cannot be
+# linked into a native shared library. Datastore operations only need the engine.
+queries = ["dep:spacetimedb_core", "dep:spacetimedb-expr", "dep:spacetimedb-query", "dep:scopeguard"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["test"] }
