@@ -194,6 +194,16 @@ pub struct ManualMigrateData<'def> {
     pub changed_tables: Vec<ModuleItemKey<'def, TableDef>>,
 }
 
+impl<'def> ManualMigrateData<'def> {
+    /// Records `table` as changed, unless it already is.
+    /// A table can be flagged by more than one diff, e.g. its row type and a constraint.
+    fn add_changed_table(&mut self, table: ModuleItemKey<'def, TableDef>) {
+        if !self.changed_tables.contains(&table) {
+            self.changed_tables.push(table);
+        }
+    }
+}
+
 impl MigratePlan<'_> {
     fn any_step(&self, f: impl Fn(&AutoMigrateStep<'_>) -> bool) -> bool {
         self.steps.iter().any(f)
@@ -869,7 +879,7 @@ fn auto_migrate_table<'def>(
         match (type_ok, event_ok, columns_ok).combine_errors() {
             Ok(x) => x,
             Err(_) if let Some(manual) = &mut plan.manual => {
-                manual.changed_tables.push(key);
+                manual.add_changed_table(key);
                 plan.ensure_disconnect_all_users();
                 return Ok(());
             }
@@ -1242,7 +1252,7 @@ fn auto_migrate_constraints<'def>(
             && *old_constraint != *new_constraint
         {
             if let Some(manual) = &mut plan.manual {
-                manual.changed_tables.push(*table_key);
+                manual.add_changed_table(*table_key);
                 plan.ensure_disconnect_all_users();
             } else {
                 errors.push(AutoMigrateError::ChangeUniqueConstraint {
@@ -1979,6 +1989,44 @@ mod tests {
         // but different columns from an old one.
         // We've left the check in, just in case this changes in the future.
     }
+    #[test]
+    fn manual_migration_lists_changed_table_once() {
+        // Swapping the columns changes the row type and the unique constraint's column,
+        // which flags the table twice.
+        let old_def = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]),
+                    true,
+                )
+                .with_unique_constraint(ColId(0))
+                .with_index(btree(0), "id_index")
+                .finish();
+        });
+        let new_def = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([("name", AlgebraicType::String), ("id", AlgebraicType::U64)]),
+                    true,
+                )
+                .with_unique_constraint(ColId(1))
+                .with_index(btree(1), "id_index")
+                .finish();
+        });
+        let migration = MigrationDef {
+            name: Identifier::for_test("migrate"),
+            namespace: NamespacePath::root(),
+            dropped: old_def.clone(),
+        };
+        let hash = hash_value(&old_def);
+
+        let plan = _ponder_migrate(&old_def, &new_def, Some((0, &hash, &migration))).expect("manual migration plan");
+
+        assert_eq!(plan.manual.unwrap().changed_tables, [key("", "Apples")]);
+    }
+
     #[test]
     fn print_empty_to_populated_schema_migration() {
         // Start with completely empty schema
