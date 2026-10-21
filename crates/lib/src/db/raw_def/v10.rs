@@ -280,6 +280,10 @@ impl ExplicitNames {
     pub fn into_entries(self) -> Vec<ExplicitNameEntry> {
         self.entries
     }
+
+    pub fn from_entries(entries: Vec<ExplicitNameEntry>) -> Self {
+        Self { entries }
+    }
 }
 
 pub type RawRowLevelSecurityDefV10 = crate::db::raw_def::v9::RawRowLevelSecurityDefV9;
