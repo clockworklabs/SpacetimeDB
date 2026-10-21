@@ -13,57 +13,38 @@ You need a module and a client connected to it. If you don't have them yet, foll
 This guide uses views that take arguments, which were added in SpacetimeDB 2.13. C++ modules can't declare them yet.
 :::
 
-In this guide, you'll build a feed of posts that loads 50 posts at a time as the user scrolls. Each client only receives the pages it has loaded, and those pages stay live: new posts show up as soon as they're published. You'll number each post, and use a [view](../../00200-core-concepts/00200-functions/00500-views.md) that takes a page number as an argument.
+In this guide, you'll build a feed of posts that loads 50 posts at a time as the user scrolls. Each client only receives the pages it has loaded, and those pages stay live: new posts show up as soon as they're published. You'll use a [view](../../00200-core-concepts/00200-functions/00500-views.md) that takes a page number and a page size as arguments.
 
 ## How it works
 
-- A private `post` table holds the posts. Each post gets a number, 0, 1, 2 and so on, with no gaps.
-- A `create_post` reducer numbers each new post, from a counter in a private `feed_state` table.
-- A `feed_page` view takes a page number and returns that page's posts: page 0 holds posts 0 to 49, page 1 holds posts 50 to 99, and so on.
-- A `feed_info` view tells clients which page is the newest.
+- A private `post` table holds the posts, with an index on their `id`.
+- A `create_post` reducer adds a post.
+- A `feed_page` view takes a page number and a page size, and returns the posts of that page, newest first. With a page size of 50, page 0 holds the 50 newest posts, page 1 the 50 before them, and so on.
 - Clients subscribe to `feed_page` once for each page they load, and drop the subscriptions of pages they no longer need.
 
-Subscriptions keep a set of rows up to date, but they can't sort rows or stop after a given number of them: they have no `ORDER BY` or `LIMIT`. Numbering the posts turns "the next 50 posts" into a range of numbers, which a view can look up directly through an index.
+Subscriptions keep a set of rows up to date, but they can't sort rows or stop after a given number of them: they have no `ORDER BY` or `LIMIT`. A view runs your own code, so it can sort the posts and return a single page.
 
-## Define the tables
+## Define the table
 
-Add two private tables:
-
-- `post` holds the posts. Its primary key, `seq`, is the post's number.
-- `feed_state` has a single row, with `id` 0, that holds the number the next post gets.
-
-Number the posts with your own counter rather than an auto-increment column. Auto-increment values can have gaps, for example after a restart, which would leave pages with missing posts. See [Auto-Increment](../../00200-core-concepts/00300-tables/00230-auto-increment.md#concurrency-and-gaps).
+Add a private `post` table. Its `id` is assigned automatically, in the order posts are created, and has an index. The view needs this index: views can't scan a whole table with `iter()`, so they read rows through indexes instead. It's a regular index rather than a primary key, because a primary key can only look up one value at a time, not a range of them.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { schema, table, t, SenderError } from 'spacetimedb/server';
-
-// Posts per page.
-const PAGE_SIZE = 50n;
+import { schema, table, t, Range, SenderError } from 'spacetimedb/server';
 
 const post = table(
   { name: 'post' },
   {
-    // Numbered 0, 1, 2... with no gaps, in the order posts were created.
-    seq: t.u64().primaryKey(),
+    id: t.u64().autoInc().index('btree'),
     author: t.identity(),
     text: t.string(),
     postedAt: t.timestamp(),
   }
 );
 
-// The number the next post gets, in a single row with id 0.
-const feedState = table(
-  { name: 'feed_state' },
-  {
-    id: t.u8().primaryKey(),
-    nextSeq: t.u64(),
-  }
-);
-
-const spacetimedb = schema({ post, feedState });
+const spacetimedb = schema({ post });
 export default spacetimedb;
 ```
 
@@ -75,27 +56,15 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    // Posts per page.
-    const ulong PageSize = 50;
-
     [SpacetimeDB.Table(Accessor = "Post")]
     public partial struct Post
     {
-        // Numbered 0, 1, 2... with no gaps, in the order posts were created.
-        [SpacetimeDB.PrimaryKey]
-        public ulong Seq;
+        [SpacetimeDB.AutoInc]
+        [SpacetimeDB.Index.BTree]
+        public ulong Id;
         public Identity Author;
         public string Text;
         public Timestamp PostedAt;
-    }
-
-    // The number the next post gets, in a single row with id 0.
-    [SpacetimeDB.Table(Accessor = "FeedState")]
-    public partial struct FeedState
-    {
-        [SpacetimeDB.PrimaryKey]
-        public byte Id;
-        public ulong NextSeq;
     }
 }
 ```
@@ -104,27 +73,16 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, Query, ReducerContext, SpacetimeType, Table, Timestamp};
-
-// Posts per page.
-const PAGE_SIZE: u64 = 50;
+use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, ReducerContext, Table, Timestamp};
 
 #[table(accessor = post)]
 pub struct Post {
-    // Numbered 0, 1, 2... with no gaps, in the order posts were created.
-    #[primary_key]
-    seq: u64,
+    #[auto_inc]
+    #[index(btree)]
+    id: u64,
     author: Identity,
     text: String,
     posted_at: Timestamp,
-}
-
-// The number the next post gets, in a single row with id 0.
-#[table(accessor = feed_state)]
-pub struct FeedState {
-    #[primary_key]
-    id: u8,
-    next_seq: u64,
 }
 ```
 
@@ -137,55 +95,33 @@ pub struct FeedState {
 #include <spacetimedb.h>
 using namespace SpacetimeDB;
 
-// Posts per page.
-constexpr uint64_t PAGE_SIZE = 50;
-
 struct Post {
-    // Numbered 0, 1, 2... with no gaps, in the order posts were created.
-    uint64_t seq;
+    uint64_t id;
     Identity author;
     std::string text;
     Timestamp posted_at;
 };
-SPACETIMEDB_STRUCT(Post, seq, author, text, posted_at)
+SPACETIMEDB_STRUCT(Post, id, author, text, posted_at)
 SPACETIMEDB_TABLE(Post, post, Private)
-FIELD_PrimaryKey(post, seq)
-
-// The number the next post gets, in a single row with id 0.
-struct FeedState {
-    uint8_t id;
-    uint64_t next_seq;
-};
-SPACETIMEDB_STRUCT(FeedState, id, next_seq)
-SPACETIMEDB_TABLE(FeedState, feed_state, Private)
-FIELD_PrimaryKey(feed_state, id)
+FIELD_IndexAutoInc(post, id)
 ```
 
 </TabItem>
 </Tabs>
 
-## Number each post
+## Add a post
 
-Insert the counter from the `init` reducer, then add a `create_post` reducer that gives each new post the counter's value and increments it. A reducer runs as a single transaction, so two posts published at the same moment can never get the same number.
+Add a `create_post` reducer that inserts a post. Pass 0 as the `id`: SpacetimeDB replaces it with the next value.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const init = spacetimedb.init(ctx => {
-  ctx.db.feedState.insert({ id: 0, nextSeq: 0n });
-});
-
 export const createPost = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
   if (text === '') {
     throw new SenderError("a post can't be empty");
   }
-  const state = ctx.db.feedState.id.find(0);
-  if (!state) {
-    throw new Error('feed not initialized');
-  }
-  ctx.db.post.insert({ seq: state.nextSeq, author: ctx.sender, text, postedAt: ctx.timestamp });
-  ctx.db.feedState.id.update({ ...state, nextSeq: state.nextSeq + 1n });
+  ctx.db.post.insert({ id: 0n, author: ctx.sender, text, postedAt: ctx.timestamp });
 });
 ```
 
@@ -195,12 +131,6 @@ export const createPost = spacetimedb.reducer({ text: t.string() }, (ctx, { text
 ```csharp
 public static partial class Module
 {
-    [SpacetimeDB.Reducer(ReducerKind.Init)]
-    public static void Init(ReducerContext ctx)
-    {
-        ctx.Db.FeedState.Insert(new FeedState { Id = 0, NextSeq = 0 });
-    }
-
     [SpacetimeDB.Reducer]
     public static void CreatePost(ReducerContext ctx, string text)
     {
@@ -208,10 +138,7 @@ public static partial class Module
         {
             throw new Exception("A post can't be empty");
         }
-        var state = ctx.Db.FeedState.Id.Find(0) ?? throw new Exception("Feed not initialized");
-        ctx.Db.Post.Insert(new Post { Seq = state.NextSeq, Author = ctx.Sender, Text = text, PostedAt = ctx.Timestamp });
-        state.NextSeq += 1;
-        ctx.Db.FeedState.Id.Update(state);
+        ctx.Db.Post.Insert(new Post { Id = 0, Author = ctx.Sender, Text = text, PostedAt = ctx.Timestamp });
     }
 }
 ```
@@ -220,25 +147,17 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    ctx.db.feed_state().insert(FeedState { id: 0, next_seq: 0 });
-}
-
 #[reducer]
 pub fn create_post(ctx: &ReducerContext, text: String) -> Result<(), String> {
     if text.is_empty() {
         return Err("a post can't be empty".to_string());
     }
-    let mut state = ctx.db.feed_state().id().find(0).ok_or("feed not initialized")?;
     ctx.db.post().insert(Post {
-        seq: state.next_seq,
+        id: 0,
         author: ctx.sender(),
         text,
         posted_at: ctx.timestamp,
     });
-    state.next_seq += 1;
-    ctx.db.feed_state().id().update(state);
     Ok(())
 }
 ```
@@ -247,23 +166,11 @@ pub fn create_post(ctx: &ReducerContext, text: String) -> Result<(), String> {
 <TabItem value="cpp" label="C++">
 
 ```cpp
-SPACETIMEDB_INIT(init, ReducerContext ctx) {
-    ctx.db[feed_state].insert(FeedState{0, 0});
-    return Ok();
-}
-
 SPACETIMEDB_REDUCER(create_post, ReducerContext ctx, std::string text) {
     if (text.empty()) {
         return Err("a post can't be empty");
     }
-    auto state = ctx.db[feed_state_id].find(uint8_t(0));
-    if (!state) {
-        return Err("feed not initialized");
-    }
-    FeedState updated = *state;
-    ctx.db[post].insert(Post{updated.next_seq, ctx.sender(), text, ctx.timestamp});
-    updated.next_seq += 1;
-    ctx.db[feed_state_id].update(updated);
+    ctx.db[post].insert(Post{0, ctx.sender(), text, ctx.timestamp});
     return Ok();
 }
 ```
@@ -271,45 +178,29 @@ SPACETIMEDB_REDUCER(create_post, ReducerContext ctx, std::string text) {
 </TabItem>
 </Tabs>
 
-## Define the views
+## Define the view
 
-Add two public anonymous views:
+Add a public anonymous view named `feed_page`, with two arguments: the page number and the page size. It reads every post with a range query on the `id` index, starting at 0 and with no upper bound. Then it sorts the posts from newest to oldest, skips the posts of the pages before, and returns the next ones. It caps the page size at 100, so a client can't ask for the whole feed at once.
 
-- `feed_page` takes a page number as an argument, and returns the posts of that page. It returns a query on the `seq` primary key, which SpacetimeDB answers with a single range lookup, and keeps up to date the same way as a subscription query.
-- `feed_info` returns the page the newest post is on, so clients know where the feed starts.
-
-Like a reducer, a view can take arguments. SpacetimeDB computes the view separately for each value of its arguments, and because `feed_page` is anonymous, every client that loads the same page shares one result. A view that takes arguments can only be subscribed to as a whole: clients can't add a filter to it.
+Like a reducer, a view can take arguments. SpacetimeDB computes the view separately for each set of argument values, and because `feed_page` is anonymous, every client that loads the same page with the same page size shares one result. A view that takes arguments can only be subscribed to as a whole: clients can't add a filter to it.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-// The posts of one page: page 0 holds posts 0 to 49, page 1 holds posts 50 to 99, and so on.
+// The largest page size a client can ask for.
+const MAX_PAGE_SIZE = 100;
+
+// One page of the feed, newest posts first.
 export const feedPage = spacetimedb.anonymousView(
   { name: 'feed_page', public: true },
-  { page: t.u64() },
+  { page: t.u32(), pageSize: t.u32() },
   t.array(post.rowType),
-  (ctx, { page }) => {
-    const first = page * PAGE_SIZE;
-    return ctx.from.post.where(p => p.seq.gte(first).and(p.seq.lt(first + PAGE_SIZE)));
-  }
-);
-
-const pageInfo = t.row('PageInfo', {
-  newestPage: t.u64(),
-});
-
-// The page the newest post is on.
-export const feedInfo = spacetimedb.anonymousView(
-  { name: 'feed_info', public: true },
-  t.array(pageInfo),
-  ctx => {
-    const state = ctx.db.feedState.id.find(0);
-    if (!state) {
-      return [];
-    }
-    const newestPage = state.nextSeq === 0n ? 0n : (state.nextSeq - 1n) / PAGE_SIZE;
-    return [{ newestPage }];
+  (ctx, { page, pageSize }) => {
+    const size = Math.min(pageSize, MAX_PAGE_SIZE);
+    const allPosts = new Range({ tag: 'included', value: 0n }, { tag: 'unbounded' });
+    const posts = Array.from(ctx.db.post.id.filter(allPosts)).sort((a, b) => (a.id < b.id ? 1 : -1));
+    return posts.slice(page * size, (page + 1) * size);
   }
 );
 ```
@@ -320,30 +211,19 @@ export const feedInfo = spacetimedb.anonymousView(
 ```csharp
 public static partial class Module
 {
-    // The posts of one page: page 0 holds posts 0 to 49, page 1 holds posts 50 to 99, and so on.
+    // The largest page size a client can ask for.
+    const uint MaxPageSize = 100;
+
+    // One page of the feed, newest posts first.
     [SpacetimeDB.View(Accessor = "FeedPage", Public = true)]
-    public static IQuery<Post> FeedPage(AnonymousViewContext ctx, ulong page)
+    public static List<Post> FeedPage(AnonymousViewContext ctx, uint page, uint pageSize)
     {
-        var first = page * PageSize;
-        return ctx.From.Post().Where(p => p.Seq.Gte(first).And(p.Seq.Lt(first + PageSize)));
-    }
-
-    [SpacetimeDB.Type]
-    public partial struct PageInfo
-    {
-        public ulong NewestPage;
-    }
-
-    // The page the newest post is on.
-    [SpacetimeDB.View(Accessor = "FeedInfo", Public = true)]
-    public static List<PageInfo> FeedInfo(AnonymousViewContext ctx)
-    {
-        if (ctx.Db.FeedState.Id.Find(0) is not FeedState state)
-        {
-            return new List<PageInfo>();
-        }
-        var newestPage = state.NextSeq == 0 ? 0 : (state.NextSeq - 1) / PageSize;
-        return new List<PageInfo> { new PageInfo { NewestPage = newestPage } };
+        var size = Math.Min(pageSize, MaxPageSize);
+        return ctx.Db.Post.Id.Filter((0UL, ulong.MaxValue))
+            .OrderByDescending(p => p.Id)
+            .Skip((int)Math.Min((long)page * size, int.MaxValue))
+            .Take((int)size)
+            .ToList();
     }
 }
 ```
@@ -352,29 +232,20 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-// The posts of one page: page 0 holds posts 0 to 49, page 1 holds posts 50 to 99, and so on.
+// The largest page size a client can ask for.
+const MAX_PAGE_SIZE: u32 = 100;
+
+// One page of the feed, newest posts first.
 #[view(accessor = feed_page, public)]
-fn feed_page(ctx: &AnonymousViewContext, page: u64) -> impl Query<Post> {
-    let first = page * PAGE_SIZE;
-    ctx.from
-        .post()
-        .r#where(move |p| p.seq.gte(first).and(p.seq.lt(first + PAGE_SIZE)))
-}
-
-#[derive(SpacetimeType)]
-pub struct PageInfo {
-    newest_page: u64,
-}
-
-// The page the newest post is on.
-#[view(accessor = feed_info, public)]
-fn feed_info(ctx: &AnonymousViewContext) -> Vec<PageInfo> {
-    let Some(state) = ctx.db.feed_state().id().find(0) else {
-        return vec![];
-    };
-    vec![PageInfo {
-        newest_page: state.next_seq.saturating_sub(1) / PAGE_SIZE,
-    }]
+fn feed_page(ctx: &AnonymousViewContext, page: u32, page_size: u32) -> Vec<Post> {
+    let size = page_size.min(MAX_PAGE_SIZE) as usize;
+    let mut posts: Vec<Post> = ctx.db.post().id().filter(0u64..).collect();
+    posts.sort_by(|a, b| b.id.cmp(&a.id));
+    posts
+        .into_iter()
+        .skip((page as usize).saturating_mul(size))
+        .take(size)
+        .collect()
 }
 ```
 
@@ -383,88 +254,70 @@ fn feed_info(ctx: &AnonymousViewContext) -> Vec<PageInfo> {
 
 C++ modules can't declare views that take arguments yet, so `feed_page` isn't available in C++.
 
-```cpp
-struct PageInfo {
-    uint64_t newest_page;
-};
-SPACETIMEDB_STRUCT(PageInfo, newest_page)
-
-// The page the newest post is on.
-SPACETIMEDB_VIEW(std::vector<PageInfo>, feed_info, Public, AnonymousViewContext ctx) {
-    auto state = ctx.db[feed_state_id].find(uint8_t(0));
-    if (!state) {
-        return {};
-    }
-    uint64_t newest_page = state->next_seq == 0 ? 0 : (state->next_seq - 1) / PAGE_SIZE;
-    return {PageInfo{newest_page}};
-}
-```
-
 </TabItem>
 </Tabs>
 
+Because `feed_page` reads every post, SpacetimeDB runs it again each time a post is created or deleted, once for each page that clients have loaded. Each run reads the whole feed, so keep the number of posts each view reads in check: for example, give each channel its own feed, as described in [What's next](#whats-next).
+
 ## Load pages from the client
 
-On the client, subscribe to `feed_info`. When it arrives, subscribe to the newest page and the page before it, so the screen is full even when the newest page only has a few posts. `feed_info` changes each time a new page starts, so the client loads new pages as they're created.
+On the client, subscribe to page 0 to show the newest posts. Keep the subscription handle of each loaded page:
 
-Keep the subscription handle of each loaded page:
-
-- When the user scrolls to the end of the feed, subscribe to the page before the oldest one loaded.
+- When the user scrolls to the end of the feed, subscribe to the next page. If the loaded pages hold fewer posts than they have room for, the last one isn't full and there are no older posts to load.
 - When a page is far off screen, unsubscribe from it. Its posts leave the client cache.
 
-In TypeScript and C#, subscribe to a view that takes arguments with SQL, for example `SELECT * FROM feed_page(3)`. In Rust, use the typed `feed_page(3)` query. The posts of every loaded page arrive in the same `feed_page` table in the client cache, which doesn't keep them in order, so sort them by `seq` before you display them.
+In TypeScript and C#, subscribe to a view that takes arguments with SQL, for example `SELECT * FROM feed_page(3, 50)`. In Rust, use the typed `feed_page(3, 50)` query. The posts of every loaded page arrive in the same `feed_page` table in the client cache, which doesn't keep them in order, so sort them by `id` before you display them.
+
+Pages count from the newest post, so a new post moves every post one place down: each loaded page gains a post at the top and passes one on to the next page. The loaded pages keep covering the same positions in the feed, for example the 100 newest posts when pages 0 and 1 are loaded.
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { DbConnection, tables, type SubscriptionHandle } from './module_bindings';
+import { DbConnection, type SubscriptionHandle } from './module_bindings';
+
+// Posts per page.
+const PAGE_SIZE = 50;
 
 const conn = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('my-app')
-  .onConnect(ctx => {
-    ctx.subscriptionBuilder().subscribe([tables.feedInfo]);
-  })
+  // Start with page 0, the newest posts.
+  .onConnect(() => loadPage(0))
   .build();
 
 // The subscription of each loaded page.
-const pages = new Map<bigint, SubscriptionHandle>();
+const pages = new Map<number, SubscriptionHandle>();
 
-function loadPage(page: bigint) {
-  if (page < 0n || pages.has(page)) {
+function loadPage(page: number) {
+  if (pages.has(page)) {
     return;
   }
   // Views that take arguments are subscribed to with SQL.
-  pages.set(page, conn.subscriptionBuilder().subscribe(`SELECT * FROM feed_page(${page})`));
+  pages.set(page, conn.subscriptionBuilder().subscribe(`SELECT * FROM feed_page(${page}, ${PAGE_SIZE})`));
 }
-
-// Load the newest page and the one before it, so the screen is full even when
-// the newest page only has a few posts. This runs again each time a new page starts.
-conn.db.feedInfo.onInsert((_ctx, info) => {
-  loadPage(info.newestPage);
-  loadPage(info.newestPage - 1n);
-});
 
 // Call this when the user scrolls to the end of the feed.
 function loadOlderPage() {
-  if (pages.size > 0) {
-    const oldest = [...pages.keys()].reduce((a, b) => (a < b ? a : b));
-    loadPage(oldest - 1n);
+  const loaded = [...pages.keys()];
+  // When the loaded pages aren't full, there are no older posts.
+  if (loaded.length === 0 || conn.db.feedPage.count() < BigInt(loaded.length * PAGE_SIZE)) {
+    return;
   }
+  loadPage(Math.max(...loaded) + 1);
 }
 
 // Call this to drop a page that's far off screen.
-function unloadPage(page: bigint) {
+function unloadPage(page: number) {
   pages.get(page)?.unsubscribe();
   pages.delete(page);
 }
 
 // Call this each frame to draw the loaded posts, newest first.
 function drawFeed() {
-  const posts = Array.from(conn.db.feedPage.iter()).sort((a, b) => (a.seq < b.seq ? 1 : -1));
+  const posts = Array.from(conn.db.feedPage.iter()).sort((a, b) => (a.id < b.id ? 1 : -1));
   for (const post of posts) {
-    console.log(`#${post.seq}: ${post.text}`);
+    console.log(`#${post.id}: ${post.text}`);
   }
 }
 
@@ -481,49 +334,42 @@ function publish(text: string) {
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
+// Posts per page.
+const int PageSize = 50;
+
+// The subscription of each loaded page.
+var pages = new Dictionary<uint, SubscriptionHandle>();
+
 var conn = DbConnection.Builder()
     .WithUri("http://localhost:3000")
     .WithDatabaseName("my-app")
-    .OnConnect((conn, identity, token) =>
-    {
-        conn.SubscriptionBuilder()
-            .AddQuery(q => q.From.FeedInfo())
-            .Subscribe();
-    })
+    // Start with page 0, the newest posts.
+    .OnConnect((conn, identity, token) => LoadPage(conn, 0))
     .Build();
 
-// The subscription of each loaded page.
-var pages = new Dictionary<ulong, SubscriptionHandle>();
-
-void LoadPage(long page)
+void LoadPage(DbConnection conn, uint page)
 {
-    if (page < 0 || pages.ContainsKey((ulong)page))
+    if (pages.ContainsKey(page))
     {
         return;
     }
     // Views that take arguments are subscribed to with SQL.
-    pages[(ulong)page] = conn.SubscriptionBuilder().Subscribe(new[] { $"SELECT * FROM feed_page({page})" });
+    pages[page] = conn.SubscriptionBuilder().Subscribe(new[] { $"SELECT * FROM feed_page({page}, {PageSize})" });
 }
-
-// Load the newest page and the one before it, so the screen is full even when
-// the newest page only has a few posts. This runs again each time a new page starts.
-conn.Db.FeedInfo.OnInsert += (ctx, info) =>
-{
-    LoadPage((long)info.NewestPage);
-    LoadPage((long)info.NewestPage - 1);
-};
 
 // Call this when the user scrolls to the end of the feed.
 void LoadOlderPage()
 {
-    if (pages.Count > 0)
+    // When the loaded pages aren't full, there are no older posts.
+    if (pages.Count == 0 || conn.Db.FeedPage.Count < pages.Count * PageSize)
     {
-        LoadPage((long)pages.Keys.Min() - 1);
+        return;
     }
+    LoadPage(conn, pages.Keys.Max() + 1);
 }
 
 // Call this to drop a page that's far off screen.
-void UnloadPage(ulong page)
+void UnloadPage(uint page)
 {
     if (pages.Remove(page, out var handle))
     {
@@ -534,9 +380,9 @@ void UnloadPage(ulong page)
 // Call this each frame to draw the loaded posts, newest first.
 void DrawFeed()
 {
-    foreach (var post in conn.Db.FeedPage.Iter().OrderByDescending(p => p.Seq))
+    foreach (var post in conn.Db.FeedPage.Iter().OrderByDescending(p => p.Id))
     {
-        Console.WriteLine($"#{post.Seq}: {post.Text}");
+        Console.WriteLine($"#{post.Id}: {post.Text}");
     }
 }
 
@@ -556,15 +402,18 @@ use spacetimedb_sdk::{DbContext, SubscriptionHandle as _, Table};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-// The subscription of each loaded page.
-static PAGES: Mutex<BTreeMap<u64, SubscriptionHandle>> = Mutex::new(BTreeMap::new());
+// Posts per page.
+const PAGE_SIZE: u32 = 50;
 
-fn load_page(ctx: &impl RemoteDbContext, page: u64) {
+// The subscription of each loaded page.
+static PAGES: Mutex<BTreeMap<u32, SubscriptionHandle>> = Mutex::new(BTreeMap::new());
+
+fn load_page(ctx: &impl RemoteDbContext, page: u32) {
     let mut pages = PAGES.lock().unwrap();
     if !pages.contains_key(&page) {
         let handle = ctx
             .subscription_builder()
-            .add_query(move |q| q.from.feed_page(page))
+            .add_query(move |q| q.from.feed_page(page, PAGE_SIZE))
             .subscribe();
         pages.insert(page, handle);
     }
@@ -572,14 +421,20 @@ fn load_page(ctx: &impl RemoteDbContext, page: u64) {
 
 // Call this when the user scrolls to the end of the feed.
 fn load_older_page(conn: &DbConnection) {
-    let oldest = PAGES.lock().unwrap().keys().next().copied();
-    if let Some(oldest) = oldest.filter(|&page| page > 0) {
-        load_page(conn, oldest - 1);
+    let (loaded, last) = {
+        let pages = PAGES.lock().unwrap();
+        (pages.len() as u64, pages.keys().next_back().copied())
+    };
+    // When the loaded pages aren't full, there are no older posts.
+    if let Some(last) = last {
+        if conn.db().feed_page().count() == loaded * PAGE_SIZE as u64 {
+            load_page(conn, last + 1);
+        }
     }
 }
 
 // Call this to drop a page that's far off screen.
-fn unload_page(page: u64) {
+fn unload_page(page: u32) {
     if let Some(handle) = PAGES.lock().unwrap().remove(&page) {
         let _ = handle.unsubscribe();
     }
@@ -588,9 +443,9 @@ fn unload_page(page: u64) {
 // Call this each frame to draw the loaded posts, newest first.
 fn draw_feed(conn: &DbConnection) {
     let mut posts: Vec<_> = conn.db().feed_page().iter().collect();
-    posts.sort_by(|a, b| b.seq.cmp(&a.seq));
+    posts.sort_by(|a, b| b.id.cmp(&a.id));
     for post in posts {
-        println!("#{}: {}", post.seq, post.text);
+        println!("#{}: {}", post.id, post.text);
     }
 }
 
@@ -598,22 +453,10 @@ fn main() {
     let conn = DbConnection::builder()
         .with_uri("http://localhost:3000")
         .with_database_name("my-app")
-        .on_connect(|ctx, _identity, _token| {
-            ctx.subscription_builder()
-                .add_query(|q| q.from.feed_info())
-                .subscribe();
-        })
+        // Start with page 0, the newest posts.
+        .on_connect(|ctx, _identity, _token| load_page(ctx, 0))
         .build()
         .expect("failed to connect");
-
-    // Load the newest page and the one before it, so the screen is full even when
-    // the newest page only has a few posts. This runs again each time a new page starts.
-    conn.db().feed_info().on_insert(|ctx, info| {
-        load_page(ctx, info.newest_page);
-        if info.newest_page > 0 {
-            load_page(ctx, info.newest_page - 1);
-        }
-    });
 
     // Process messages from the database on a background thread.
     conn.run_threaded();
@@ -634,17 +477,15 @@ fn publish(conn: &DbConnection, text: String) {
 
 You now have a feed that loads 50 posts at a time, and keeps the loaded pages live:
 
-- Each post gets a number with no gaps, from a counter updated in the same transaction.
-- The `feed_page` view takes a page number and returns that page's posts through a range lookup, shared by every client that loads the same page.
+- The `feed_page` view takes a page number and a page size, and returns that page of posts, newest first. Every client that loads the same page shares one result.
 - Clients subscribe to one page at a time, and unsubscribe from the pages they no longer show.
 
 To adapt it to your app:
 
-- **Several feeds.** For a feed per channel, add a `channel_id` column to `post`, keep a counter per channel, and give `feed_page` a second argument: `feed_page(channel_id, page)`.
-- **Jump to a page.** Subscribe to any page directly, for example page 0 to show the oldest posts.
-- **Deleted posts.** Deleting a post leaves its page one post short. Don't renumber the posts: that would move every later post to a different page.
-- **Other sort orders.** Numbering only works for one order, the order posts were created in. To page through rows in another order, such as search results, return one page of results from a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) instead. That page isn't live.
+- **Several feeds.** For a feed per channel, add an indexed `channel_id` column to `post` and give `feed_page` a third argument: `feed_page(channel_id, page, page_size)`. Read the posts with `filter` on `channel_id`, so each page only reads, and only runs again for, the posts of its own channel.
+- **Jump to a page.** Subscribe to any page directly, for example to show page 10 without loading pages 0 to 9.
+- **Other sort orders.** To sort by something else, such as likes, index that column and sort by it in the view.
 
-To learn more about the features used here, see [Views](../../00200-core-concepts/00200-functions/00500-views.md), [Subscriptions](../../00200-core-concepts/00400-subscriptions.md) and [Auto-Increment](../../00200-core-concepts/00300-tables/00230-auto-increment.md).
+To learn more about the features used here, see [Views](../../00200-core-concepts/00200-functions/00500-views.md), [Subscriptions](../../00200-core-concepts/00400-subscriptions.md) and [Indexes](../../00200-core-concepts/00300-tables/00300-indexes.md).
 
 Next, you can [add admin and moderator roles](./00200-admin-roles.md).
