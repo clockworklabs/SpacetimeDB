@@ -81,8 +81,8 @@ use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParam
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
-    HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
-    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, MigrationExecuteResult, MigrationOp,
+    ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
@@ -1977,6 +1977,16 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
             })
         });
         (result, None)
+    }
+
+    // TODO: migrations aren't supported in JS modules yet.
+    fn call_migration(&mut self, _op: MigrationOp<'_>, _budget: FunctionBudget) -> MigrationExecuteResult {
+        ExecutionResult {
+            stats: ExecutionStats::default(),
+            call_result: Err(ExecutionError::Trap(anyhow::anyhow!(
+                "migrations are not supported in JS modules"
+            ))),
+        }
     }
 }
 
