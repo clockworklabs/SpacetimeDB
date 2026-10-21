@@ -56,6 +56,8 @@ jobs:
           echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++"                 >> $GITHUB_ENV
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"                   >> $GITHUB_ENV
 
+      - name: Check and update rustup
+        uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@8adcbd15a19714745658412a8f238b79331cf6ad # rustup >= 1.29.2
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain

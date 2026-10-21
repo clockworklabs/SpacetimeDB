@@ -1,0 +1,30 @@
+name: Verify rustup update action
+
+on:
+  pull_request:
+    paths:
+      - .github/actions/ensure-rustup/**
+      - .github/workflows/ensure-rustup.yml
+  push:
+    branches: [master]
+    paths:
+      - .github/actions/ensure-rustup/**
+      - .github/workflows/ensure-rustup.yml
+
+permissions:
+  contents: read
+
+jobs:
+  ensure-rustup:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test version comparison and update behavior
+        if: runner.os == 'Linux'
+        run: python3 .github/actions/ensure-rustup/test.py
+      - uses: ./.github/actions/ensure-rustup
