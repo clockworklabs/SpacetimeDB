@@ -164,6 +164,54 @@ impl TieredStorage {
     }
 }
 
+#[cfg(test)]
+impl TieredStorage {
+    /// Make a [TieredStorage] that can be made to fail read access when the
+    /// returned atomic bool is set to `true`.
+    pub(crate) fn with_failing_reads_for_test() -> (Self, Arc<std::sync::atomic::AtomicBool>) {
+        use std::{
+            io,
+            sync::atomic::{AtomicBool, Ordering},
+        };
+
+        #[derive(Debug, Default)]
+        struct FailingReads {
+            inner: MemoryObjectStore,
+            fail_reads: Arc<AtomicBool>,
+        }
+
+        impl ObjectStore for FailingReads {
+            fn stat(&self, key: ObjectKey) -> Result<Option<ObjectMetadata>, ObjectStoreError> {
+                self.inner.stat(key)
+            }
+
+            fn read(&self, key: ObjectKey) -> Result<Option<ObjectBytes>, ObjectStoreError> {
+                if self.fail_reads.load(Ordering::Relaxed) {
+                    return Err(io::Error::other("injected object-store read failure").into());
+                }
+                self.inner.read(key)
+            }
+
+            fn write(&self, object: Object<'_>) -> Result<ObjectKey, ObjectStoreError> {
+                self.inner.write(object)
+            }
+        }
+
+        let store = FailingReads::default();
+        let fail_reads = store.fail_reads.clone();
+        (
+            Self::empty(
+                BackingStore {
+                    object_store: Box::new(store),
+                    budget: ByteBudget::unlimited(),
+                },
+                None,
+            ),
+            fail_reads,
+        )
+    }
+}
+
 #[derive(Debug)]
 struct ObjectCatalogEntry {
     size: u64,
