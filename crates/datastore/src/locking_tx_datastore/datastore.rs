@@ -1163,6 +1163,7 @@ pub(crate) mod tests {
         ScheduleSchema, SequenceSchema,
     };
     use spacetimedb_schema::table_name::TableName;
+    use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
@@ -4408,6 +4409,148 @@ pub(crate) mod tests {
         );
         commit(&datastore, tx)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_blob_fault_restores_indices_and_schema() -> ResultTest<()> {
+        // Bootstrap and commit with enough memory for all data. We only apply
+        // memory pressure later, so setup cannot accidentally trigger the error.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        // Two backing indices exercise undo of an earlier successful pair as
+        // well as the pair whose committed-table pointer-map rebuild fails.
+        let mut tx = begin_mut_tx(&datastore);
+        let indices = vec![
+            IndexSchema::for_test("Foo_id_first", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("Foo_id_second", BTreeAlgorithm::from(0)),
+        ];
+        let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
+        let table_id = datastore.create_table_mut_tx(&mut tx, basic_table_schema_with_indices(indices, constraints))?;
+        let large = "x".repeat(1024 * 1024);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        let constraint_id = tx.constraint_id_from_name("Foo_id_key")?.unwrap();
+        let schema_before = tx.committed_state_write_lock.tables[&table_id].get_schema().clone();
+
+        // Keep room for system-table pages, but not for the evicted 1 MiB blob.
+        // The tx table can build its pointer map; the committed table cannot.
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        // The first index becomes non-unique on both tables without a scan:
+        // another unique index remains. For the second index, the tx rebuild
+        // succeeds, then the committed rebuild tries to fault the large blob.
+        let error = datastore.drop_constraint_mut_tx(&mut tx, constraint_id).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+
+        // Even before transaction rollback, every changed index and the shared
+        // schema must be restored. No ConstraintRemoved was recorded on failure.
+        for table in [
+            &tx.committed_state_write_lock.tables[&table_id],
+            &tx.tx_state.insert_tables[&table_id],
+        ] {
+            assert_eq!(table.get_indexes_by_cols(&col(0)).len(), 2);
+            assert!(table
+                .get_indexes_by_cols(&col(0))
+                .iter()
+                .all(|(_, index)| index.is_unique()));
+            assert!(!table.has_pointer_map());
+            assert_eq!(table.get_schema(), &schema_before);
+        }
+        drop(reservation);
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Rollback must also restore the system-table constraint row deleted
+        // before the failed index changes. Check both metadata and enforcement
+        // from a fresh transaction, after the memory pressure has been removed.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.committed_state_write_lock.tables[&table_id].get_schema(),
+            &schema_before
+        );
+        assert_eq!(tx.constraint_id_from_name("Foo_id_key")?, Some(constraint_id));
+        assert!(insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Duplicate", 20)).is_err());
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_blob_fault_reverts_uniqueness_before_reporting_conflict() -> ResultTest<()> {
+        // Bootstrap and commit with enough memory for all data. We only apply
+        // memory pressure later, so setup cannot accidentally trigger the error.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, table_with_non_unique_index(0u16))?;
+        let large = "x".repeat(1024 * 1024);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // Insert a conflicting row, so making the index unique on each of the
+        // tx and committed state tables succeeds individually without reading
+        // the blob. The conflict is found only by `Index::can_merge`.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
+        // Leave enough room to insert constraint metadata into system tables,
+        // but too little to fault the committed row's 1MiB string back in.
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let error = datastore.create_constraint_mut_tx(&mut tx, constraint).unwrap_err();
+        // Formatting the merge-conflict error obtains a `RowRef`, which faults
+        // all of the row's blobs. Assert that we hit exactly this case.
+        // TODO(disk-tables): Don't display the entire column list?
+        assert!(matches!(
+            error,
+            DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+
+        // The fallible diagnostic must not bypass undo on either table.
+        // This must happen before transaction rollback!
+        for table in [
+            &tx.committed_state_write_lock.tables[&table_id],
+            &tx.tx_state.insert_tables[&table_id],
+        ] {
+            assert!(!table.has_unique_index());
+            assert!(table.has_pointer_map());
+        }
+        drop(reservation);
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Rollback must discard the newly inserted constraint metadata too.
+        // A fresh transaction must still permit different rows with the same key.
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(tx.constraint_id_from_name("Foo_id_unique")?.is_none());
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Duplicate", 20))?;
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 

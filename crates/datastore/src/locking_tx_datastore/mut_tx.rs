@@ -2538,12 +2538,13 @@ impl MutTxId {
         let table_id = st_constraint_ref.read_col(StConstraintFields::TableId)?;
         self.delete(ST_CONSTRAINT_ID, st_constraint_ref.pointer())?;
 
-        // Remove constraint in transaction's insert table.
-        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
-        // This likely will do a clone-write as over time
-        // the schema might have found other referents.
+        let (_, (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         let schema = commit_table
-            .with_mut_schema_and_clone(tx_table, |s| s.remove_constraint(constraint_id))
+            .get_schema()
+            .constraints
+            .iter()
+            .find(|constraint| constraint.constraint_id == constraint_id)
+            .cloned()
             .expect("there should be a schema in the committed state if we reach here");
 
         Ok((table_id, schema))
@@ -2681,12 +2682,14 @@ impl MutTxId {
             };
             if let Err(violation) = can_merge_result {
                 let cols = commit_table.indexes[&index_id].indexed_columns().clone();
+                // Revert before obtaining the `RowRef`, which can fail to fault
+                // the row's blobs.
+                revert(commit_table, tx_table, index_ids.len());
                 let violation = commit_table
                     .get_row_ref(commit_blob_store, violation)?
                     .expect("row came from scanning the table")
                     .project(&cols)
                     .expect("cols should be valid for this table");
-                revert(commit_table, tx_table, index_ids.len());
                 return Err(anyhow::anyhow!("Unique constraint violation during merge: {violation:?}").into());
             }
         }
@@ -2727,15 +2730,51 @@ impl MutTxId {
                 .map(|(id, _)| id)
                 .collect();
 
-            for &index_id in &index_ids {
-                commit_table.make_index_non_unique(index_id, commit_blob_store)?;
-                tx_table.make_index_non_unique(index_id, tx_blob_store)?;
+            let revert = |commit_table: &mut Table, tx_table: &mut Table, up_to: usize| {
+                for &index_id in &index_ids[..up_to] {
+                    commit_table
+                        .indexes
+                        .get_mut(&index_id)
+                        .expect("commit index must exist")
+                        .make_unique()
+                        .expect("index was unique before dropping the constraint");
+                    tx_table
+                        .indexes
+                        .get_mut(&index_id)
+                        .expect("transaction index must exist")
+                        .make_unique()
+                        .expect("index was unique before dropping the constraint");
+                }
+                commit_table.take_pointer_map();
+                tx_table.take_pointer_map();
+            };
+
+            for (i, &index_id) in index_ids.iter().enumerate() {
+                if let Err(e) = tx_table.make_index_non_unique(index_id, tx_blob_store) {
+                    revert(commit_table, tx_table, i);
+                    return Err(e.into());
+                }
+                if let Err(e) = commit_table.make_index_non_unique(index_id, commit_blob_store) {
+                    revert(commit_table, tx_table, i + 1);
+                    return Err(e.into());
+                }
             }
 
             index_ids
         } else {
             vec![]
         };
+
+        // We can now safely remove the constraint from the commit table's
+        // schema.
+        //
+        // This likely will do a clone-write as over time the schema might have
+        // found other referents. Delay it until all fallible index changes have
+        // succeeded so rollback always has a pending change to follow.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        commit_table
+            .with_mut_schema_and_clone(tx_table, |schema| schema.remove_constraint(constraint_id))
+            .expect("constraint existed when the drop began");
 
         self.push_schema_change(PendingSchemaChange::ConstraintRemoved(
             table_id,
