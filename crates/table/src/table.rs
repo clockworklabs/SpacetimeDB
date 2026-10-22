@@ -1856,9 +1856,20 @@ impl Table {
     /// Returns a list of all present row pointers.
     pub fn scan_all_row_ptrs(&self) -> Result<Vec<RowPointer>, TableError> {
         let mut ptrs = Vec::with_capacity(self.row_count as usize);
-        for row in self.scan_rows(&BlobSet::new_for_test()) {
-            let row = row?;
-            ptrs.push(row.pointer);
+        // Avoid using `scan_rows`, which constructs `RowRef`s and faults in
+        // blobs. We don't need them, as we're only interested in the row
+        // pointers.
+        for index in 0..self.inner.pages.num_pages() {
+            let page_index = PageIndex(index as _);
+            let Some(page) = self.inner.pages.get_page(page_index)? else {
+                continue;
+            };
+            page.with_page(|page| {
+                ptrs.extend(
+                    page.iter_fixed_len(self.row_size())
+                        .map(|page_offset| RowPointer::new(false, page_index, page_offset, self.squashed_offset)),
+                )
+            });
         }
         Ok(ptrs)
     }
@@ -3897,5 +3908,18 @@ pub(crate) mod test {
         table.make_index_non_unique(index_id, &blobs).unwrap();
         assert!(!table.indexes[&index_id].is_unique());
         assert!(table.has_pointer_map());
+    }
+
+    #[test]
+    fn clear_succeeds_with_external_blobs() {
+        let blobs = BlobSet::new_for_test();
+        let mut table = table(ProductType::from([AlgebraicType::String]));
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        table.insert(&blobs, &product![large]).unwrap();
+
+        assert_eq!(blobs.num_blobs(), 1);
+        assert_eq!(table.clear(&blobs).unwrap(), 1);
+        assert_eq!(table.num_rows(), 0);
+        assert_eq!(blobs.num_blobs(), 0);
     }
 }
