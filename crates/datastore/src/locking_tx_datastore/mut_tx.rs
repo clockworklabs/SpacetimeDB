@@ -2067,10 +2067,20 @@ impl MutTxId {
         // Remove the index in the transaction's insert table and the commit table.
         let ((tx_table, tx_bs, _), (commit_table, commit_bs, idx_map)) =
             self.get_or_create_insert_table_mut(table_id)?;
-        tx_table.delete_index(tx_bs, index_id, None)?;
-        let commit_index = commit_table
-            .delete_index(commit_bs, index_id, None)?
-            .expect("there should be a schema in the committed state if we reach here");
+        let tx_index = tx_table.delete_index(tx_bs, index_id, None)?;
+        let commit_index = match commit_table.delete_index(commit_bs, index_id, None) {
+            Ok(index) => index.expect("there should be a schema in the committed state if we reach here"),
+            Err(e) => {
+                // The individual table operations are atomic, but the tx_table
+                // removal already succeeded. Restore it before returning, since
+                // no IndexRemoved rollback entry has been recorded yet.
+                if let Some(index) = tx_index {
+                    // SAFETY: This is the index just removed from this table.
+                    unsafe { tx_table.add_index(index_id, index) };
+                }
+                return Err(e.into());
+            }
+        };
 
         // Remove index from schema.
         let index_schema = commit_table
