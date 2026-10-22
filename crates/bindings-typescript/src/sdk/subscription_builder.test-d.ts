@@ -20,7 +20,7 @@ const tablesSchema = schema({
   peopleBy: withViewParams(table({ name: 'people_by' }, person.rowType), {
     minId: t.u32(),
   }),
-  'lib.items': table({ name: 'lib.items' }, { id: t.u32() }),
+  'lib.lineItems': table({ name: 'lib.line_items' }, { id: t.u32() }),
 });
 const reducersSchema = reducers();
 const proceduresSchema = procedures();
@@ -63,7 +63,11 @@ sub.subscribe(tables => tables.peopleBy({}));
 // @ts-expect-error a view with args can't be queried without them.
 sub.subscribe(tables => tables.peopleBy.build());
 
-// A submodule's table is grouped under its namespace, untyped for now.
-sub.subscribe(tables => tables.lib.items.build());
-// @ts-expect-error it isn't also at the root.
-sub.subscribe(tables => tables['lib.items'].build());
+// A submodule's table is nested by its accessor name, as in `conn.db`.
+sub.subscribe(tables => tables.lib.lineItems.where(row => row.id.eq(1)));
+// @ts-expect-error `name` is not a column of `lib.lineItems`.
+sub.subscribe(tables => tables.lib.lineItems.where(row => row.name.eq('x')));
+// @ts-expect-error it isn't keyed by its source name.
+sub.subscribe(tables => tables.lib.line_items.build());
+// @ts-expect-error nor by its dotted accessor name at the root.
+sub.subscribe(tables => tables['lib.lineItems'].build());

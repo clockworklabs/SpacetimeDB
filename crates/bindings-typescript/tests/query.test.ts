@@ -399,21 +399,24 @@ describe('TableScan.toSql', () => {
 
 describe('makeFromBuilder', () => {
   // Exercises the query builder used by `subscriptionBuilder().subscribe(tables => ...)`:
-  // root tables (no dot in `sourceName`) are exposed directly, while namespaced/submodule
-  // tables (dotted `sourceName`, e.g. `"lib.orders"`) are grouped under a sub-object keyed
-  // by the namespace, so two tables with the same accessor name in different namespaces
-  // don't collide.
-  it('exposes root-level tables (no dot in sourceName) directly', () => {
+  // root tables are exposed directly, while namespaced/submodule tables (dotted
+  // `accessorName`, e.g. `"lib.orders"`) are nested under their namespace as in `conn.db`,
+  // so two tables with the same name in different namespaces don't collide.
+  it('exposes root-level tables (no dot in accessorName) directly', () => {
     const from = makeFromBuilder(schemaDef.tables);
     const sql = toSql(from.person.build());
 
     expect(sql).toBe('SELECT * FROM "person"');
   });
 
-  it('groups a namespaced table (dotted sourceName) under its namespace', () => {
+  it('nests a namespaced table (dotted accessorName) under its namespace', () => {
     const namespacedTables = {
       ...schemaDef.tables,
-      orders: { ...schemaDef.tables.orders, sourceName: 'lib.orders' },
+      orders: {
+        ...schemaDef.tables.orders,
+        accessorName: 'lib.orders',
+        sourceName: 'lib.orders',
+      },
     };
     const from = makeFromBuilder(namespacedTables) as any;
 
@@ -425,7 +428,11 @@ describe('makeFromBuilder', () => {
   it('keeps a root table with the same accessor name distinct from a namespaced one', () => {
     const namespacedTables = {
       ...schemaDef.tables,
-      orders: { ...schemaDef.tables.orders, sourceName: 'lib.orders' },
+      orders: {
+        ...schemaDef.tables.orders,
+        accessorName: 'lib.orders',
+        sourceName: 'lib.orders',
+      },
     };
     const from = makeFromBuilder(namespacedTables) as any;
 
@@ -487,8 +494,9 @@ describe('view calls', () => {
     const expected = `SELECT * FROM "lib"."people_by"(2)`;
     const qb = makeQueryBuilder(nsSchemaDef);
     expect(toSql(qb['lib.peopleBy']({ minAge: 2 }))).toBe(expected);
-    // The `subscribe` callback's builder groups it under its namespace.
-    const from = makeFromBuilder(nsSchemaDef.tables) as any;
-    expect(toSql(from.lib.people_by({ minAge: 2 }))).toBe(expected);
+    // The `subscribe` callback's builder nests it by its accessor name.
+    const from = makeFromBuilder<typeof nsSchemaDef>(nsSchemaDef.tables);
+    expect(toSql(from.lib.peopleBy({ minAge: 2 }))).toBe(expected);
+    expect((from.lib as any).people_by).toBeUndefined();
   });
 });

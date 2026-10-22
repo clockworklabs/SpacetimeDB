@@ -1,3 +1,4 @@
+import { accessorSlot } from './accessor_path';
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
@@ -13,7 +14,7 @@ import type {
   RowBuilder,
   TypeBuilder,
 } from './type_builders';
-import type { Values } from './type_util';
+import type { NestAccessors, Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
 import { Uuid } from './uuid';
 
@@ -270,43 +271,13 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
   > as Tbl['accessorName']]: QueryBuilderEntry<Tbl>;
 } & {};
 
-// Generated client bindings give a submodule's tables dotted accessor names, e.g. `lib.items`.
-type NamespaceOf<AccessorName> = AccessorName extends `${infer NS}.${string}`
-  ? NS
-  : never;
-
 /**
- * Like `QueryBuilder`, but with namespaces exposed as sub-objects.
+ * Like `QueryBuilder`, but with a submodule's tables nested by their dotted accessor name,
+ * as in `conn.db`: the table `lib.items` is `tables.lib.items`.
  * This is the type of the `tables` argument in a `subscribe` query-builder callback.
- *
- * Root-level tables appear as direct properties (same as `QueryBuilder`).
- * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
- * namespace's schema, so `tables.<namespace>.<table>` is fully typed.
- *
- * A table with a dotted accessor name is instead grouped under its namespace,
- * as `makeFromBuilder` does at runtime. Its key there is the rest of its `sourceName`,
- * which the types don't record, so such a namespace is untyped.
- *
- * When `SchemaDef['namespaces']` is absent or `{}` and no accessor name is dotted,
- * no namespace properties appear, so accessing an undeclared namespace is a compile error.
  */
-export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in Values<
-    SchemaDef['tables']
-  > as Tbl['accessorName'] extends `${string}.${string}`
-    ? never
-    : Tbl['accessorName']]: QueryBuilderEntry<Tbl>;
-} & {
-  readonly [NS in NamespaceOf<
-    Values<SchemaDef['tables']>['accessorName']
-  >]: QueryBuilder<UntypedSchemaDef>;
-} & {
-  readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
-    SchemaDef['namespaces']
-  >[NS] extends UntypedSchemaDef
-    ? QueryBuilder<NonNullable<SchemaDef['namespaces']>[NS]>
-    : never;
-};
+export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
+  NestAccessors<QueryBuilder<SchemaDef>>;
 
 /**
  * A runtime reference to a table. This materializes the RowExpr for us.
@@ -446,36 +417,36 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
 /**
  * Builds the namespace-aware `tables` object passed to `subscribe`'s query-builder callback.
  *
- * Tables whose `sourceName` contains no `.` are placed at the root.
- * Tables with a dotted `sourceName` (e.g. `"namespace.table"`) are grouped under a
- * sub-object keyed by the namespace alias, with the part after the dot as the
- * property key within that namespace.
+ * Each table is placed at its accessor name, with a dotted one (e.g. `"namespace.table"`)
+ * nested under its namespace, as `conn.db` places it.
  */
 export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
   tables: SchemaDef['tables']
 ): NamespacedQueryBuilder<SchemaDef> {
   const result: Record<string, unknown> = Object.create(null);
-  const namespaces: Record<string, Record<string, unknown>> = Object.create(
-    null
-  );
-
   for (const table of Object.values(tables) as UntypedTableDef[]) {
-    const dotIdx = table.sourceName.indexOf('.');
-    if (dotIdx === -1) {
-      result[table.accessorName] = createQueryBuilderEntry(table);
-    } else {
-      const ns = table.sourceName.slice(0, dotIdx);
-      const key = table.sourceName.slice(dotIdx + 1);
-      (namespaces[ns] ??= Object.create(null))[key] =
-        createQueryBuilderEntry(table);
+    const [target, key] = accessorSlot(result, table.accessorName);
+    target[key] = createQueryBuilderEntry(table);
+  }
+  return freezeNamespaces(
+    result
+  ) as unknown as NamespacedQueryBuilder<SchemaDef>;
+}
+
+// Freezes `obj` and the namespace objects, with a null prototype, that `accessorSlot` nested in it.
+function freezeNamespaces(
+  obj: Record<string, unknown>
+): Record<string, unknown> {
+  for (const value of Object.values(obj)) {
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      Object.getPrototypeOf(value) === null
+    ) {
+      freezeNamespaces(value as Record<string, unknown>);
     }
   }
-
-  for (const [ns, nsTables] of Object.entries(namespaces)) {
-    result[ns] = Object.freeze(nsTables);
-  }
-
-  return Object.freeze(result) as unknown as NamespacedQueryBuilder<SchemaDef>;
+  return Object.freeze(obj);
 }
 
 function createRowExpr<TableDef extends TypedTableDef>(
