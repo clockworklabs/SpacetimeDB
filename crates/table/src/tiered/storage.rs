@@ -1,4 +1,6 @@
 use std::fmt;
+#[cfg(test)]
+use std::sync::Arc;
 
 use derive_more::From;
 use parking_lot::RwLock;
@@ -199,16 +201,7 @@ impl TieredStorage {
 
         let store = FailingReads::default();
         let fail_reads = store.fail_reads.clone();
-        (
-            Self::empty(
-                BackingStore {
-                    object_store: Box::new(store),
-                    budget: ByteBudget::unlimited(),
-                },
-                None,
-            ),
-            fail_reads,
-        )
+        (Self::new(Box::new(store), None), fail_reads)
     }
 }
 
