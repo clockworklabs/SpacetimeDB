@@ -21,6 +21,10 @@ const tablesSchema = schema({
     minId: t.u32(),
   }),
   'lib.lineItems': table({ name: 'lib.line_items' }, { id: t.u32() }),
+  'lib.peopleBy': withViewParams(
+    table({ name: 'lib.people_by' }, person.rowType),
+    { minId: t.u32() }
+  ),
 });
 const reducersSchema = reducers();
 const proceduresSchema = procedures();
@@ -71,3 +75,10 @@ sub.subscribe(tables => tables.lib.lineItems.where(row => row.name.eq('x')));
 sub.subscribe(tables => tables.lib.line_items.build());
 // @ts-expect-error nor by its dotted accessor name at the root.
 sub.subscribe(tables => tables['lib.lineItems'].build());
+
+// So is a submodule's view with args, which is called with them.
+sub.subscribe(tables => tables.lib.peopleBy({ minId: 2 }));
+// @ts-expect-error `minId` is a number.
+sub.subscribe(tables => tables.lib.peopleBy({ minId: 'two' }));
+// @ts-expect-error it isn't keyed by its source name.
+sub.subscribe(tables => tables.lib.people_by({ minId: 2 }));
