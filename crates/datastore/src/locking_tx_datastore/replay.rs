@@ -1365,4 +1365,69 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn test_clear_with_evicted_blob_in_transactions_and_replay() -> ResultTest<()> {
+        // Exercise both meanings of clear: replay removes committed rows
+        // immediately, while a live transaction marks them deleted until commit.
+        for replay in [false, true] {
+            // Set up with ample memory. The two committed rows deliberately mix
+            // inline and external storage, in that order, so a row-by-row clear
+            // could delete the first row before failing to load the second.
+            const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: 0,
+                soft_limit_bytes: HARD_LIMIT_BYTES,
+                hard_limit_bytes: HARD_LIMIT_BYTES,
+            })?;
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = budget.clone();
+            let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+            let mut tx = begin_mut_tx(&datastore);
+            let schema = TableSchema::from_product_type([AlgebraicType::String].into());
+            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+            tx.insert_via_serialize_bsatn(table_id, &product!["small"])?;
+            tx.insert_via_serialize_bsatn(table_id, &product!["x".repeat(1024 * 1024)])?;
+            commit(&datastore, tx)?;
+
+            // Evict the 1 MiB blob, then reserve all but 256 KiB. Page operations
+            // still fit, but unnecessarily reading the blob must fail. The clear
+            // operation should succeed using only page data and catalog entries.
+            datastore.committed_state.read().storage.blobs().evict()?;
+            let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+            if replay {
+                let state = datastore.committed_state.write();
+                let mut state = ReplayCommittedState::new(state);
+                // A truncate needs the blob's catalog reference, not its bytes.
+                // Previously it deleted "small" and then faulted the large blob.
+                state.replay_truncate(table_id)?;
+                assert_eq!(state.tables[&table_id].num_rows(), 0);
+                assert!(state.tables[&table_id].scan_all_row_ptrs()?.is_empty());
+                assert_eq!(state.storage.blobs().num_blobs(), 0);
+                drop(reservation);
+            } else {
+                let mut tx = begin_mut_tx(&datastore);
+                tx.insert_via_serialize_bsatn(table_id, &product!["tx row"])?;
+                // Clearing tx rows and marking committed rows deleted must not
+                // read the evicted blob merely to obtain committed row pointers.
+                assert_eq!(tx.clear_table(table_id)?, 3);
+                assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+                assert_eq!(tx.table_row_count(table_id), Some(0));
+                drop(reservation);
+                let _ = datastore.rollback_mut_tx(tx);
+
+                // Rollback discards the transaction's own row and delete marks,
+                // leaving the original two committed rows intact. A fresh clear
+                // followed by commit must then remove those rows permanently.
+                let mut tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, table_id).len(), 2);
+                assert_eq!(tx.clear_table(table_id)?, 2);
+                commit(&datastore, tx)?;
+                let tx = begin_mut_tx(&datastore);
+                assert!(all_rows(&datastore, &tx, table_id).is_empty());
+                let _ = datastore.rollback_mut_tx(tx);
+            }
+        }
+        Ok(())
+    }
 }

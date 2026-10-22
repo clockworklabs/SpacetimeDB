@@ -99,6 +99,26 @@ impl Pages {
             .expect("pages len to be greater than number of free slots")
     }
 
+    /// Remove all pages without shrinking the page-index space.
+    ///
+    /// I.e., mark all pages as absent (`None`).
+    ///
+    /// The `recycle` closure is called for each page, so page allocations can
+    /// be put into the shared page pool or resident cache.
+    pub(crate) fn clear(&mut self, mut recycle: impl FnMut(PageIndex, Box<Page>)) {
+        self.non_full_pages.clear();
+        for (index, slot) in self.pages.iter_mut().enumerate() {
+            let index = PageIndex(index as _);
+            if let Some(page) = slot.take() {
+                assert!(self.free_page_slots.insert(index));
+                recycle(index, page);
+            } else {
+                assert!(self.free_page_slots.contains(&index));
+            }
+        }
+        assert_eq!(self.free_page_slots.len(), self.pages.len());
+    }
+
     pub fn free_empty_page(&mut self, page_index: PageIndex) -> Box<Page> {
         let page = self.get(page_index).expect("page to free to have been present");
 

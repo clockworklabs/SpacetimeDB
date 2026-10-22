@@ -733,6 +733,28 @@ impl PageSet {
         )
     }
 
+    /// Free all pages, retaining their indices as absent, reusable slots.
+    ///
+    /// Does not read pages or release blob references: the caller must release
+    /// references belonging to the discarded rows before calling this method.
+    pub(crate) fn clear(&mut self) {
+        if let Some(resident) = self.storage.resident_mut() {
+            resident.pages.clear(|index, page| {
+                let permit = resident.permits[index.idx()].take().expect("present page has a permit");
+                self.manager.recycle_resident(page, permit);
+            });
+        } else {
+            let tiered = self.storage.tiered_mut();
+            tiered.non_full_pages.clear();
+            for (index, slot) in tiered.slots.iter().enumerate() {
+                slot.free();
+                tiered.free_page_slots.insert(PageIndex(index as _));
+            }
+            assert_eq!(tiered.free_page_slots.len(), tiered.slots.len());
+        }
+        assert_eq!(self.num_present_pages(), 0);
+    }
+
     /// The number of present pages in `self`.
     ///
     /// Includes resident as well as non-resident pages, but not freed ones.

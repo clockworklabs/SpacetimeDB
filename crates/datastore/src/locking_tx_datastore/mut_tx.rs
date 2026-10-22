@@ -4368,7 +4368,10 @@ impl MutTxId {
     // Clears the table for `table_id`, removing all rows.
     pub fn clear_table(&mut self, table_id: TableId) -> Result<u64> {
         // Get the commit table.
-        let (commit_table, commit_bs, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
+        let (commit_table, ..) = self.committed_state_write_lock.get_table_and_blob_store(table_id)?;
+        // Collect pointers before clearing tx rows, so a committed-page fault
+        // cannot leave a partial clear. Marking deletes does not need blob data.
+        let committed_ptrs = commit_table.scan_all_row_ptrs()?;
 
         // Get the insert table and delete all rows from it.s
         let (tx_table, tx_blob_store, delete_table) = self
@@ -4377,8 +4380,7 @@ impl MutTxId {
         let mut rows_removed = tx_table.clear(tx_blob_store)?;
 
         // Mark every row in the committed state as deleted.
-        for row in commit_table.scan_rows(commit_bs) {
-            let ptr = row?.into_pointer();
+        for ptr in committed_ptrs {
             delete_table.insert(ptr);
             rows_removed += 1;
         }
