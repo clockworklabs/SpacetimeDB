@@ -100,8 +100,8 @@ impl TieredDatabaseStorage {
         &self.blobs
     }
 
-    pub fn physical_bytes_used_by_blobs(&self) -> u64 {
-        self.blobs.physical_bytes_used_by_blobs()
+    pub fn resident_bytes_used_by_blobs(&self) -> u64 {
+        self.blobs.resident_bytes_used_by_blobs()
     }
 
     pub fn new_empty_blob_set(&self) -> BlobSet {

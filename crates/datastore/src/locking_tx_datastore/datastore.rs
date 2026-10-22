@@ -3333,7 +3333,7 @@ pub(crate) mod tests {
 
         let stream_rows = tx
             .iter(ST_INBOUND_STREAM_ID)?
-            .map(StInboundStreamRow::try_from)
+            .map(|row| StInboundStreamRow::try_from(row?))
             .collect::<Result<Vec<_>>>()?;
         assert_eq!(stream_rows.len(), 1);
         assert_eq!(stream_rows[0].sender_identity, IdentityViaU256(sender));
@@ -3342,7 +3342,7 @@ pub(crate) mod tests {
 
         let msg_rows = tx
             .iter(ST_INBOUND_MSG_ID)?
-            .map(StInboundMsgRow::try_from)
+            .map(|row| StInboundMsgRow::try_from(row?))
             .collect::<Result<Vec<_>>>()?;
         assert!(msg_rows.is_empty());
 

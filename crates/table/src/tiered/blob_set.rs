@@ -19,7 +19,7 @@ use crate::{
     row_type_visitor::VarLenVisitorProgram,
     tiered::{
         error::{BlobError, ObjectStoreError},
-        map::{BlobHashWrapper, ObjectKey, ObjectMap},
+        map::{BlobHashWrapper, ObjectKey},
         mem::{self, BlobEvictionCandidate, BlobFrame, ReservedBlob},
         storage::Object,
         ByteBudget, ByteBudgetUsage, ResidentObjects, TieredStorage,
@@ -119,7 +119,6 @@ impl BlobSet {
             });
 
             if let Some(blob) = maybe_resident {
-<<<<<<< HEAD
                 let key = self.storage.write(Object::from(&blob))?;
                 assert_eq!(
                     key.as_blob_hash().expect("storage key to be a blob hash"),
@@ -239,7 +238,7 @@ impl BlobSet {
                 entry.get_mut().inc_uses();
                 Ok(())
             }
-            hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(hash.into())),
+            hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash.into()))),
         }
     }
 
@@ -276,7 +275,9 @@ impl BlobSet {
     pub fn get(&self, hash: BlobHashWrapper) -> Result<BlobHandle, BlobError> {
         let blob_or_bytes = {
             let entries = self.entries.read();
-            let entry = entries.get(&hash).ok_or_else(|| BlobError::MissingBlob(hash.into()))?;
+            let entry = entries
+                .get(&hash)
+                .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
             match entry {
                 BlobEntry::Resident { blob, .. } => Ok::<_, BlobError>(Ok(blob.clone())),
                 BlobEntry::NonResident { .. } => {
@@ -502,7 +503,7 @@ impl Deref for BlobHandle {
 pub struct BlobReadSet {
     // Rows without external blobs need no Arc allocation or reference counting.
     // Non-empty sets share their pins when a RowRef is cloned.
-    inner: Option<Arc<SmallHashMap<BlobHash, BlobHandle, 4, 16>>>,
+    inner: Option<Arc<SmallHashMap<BlobHashWrapper, BlobHandle, 4, 16>>>,
 }
 
 impl BlobReadSet {
@@ -535,13 +536,13 @@ impl BlobReadSet {
 
     /// Get the blob with content address `hash`, or `None` if it is not in the
     /// read set.
-    pub fn get(&self, hash: &BlobHash) -> Option<&BlobHandle> {
+    pub fn get(&self, hash: &BlobHashWrapper) -> Option<&BlobHandle> {
         self.inner.as_ref()?.get(hash)
     }
 
     /// Iterator over all entries in the read set.
     pub fn iter(&self) -> impl Iterator<Item = (&BlobHashWrapper, &BlobHandle)> {
-        self.inner.iter()
+        self.inner.iter().flat_map(|inner| inner.iter())
     }
 }
 
