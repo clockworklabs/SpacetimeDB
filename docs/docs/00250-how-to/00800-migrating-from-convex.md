@@ -310,8 +310,9 @@ If a Convex query takes arguments, define a
 [view with arguments](/docs/functions/views#views-with-arguments) and subscribe
 with `SELECT * FROM view_name(args)`. Arguments must be SQL literals, and the
 subscription cannot add filters, column lists, or joins to the view call. If you
-need filters or argument types that views don't support, subscribe to the
-underlying table with a filtered SQL or query-builder query instead.
+need filters or argument types that views don't support, you can model the
+arguments as part of the subscribed table data, or create a view whose result
+can be filtered by the client's subscription.
 
 ### 5. Split actions into reducers and procedures
 
