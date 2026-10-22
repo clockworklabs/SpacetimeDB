@@ -3605,7 +3605,7 @@ impl MutTxId {
             col_list![StInboundStreamFields::SenderIdentity, StInboundStreamFields::StreamId],
             &key,
         )?
-        .map(StInboundStreamRow::try_from)
+        .map(|row| StInboundStreamRow::try_from(row?))
         .next()
         .transpose()
     }
@@ -3629,7 +3629,7 @@ impl MutTxId {
             ],
             &key,
         )?
-        .map(StInboundMsgRow::try_from)
+        .map(|row| StInboundMsgRow::try_from(row?))
         .next()
         .transpose()
     }
@@ -3693,8 +3693,8 @@ impl MutTxId {
                 ],
                 start..=end,
             )?
-            .map(|row| row.pointer())
-            .collect::<Vec<_>>();
+            .map(|row| Ok(row?.into_pointer()))
+            .collect::<Result<Vec<_>>>()?;
         for row in rows {
             self.delete(ST_INBOUND_MSG_ID, row)?;
         }
@@ -4639,7 +4639,7 @@ mod tests {
     };
     use crate::traits::MutTx as _;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_table::page_pool::PagePool;
+    use spacetimedb_table::tiered::TieredStorageConfig;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
     const BOB: Identity = Identity::from_byte_array([2; 32]);
@@ -4660,7 +4660,7 @@ mod tests {
     }
 
     fn committed_subscribers(subscribers: &[(Identity, u64)]) -> ResultTest<(Locking, ViewCallInfo)> {
-        let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
+        let datastore = Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())?;
         let call = ViewCallInfo::anonymous(ViewId::from(10_000u32));
         let mut tx = begin_mut_tx(&datastore);
         for &(identity, count) in subscribers {

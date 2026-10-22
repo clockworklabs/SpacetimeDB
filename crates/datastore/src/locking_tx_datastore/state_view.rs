@@ -282,7 +282,7 @@ pub trait StateView {
                     // Look up the view's parameters, in position order.
                     let mut params = self
                         .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
-                        .map(StViewParamRow::try_from)
+                        .map(|row| StViewParamRow::try_from(row?))
                         .collect::<Result<Vec<_>>>()?;
                     params.sort_by_key(|param| param.param_pos);
 
