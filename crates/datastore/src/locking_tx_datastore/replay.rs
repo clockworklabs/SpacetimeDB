@@ -1164,7 +1164,7 @@ mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::{product, AlgebraicType};
-    use spacetimedb_table::tiered::TieredStorageConfig;
+    use spacetimedb_table::tiered::{ByteBudget, ByteBudgetConfig, TieredStorageConfig};
 
     use super::*;
 
@@ -1290,6 +1290,79 @@ mod tests {
             [spacetimedb_sats::product![table_id]],
             "the orphaned `st_event_table` row should be deleted and the extant one kept"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_failed_insert_blob_pinning_leaves_no_rows_in_transactions_or_replay() -> ResultTest<()> {
+        // Check the same post-serialization failure through the two callers,
+        // rather than only calling the lower-level table helpers directly.
+        for replay in [false, true] {
+            // Create and commit an empty table with ample memory. Reserving the
+            // remaining budget afterward targets the user insert, not bootstrap
+            // or the system-table writes needed to create its schema.
+            const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: 0,
+                soft_limit_bytes: HARD_LIMIT_BYTES,
+                hard_limit_bytes: HARD_LIMIT_BYTES,
+            })?;
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = budget.clone();
+            let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+            let mut tx = begin_mut_tx(&datastore);
+            let schema = TableSchema::from_product_type([AlgebraicType::String, AlgebraicType::String].into());
+            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+            commit(&datastore, tx)?;
+
+            let blob_size = 1024 * 1024;
+            // Different contents require two resident frames; identical strings
+            // would share a frame and would not trigger the pinning failure.
+            let row = product!["x".repeat(blob_size), "y".repeat(blob_size)];
+            // Leave room for page allocations and one blob. Writing the two blobs
+            // individually succeeds, but the returned RowRef cannot pin both.
+            let reservation =
+                budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024 - blob_size as u64)?;
+            if replay {
+                // Replay mutates committed state directly. It has no transaction
+                // rollback to discard a half-written row or its blob references.
+                let state = datastore.committed_state.write();
+                let mut state = ReplayCommittedState::new(state);
+                let schema = state.schema_for_table(table_id)?;
+                assert!(state.replay_insert(table_id, &schema, &row).is_err());
+                // Remove memory pressure before inspecting state, so subsequent
+                // reads can reveal leaked rows instead of failing to load them.
+                drop(reservation);
+                let table = &state.tables[&table_id];
+                assert_eq!(table.num_rows(), 0);
+                assert!(table.scan_all_row_ptrs()?.is_empty());
+                assert_eq!(state.storage.blobs().num_blobs(), 0);
+                // A subsequent replay operation must not see a ghost row from
+                // the failed operation, or inherit its blob references.
+                state.replay_insert(table_id, &schema, &product!["small", "row"])?;
+                assert_eq!(state.tables[&table_id].num_rows(), 1);
+            } else {
+                // An insertion error must undo its own physical writes while
+                // the transaction remains open. Rolling back here would hide
+                // the leak by discarding the entire transaction-local table.
+                let mut tx = begin_mut_tx(&datastore);
+                assert!(tx.insert_via_serialize_bsatn(table_id, &row).is_err());
+                drop(reservation);
+                let table = &tx.tx_state.insert_tables[&table_id];
+                // num_rows is unchanged even on the buggy path: the failure
+                // precedes confirmation. Check actual slots and blob refs too.
+                assert_eq!(table.num_rows(), 0);
+                assert!(table.scan_all_row_ptrs()?.is_empty());
+                assert_eq!(tx.tx_state.blob_store.num_blobs(), 0);
+                // Callers can handle an insertion error and keep the tx open.
+                // Committing must publish only the later successful insertion.
+                tx.insert_via_serialize_bsatn(table_id, &product!["small", "row"])?;
+                commit(&datastore, tx)?;
+                let tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, table_id), [product!["small", "row"]]);
+                let _ = datastore.rollback_mut_tx(tx);
+            }
+        }
         Ok(())
     }
 }
