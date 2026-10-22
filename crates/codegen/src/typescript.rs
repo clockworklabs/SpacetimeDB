@@ -62,6 +62,105 @@ pub struct TypeScript {
     pub import_extension: ImportExtension,
 }
 
+/// Generate root-module receiver bindings; submodule receivers are not supported yet.
+pub(super) fn generate_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+    fn collect(module: &ModuleDef, ty: &AlgebraicTypeUse, refs: &mut BTreeSet<AlgebraicTypeRef>) {
+        match ty {
+            AlgebraicTypeUse::Ref(r) if refs.insert(*r) => match &module.typespace_for_generate()[*r] {
+                AlgebraicTypeDef::Product(p) => p.elements.iter().for_each(|(_, ty)| collect(module, ty, refs)),
+                AlgebraicTypeDef::Sum(s) => s.variants.iter().for_each(|(_, ty)| collect(module, ty, refs)),
+                AlgebraicTypeDef::PlainEnum(_) => {}
+            },
+            AlgebraicTypeUse::Array(ty) | AlgebraicTypeUse::Option(ty) => collect(module, ty, refs),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                collect(module, ok_ty, refs);
+                collect(module, err_ty, refs);
+            }
+            _ => {}
+        }
+    }
+
+    let mut reducers = iter_reducers(module, crate::CodegenVisibility::OnlyPublic).collect::<Vec<_>>();
+    // Equivalent modules can register their reducers in different orders across languages.
+    reducers.sort_by(|left, right| left.name.cmp(&right.name));
+    let mut refs = BTreeSet::new();
+    for reducer in &reducers {
+        for (_, ty) in &reducer.params_for_generate.elements {
+            collect(module, ty, &mut refs);
+        }
+    }
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+    print_auto_generated_file_comment(out);
+    writeln!(
+        out,
+        "import {{ t as __t, remoteModule as __remoteModule, TypeBuilder as __TypeBuilder, type AlgebraicTypeType as __AlgebraicTypeType, type Infer as __Infer }} from 'spacetimedb/server';"
+    );
+    out.newline();
+    for typ in iter_types(module).filter(|typ| refs.contains(&typ.ty)) {
+        let name = type_ref_name(module, typ.ty);
+        match &module.typespace_for_generate()[typ.ty] {
+            AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &p.elements),
+            AlgebraicTypeDef::Sum(s) => define_body_for_sum(module, out, &name, &s.variants),
+            AlgebraicTypeDef::PlainEnum(e) => {
+                let variants = e
+                    .variants
+                    .iter()
+                    .cloned()
+                    .map(|v| (v, AlgebraicTypeUse::Unit))
+                    .collect::<Vec<_>>();
+                define_body_for_sum(module, out, &name, &variants);
+            }
+        }
+    }
+    writeln!(out, "export default __remoteModule({{");
+    out.indent(1);
+    for reducer in reducers {
+        let accessor = reducer.accessor_name.deref().to_case(Case::Camel);
+        let hash = spacetimedb_schema::def::reducer_signature_hash(
+            &reducer.params(),
+            &reducer.ok_return_type,
+            &reducer.err_return_type,
+            module.typespace(),
+        );
+        writeln!(out, "{}: {{", ts_string_literal(&accessor));
+        out.indent(1);
+        writeln!(out, "name: {},", ts_string_literal(&reducer.name));
+        writeln!(out, "signatureHash: {}n,", hash.to_u256());
+        writeln!(out, "params: {{");
+        out.with_indent(|out| {
+            write_object_type_builder_fields(module, out, &reducer.params_for_generate.elements, None, true, None)
+                .unwrap()
+        });
+        writeln!(out, "}},");
+        writeln!(out, "paramNames: {{");
+        out.indent(1);
+        for ((accessor, _), param) in reducer
+            .params_for_generate
+            .elements
+            .iter()
+            .zip(reducer.params().elements.iter())
+        {
+            writeln!(
+                out,
+                "{}: {},",
+                ts_string_literal(&accessor.deref().to_case(Case::Camel)),
+                ts_string_literal(param.name.as_deref().unwrap())
+            );
+        }
+        out.dedent(1);
+        writeln!(out, "}},");
+        out.dedent(1);
+        writeln!(out, "}},");
+    }
+    out.dedent(1);
+    writeln!(out, "}});");
+    vec![OutputFile {
+        filename: "index.ts".into(),
+        code: output.into_inner(),
+    }]
+}
+
 impl Lang for TypeScript {
     fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
         vec![]
