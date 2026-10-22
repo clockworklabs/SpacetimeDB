@@ -1,0 +1,13 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Implement a tenant-scoped audit-log page. The ordering key is (occurred_at, id), ascending. The exclusive cursor is that pair; never use timestamp alone. Only rows for the requested tenant with visible=true can enter a page. Apply filtering BEFORE the limit. The page table is a test adapter: replace it on each read_page call; it is not a per-client cache. No native pagination API or scan-cost guarantee is assumed.
+
+Tables (the first field is the primary key):
+- public AuditEntry: Id: ulong, Tenant: string, OccurredAt: ulong, Visible: bool
+- public PageEntry: Position: ulong, EntryId: ulong, OccurredAt: ulong
+
+Reducers (argument order is part of the contract):
+- add_entry(Id: ulong, Tenant: string, OccurredAt: ulong, Visible: bool): Insert the supplied audit entry.
+- read_page(Tenant: string, AfterTime: ulong, AfterId: ulong, Limit: ulong): Reject limits outside 1..=10 with 'invalid limit', preserving the previous page. Otherwise replace page_entry with matching entries strictly after the cursor, sorted by the pair, at most limit rows. Positions start at 0 and are consecutive. Empty pages clear old results. Audit rows are never changed.
+
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

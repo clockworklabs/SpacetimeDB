@@ -2,10 +2,14 @@ namespace SpacetimeDB;
 
 using System;
 using System.Globalization;
+using System.Linq;
 
-/// <summary>A table identifier with a separately quoted optional namespace and local name.</summary>
+/// <summary>A table identifier with separately quoted namespace segments and local name.</summary>
 public readonly struct SqlTableName
 {
+    private readonly string? quotedNamespace;
+
+    /// <summary>The namespace path, without SQL quoting.</summary>
     public string? Namespace { get; }
     public string LocalName { get; }
 
@@ -13,18 +17,32 @@ public readonly struct SqlTableName
     {
         LocalName = localName;
         Namespace = null;
+        quotedNamespace = null;
     }
 
     public SqlTableName(string @namespace, string localName)
     {
         Namespace = @namespace ?? throw new ArgumentNullException(nameof(@namespace));
         LocalName = localName;
+        quotedNamespace = SqlFormat.QuoteIdent(@namespace);
+    }
+
+    public SqlTableName(string[] namespaceSegments, string localName)
+    {
+        namespaceSegments =
+            namespaceSegments ?? throw new ArgumentNullException(nameof(namespaceSegments));
+        Namespace = namespaceSegments.Length == 0 ? null : string.Join(".", namespaceSegments);
+        LocalName = localName;
+        quotedNamespace =
+            namespaceSegments.Length == 0
+                ? null
+                : string.Join(".", namespaceSegments.Select(SqlFormat.QuoteIdent));
     }
 
     public override string ToString() =>
-        Namespace is null
+        quotedNamespace is null
             ? SqlFormat.QuoteIdent(LocalName)
-            : SqlFormat.QuoteIdent(Namespace) + "." + SqlFormat.QuoteIdent(LocalName);
+            : quotedNamespace + "." + SqlFormat.QuoteIdent(LocalName);
 }
 
 public readonly struct SqlLiteral<T>
