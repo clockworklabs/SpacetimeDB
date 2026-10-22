@@ -39,7 +39,8 @@ export type TableSchema<
   Idx extends readonly IndexOpts<keyof Row & string>[],
 > = {
   /**
-   * The name of the table.
+   * The `name` option: the table's canonical name if given, which client bindings always give.
+   * `undefined` in a module that leaves it to the accessor name and case conversion.
    */
   readonly tableName?: string;
 
