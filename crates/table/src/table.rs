@@ -1785,22 +1785,30 @@ impl Table {
         index_id: IndexId,
         pointer_map: Option<PointerMap>,
     ) -> Result<Option<TableIndex>, TableError> {
-        let Some(index) = self.indexes.remove(&index_id) else {
+        let Some(index) = self.indexes.get(&index_id) else {
             return Ok(None);
         };
 
         // If we removed the last unique index, add a pointer map.
-        if index.is_unique() && !self.indexes.values().any(|idx| idx.is_unique()) {
-            self.pointer_map = Some(pointer_map.map_or_else(|| self.rebuild_pointer_map(blobs), Ok)?);
+        let needs_pointer_map =
+            index.is_unique() && self.indexes.iter().all(|(id, idx)| *id == index_id || !idx.is_unique());
+        let pointer_map = needs_pointer_map
+            .then(|| pointer_map.map_or_else(|| self.rebuild_pointer_map(blobs), Ok))
+            .transpose()?;
+
+        // Commit the changes only if pointer map rebuild was successful.
+        let index = self.indexes.remove(&index_id).expect("index existence checked above");
+        if let Some(pointer_map) = pointer_map {
+            self.pointer_map = Some(pointer_map);
         }
 
         Ok(Some(index))
     }
 
-    // TODO(kim): When a transaction rolls back, we do not want to rebuild the
-    // pointer map, because that could cause page faults, making rollback
-    // fallible. `PendingSchemaChange` should ensure that we eventually end up
-    // with the same pointer map (or none) as before.
+    // When a transaction rolls back, we do not want to rebuild the pointer map,
+    // because that could cause page faults, making rollback fallible.
+    // `PendingSchemaChange` should ensure that we eventually end up with the
+    // same pointer map (or none) as before.
     pub fn rollback_add_index(&mut self, index_id: IndexId, pointer_map: Option<PointerMap>) -> Option<TableIndex> {
         let index = self.indexes.remove(&index_id)?;
         self.pointer_map = pointer_map;
@@ -3007,8 +3015,11 @@ enum PreparedInsertInner {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use crate::indexes::PAGE_SIZE;
     use crate::page::tests::hash_unmodified_save_get;
+    use crate::page_pool::PagePool;
     use crate::table_index::KeySize;
+    use crate::tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
@@ -3746,5 +3757,70 @@ pub(crate) mod test {
         assert_eq!(table.num_pages(), 2);
         assert_eq!(table.pages().num_pages(), 2);
         assert!(table.pages().get_page(PageIndex(0)).expect("no page faults").is_some());
+    }
+
+    #[test]
+    fn pointer_map_rebuild_failure_prevents_index_deletion() {
+        // Allow only one resident page so we can force rebuilding the pointer
+        // map to fail while faulting this table's page back in.
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: PAGE_SIZE as u64,
+            hard_limit_bytes: PAGE_SIZE as u64,
+        })
+        .unwrap();
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        ));
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64]));
+        let mut table = Table::new(
+            schema.clone().into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager.clone(),
+            PageEvictionPolicy::Evictable,
+        );
+        let blobs = BlobSet::new_for_test();
+        let index_id = IndexId(1);
+        let index = table
+            .new_index(
+                &BTreeAlgorithm {
+                    columns: ColList::new(0.into()),
+                }
+                .into(),
+                true,
+            )
+            .unwrap();
+        // A unique index provides set semantics, so the table has no pointer
+        // map. Deleting this index will need to build one from the stored rows.
+        unsafe { table.insert_index(&blobs, index_id, index) }.unwrap().unwrap();
+        table.insert(&blobs, &product![0_u64]).unwrap();
+        table.inner.pages.evict().unwrap();
+
+        // Occupy and pin the entire resident-page budget with another table.
+        // The target table's evicted page therefore cannot be faulted in.
+        let mut blocker = Table::new(
+            schema.into(),
+            SquashedOffset::TX_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        let (_, blocker_pin) = blocker.insert(&blobs, &product![1_u64]).unwrap();
+
+        // Rebuilding the pointer map fails. The unique index must remain in
+        // place so the table never loses both forms of set-semantic lookup.
+        let error = table.delete_index(&blobs, index_id, None).unwrap_err();
+        assert!(matches!(error, TableError::Page(_)));
+        assert!(table.indexes[&index_id].is_unique());
+        assert!(!table.has_pointer_map());
+
+        // Once the budget is available, the same transition succeeds: the
+        // unique index is removed and the replacement pointer map is present.
+        drop(blocker_pin);
+        drop(blocker);
+        assert!(table.delete_index(&blobs, index_id, None).unwrap().is_some());
+        assert!(!table.has_unique_index());
+        assert!(table.has_pointer_map());
     }
 }
