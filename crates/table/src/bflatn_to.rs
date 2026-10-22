@@ -3,6 +3,7 @@
 //! which write `val: ProductValue` typed at `ty` to `page` and `pages` respectively.
 
 use crate::{
+    blob_store::BlobHash,
     indexes::PageIndex,
     table::TableError,
     tiered::{BlobError, BlobSet, PageError, PageSet, ReservedPage},
@@ -147,24 +148,29 @@ pub unsafe fn write_row_to_page(
         large_blob_insertions: Vec::new(),
     };
 
-    // Write the row to the page. Roll back on any failure.
-    if let Err(e) = serialized.write_product(ty.product(), val) {
-        // SAFETY: The `visitor` is proper for the row type per caller requirements.
-        unsafe { serialized.roll_back_var_len_allocations(visitor) };
-        // SAFETY:
-        // - `fixed_offset` came from `alloc_fixed_len` so it is in bounds of `page`.
-        // - `RowTypeLayout::size()` ensures `fixed_offset` is properly aligned for `FreeCellRef`.
-        unsafe { fixed.free(fixed_offset, fixed_row_size) };
-        return Err(e);
-    }
-
-    let blob_store_inserted_bytes = if ty.layout.fixed {
+    // Write the row to the page.
+    // Ensure to not short-circuit errors, so we can roll back below.
+    let inserted = match serialized.write_product(ty.product(), val) {
         // The layout is fixed, so there are no large blobs to write.
-        <_>::default()
-    } else {
-        // Haven't stored large blobs or init those granules with blob hashes yet,
-        // so do it now.
-        serialized.write_large_blobs(blobs)?
+        Ok(()) if ty.layout.fixed => Ok(<_>::default()),
+        // Now write blobs.
+        Ok(()) => serialized.write_large_blobs(blobs).map_err(Into::into),
+        Err(e) => Err(e),
+    };
+
+    let blob_store_inserted_bytes = match inserted {
+        Ok(blob_store_inserted_bytes) => blob_store_inserted_bytes,
+        // Undo the insertion.
+        Err(e) => {
+            // SAFETY: The `visitor` is proper for the row type per caller requirements.
+            unsafe { serialized.roll_back_var_len_allocations(visitor) };
+            // SAFETY:
+            // - `fixed_offset` came from `alloc_fixed_len` so it is in bounds of `page`.
+            // - `RowTypeLayout::size()` ensures `fixed_offset` is properly aligned for `FreeCellRef`.
+            unsafe { fixed.free(fixed_offset, fixed_row_size) };
+
+            return Err(e);
+        }
     };
 
     Ok((fixed_offset, blob_store_inserted_bytes))
@@ -217,17 +223,31 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
     #[cold]
     #[inline(never)]
-    fn write_large_blobs(mut self, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
+    fn write_large_blobs(&mut self, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
         let mut blob_store_inserted_bytes = BlobNumBytes::default();
-        for (vlr, value) in self.large_blob_insertions {
+        for (i, (vlr, value)) in self.large_blob_insertions.iter().enumerate() {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
             // However, as it was added to `self.large_blob_insertions`,
             // we have not yet written the hash to that granule.
-            unsafe {
-                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blobs, &value, vlr)?;
+            let inserted_bytes = unsafe { self.var_view.write_large_blob_hash_to_granule(blobs, value, *vlr) };
+            match inserted_bytes {
+                Ok(inserted_bytes) => {
+                    blob_store_inserted_bytes += inserted_bytes;
+                }
+                // Decrement the refcounts for all blobs written so far.
+                Err(e) => {
+                    for (_, value) in self.large_blob_insertions[..i].iter().rev() {
+                        let hash = BlobHash::hash_from_bytes(value);
+                        blobs
+                            .free_ref(hash.into())
+                            .expect("blob was inserted by this operation");
+                    }
+                    return Err(e);
+                }
             }
         }
+
         Ok(blob_store_inserted_bytes)
     }
 
@@ -558,14 +578,58 @@ fn bsatn_len(val: &AlgebraicValue) -> usize {
 
 #[cfg(test)]
 pub mod test {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
     use crate::{
         bflatn_from::serialize_row_from_page, page::tests::hash_unmodified_save_get,
         row_type_visitor::row_type_visitor, tiered::BlobReadSet,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
+    use spacetimedb_lib::ProductType;
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
     use spacetimedb_sats::proptest::generate_typed_row;
+
+    #[test]
+    fn failed_blob_write_rolls_back_page_and_prior_blob_references() {
+        let blob_size = VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1;
+        let first = "a".repeat(blob_size);
+        let second = "b".repeat(blob_size);
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: blob_size as u64,
+            hard_limit_bytes: blob_size as u64,
+        })
+        .unwrap();
+        let blobs = BlobSet::new(
+            Arc::new(ResidentObjects::new(budget)),
+            Arc::new(TieredStorage::new_for_test()),
+        );
+
+        // Pin the first blob so inserting the second cannot evict it. Writing
+        // the row will therefore succeed for the first field and fail for the
+        // second, exercising rollback after a partial blob-set mutation.
+        let first_pin = blobs.insert(first.as_bytes()).unwrap();
+        let first_hash = first_pin.hash();
+        let ty: RowTypeLayout = ProductType::from([AlgebraicType::String, AlgebraicType::String]).into();
+        let visitor = row_type_visitor(&ty);
+        let row = spacetimedb_sats::product![first.clone(), second.clone()];
+        let mut page = Page::new(ty.size());
+
+        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap_err();
+        assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
+        assert_eq!(page.num_rows(), 0);
+        assert_eq!(blobs.num_blobs(), 1);
+        assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+
+        // The failed row's page allocations must also be reusable.
+        drop(first_pin);
+        let (offset, _) = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap();
+        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs) }.unwrap();
+        assert_eq!(page.num_rows(), 0);
+        assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
