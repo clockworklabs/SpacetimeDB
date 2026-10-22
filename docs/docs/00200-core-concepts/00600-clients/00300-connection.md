@@ -13,7 +13,7 @@ After [generating client bindings](./00200-codegen.md) for your module, you can 
 Before connecting, ensure you have:
 
 1. [Generated client bindings](./00200-codegen.md) for your module
-2. A published database running on SpacetimeDB (local or on [MainCloud](../../00300-resources/00100-how-to/00100-deploy/00100-maincloud.md))
+2. A published database running on SpacetimeDB (local or on [MainCloud](../../00250-how-to/00100-deploy/00100-maincloud.md))
 3. The database's URI and name or identity
 
 ## Basic Connection

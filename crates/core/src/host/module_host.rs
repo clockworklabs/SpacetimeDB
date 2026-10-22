@@ -13,6 +13,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
+use crate::host::wasm_common::module_host_actor::ReducerSuccessAction;
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -49,13 +50,14 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StInboundMsgRow};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -66,15 +68,16 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
+use spacetimedb_schema::def::{reducer_signature_hash, ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
@@ -227,6 +230,9 @@ pub struct ModuleInfo {
     /// Loaded by loading the module's program from the system tables, extracting its definition,
     /// and validating.
     pub module_def: Arc<ModuleDef>,
+    /// Signature hashes computed on first IDC use, keyed by fully qualified reducer name.
+    /// A new module gets a fresh cache on update or restart.
+    reducer_signature_hashes: FxHashMap<ReducerName, OnceLock<Hash>>,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -343,8 +349,14 @@ impl ModuleInfo {
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
         let metrics = ModuleMetrics::new(&database_identity);
+        let reducer_signature_hashes = module_def
+            .reducer_ids_and_defs()
+            .into_iter()
+            .map(|(_, reducer)| (reducer.name.clone(), OnceLock::new()))
+            .collect();
         Arc::new(ModuleInfo {
             module_def: Arc::new(module_def),
+            reducer_signature_hashes,
             owner_identity,
             database_identity,
             module_hash,
@@ -355,6 +367,22 @@ impl ModuleInfo {
 
     pub fn relational_db(&self) -> &Arc<RelationalDB> {
         self.subscriptions.relational_db()
+    }
+
+    /// Returns the reducer's signature hash, computing it on first use.
+    pub fn reducer_signature_hash(&self, reducer_name: &ReducerName) -> Hash {
+        *self.reducer_signature_hashes[reducer_name].get_or_init(|| {
+            let (_, reducer, owning_def) = self
+                .module_def
+                .reducer_by_name_with_module(reducer_name)
+                .expect("reducer belongs to this module");
+            reducer_signature_hash(
+                &reducer.params(),
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                owning_def.typespace(),
+            )
+        })
     }
 }
 
@@ -741,7 +769,7 @@ pub fn call_identity_connected(
     let stdb = module.relational_db();
     let workload = Workload::reducer_no_args(
         ReducerName::new(Identifier::new_unsafe_assume_valid("call_identity_connected".into())),
-        caller_auth.claims.identity,
+        caller_auth.identity,
         caller_connection_id,
     );
     let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload);
@@ -755,9 +783,9 @@ pub fn call_identity_connected(
 
     mut_tx
         .insert_st_client(
-            caller_auth.claims.identity,
+            caller_auth.identity,
             caller_connection_id,
-            &caller_auth.jwt_payload,
+            caller_auth.jwt_payload.as_deref(),
         )
         .map_err(DBError::from)
         .map_err(Box::new)?;
@@ -770,7 +798,7 @@ pub fn call_identity_connected(
         let tx = Some(ScopeGuard::into_inner(mut_tx));
         let params = ModuleHost::call_reducer_params(
             &module.module_def,
-            caller_auth.claims.identity,
+            caller_auth.identity,
             Some(caller_connection_id),
             None,
             None,
@@ -1177,6 +1205,8 @@ pub struct CallViewParams {
     pub caller: Identity,
     pub sender: Option<Identity>,
     pub args: ArgsTuple,
+    /// The key of the instance being evaluated: its rows are stored, and its reads tracked, under it.
+    pub view_call: ViewCallInfo,
     pub row_type: AlgebraicTypeRef,
     pub timestamp: Timestamp,
     /// The typespace of the module that owns this view.
@@ -1283,6 +1313,8 @@ impl CallProcedureParams {
 
 pub struct CallHttpHandlerParams {
     pub timestamp: Timestamp,
+    /// The random identity the host created for this request, and its token.
+    pub caller_auth: ConnectionAuthCtx,
     pub handler_id: HttpHandlerId,
     pub request: HttpRequest,
     pub request_body: Bytes,
@@ -1643,6 +1675,74 @@ impl From<UpdateEnvironmentResult> for UpdateDatabaseResult {
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
 pub struct NoSuchModule;
+
+/// Result of processing an IDC delivery, including retransmissions.
+/// New and replayed results must be durable before the transport replies.
+pub enum IdcReducerCallOutcome {
+    /// Recorded a new terminal result, either from reducer execution or validation failure.
+    /// The transaction offset identifies the commit that must become durable.
+    Recorded(ReducerCallResultWithTxOffset),
+    /// Returned the stored result of an earlier delivery without invoking the reducer again.
+    Replayed(IdcStoredReducerOutcome),
+    /// The sender already acknowledged this delivery, so its stored result was removed.
+    /// The reducer is not invoked again.
+    AlreadyAcked,
+}
+
+#[derive(Debug)]
+pub struct IdcStoredReducerOutcome {
+    pub result_status: StInboundMsgResultStatus,
+    pub result_payload: Bytes,
+    /// Committed prefix containing the stored outcome; the transport waits for durability.
+    pub tx_offset: u64,
+}
+
+/// The receiver's state for an ordered delivery.
+#[derive(Debug)]
+pub(super) enum IdcSequenceState {
+    /// This is the next sequence. Execute or record its failure in the checking transaction.
+    Ready,
+    /// This message was already processed. Return its stored outcome without running it again.
+    Replayed(StInboundMsgRow),
+    /// The sender acknowledged this message, so its stored outcome has been removed.
+    AlreadyAcked,
+}
+
+/// The sender, stream, and sequence of an IDC request.
+#[derive(Clone, Copy)]
+pub(super) struct IdcMessageParams {
+    pub sender_identity: Identity,
+    pub stream_id: u64,
+    pub seq: u64,
+}
+
+/// A validation failure that must be recorded before replying to the sender.
+#[derive(Debug, thiserror::Error)]
+enum IdcTerminalError {
+    #[error(transparent)]
+    InvalidArgs(#[from] InvalidReducerArguments),
+    #[error("IDC reducer does not exist: {0}")]
+    NoSuchReducer(String),
+    #[error("IDC reducer signature mismatch for {reducer}: expected {expected}, got {actual}")]
+    SignatureMismatch {
+        reducer: String,
+        expected: Hash,
+        actual: Hash,
+    },
+}
+
+/// A receiver failure that leaves the message pending for retry.
+#[derive(Debug, thiserror::Error)]
+pub enum IdcDeliveryFailure {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("IDC delivery is out of order: expected seq {expected}, got {actual}")]
+    OutOfOrder { expected: u64, actual: u64 },
+    #[error(transparent)]
+    Datastore(#[from] DBError),
+    #[error("internal IDC reducer call error: {0}")]
+    Internal(String),
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ReducerCallError {
@@ -2426,6 +2526,50 @@ impl ModuleHost {
         ))
     }
 
+    /// Validate the requested reducer against module def,
+    /// prepare its arguments by calling `call_reducer_params`.
+    /// Failures must be considered as terminal outcomes.
+    fn call_idc_reducer_param(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        reducer_name: &str,
+        args: FunctionArgs,
+        expected_signature_hash: Hash,
+    ) -> Result<(&ReducerDef, CallReducerParams), IdcTerminalError> {
+        let Some((reducer_id, reducer_def, owning_def)) =
+            self.info.module_def.reducer_by_name_with_module(reducer_name)
+        else {
+            return Err(IdcTerminalError::NoSuchReducer(reducer_name.to_string()));
+        };
+
+        if reducer_def.lifecycle.is_some() || reducer_def.visibility.is_private() {
+            return Err(IdcTerminalError::NoSuchReducer(reducer_name.to_string()));
+        }
+
+        let actual_signature_hash = self.info.reducer_signature_hash(&reducer_def.name);
+        if actual_signature_hash != expected_signature_hash {
+            return Err(IdcTerminalError::SignatureMismatch {
+                reducer: reducer_name.to_string(),
+                expected: expected_signature_hash,
+                actual: actual_signature_hash,
+            });
+        }
+
+        let params = Self::call_reducer_params(
+            owning_def,
+            caller_identity,
+            Some(caller_connection_id),
+            None,
+            None,
+            None,
+            reducer_id,
+            reducer_def,
+            args,
+        )?;
+        Ok((reducer_def, params))
+    }
+
     async fn call_reducer_with_params(
         &self,
         reducer_name: &ReducerName,
@@ -2450,6 +2594,198 @@ impl ModuleHost {
             |p, inst| { inst.call_reducer_with_offset(p).await },
         )
         .map_err(Into::into)
+    }
+
+    /// Check an inbound IDC delivery for the ordered configuration
+    /// against the receiver's stream state without mutating it.
+    ///
+    /// Algorithm:
+    ///
+    /// 1. Read `applied_prefix`, the highest contiguous `seq` whose terminal
+    ///    outcome has already been decided for `(sender_identity, stream_id)`.
+    /// 2. If `seq <= applied_prefix`, this is a duplicate or delayed delivery.
+    ///    Return the retained outcome when it still exists; otherwise the sender
+    ///    has already acknowledged it and the delivery is `AlreadyAcked`.
+    /// 3. If `seq == applied_prefix + 1`, the delivery is the next message in
+    ///    the stream and may run the reducer.
+    /// 4. Otherwise, an earlier message is still missing, so report the expected
+    ///    sequence and make the sender retry later.
+    pub(super) fn check_idc_stream_seq(
+        tx: &MutTxId,
+        delivery: IdcMessageParams,
+    ) -> Result<IdcSequenceState, IdcDeliveryFailure> {
+        let IdcMessageParams {
+            sender_identity,
+            stream_id,
+            seq,
+        } = delivery;
+        let applied_prefix = tx
+            .inbound_idc_applied_prefix(sender_identity, stream_id)
+            .map_err(DBError::from)?;
+
+        // This sequence was already processed. Replay its result if retained;
+        // otherwise it was acknowledged. Neither case executes the reducer again.
+        if seq <= applied_prefix {
+            let state = match tx
+                .inbound_idc_outcome(sender_identity, stream_id, seq)
+                .map_err(DBError::from)?
+            {
+                Some(row) => IdcSequenceState::Replayed(row),
+                None => IdcSequenceState::AlreadyAcked,
+            };
+            return Ok(state);
+        }
+
+        // Only the next sequence may execute; later deliveries must wait for
+        // the missing messages to be processed first.
+        let expected = applied_prefix + 1;
+        if seq == expected {
+            return Ok(IdcSequenceState::Ready);
+        }
+        Err(IdcDeliveryFailure::OutOfOrder { expected, actual: seq })
+    }
+
+    /// Keep the checking transaction open for a new delivery, or roll it back and
+    /// return the existing outcome. Delivery failures also roll back the transaction.
+    pub(super) fn check_idc_delivery(
+        db: &RelationalDB,
+        tx: MutTxId,
+        delivery: IdcMessageParams,
+    ) -> Result<ControlFlow<IdcReducerCallOutcome, MutTxId>, IdcDeliveryFailure> {
+        let (tx, state) = db.with_auto_rollback(tx, |tx| Self::check_idc_stream_seq(tx, delivery))?;
+        let outcome = match state {
+            IdcSequenceState::Ready => return Ok(ControlFlow::Continue(tx)),
+            IdcSequenceState::Replayed(row) => {
+                let tx_offset = ModuleSubscriptions::rollback_mut_tx(db, tx);
+                IdcReducerCallOutcome::Replayed(IdcStoredReducerOutcome {
+                    result_status: row.result_status,
+                    result_payload: row.result_payload,
+                    tx_offset,
+                })
+            }
+            IdcSequenceState::AlreadyAcked => {
+                ModuleSubscriptions::rollback_mut_tx(db, tx);
+                IdcReducerCallOutcome::AlreadyAcked
+            }
+        };
+        Ok(ControlFlow::Break(outcome))
+    }
+
+    async fn call_idc_reducer_with_params(
+        &self,
+        msg: IdcMessageParams,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let IdcMessageParams {
+            sender_identity,
+            stream_id,
+            seq,
+            ..
+        } = msg;
+
+        let on_success: ReducerSuccessAction = Box::new(move |tx, reducer_return_value| {
+            tx.record_inbound_idc_outcome(
+                sender_identity,
+                stream_id,
+                seq,
+                StInboundMsgResultStatus::Ok,
+                reducer_return_value.clone().unwrap_or_default(),
+            )?;
+            Ok(())
+        });
+
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(reducer_name);
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                executor
+                    .run_sync_job(move |state| {
+                        state.with_instance(move |inst| {
+                            drop(timer_guard);
+                            inst.call_idc_reducer(params, msg, on_success)
+                        })
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                drop(timer_guard);
+                host.main_instance
+                    .with_instance(|inst| async move { inst.call_idc_reducer(params, msg, on_success).await })
+                    .await
+            }
+        }
+    }
+
+    /// Record a validation failure or a reducer failure after its transaction rolled back.
+    ///
+    /// Opens a new transaction and checks the stream before writing. Only the next
+    /// unapplied sequence can be recorded. The check and write share a transaction,
+    /// so another request cannot record an outcome between them.
+    ///
+    /// If another request already processed this message, returns its stored outcome
+    /// as [`IdcReducerCallOutcome::Replayed`], or [`IdcReducerCallOutcome::AlreadyAcked`]
+    /// if the sender acknowledged it and the outcome was removed. Neither case writes
+    /// a new failure. An out-of-order sequence returns [`IdcDeliveryFailure::OutOfOrder`]
+    /// without recording anything.
+    ///
+    /// For both newly recorded and replayed outcomes, the caller must wait for the
+    /// returned transaction offset to become durable before replying.
+    pub(super) fn record_idc_terminal_error(
+        stdb: &RelationalDB,
+        delivery: IdcMessageParams,
+        status: StInboundMsgResultStatus,
+        payload: Bytes,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let IdcMessageParams {
+            sender_identity,
+            stream_id,
+            seq,
+            ..
+        } = delivery;
+
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+
+        let tx = match Self::check_idc_delivery(stdb, tx, delivery)? {
+            ControlFlow::Continue(tx) => tx,
+            ControlFlow::Break(outcome) => return Ok(outcome),
+        };
+
+        // The checking transaction stays open, so no other request can record this sequence.
+        let (tx, ()) = stdb
+            .with_auto_rollback(tx, |tx| {
+                tx.record_inbound_idc_outcome(sender_identity, stream_id, seq, status, payload.clone())
+            })
+            .inspect_err(|error| {
+                log::error!(
+                    "Unexpected failure recording IDC outcome after sequence check: database_identity={} sender_identity={} stream_id={stream_id} sequence={seq}: {error:#}",
+                    stdb.database_identity().to_hex(),
+                    sender_identity.to_hex(),
+                );
+            })
+            .map_err(DBError::from)?;
+
+        let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+            .commit_tx(tx)?
+            .ok_or_else(|| IdcDeliveryFailure::Internal("IDC transaction was not committed".into()))?;
+        stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+
+        let outcome = if status == StInboundMsgResultStatus::BudgetExceeded {
+            ReducerOutcome::BudgetExceeded
+        } else {
+            let message = String::from_utf8_lossy(&payload).into_owned().into_boxed_str();
+            ReducerOutcome::Failed(Box::new(message))
+        };
+        let result = ReducerCallResult {
+            outcome,
+            execution_budget_used: FunctionBudget::ZERO,
+            execution_duration: Duration::ZERO,
+        };
+        Ok(IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+            result,
+            tx_offset: from_tx_offset(tx_offset),
+        }))
     }
 
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
@@ -2546,6 +2882,95 @@ impl ModuleHost {
             async |call| self.call_reducer_with_params_and_offset(&call.name, call.params).await,
         )
         .await
+    }
+
+    /// Remove acknowledged outcomes in a separate transaction so a reducer rollback
+    /// does not undo cleanup.
+    fn trim_idc_outcomes(
+        &self,
+        sender_identity: Identity,
+        stream_id: u64,
+        ack_prefix: u64,
+    ) -> Result<(), IdcDeliveryFailure> {
+        if ack_prefix == 0 {
+            return Ok(());
+        }
+        let db = self.relational_db();
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, ()) = db
+            .with_auto_rollback(tx, |tx| {
+                tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)
+            })
+            .map_err(DBError::from)?;
+        let (_, tx_data, tx_metrics, reducer) = db
+            .commit_tx(tx)?
+            .ok_or_else(|| IdcDeliveryFailure::Internal("IDC transaction was not committed".into()))?;
+        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+        Ok(())
+    }
+
+    /// Processes an ordered IDC message and returns its recorded outcome.
+    ///
+    /// New messages are checked against the current module before running the reducer.
+    /// Successful changes and their outcome commit together. If validation or the
+    /// reducer fails, the error is recorded separately, with any reducer changes rolled back.
+    ///
+    /// Both success and recorded failure return [`IdcReducerCallOutcome::Recorded`].
+    /// Retries return [`IdcReducerCallOutcome::Replayed`] without running the reducer
+    /// again. Once the sender acknowledges the outcome and it is removed, later
+    /// retries return [`IdcReducerCallOutcome::AlreadyAcked`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdcDeliveryFailure`] if delivery cannot finish, including when an
+    /// outcome cannot be recorded. The sender should retry the same message.
+    ///
+    /// # Caller Requirements
+    ///
+    /// The caller handles authentication and the connection lifecycle. Send messages
+    /// in sequence order. Overlapping retries are safe, but out-of-order deliveries
+    /// are rejected rather than buffered for pipelining. Before replying, the caller
+    /// must wait for the returned transaction offset to become durable, including for replays.
+    pub async fn call_idc_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        reducer_name: &str,
+        args: FunctionArgs,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+        expected_signature_hash: Hash,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        self.trim_idc_outcomes(caller_identity, stream_id, ack_prefix)?;
+        let msg = IdcMessageParams {
+            sender_identity: caller_identity,
+            stream_id,
+            seq,
+        };
+
+        let reducer_params = self.call_idc_reducer_param(
+            caller_identity,
+            caller_connection_id,
+            reducer_name,
+            args,
+            expected_signature_hash,
+        );
+
+        let (reducer_def, params) = match reducer_params {
+            Ok(params) => params,
+            Err(err) => {
+                // Only a recorded failure becomes a terminal response. If this
+                // write fails, return a delivery failure so the sender retries.
+                return Self::record_idc_terminal_error(
+                    self.relational_db(),
+                    msg,
+                    StInboundMsgResultStatus::Err,
+                    Bytes::from(err.to_string()),
+                );
+            }
+        };
+        self.call_idc_reducer_with_params(msg, &reducer_def.name, params).await
     }
 
     pub async fn enqueue_reducer(
@@ -3030,6 +3455,7 @@ impl ModuleHost {
 
     pub async fn call_http_handler(
         &self,
+        caller_auth: ConnectionAuthCtx,
         handler_id: HttpHandlerId,
         request: HttpRequest,
         request_body: Bytes,
@@ -3040,6 +3466,7 @@ impl ModuleHost {
 
         let params = CallHttpHandlerParams {
             timestamp: Timestamp::now(),
+            caller_auth,
             handler_id,
             request,
             request_body,
@@ -3094,26 +3521,30 @@ impl ModuleHost {
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
-        use FunctionArgs::*;
-        let mut view_ids = HashSet::new();
-        view_collector.collect_views(&mut view_ids);
-        for view_id in view_ids {
+        let mut view_calls = HashSet::new();
+        view_collector.collect_views(&mut view_calls);
+        for ViewCall { view_id, args } in view_calls {
             let st_view_row = tx.lookup_st_view(view_id)?;
             let view_name: NamespacedIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let args = if is_anonymous {
-                ViewInstanceArgs::Anonymous
-            } else {
-                ViewInstanceArgs::Sender(caller)
-            };
-            let view_call = ViewCallInfo::from_args(view_id, args);
+            let args = ViewInstanceArgs::for_schema(is_anonymous, caller, args);
+            let view_call = ViewCallInfo::from_args(view_id, &args);
             let sender = args.sender();
             let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
-                let (res, trapped) =
-                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
+                let (res, trapped) = Self::call_view(
+                    instance,
+                    tx,
+                    &view_name,
+                    view_id,
+                    table_id,
+                    FunctionArgs::from_view_args(args.args()),
+                    view_call.clone(),
+                    caller,
+                    sender,
+                )?;
                 tx = res.tx;
                 if trapped {
                     return Ok((tx, true));
@@ -3121,7 +3552,7 @@ impl ModuleHost {
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_call.clone(), args)?;
+                tx.update_view_timestamp(view_call.clone(), args.clone())?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
@@ -3171,8 +3602,8 @@ impl ModuleHost {
                     break;
                 }
             };
-            let sender = match tx.view_instance_args(&view_call) {
-                Some(args) => args.sender(),
+            let instance_args = match tx.view_instance_args(&view_call) {
+                Some(args) => args,
                 None => {
                     outcome = ViewOutcome::Failed(format!(
                         "failed to look up materialized view args for view {}",
@@ -3189,7 +3620,9 @@ impl ModuleHost {
                 global_fn_ptr,
                 owning_def,
             } = resolved;
-            let args = match FunctionArgs::Nullary.into_tuple_for_def(owning_def, view_def) {
+            let sender = instance_args.sender();
+            let args = match FunctionArgs::from_view_args(instance_args.args()).into_tuple_for_def(owning_def, view_def)
+            {
                 Ok(args) => args,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
@@ -3207,6 +3640,7 @@ impl ModuleHost {
                 caller,
                 sender,
                 args,
+                view_call,
                 view_def.product_type_ref,
                 timestamp,
                 Arc::new(owning_def.typespace().clone()),
@@ -3248,6 +3682,7 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
@@ -3258,6 +3693,7 @@ impl ModuleHost {
             view_id,
             table_id,
             args,
+            view_call,
             caller,
             sender,
             Timestamp::now(),
@@ -3271,6 +3707,7 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
         timestamp: Timestamp,
@@ -3294,6 +3731,7 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             Arc::new(owning_def.typespace().clone()),
@@ -3310,6 +3748,7 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
         args: ArgsTuple,
+        view_call: ViewCallInfo,
         row_type: AlgebraicTypeRef,
         timestamp: Timestamp,
         view_typespace: Arc<Typespace>,
@@ -3324,6 +3763,7 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             view_typespace,
         };
@@ -3830,7 +4270,7 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{ModuleHost, ModuleInfo};
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
@@ -3842,6 +4282,210 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn idc_failure_recording_preserves_a_concurrent_outcome() -> anyhow::Result<()> {
+        use super::{IdcMessageParams, IdcReducerCallOutcome, IdcSequenceState};
+        use bytes::Bytes;
+        use spacetimedb_datastore::execution_context::Workload;
+        use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
+        use spacetimedb_datastore::traits::IsolationLevel;
+
+        for status in [
+            StInboundMsgResultStatus::Ok,
+            StInboundMsgResultStatus::Err,
+            StInboundMsgResultStatus::BudgetExceeded,
+        ] {
+            let db = TestDB::in_memory()?;
+            let delivery = IdcMessageParams {
+                sender_identity: Identity::ONE,
+                stream_id: 1,
+                seq: 1,
+            };
+
+            // The first attempt checks the stream, then rolls back its reducer.
+            let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            assert!(matches!(
+                ModuleHost::check_idc_stream_seq(&tx, delivery)?,
+                IdcSequenceState::Ready
+            ));
+            let _ = db.rollback_mut_tx(tx);
+
+            // A retry commits in the gap before the first attempt records its error.
+            let payload = Bytes::from_static(b"winning outcome");
+            with_auto_commit(&db, |tx| {
+                tx.record_inbound_idc_outcome(
+                    delivery.sender_identity,
+                    delivery.stream_id,
+                    delivery.seq,
+                    status,
+                    payload.clone(),
+                )
+                .map_err(crate::error::DBError::from)
+            })?;
+            let result = ModuleHost::record_idc_terminal_error(
+                &db,
+                delivery,
+                StInboundMsgResultStatus::Err,
+                Bytes::from_static(b"late error"),
+            )?;
+            let IdcReducerCallOutcome::Replayed(result) = result else {
+                panic!("failure recording must return the winning outcome");
+            };
+            assert_eq!(result.result_status, status);
+            assert_eq!(result.result_payload, payload);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn idc_failure_recording_checks_the_applied_prefix() -> anyhow::Result<()> {
+        use super::{IdcDeliveryFailure, IdcMessageParams, IdcReducerCallOutcome, ReducerOutcome};
+        use bytes::Bytes;
+        use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
+
+        for status in [StInboundMsgResultStatus::Err, StInboundMsgResultStatus::BudgetExceeded] {
+            let db = TestDB::in_memory()?;
+            let record = |seq| {
+                ModuleHost::record_idc_terminal_error(
+                    &db,
+                    IdcMessageParams {
+                        sender_identity: Identity::ONE,
+                        stream_id: 1,
+                        seq,
+                    },
+                    status,
+                    Bytes::from_static(b"rejected"),
+                )
+            };
+            let IdcReducerCallOutcome::Recorded(recorded) = record(1)? else {
+                panic!("first delivery must record a failure");
+            };
+            // The first response and retries must agree on the failure's classification.
+            assert!(matches!(
+                (status, recorded.result.outcome),
+                (StInboundMsgResultStatus::Err, ReducerOutcome::Failed(_))
+                    | (StInboundMsgResultStatus::BudgetExceeded, ReducerOutcome::BudgetExceeded)
+            ));
+            let offset = recorded.tx_offset.await?;
+            let IdcReducerCallOutcome::Replayed(replayed) = record(1)? else {
+                panic!("duplicate delivery must replay the failure");
+            };
+            assert_eq!(replayed.result_status, status);
+            assert_eq!(replayed.result_payload, Bytes::from_static(b"rejected"));
+            assert!(replayed.tx_offset >= offset);
+            assert!(matches!(record(2)?, IdcReducerCallOutcome::Recorded(_)));
+            with_auto_commit(&db, |tx| {
+                tx.trim_inbound_idc_outcomes(Identity::ONE, 1, 1)
+                    .map_err(crate::error::DBError::from)
+            })?;
+
+            // Sequence 1 has been acknowledged and trimmed. A late failure must not
+            // recreate it or move the prefix backward, even without an outcome row.
+            assert!(matches!(record(1)?, IdcReducerCallOutcome::AlreadyAcked));
+            assert!(matches!(
+                record(4),
+                Err(IdcDeliveryFailure::OutOfOrder { expected: 3, actual: 4 })
+            ));
+            assert!(matches!(record(3)?, IdcReducerCallOutcome::Recorded(_)));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reducer_signature_hash_cache_is_lazy_and_scoped_to_module() -> anyhow::Result<()> {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+        use spacetimedb_lib::{hash_bytes, ProductType};
+        use spacetimedb_schema::def::reducer_signature_hash;
+        use spacetimedb_schema::reducer_name::ReducerName;
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db);
+        let make_info = |child_type| {
+            let mut child = RawModuleDefV10Builder::new();
+            let payload =
+                child.add_algebraic_type([], "Payload", AlgebraicType::product([("value", child_type)]), false);
+            child.add_reducer("receive", ProductType::from([("payload", payload.into())]));
+
+            let mut nested = RawModuleDefV10Builder::new();
+            nested.add_reducer("receive", ProductType::from([("payload", AlgebraicType::U8)]));
+            child.add_submodule("nested", nested.finish());
+
+            let mut sibling = RawModuleDefV10Builder::new();
+            sibling.add_reducer("receive", ProductType::from([("payload", AlgebraicType::U32)]));
+
+            let mut parent = RawModuleDefV10Builder::new();
+            let payload = parent.add_algebraic_type(
+                [],
+                "Payload",
+                AlgebraicType::product([("value", AlgebraicType::U64)]),
+                false,
+            );
+            parent.add_reducer("receive", ProductType::from([("payload", payload.into())]));
+            parent.add_submodule("child", child.finish());
+            parent.add_submodule("sibling", sibling.finish());
+            ModuleInfo::new(
+                parent.finish().try_into().unwrap(),
+                Identity::ZERO,
+                Identity::ONE,
+                hash_bytes(b"test module"),
+                subscriptions.clone(),
+            )
+        };
+        let hash_for = |info: &ModuleInfo, name| {
+            let (_, reducer, owning) = info.module_def.reducer_by_name_with_module(name).unwrap();
+            let hash = info.reducer_signature_hash(&reducer.name);
+            assert_eq!(
+                hash,
+                reducer_signature_hash(
+                    &reducer.params(),
+                    &reducer.ok_return_type,
+                    &reducer.err_return_type,
+                    owning.typespace(),
+                )
+            );
+            assert_eq!(info.reducer_signature_hashes[&reducer.name].get(), Some(&hash));
+            hash
+        };
+
+        let info = make_info(AlgebraicType::String);
+        assert_eq!(info.reducer_signature_hashes.len(), 4);
+        assert!(info.reducer_signature_hashes.values().all(|slot| slot.get().is_none()));
+        let child_hash = hash_for(&info, "child.receive");
+        for name in ["receive", "sibling.receive", "child.nested.receive"] {
+            assert!(info.reducer_signature_hashes[&ReducerName::for_test(name)]
+                .get()
+                .is_none());
+        }
+        assert_eq!(hash_for(&info.clone(), "child.receive"), child_hash);
+        let parent_hash = hash_for(&info, "receive");
+        assert_ne!(parent_hash, child_hash);
+        let sibling_hash = hash_for(&info, "sibling.receive");
+        let nested_hash = hash_for(&info, "child.nested.receive");
+        assert_ne!(sibling_hash, child_hash);
+        assert_ne!(nested_hash, child_hash);
+
+        // Reloading the same definition starts empty and produces the same hash.
+        let reloaded = make_info(AlgebraicType::String);
+        assert!(reloaded
+            .reducer_signature_hashes
+            .values()
+            .all(|slot| slot.get().is_none()));
+        assert_eq!(hash_for(&reloaded, "child.receive"), child_hash);
+
+        // A changed module must not reuse a hash cached for the same reducer name.
+        let updated = make_info(AlgebraicType::Bool);
+        assert!(updated
+            .reducer_signature_hashes
+            .values()
+            .all(|slot| slot.get().is_none()));
+        assert_ne!(hash_for(&updated, "child.receive"), child_hash);
+        assert_eq!(hash_for(&updated, "receive"), parent_hash);
+        assert_eq!(hash_for(&updated, "sibling.receive"), sibling_hash);
+        assert_eq!(hash_for(&updated, "child.nested.receive"), nested_hash);
+        assert_eq!(hash_for(&info, "child.receive"), child_hash);
+        Ok(())
+    }
 
     fn v2_client_config() -> ClientConfig {
         ClientConfig {

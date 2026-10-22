@@ -20,6 +20,41 @@ pub fn spec() -> BenchmarkSpec {
                 timeout: Duration::from_secs(10),
             },
         ));
+        scorers.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                use serde_json::json;
+                s.call("set_sale", json!([2, "games", 17]))?;
+                s.rows(
+                    "category_summary",
+                    &["category", "total_amount", "sale_count"],
+                    json!([["games", 17, 1]]),
+                )?;
+                s.call("set_sale", json!([4, "games", -17]))?;
+                s.rows(
+                    "category_summary",
+                    &["category", "total_amount", "sale_count"],
+                    json!([["games", 0, 2]]),
+                )?;
+                s.call("remove_sale", json!([2]))?;
+                s.call("remove_sale", json!([2]))?;
+                s.rows(
+                    "category_summary",
+                    &["category", "total_amount", "sale_count"],
+                    json!([["games", -17, 1]]),
+                )?;
+                s.call("remove_sale", json!([4]))?;
+                s.rows(
+                    "category_summary",
+                    &["category", "total_amount", "sale_count"],
+                    json!([]),
+                )?;
+                Ok(())
+            },
+        ));
         scorers
     })
 }

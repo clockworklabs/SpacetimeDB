@@ -3254,6 +3254,8 @@ fn generate_query_builder_types(
         source_name: String,
         source_pascal: String,
         can_be_lookup: bool,
+        /// A view that takes arguments
+        takes_args: bool,
     }
 
     writeln!(output, "// QueryBuilder types");
@@ -3310,6 +3312,7 @@ fn generate_query_builder_types(
             source_name: table.name.deref().to_string(),
             source_pascal,
             can_be_lookup: !table.is_event,
+            takes_args: false,
         });
     }
 
@@ -3347,6 +3350,7 @@ fn generate_query_builder_types(
             source_name: view.name.deref().to_string(),
             source_pascal,
             can_be_lookup: true,
+            takes_args: !view.params.elements.is_empty(),
         });
     }
 
@@ -3484,7 +3488,7 @@ fn generate_query_builder_types(
     writeln!(output, "    static TArray<FString> AllTablesSqlQueries()");
     writeln!(output, "    {{");
     writeln!(output, "        TArray<FString> Sql;");
-    for source_meta in &source_metas {
+    for source_meta in source_metas.iter().filter(|source_meta| !source_meta.takes_args) {
         let source_pascal = &source_meta.source_pascal;
         writeln!(
                 output,

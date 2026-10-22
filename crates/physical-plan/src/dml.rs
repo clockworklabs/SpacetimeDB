@@ -65,6 +65,7 @@ impl DeletePlan {
             schema,
             alias,
             delta: None,
+            view_args: None,
         });
         let project = match filter {
             None => ProjectName::None(relvar),
@@ -103,6 +104,7 @@ impl UpdatePlan {
             schema,
             alias,
             delta: None,
+            view_args: None,
         });
         let project = match filter {
             None => ProjectName::None(relvar),

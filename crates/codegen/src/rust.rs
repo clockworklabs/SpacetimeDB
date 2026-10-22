@@ -2,8 +2,9 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, CodegenVisibility,
+    is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
+    iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
+    CodegenVisibility,
 };
 use crate::CodegenOptions;
 use crate::OutputFile;
@@ -453,7 +454,20 @@ pub(super) fn parse_table_update(
 "
         );
 
-        implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor");
+        // A parameterized view can't be queried without arguments, so its accessor takes them.
+        // If SQL can't express its params, it can't be queried at all, so it gets no accessor.
+        match module.view(&table.name) {
+            Some(view) if !view.params.elements.is_empty() => {
+                let params = &view.params_for_generate.elements;
+                if params.iter().all(|(_, ty)| is_sql_literal_type(ty)) {
+                    implement_query_view_call_accessor(module, table, params, out, &row_type)
+                        .expect("failed to implement query view call accessor");
+                }
+            }
+            _ => {
+                implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor")
+            }
+        }
 
         OutputFile {
             filename: table_module_name(&table.accessor_name) + ".rs",
@@ -900,6 +914,67 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
         impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
             fn {accessor_method}(&self) -> __sdk::__query_builder::Table<{struct_name}> {{
                 __sdk::__query_builder::Table::new({table_name:?})
+            }}
+        }}
+"
+    )
+}
+
+/// Can a SQL literal express a value of this type?
+/// Matches the types the server accepts as view args, which are the types `SqlLiteral` is implemented for.
+fn is_sql_literal_type(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Primitive(_)
+        | AlgebraicTypeUse::String
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Timestamp
+        | AlgebraicTypeUse::Uuid => true,
+        AlgebraicTypeUse::Array(elem) => matches!(**elem, AlgebraicTypeUse::Primitive(PrimitiveType::U8)),
+        _ => false,
+    }
+}
+
+/// Like [`implement_query_table_accessor`], but for a parameterized view:
+/// the accessor takes the view's params and renders them as the call's args.
+fn implement_query_view_call_accessor(
+    module: &ModuleDef,
+    table: &TableDef,
+    params: &[(Identifier, AlgebraicTypeUse)],
+    out: &mut impl Write,
+    struct_name: &String,
+) -> fmt::Result {
+    let accessor_method = table_method_name(&table.accessor_name);
+    let view_name = table.name.deref();
+    let query_accessor_trait = accessor_method.to_string() + "QueryTableAccess";
+    let FormattedArglist {
+        arglist_no_delimiters, ..
+    } = FormattedArglist::for_arguments(module, params);
+    let args = params
+        .iter()
+        .map(|(ident, _)| {
+            let arg_name = ident.deref().to_case(Case::Snake);
+            format!("__sdk::__query_builder::SqlLiteral::to_sql_literal({arg_name})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    writeln!(
+        out,
+        "
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the view `{struct_name}`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait {query_accessor_trait} {{
+            #[allow(non_snake_case)]
+            /// Get a query for a call to the view `{struct_name}` with the given arguments.
+            fn {accessor_method}(&self, {arglist_no_delimiters}) -> __sdk::__query_builder::ViewCall<{struct_name}>;
+        }}
+
+        impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
+            fn {accessor_method}(&self, {arglist_no_delimiters}) -> __sdk::__query_builder::ViewCall<{struct_name}> {{
+                __sdk::__query_builder::ViewCall::new({view_name:?}, [{args}])
             }}
         }}
 "
@@ -1689,7 +1764,9 @@ type QueryBuilder = __sdk::QueryBuilder;
             out.delimited_block(
                 "const ALL_TABLE_NAMES: &'static [&'static str] = &[",
                 |out| {
-                    for (name, _, _) in iter_table_names_and_types(module, visibility) {
+                    for (name, _, _) in iter_table_names_and_types(module, visibility)
+                        .filter(|(name, _, _)| !is_parameterized_view(module, name))
+                    {
                         writeln!(out, "\"{name}\",");
                     }
                 },

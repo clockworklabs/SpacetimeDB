@@ -2672,8 +2672,11 @@ mod tests {
         let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
-        let args = ViewInstanceArgs::Sender(sender);
-        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, sender)?;
+        let args = ViewInstanceArgs::Sender {
+            sender,
+            args: ProductValue::default(),
+        };
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, sender)?;
         stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
@@ -2770,8 +2773,11 @@ mod tests {
         };
 
         let mut tx = begin_mut_tx(&stdb);
-        let args = ViewInstanceArgs::Sender(Identity::ONE);
-        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, Identity::ONE)?;
+        let args = ViewInstanceArgs::Sender {
+            sender: Identity::ONE,
+            args: ProductValue::default(),
+        };
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, Identity::ONE)?;
         stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
@@ -2921,8 +2927,20 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let view_call = ViewCallInfo::anonymous(view_id);
-        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, stale_sender)?;
-        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, live_sender)?;
+        tx.subscribe_view(
+            view_call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+            stale_sender,
+        )?;
+        tx.subscribe_view(
+            view_call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+            live_sender,
+        )?;
         stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
@@ -2934,7 +2952,12 @@ mod tests {
         update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.update_view_timestamp(ViewCallInfo::anonymous(view_id), ViewInstanceArgs::Anonymous)?;
+        tx.update_view_timestamp(
+            ViewCallInfo::anonymous(view_id),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+        )?;
         stdb.commit_tx(tx)?;
 
         // Cleanup should remove only the stale subscriber row and keep the shared
@@ -2970,7 +2993,13 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let view_call = ViewCallInfo::anonymous(view_id);
-        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, sender)?;
+        tx.subscribe_view(
+            view_call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+            sender,
+        )?;
         stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
@@ -4431,7 +4460,7 @@ mod tests {
         assert_eq!(user_table_names, expected_table_names);
 
         db.with_auto_commit(Workload::ForTests, |tx| {
-            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt")
+            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, Some("invalid_jwt"))
                 .unwrap();
             Ok::<(), DBError>(())
         })?;

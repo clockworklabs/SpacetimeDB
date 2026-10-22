@@ -132,6 +132,7 @@ impl From<StOutboundMsgRow> for ProductValue {
 pub enum StInboundMsgResultStatus {
     Ok = 1,
     Err = 2,
+    BudgetExceeded = 3,
 }
 
 impl TryFrom<u8> for StInboundMsgResultStatus {
@@ -140,6 +141,7 @@ impl TryFrom<u8> for StInboundMsgResultStatus {
         match value {
             1 => Ok(Self::Ok),
             2 => Ok(Self::Err),
+            3 => Ok(Self::BudgetExceeded),
             _ => Err("invalid st_inbound_msg result status"),
         }
     }

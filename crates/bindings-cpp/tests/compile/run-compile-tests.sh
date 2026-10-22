@@ -68,7 +68,6 @@ if [[ "$SUITE" == "http-handlers" ]]; then
         "error_http_handler_wrong_request_arg_type"
         "error_http_handler_no_return_type"
         "error_http_handler_wrong_return_type"
-        "error_http_handler_no_sender"
         "error_http_handler_no_connection_id"
         "error_http_handler_no_db"
         "error_http_router_not_a_function"
@@ -106,10 +105,6 @@ if [[ "$SUITE" == "http-handlers" ]]; then
     CASE_EXPECTATION["error_http_handler_wrong_return_type"]="failure"
     CASE_MARKER["error_http_handler_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::HttpResponse'"
     CASE_SOURCE["error_http_handler_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_return_type.cpp"
-
-    CASE_EXPECTATION["error_http_handler_no_sender"]="failure"
-    CASE_MARKER["error_http_handler_no_sender"]="no member named 'sender' in 'SpacetimeDB::HandlerContext'"
-    CASE_SOURCE["error_http_handler_no_sender"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_sender.cpp"
 
     CASE_EXPECTATION["error_http_handler_no_connection_id"]="failure"
     CASE_MARKER["error_http_handler_no_connection_id"]="no member named 'connection_id' in 'SpacetimeDB::HandlerContext'"
