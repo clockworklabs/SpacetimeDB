@@ -4431,34 +4431,28 @@ impl MutTxId {
             .tx_state
             .get_table_and_blob_store_or_create_from(table_id, commit_table);
 
-        // We only want to physically insert the row here to get a row pointer.
-        // We'd like to avoid any set semantic and unique constraint checks.
-        let (temp_row_ref, _) = tx_table.insert_physically_pv(tx_blob_store, rel, None)?;
-        let temp_ptr = temp_row_ref.into_pointer();
-
-        // First, check if a matching row exists in the `commit_table`.
-        // If it does, no need to check the `tx_table`.
-        //
-        // We start with `commit_table` as, in most cases,
-        // we'll likely have a transaction that deletes a committed row
-        // rather than deleting a row that was inserted in the same transaction.
-        //
-        // SAFETY:
-        // - `commit_table` and `tx_table` use the same schema.
-        // - `temp_ptr` is valid because we just inserted it.
-        let (hash, to_delete) = unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, temp_ptr, None) }?;
-        let to_delete = if to_delete.is_some() {
-            to_delete
-        } else {
-            unsafe { Table::find_same_row(tx_table, tx_table, tx_blob_store, temp_ptr, hash) }?.1
-        };
-
-        // Remove the temporary entry from the tx table.
-        // Do this before actually deleting to drop the borrows on the table.
-        // SAFETY: `temp_ptr` is valid because we just inserted it and haven't deleted it since.
-        unsafe {
-            tx_table.delete_internal_skip_pointer_map(tx_blob_store, temp_ptr)?;
-        }
+        let to_delete = tx_table.with_temporary_row(tx_blob_store, rel, |tx_table, temp_ptr| {
+            // First, check if a matching row exists in the `commit_table`.
+            // If it does, no need to check the `tx_table`.
+            //
+            // We start with `commit_table` as, in most cases,
+            // we'll likely have a transaction that deletes a committed row
+            // rather than deleting a row that was inserted in the same transaction.
+            //
+            // SAFETY:
+            // - `commit_table` and `tx_table` use the same schema.
+            // - `temp_ptr` is valid because we just inserted it.
+            let (hash, to_delete) =
+                unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, temp_ptr, None) }?;
+            if to_delete.is_some() {
+                Ok(to_delete)
+            } else {
+                // SAFETY: as above
+                let (_, to_delete) =
+                    unsafe { Table::find_same_row(tx_table, tx_table, tx_blob_store, temp_ptr, hash) }?;
+                Ok(to_delete)
+            }
+        })?;
 
         // Delete the found row either by marking (commit table)
         // or by deleting directly (tx table).

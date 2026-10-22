@@ -1651,6 +1651,36 @@ impl Table {
     ///
     /// This method is used during replay, not regular transaction processing.
     pub fn delete_equal_row(&mut self, blobs: &BlobSet, row: &ProductValue) -> Result<Option<RowPointer>, Error> {
+        let (existing_row_ptr, prepared) = self.with_temporary_row(blobs, row, |table, temp_ptr| {
+            // SAFETY: Both layouts are the same table's, and `temp_ptr` is live
+            // throughout the callback. Lookup uses a pointer map or unique index.
+            let (_, existing_row_ptr) = unsafe { Self::find_same_row(table, table, blobs, temp_ptr, None) }?;
+
+            // Pin the real deletion before changing any indices or row data.
+            let prepared = existing_row_ptr
+                .map(|ptr| table.prepare_commit(blobs, [ptr], std::iter::empty()))
+                .transpose()?;
+            Ok((existing_row_ptr, prepared))
+        })?;
+        // Commit the changes.
+        if let Some(prepared) = prepared {
+            prepared.apply(self, blobs);
+        }
+
+        Ok(existing_row_ptr)
+    }
+
+    /// Make `row` temporarily available for lookup without indexing or counting
+    /// it.
+    ///
+    /// The row pointer is valid only during `with`; cleanup runs on both
+    /// success and error, before returning the callback's result.
+    pub fn with_temporary_row<T>(
+        &mut self,
+        blobs: &BlobSet,
+        row: &ProductValue,
+        with: impl FnOnce(&Self, RowPointer) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
@@ -1683,24 +1713,7 @@ impl Table {
             PageRef::Tiered(page_handle) => Some(page_handle),
         };
 
-        let result = (|| {
-            // Find the row equal to the passed-in `row`.
-            // This uses one of two approaches.
-            // Either there is a pointer map, so we use that,
-            // or, we have at least one unique index, so use one of them.
-            //
-            // SAFETY:
-            // - `self` trivially has the same `row_layout` as `self`.
-            // - We just inserted `temp_ptr`, so it's valid.
-            let (_, existing_row_ptr) = unsafe { Self::find_same_row(self, self, blobs, temp_ptr, None) }?;
-
-            // Fault and pin everything the deletion needs before changing any
-            // indices, pointer-map entries, physical rows, or statistics.
-            let prepared = existing_row_ptr
-                .map(|ptr| self.prepare_commit(blobs, [ptr], std::iter::empty()))
-                .transpose()?;
-            Ok::<_, TableError>((existing_row_ptr, prepared))
-        })();
+        let result = with(self, temp_ptr);
 
         // Remove the temporary row we inserted in the beginning.
         // It was never added to the poiner map or statistics. Its page is still
@@ -1712,13 +1725,7 @@ impl Table {
             .expect("temporary row is resident and its blob references are valid");
         drop(temp_page);
 
-        // Commit the changes.
-        let (existing_row_ptr, prepared) = result?;
-        if let Some(prepared) = prepared {
-            prepared.apply(self, blobs);
-        }
-
-        Ok(existing_row_ptr)
+        result
     }
 
     /// Clears this table, removing all present rows from it.
@@ -4440,5 +4447,66 @@ pub(crate) mod test {
             table.insert(&blobs, &product![0_u64, large]),
             Err(InsertError::Duplicate(_))
         ));
+    }
+
+    #[test]
+    fn temporary_row_lookup_failure_cleans_up_across_tables() {
+        // A value-based delete temporarily writes its needle into the tx table
+        // to compare it with committed rows. Fail that comparison and verify
+        // that neither the temporary row nor its extra blob reference survives.
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let hard_limit_bytes = PAGE_SIZE as u64 + large.len() as u64;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: hard_limit_bytes,
+            hard_limit_bytes,
+        })
+        .unwrap();
+        let resident = Arc::new(ResidentObjects::new(budget));
+        let storage = Arc::new(TieredStorage::new_for_test());
+        let blobs = BlobSet::new(resident.clone(), storage.clone());
+        let manager = Arc::new(PageManager::new(resident, PagePool::new_for_test(), storage));
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+        let mut committed = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        let row = product![0_u64, large.clone()];
+        committed.insert(&blobs, &row).unwrap();
+        // The target page is now evicted. Its empty tx-table clone
+        // shares the same page budget, so writing the needle takes all the room
+        // needed to fault the target page back in. Blob contents are shared too.
+        committed.inner.pages.evict().unwrap();
+        let mut tx_table = committed.clone_structure(SquashedOffset::TX_STATE);
+
+        // This is the lookup used by live delete_by_row_value: the temporary
+        // needle lives in the tx table, but the candidate is in committed state.
+        // Pinning the needle consumes the sole page budget, so the committed
+        // page cannot be faulted in. The error must still clean up the needle.
+        let error = tx_table
+            .with_temporary_row(&blobs, &row, |tx_table, temp_ptr| {
+                // SAFETY: clone_structure preserves the layout; the callback owns
+                // a live temporary pointer in tx_table for its entire duration.
+                unsafe { Table::find_same_row(&committed, tx_table, &blobs, temp_ptr, None).map_err(Into::into) }
+            })
+            .unwrap_err();
+        // Require a page-budget error from lookup, rather than accepting a
+        // serialization or blob-insertion error before the callback was entered.
+        assert!(matches!(error, Error::Table(TableError::Page(error))
+            if matches!(*error, PageError::MemoryLimitExceeded(_))));
+        // Temporary rows are never counted, so a zero row count alone could
+        // pass with a leaked row. Inspect physical slots and logical blob uses.
+        assert_eq!(tx_table.num_rows(), 0);
+        assert!(tx_table.scan_all_row_ptrs().unwrap().is_empty());
+        assert_eq!(blobs.bytes_used_by_blobs(), large.len() as u64);
+        // Cleanup must remove only the needle's use of the blob. The committed
+        // row and its reference must remain readable once the tx page is freed.
+        assert_eq!(committed.num_rows(), 1);
+        assert_eq!(
+            committed.scan_rows(&blobs).next().unwrap().unwrap().to_product_value(),
+            row
+        );
     }
 }
