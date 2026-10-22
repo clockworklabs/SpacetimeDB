@@ -843,10 +843,8 @@ impl Table {
                 self.squashed_offset,
             )
         }?;
-        // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
 
-        Ok((row_ref, blob_bytes))
+        self.finish_physical_insert(blobs, ptr, blob_bytes)
     }
 
     /// Physically insert a `row`, encoded in BSATN, into this table,
@@ -911,10 +909,63 @@ impl Table {
             }?
         };
 
-        // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
+        self.finish_physical_insert(blobs, ptr, blob_bytes)
+    }
 
-        Ok((row_ref, blob_bytes))
+    /// Finish a physical insertion without leaving an untracked row if pinning
+    /// its blobs fails.
+    ///
+    /// The caller has just written `ptr` and has not indexed it or updated
+    /// statistics, so cleanup must only undo physical storage.
+    fn finish_physical_insert<'a>(
+        &'a mut self,
+        blobs: &BlobSet,
+        ptr: RowPointer,
+        blob_bytes: BlobNumBytes,
+    ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
+        let page = self
+            .inner
+            .pages
+            .get_page(ptr.page_index())
+            .expect("just written page is resident")
+            .expect("just written page exists");
+        let row_blobs = if self.inner.row_layout.layout().fixed {
+            Ok(BlobReadSet::empty())
+        } else {
+            page.with_page(|page| {
+                BlobReadSet::new(
+                    &self.inner.visitor_prog,
+                    page,
+                    blobs,
+                    &self.inner.row_layout,
+                    ptr.page_offset(),
+                )
+            })
+        };
+        let page = match page {
+            PageRef::Resident(_) => None,
+            PageRef::Tiered(handle) => Some(handle),
+        };
+        let row_blobs = match row_blobs {
+            Ok(row_blobs) => row_blobs,
+            Err(error) => {
+                // `page` still pins the newly written page. Blob refcount
+                // removal only touches the catalog, even for evicted blobs.
+                // SAFETY: `ptr` was just inserted and is still live.
+                unsafe { self.delete_internal_skip_pointer_map(blobs, ptr) }
+                    .expect("new row is resident and its blob references are valid");
+                return Err(TableError::from(error).into());
+            }
+        };
+        Ok((
+            RowRef {
+                table: &self.inner,
+                pointer: ptr,
+                page,
+                blobs: row_blobs,
+            },
+            blob_bytes,
+        ))
     }
 
     /// Returns all the columns with sequences that need generation for this `row`.
@@ -4154,6 +4205,58 @@ pub(crate) mod test {
             assert_eq!(table.delete_equal_row(&blobs, &row).unwrap(), None);
             assert_eq!(table.num_rows(), 1);
             assert_eq!(blobs.bytes_used_by_blobs(), large.len() as u64);
+        }
+    }
+
+    #[test]
+    fn physical_insert_blob_pin_failure_rolls_back_both_encodings() {
+        // Exercise the physical insertion helpers behind replay (ProductValue)
+        // and regular transactions (BSATN). Neither may leave a row behind when
+        // serialization succeeds but constructing the returned RowRef fails.
+        for bsatn in [false, true] {
+            // Distinct contents prevent deduplication from turning two blob
+            // references into a single resident allocation. Share one budget
+            // between pages and blobs: it holds one page and only one blob.
+            let first = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+            let second = "y".repeat(first.len());
+            let hard_limit_bytes = PAGE_SIZE as u64 + first.len() as u64;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                low_water_bytes: 0,
+                soft_limit_bytes: hard_limit_bytes,
+                hard_limit_bytes,
+            })
+            .unwrap();
+            let resident = Arc::new(ResidentObjects::new(budget));
+            let storage = Arc::new(TieredStorage::new_for_test());
+            let mut blobs = BlobSet::new(resident.clone(), storage.clone());
+            let manager = Arc::new(PageManager::new(resident, PagePool::new_for_test(), storage));
+            let schema =
+                TableSchema::from_product_type(ProductType::from([AlgebraicType::String, AlgebraicType::String]));
+            let mut table = Table::new(
+                schema.into(),
+                SquashedOffset::TX_STATE,
+                manager,
+                PageEvictionPolicy::Evictable,
+            );
+            let row = product![first, second];
+
+            // Serialization can write and evict the blobs one at a time. The
+            // failure comes afterward: a RowRef must pin both simultaneously.
+            let error = if bsatn {
+                table.insert_physically_bsatn(&mut blobs, &to_vec(&row).unwrap())
+            } else {
+                table.insert_physically_pv(&blobs, &row, None)
+            }
+            .unwrap_err();
+            assert!(matches!(error, Error::Table(TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))));
+            // Statistics alone cannot detect this bug: physical inserts are
+            // not counted yet. Inspect occupied row slots as well as both blob
+            // catalog entries to prove that the successful writes were undone.
+            assert_eq!(table.num_rows(), 0);
+            assert!(table.scan_all_row_ptrs().unwrap().is_empty(), "encoding: bsatn={bsatn}");
+            assert_eq!(blobs.num_blobs(), 0);
+            assert_eq!(blobs.bytes_used_by_blobs(), 0);
         }
     }
 }
