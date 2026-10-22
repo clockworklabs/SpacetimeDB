@@ -7,6 +7,17 @@
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
   </PropertyGroup>
 
+  <!-- Project references inherit the module RID. Pack also builds this variant
+       without a RID: it contains IL, not a native compiler/toolchain dependency. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm' Or '$(_SpacetimeDBWasmRuntime)' == 'true'">
+    <DefineConstants>$(DefineConstants);SPACETIMEDB_WASM_RUNTIME</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_SpacetimeDBWasmRuntime)' == 'true'">
+    <OutputPath>bin/$(Configuration)/wasm/</OutputPath>
+    <IntermediateOutputPath>obj/$(Configuration)/wasm/$(TargetFramework)/</IntermediateOutputPath>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -53,5 +64,20 @@
     <UpToDateCheckInput Include="bindings.c" />
     <UpToDateCheckInput Include="driver.h" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackWasmRuntime</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="PackWasmRuntime" Condition="'$(TargetFramework)' == 'net10.0'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build"
+             Properties="TargetFramework=net10.0;_SpacetimeDBWasmRuntime=true"
+             RemoveProperties="RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="_WasmRuntimeAssembly" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(_WasmRuntimeAssembly)" PackagePath="runtimes/wasi-wasm/lib/net10.0" />
+    </ItemGroup>
+  </Target>
 
 </Project>

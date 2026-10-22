@@ -884,27 +884,93 @@ namespace SpacetimeDB
     public sealed class Local : global::SpacetimeDB.LocalBase
     {
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.Player Player =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "Player"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestAutoIncNotInteger"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDefaultFieldValues"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDuplicateTableName"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestIndexIssues TestIndexIssues =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithMissingScheduleAtField"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutPrimaryKey"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutScheduleAt"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongPrimaryKeyType"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongScheduleAtType"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestUniqueNotEquatable"
+                )
+            );
     }
 
     public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
@@ -1058,57 +1124,223 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
         public readonly struct Tables
         {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.Internal.Local? __owner { get; }
+
+            public Tables(global::SpacetimeDB.Internal.Local? db)
+            {
+                __owner = db;
+            }
+#else
+            public Tables(global::SpacetimeDB.Internal.Local? db) { }
+#endif
+
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.Player Player =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "Player"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestAutoIncNotInteger"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDefaultFieldValues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDuplicateTableName"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestIndexIssues TestIndexIssues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithMissingScheduleAtField"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutPrimaryKey"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutScheduleAt"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongPrimaryKeyType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongScheduleAtType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestUniqueNotEquatable"
+                    )
+                );
         }
 
         public readonly struct ReadOnlyTables
         {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.Internal.LocalReadOnly? __owner { get; }
+
+            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
+            {
+                __owner = db;
+            }
+#else
+            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db) { }
+#endif
+
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.PlayerReadOnly Player =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "Player"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestAutoIncNotInteger"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDefaultFieldValues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDuplicateTableName"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithMissingScheduleAtField"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutPrimaryKey"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutScheduleAt"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongPrimaryKeyType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongScheduleAtType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestUniqueNotEquatable"
+                    )
+                );
         }
 
-        public readonly partial struct Queries { }
+        public readonly partial struct Queries
+        {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.QueryBuilder __owner { get; }
+
+            public Queries(global::SpacetimeDB.QueryBuilder from)
+            {
+                __owner = from;
+            }
+#else
+            public Queries(global::SpacetimeDB.QueryBuilder from) { }
+#endif
+        }
     }
 
     public static class LocalTableExtensions
@@ -1116,27 +1348,93 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
         extension(global::SpacetimeDB.Local db)
         {
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.Player Player =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "Player"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestAutoIncNotInteger"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDefaultFieldValues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDuplicateTableName"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestIndexIssues TestIndexIssues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithMissingScheduleAtField"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutPrimaryKey"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutScheduleAt"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongPrimaryKeyType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongScheduleAtType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestUniqueNotEquatable"
+                    )
+                );
         }
     }
 
@@ -1145,27 +1443,93 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
         extension(global::SpacetimeDB.Internal.LocalReadOnly db)
         {
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.PlayerReadOnly Player =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "Player"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestAutoIncNotInteger"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDefaultFieldValues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestDuplicateTableName"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithMissingScheduleAtField"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutPrimaryKey"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutScheduleAt"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongPrimaryKeyType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongScheduleAtType"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
-                new();
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestUniqueNotEquatable"
+                    )
+                );
         }
     }
 
@@ -1186,6 +1550,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestDuplicateTableNameSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1197,6 +1562,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestDuplicateTableNameSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1206,7 +1572,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestDuplicateTableNameIxCols
             > TestDuplicateTableName()
             {
-                var tableName = TestDuplicateTableNameSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDuplicateTableName"
+                );
                 return new(
                     tableName,
                     new TestDuplicateTableNameCols(tableName),
@@ -1224,7 +1593,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::InAnotherNamespace.TestDuplicateTableName,
                 TestDuplicateTableNameCols,
                 TestDuplicateTableNameIxCols
-            > TestDuplicateTableName() => new AssemblyDescriptor.Queries().TestDuplicateTableName();
+            > TestDuplicateTableName() =>
+                new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
         }
     }
 
@@ -1248,6 +1618,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class PlayerSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1259,12 +1630,16 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static PlayerSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
             public global::SpacetimeDB.Table<global::Player, PlayerCols, PlayerIxCols> Player()
             {
-                var tableName = PlayerSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "Player"
+                );
                 return new(tableName, new PlayerCols(tableName), new PlayerIxCols(tableName));
             }
         }
@@ -1275,7 +1650,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
         extension(global::SpacetimeDB.QueryBuilder from)
         {
             public global::SpacetimeDB.Table<global::Player, PlayerCols, PlayerIxCols> Player() =>
-                new AssemblyDescriptor.Queries().Player();
+                new AssemblyDescriptor.Queries(from).Player();
         }
     }
 
@@ -1307,6 +1682,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestAutoIncNotIntegerSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1318,6 +1694,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestAutoIncNotIntegerSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1327,7 +1704,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestAutoIncNotIntegerIxCols
             > TestAutoIncNotInteger()
             {
-                var tableName = TestAutoIncNotIntegerSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestAutoIncNotInteger"
+                );
                 return new(
                     tableName,
                     new TestAutoIncNotIntegerCols(tableName),
@@ -1345,7 +1725,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestAutoIncNotInteger,
                 TestAutoIncNotIntegerCols,
                 TestAutoIncNotIntegerIxCols
-            > TestAutoIncNotInteger() => new AssemblyDescriptor.Queries().TestAutoIncNotInteger();
+            > TestAutoIncNotInteger() =>
+                new AssemblyDescriptor.Queries(from).TestAutoIncNotInteger();
         }
     }
 
@@ -1455,6 +1836,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestDefaultFieldValuesSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1466,6 +1848,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestDefaultFieldValuesSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1475,7 +1858,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestDefaultFieldValuesIxCols
             > TestDefaultFieldValues()
             {
-                var tableName = TestDefaultFieldValuesSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDefaultFieldValues"
+                );
                 return new(
                     tableName,
                     new TestDefaultFieldValuesCols(tableName),
@@ -1493,7 +1879,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestDefaultFieldValues,
                 TestDefaultFieldValuesCols,
                 TestDefaultFieldValuesIxCols
-            > TestDefaultFieldValues() => new AssemblyDescriptor.Queries().TestDefaultFieldValues();
+            > TestDefaultFieldValues() =>
+                new AssemblyDescriptor.Queries(from).TestDefaultFieldValues();
         }
     }
 
@@ -1509,6 +1896,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestDuplicateTableNameSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1520,6 +1908,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestDuplicateTableNameSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1529,7 +1918,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestDuplicateTableNameIxCols
             > TestDuplicateTableName()
             {
-                var tableName = TestDuplicateTableNameSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDuplicateTableName"
+                );
                 return new(
                     tableName,
                     new TestDuplicateTableNameCols(tableName),
@@ -1547,7 +1939,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestDuplicateTableName,
                 TestDuplicateTableNameCols,
                 TestDuplicateTableNameIxCols
-            > TestDuplicateTableName() => new AssemblyDescriptor.Queries().TestDuplicateTableName();
+            > TestDuplicateTableName() =>
+                new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
         }
     }
 
@@ -1595,6 +1988,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestIndexIssuesSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1606,6 +2000,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestIndexIssuesSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1615,7 +2010,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestIndexIssuesIxCols
             > TestIndexIssues()
             {
-                var tableName = TestIndexIssuesSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues"
+                );
                 return new(
                     tableName,
                     new TestIndexIssuesCols(tableName),
@@ -1633,7 +2031,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestIndexIssues,
                 TestIndexIssuesCols,
                 TestIndexIssuesIxCols
-            > TestIndexIssues() => new AssemblyDescriptor.Queries().TestIndexIssues();
+            > TestIndexIssues() => new AssemblyDescriptor.Queries(from).TestIndexIssues();
         }
     }
 
@@ -1678,6 +2076,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithoutPrimaryKeySqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1689,6 +2088,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithoutPrimaryKeySqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1698,7 +2098,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithoutPrimaryKeyIxCols
             > TestScheduleWithoutPrimaryKey()
             {
-                var tableName = TestScheduleWithoutPrimaryKeySqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutPrimaryKey"
+                );
                 return new(
                     tableName,
                     new TestScheduleWithoutPrimaryKeyCols(tableName),
@@ -1717,7 +2120,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithoutPrimaryKeyCols,
                 TestScheduleWithoutPrimaryKeyIxCols
             > TestScheduleWithoutPrimaryKey() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithoutPrimaryKey();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithoutPrimaryKey();
         }
     }
 
@@ -1772,6 +2175,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithWrongPrimaryKeyTypeSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1783,6 +2187,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithWrongPrimaryKeyTypeSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1792,7 +2197,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithWrongPrimaryKeyTypeIxCols
             > TestScheduleWithWrongPrimaryKeyType()
             {
-                var tableName = TestScheduleWithWrongPrimaryKeyTypeSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongPrimaryKeyType"
+                );
                 return new(
                     tableName,
                     new TestScheduleWithWrongPrimaryKeyTypeCols(tableName),
@@ -1811,7 +2219,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithWrongPrimaryKeyTypeCols,
                 TestScheduleWithWrongPrimaryKeyTypeIxCols
             > TestScheduleWithWrongPrimaryKeyType() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithWrongPrimaryKeyType();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithWrongPrimaryKeyType();
         }
     }
 
@@ -1864,6 +2272,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithoutScheduleAtSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1875,6 +2284,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithoutScheduleAtSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1884,7 +2294,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithoutScheduleAtIxCols
             > TestScheduleWithoutScheduleAt()
             {
-                var tableName = TestScheduleWithoutScheduleAtSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutScheduleAt"
+                );
                 return new(
                     tableName,
                     new TestScheduleWithoutScheduleAtCols(tableName),
@@ -1903,7 +2316,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithoutScheduleAtCols,
                 TestScheduleWithoutScheduleAtIxCols
             > TestScheduleWithoutScheduleAt() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithoutScheduleAt();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithoutScheduleAt();
         }
     }
 
@@ -1958,6 +2371,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithWrongScheduleAtTypeSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1969,6 +2383,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithWrongScheduleAtTypeSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1978,7 +2393,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithWrongScheduleAtTypeIxCols
             > TestScheduleWithWrongScheduleAtType()
             {
-                var tableName = TestScheduleWithWrongScheduleAtTypeSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongScheduleAtType"
+                );
                 return new(
                     tableName,
                     new TestScheduleWithWrongScheduleAtTypeCols(tableName),
@@ -1997,7 +2415,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithWrongScheduleAtTypeCols,
                 TestScheduleWithWrongScheduleAtTypeIxCols
             > TestScheduleWithWrongScheduleAtType() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithWrongScheduleAtType();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithWrongScheduleAtType();
         }
     }
 
@@ -2046,6 +2464,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithMissingScheduleAtFieldSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -2057,6 +2476,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithMissingScheduleAtFieldSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -2066,7 +2486,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithMissingScheduleAtFieldIxCols
             > TestScheduleWithMissingScheduleAtField()
             {
-                var tableName = TestScheduleWithMissingScheduleAtFieldSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithMissingScheduleAtField"
+                );
                 return new(
                     tableName,
                     new TestScheduleWithMissingScheduleAtFieldCols(tableName),
@@ -2085,7 +2508,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithMissingScheduleAtFieldCols,
                 TestScheduleWithMissingScheduleAtFieldIxCols
             > TestScheduleWithMissingScheduleAtField() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithMissingScheduleAtField();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithMissingScheduleAtField();
         }
     }
 
@@ -2128,6 +2551,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestUniqueNotEquatableSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -2139,6 +2563,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestUniqueNotEquatableSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -2148,7 +2573,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestUniqueNotEquatableIxCols
             > TestUniqueNotEquatable()
             {
-                var tableName = TestUniqueNotEquatableSqlNameCache.Name;
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestUniqueNotEquatable"
+                );
                 return new(
                     tableName,
                     new TestUniqueNotEquatableCols(tableName),
@@ -2166,7 +2594,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestUniqueNotEquatable,
                 TestUniqueNotEquatableCols,
                 TestUniqueNotEquatableIxCols
-            > TestUniqueNotEquatable() => new AssemblyDescriptor.Queries().TestUniqueNotEquatable();
+            > TestUniqueNotEquatable() =>
+                new AssemblyDescriptor.Queries(from).TestUniqueNotEquatable();
         }
     }
 }
@@ -2176,6 +2605,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
 {
     public readonly struct Player : global::SpacetimeDB.Internal.ITableView<Player, global::Player>
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal Player(global::SpacetimeDB.Internal.TableAccessor access) => __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2228,19 +2661,19 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
         /// It also takes into account modifications by the current transaction.
         /// </summary>
         public ulong Count =>
-            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoCount();
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoCount(__access);
 
         public IEnumerable<global::Player> Iter() =>
-            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoIter();
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoIter(__access);
 
         public global::Player Insert(global::Player row) =>
-            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoInsert(row);
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoInsert(__access, row);
 
         public bool Delete(global::Player row) =>
-            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoDelete(row);
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoDelete(__access, row);
 
         public ulong Clear() =>
-            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoClear();
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoClear(__access);
 
         public sealed class IdentityUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -2250,17 +2683,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 SpacetimeDB.Identity.BSATN
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "Player_Identity_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdentityUniqueIndex() { }
-
-            internal IdentityUniqueIndex()
-                : base(__resolvedName) { }
+            internal IdentityUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "Player_Identity_idx_btree") { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2268,8 +2692,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
 
-        private static IdentityUniqueIndex? __Identity;
-        public IdentityUniqueIndex Identity => __Identity ??= new();
+        public IdentityUniqueIndex Identity => new(__access);
     }
 
     public readonly struct TestAutoIncNotInteger
@@ -2278,6 +2701,11 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestAutoIncNotInteger
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestAutoIncNotInteger(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2354,31 +2782,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestAutoIncNotInteger> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestAutoIncNotInteger row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
-            >.DoClear();
+            >.DoClear(__access);
 
         public sealed class IdentityFieldUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -2388,17 +2816,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 SpacetimeDB.BSATN.String
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestAutoIncNotInteger_IdentityField_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdentityFieldUniqueIndex() { }
-
-            internal IdentityFieldUniqueIndex()
-                : base(__resolvedName) { }
+            internal IdentityFieldUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestAutoIncNotInteger_IdentityField_idx_btree") { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2406,8 +2825,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
         }
 
-        private static IdentityFieldUniqueIndex? __IdentityField;
-        public IdentityFieldUniqueIndex IdentityField => __IdentityField ??= new();
+        public IdentityFieldUniqueIndex IdentityField => new(__access);
     }
 
     public readonly struct TestDefaultFieldValues
@@ -2416,6 +2834,11 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestDefaultFieldValues
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestDefaultFieldValues(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2472,31 +2895,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestDefaultFieldValues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestDefaultFieldValues Insert(global::TestDefaultFieldValues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestDefaultFieldValues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
-            >.DoClear();
+            >.DoClear(__access);
     }
 
     public readonly struct TestDuplicateTableName
@@ -2505,6 +2928,11 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestDuplicateTableName
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestDuplicateTableName(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2548,36 +2976,41 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestDuplicateTableName> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestDuplicateTableName row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
-            >.DoClear();
+            >.DoClear(__access);
     }
 
     public readonly struct TestIndexIssues
         : global::SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestIndexIssues(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2653,93 +3086,68 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
                 global::TestIndexIssues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestIndexIssues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
                 global::TestIndexIssues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestIndexIssues Insert(global::TestIndexIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
                 global::TestIndexIssues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestIndexIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
                 global::TestIndexIssues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
                 global::TestIndexIssues
-            >.DoClear();
+            >.DoClear(__access);
 
-        public sealed class TestIndexWithoutColumnsIndex()
-            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
+        public sealed class TestIndexWithoutColumnsIndex
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues__idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestIndexWithoutColumnsIndex() { }
+            internal TestIndexWithoutColumnsIndex(
+                global::SpacetimeDB.Internal.TableAccessor accessor
+            )
+                : base(accessor, "TestIndexIssues__idx_btree") { }
         }
 
-        private static TestIndexWithoutColumnsIndex? __TestIndexWithoutColumns;
-        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns =>
-            __TestIndexWithoutColumns ??= new();
+        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new(__access);
 
-        public sealed class TestIndexWithEmptyColumnsIndex()
-            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
+        public sealed class TestIndexWithEmptyColumnsIndex
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues__idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestIndexWithEmptyColumnsIndex() { }
+            internal TestIndexWithEmptyColumnsIndex(
+                global::SpacetimeDB.Internal.TableAccessor accessor
+            )
+                : base(accessor, "TestIndexIssues__idx_btree") { }
         }
 
-        private static TestIndexWithEmptyColumnsIndex? __TestIndexWithEmptyColumns;
-        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns =>
-            __TestIndexWithEmptyColumns ??= new();
+        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new(__access);
 
-        public sealed class TestUnknownColumnsIndex()
-            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
+        public sealed class TestUnknownColumnsIndex
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues__idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestUnknownColumnsIndex() { }
+            internal TestUnknownColumnsIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestIndexIssues__idx_btree") { }
         }
 
-        private static TestUnknownColumnsIndex? __TestUnknownColumns;
-        public TestUnknownColumnsIndex TestUnknownColumns => __TestUnknownColumns ??= new();
+        public TestUnknownColumnsIndex TestUnknownColumns => new(__access);
 
-        public sealed class SelfIndexingColumnIndex()
-            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
+        public sealed class SelfIndexingColumnIndex
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static SelfIndexingColumnIndex() { }
+            internal SelfIndexingColumnIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestIndexIssues_SelfIndexingColumn_idx_btree") { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                 DoFilter(
@@ -2772,20 +3180,15 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 );
         }
 
-        private static SelfIndexingColumnIndex? __SelfIndexingColumn;
-        public SelfIndexingColumnIndex SelfIndexingColumn => __SelfIndexingColumn ??= new();
+        public SelfIndexingColumnIndex SelfIndexingColumn => new(__access);
 
-        public sealed class SecondaryIndexingColumnIndex()
-            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
+        public sealed class SecondaryIndexingColumnIndex
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static SecondaryIndexingColumnIndex() { }
+            internal SecondaryIndexingColumnIndex(
+                global::SpacetimeDB.Internal.TableAccessor accessor
+            )
+                : base(accessor, "TestIndexIssues_SecondaryIndexingColumn_idx_btree") { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
                 DoFilter(
@@ -2818,21 +3221,13 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 );
         }
 
-        private static SecondaryIndexingColumnIndex? __SecondaryIndexingColumn;
-        public SecondaryIndexingColumnIndex SecondaryIndexingColumn =>
-            __SecondaryIndexingColumn ??= new();
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new(__access);
 
-        public sealed class TestUnexpectedColumnsIndex()
-            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(__resolvedName)
+        public sealed class TestUnexpectedColumnsIndex
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestUnexpectedColumnsIndex() { }
+            internal TestUnexpectedColumnsIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestIndexIssues_SelfIndexingColumn_idx_btree") { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                 DoFilter(
@@ -2865,9 +3260,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 );
         }
 
-        private static TestUnexpectedColumnsIndex? __TestUnexpectedColumns;
-        public TestUnexpectedColumnsIndex TestUnexpectedColumns =>
-            __TestUnexpectedColumns ??= new();
+        public TestUnexpectedColumnsIndex TestUnexpectedColumns => new(__access);
     }
 
     public readonly struct TestScheduleWithMissingScheduleAtField
@@ -2876,6 +3269,12 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestScheduleIssues
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestScheduleWithMissingScheduleAtField(
+            global::SpacetimeDB.Internal.TableAccessor access
+        ) => __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2919,31 +3318,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestScheduleIssues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
-            >.DoClear();
+            >.DoClear(__access);
     }
 
     public readonly struct TestScheduleWithoutPrimaryKey
@@ -2952,6 +3351,11 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestScheduleIssues
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestScheduleWithoutPrimaryKey(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -2999,31 +3403,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestScheduleIssues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
-            >.DoClear();
+            >.DoClear(__access);
     }
 
     public readonly struct TestScheduleWithoutScheduleAt
@@ -3032,6 +3436,11 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestScheduleIssues
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestScheduleWithoutScheduleAt(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -3088,31 +3497,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestScheduleIssues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
-            >.DoClear();
+            >.DoClear(__access);
 
         public sealed class IdCorrectTypeUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -3122,17 +3531,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdCorrectTypeUniqueIndex() { }
-
-            internal IdCorrectTypeUniqueIndex()
-                : base(__resolvedName) { }
+            internal IdCorrectTypeUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3143,8 +3543,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        private static IdCorrectTypeUniqueIndex? __IdCorrectType;
-        public IdCorrectTypeUniqueIndex IdCorrectType => __IdCorrectType ??= new();
+        public IdCorrectTypeUniqueIndex IdCorrectType => new(__access);
     }
 
     public readonly struct TestScheduleWithWrongPrimaryKeyType
@@ -3153,6 +3552,12 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestScheduleIssues
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestScheduleWithWrongPrimaryKeyType(
+            global::SpacetimeDB.Internal.TableAccessor access
+        ) => __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -3213,31 +3618,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestScheduleIssues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
-            >.DoClear();
+            >.DoClear(__access);
 
         public sealed class IdWrongTypeUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -3247,17 +3652,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 SpacetimeDB.BSATN.String
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdWrongTypeUniqueIndex() { }
-
-            internal IdWrongTypeUniqueIndex()
-                : base(__resolvedName) { }
+            internal IdWrongTypeUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3268,8 +3664,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        private static IdWrongTypeUniqueIndex? __IdWrongType;
-        public IdWrongTypeUniqueIndex IdWrongType => __IdWrongType ??= new();
+        public IdWrongTypeUniqueIndex IdWrongType => new(__access);
     }
 
     public readonly struct TestScheduleWithWrongScheduleAtType
@@ -3278,6 +3673,12 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestScheduleIssues
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestScheduleWithWrongScheduleAtType(
+            global::SpacetimeDB.Internal.TableAccessor access
+        ) => __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -3338,31 +3739,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestScheduleIssues> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestScheduleIssues row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
-            >.DoClear();
+            >.DoClear(__access);
 
         public sealed class IdCorrectTypeUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -3372,17 +3773,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdCorrectTypeUniqueIndex() { }
-
-            internal IdCorrectTypeUniqueIndex()
-                : base(__resolvedName) { }
+            internal IdCorrectTypeUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3393,8 +3785,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        private static IdCorrectTypeUniqueIndex? __IdCorrectType;
-        public IdCorrectTypeUniqueIndex IdCorrectType => __IdCorrectType ??= new();
+        public IdCorrectTypeUniqueIndex IdCorrectType => new(__access);
     }
 
     public readonly struct TestUniqueNotEquatable
@@ -3403,6 +3794,11 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::TestUniqueNotEquatable
         >
     {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TestUniqueNotEquatable(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
         public static string LookupName =>
             global::SpacetimeDB.Internal.Module.ResolveName(
                 "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
@@ -3468,31 +3864,31 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
-            >.DoCount();
+            >.DoCount(__access);
 
         public IEnumerable<global::TestUniqueNotEquatable> Iter() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
-            >.DoIter();
+            >.DoIter(__access);
 
         public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
-            >.DoInsert(row);
+            >.DoInsert(__access, row);
 
         public bool Delete(global::TestUniqueNotEquatable row) =>
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
-            >.DoDelete(row);
+            >.DoDelete(__access, row);
 
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
-            >.DoClear();
+            >.DoClear(__access);
 
         public sealed class PrimaryKeyFieldUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
@@ -3502,17 +3898,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestUniqueNotEquatable_PrimaryKeyField_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static PrimaryKeyFieldUniqueIndex() { }
-
-            internal PrimaryKeyFieldUniqueIndex()
-                : base(__resolvedName) { }
+            internal PrimaryKeyFieldUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3524,8 +3911,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
                 DoUpdate(row);
         }
 
-        private static PrimaryKeyFieldUniqueIndex? __PrimaryKeyField;
-        public PrimaryKeyFieldUniqueIndex PrimaryKeyField => __PrimaryKeyField ??= new();
+        public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new(__access);
     }
 }
 
@@ -4264,17 +4650,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
     public sealed class PlayerReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::Player>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "Player"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static PlayerReadOnly() { }
-
-        internal PlayerReadOnly()
-            : base(__resolvedName) { }
+        internal PlayerReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4292,39 +4669,20 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 SpacetimeDB.Identity.BSATN
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "Player_Identity_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdentityIndex() { }
-
-            internal IdentityIndex()
-                : base(__resolvedName) { }
+            internal IdentityIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "Player_Identity_idx_btree") { }
 
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
 
-        private static IdentityIndex? __Identity;
-        public IdentityIndex Identity => __Identity ??= new();
+        public IdentityIndex Identity => new(__access);
     }
 
     public sealed class TestAutoIncNotIntegerReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestAutoIncNotInteger>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestAutoIncNotInteger"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestAutoIncNotIntegerReadOnly() { }
-
-        internal TestAutoIncNotIntegerReadOnly()
-            : base(__resolvedName) { }
+        internal TestAutoIncNotIntegerReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4342,39 +4700,20 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 SpacetimeDB.BSATN.String
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestAutoIncNotInteger_IdentityField_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdentityFieldIndex() { }
-
-            internal IdentityFieldIndex()
-                : base(__resolvedName) { }
+            internal IdentityFieldIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestAutoIncNotInteger_IdentityField_idx_btree") { }
 
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
         }
 
-        private static IdentityFieldIndex? __IdentityField;
-        public IdentityFieldIndex IdentityField => __IdentityField ??= new();
+        public IdentityFieldIndex IdentityField => new(__access);
     }
 
     public sealed class TestDefaultFieldValuesReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestDefaultFieldValues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestDefaultFieldValues"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestDefaultFieldValuesReadOnly() { }
-
-        internal TestDefaultFieldValuesReadOnly()
-            : base(__resolvedName) { }
+        internal TestDefaultFieldValuesReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4388,17 +4727,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
     public sealed class TestDuplicateTableNameReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestDuplicateTableName>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestDuplicateTableName"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestDuplicateTableNameReadOnly() { }
-
-        internal TestDuplicateTableNameReadOnly()
-            : base(__resolvedName) { }
+        internal TestDuplicateTableNameReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4412,17 +4742,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
     public sealed class TestIndexIssuesReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestIndexIssues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestIndexIssues"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestIndexIssuesReadOnly() { }
-
-        internal TestIndexIssuesReadOnly()
-            : base(__resolvedName) { }
+        internal TestIndexIssuesReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4435,76 +4756,39 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
         public sealed class TestIndexWithoutColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues__idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestIndexWithoutColumnsIndex() { }
-
-            internal TestIndexWithoutColumnsIndex()
-                : base(__resolvedName) { }
+            internal TestIndexWithoutColumnsIndex(
+                global::SpacetimeDB.Internal.TableAccessor accessor
+            )
+                : base(accessor, "TestIndexIssues__idx_btree") { }
         }
 
-        private static TestIndexWithoutColumnsIndex? __TestIndexWithoutColumns;
-        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns =>
-            __TestIndexWithoutColumns ??= new();
+        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new(__access);
 
         public sealed class TestIndexWithEmptyColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues__idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestIndexWithEmptyColumnsIndex() { }
-
-            internal TestIndexWithEmptyColumnsIndex()
-                : base(__resolvedName) { }
+            internal TestIndexWithEmptyColumnsIndex(
+                global::SpacetimeDB.Internal.TableAccessor accessor
+            )
+                : base(accessor, "TestIndexIssues__idx_btree") { }
         }
 
-        private static TestIndexWithEmptyColumnsIndex? __TestIndexWithEmptyColumns;
-        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns =>
-            __TestIndexWithEmptyColumns ??= new();
+        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new(__access);
 
         public sealed class TestUnknownColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues__idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestUnknownColumnsIndex() { }
-
-            internal TestUnknownColumnsIndex()
-                : base(__resolvedName) { }
+            internal TestUnknownColumnsIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestIndexIssues__idx_btree") { }
         }
 
-        private static TestUnknownColumnsIndex? __TestUnknownColumns;
-        public TestUnknownColumnsIndex TestUnknownColumns => __TestUnknownColumns ??= new();
+        public TestUnknownColumnsIndex TestUnknownColumns => new(__access);
 
         public sealed class SelfIndexingColumnIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static SelfIndexingColumnIndex() { }
-
-            internal SelfIndexingColumnIndex()
-                : base(__resolvedName) { }
+            internal SelfIndexingColumnIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestIndexIssues_SelfIndexingColumn_idx_btree") { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                 DoFilter(
@@ -4523,23 +4807,15 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 );
         }
 
-        private static SelfIndexingColumnIndex? __SelfIndexingColumn;
-        public SelfIndexingColumnIndex SelfIndexingColumn => __SelfIndexingColumn ??= new();
+        public SelfIndexingColumnIndex SelfIndexingColumn => new(__access);
 
         public sealed class SecondaryIndexingColumnIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static SecondaryIndexingColumnIndex() { }
-
-            internal SecondaryIndexingColumnIndex()
-                : base(__resolvedName) { }
+            internal SecondaryIndexingColumnIndex(
+                global::SpacetimeDB.Internal.TableAccessor accessor
+            )
+                : base(accessor, "TestIndexIssues_SecondaryIndexingColumn_idx_btree") { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
                 DoFilter(
@@ -4558,24 +4834,13 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 );
         }
 
-        private static SecondaryIndexingColumnIndex? __SecondaryIndexingColumn;
-        public SecondaryIndexingColumnIndex SecondaryIndexingColumn =>
-            __SecondaryIndexingColumn ??= new();
+        public SecondaryIndexingColumnIndex SecondaryIndexingColumn => new(__access);
 
         public sealed class TestUnexpectedColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static TestUnexpectedColumnsIndex() { }
-
-            internal TestUnexpectedColumnsIndex()
-                : base(__resolvedName) { }
+            internal TestUnexpectedColumnsIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestIndexIssues_SelfIndexingColumn_idx_btree") { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                 DoFilter(
@@ -4594,25 +4859,16 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 );
         }
 
-        private static TestUnexpectedColumnsIndex? __TestUnexpectedColumns;
-        public TestUnexpectedColumnsIndex TestUnexpectedColumns =>
-            __TestUnexpectedColumns ??= new();
+        public TestUnexpectedColumnsIndex TestUnexpectedColumns => new(__access);
     }
 
     public sealed class TestScheduleWithMissingScheduleAtFieldReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestScheduleWithMissingScheduleAtField"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestScheduleWithMissingScheduleAtFieldReadOnly() { }
-
-        internal TestScheduleWithMissingScheduleAtFieldReadOnly()
-            : base(__resolvedName) { }
+        internal TestScheduleWithMissingScheduleAtFieldReadOnly(
+            global::SpacetimeDB.Internal.TableAccessor access
+        )
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4626,17 +4882,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
     public sealed class TestScheduleWithoutPrimaryKeyReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestScheduleWithoutPrimaryKey"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestScheduleWithoutPrimaryKeyReadOnly() { }
-
-        internal TestScheduleWithoutPrimaryKeyReadOnly()
-            : base(__resolvedName) { }
+        internal TestScheduleWithoutPrimaryKeyReadOnly(
+            global::SpacetimeDB.Internal.TableAccessor access
+        )
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4650,17 +4899,10 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
     public sealed class TestScheduleWithoutScheduleAtReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestScheduleWithoutScheduleAt"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestScheduleWithoutScheduleAtReadOnly() { }
-
-        internal TestScheduleWithoutScheduleAtReadOnly()
-            : base(__resolvedName) { }
+        internal TestScheduleWithoutScheduleAtReadOnly(
+            global::SpacetimeDB.Internal.TableAccessor access
+        )
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4678,39 +4920,22 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdCorrectTypeIndex() { }
-
-            internal IdCorrectTypeIndex()
-                : base(__resolvedName) { }
+            internal IdCorrectTypeIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
 
             public global::TestScheduleIssues? Find(int key) => FindSingle(key);
         }
 
-        private static IdCorrectTypeIndex? __IdCorrectType;
-        public IdCorrectTypeIndex IdCorrectType => __IdCorrectType ??= new();
+        public IdCorrectTypeIndex IdCorrectType => new(__access);
     }
 
     public sealed class TestScheduleWithWrongPrimaryKeyTypeReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestScheduleWithWrongPrimaryKeyType"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestScheduleWithWrongPrimaryKeyTypeReadOnly() { }
-
-        internal TestScheduleWithWrongPrimaryKeyTypeReadOnly()
-            : base(__resolvedName) { }
+        internal TestScheduleWithWrongPrimaryKeyTypeReadOnly(
+            global::SpacetimeDB.Internal.TableAccessor access
+        )
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4728,39 +4953,22 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 SpacetimeDB.BSATN.String
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdWrongTypeIndex() { }
-
-            internal IdWrongTypeIndex()
-                : base(__resolvedName) { }
+            internal IdWrongTypeIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
 
             public global::TestScheduleIssues? Find(string key) => FindSingle(key);
         }
 
-        private static IdWrongTypeIndex? __IdWrongType;
-        public IdWrongTypeIndex IdWrongType => __IdWrongType ??= new();
+        public IdWrongTypeIndex IdWrongType => new(__access);
     }
 
     public sealed class TestScheduleWithWrongScheduleAtTypeReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestScheduleWithWrongScheduleAtType"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestScheduleWithWrongScheduleAtTypeReadOnly() { }
-
-        internal TestScheduleWithWrongScheduleAtTypeReadOnly()
-            : base(__resolvedName) { }
+        internal TestScheduleWithWrongScheduleAtTypeReadOnly(
+            global::SpacetimeDB.Internal.TableAccessor access
+        )
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4778,39 +4986,20 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static IdCorrectTypeIndex() { }
-
-            internal IdCorrectTypeIndex()
-                : base(__resolvedName) { }
+            internal IdCorrectTypeIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
 
             public global::TestScheduleIssues? Find(int key) => FindSingle(key);
         }
 
-        private static IdCorrectTypeIndex? __IdCorrectType;
-        public IdCorrectTypeIndex IdCorrectType => __IdCorrectType ??= new();
+        public IdCorrectTypeIndex IdCorrectType => new(__access);
     }
 
     public sealed class TestUniqueNotEquatableReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestUniqueNotEquatable>
     {
-        private static readonly string __resolvedName =
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                "TestUniqueNotEquatable"
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static TestUniqueNotEquatableReadOnly() { }
-
-        internal TestUniqueNotEquatableReadOnly()
-            : base(__resolvedName) { }
+        internal TestUniqueNotEquatableReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4828,24 +5017,14 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
                 SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
             >
         {
-            private static readonly string __resolvedName =
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "TestUniqueNotEquatable_PrimaryKeyField_idx_btree"
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static PrimaryKeyFieldIndex() { }
-
-            internal PrimaryKeyFieldIndex()
-                : base(__resolvedName) { }
+            internal PrimaryKeyFieldIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+                : base(accessor, "TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
 
             public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
                 FindSingle(key);
         }
 
-        private static PrimaryKeyFieldIndex? __PrimaryKeyField;
-        public PrimaryKeyFieldIndex PrimaryKeyField => __PrimaryKeyField ??= new();
+        public PrimaryKeyFieldIndex PrimaryKeyField => new(__access);
     }
 }
 
@@ -4855,27 +5034,93 @@ namespace SpacetimeDB.Internal
     public sealed partial class LocalReadOnly
     {
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.PlayerReadOnly Player =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "Player"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestAutoIncNotInteger"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDefaultFieldValues"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDuplicateTableName"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithMissingScheduleAtField"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutPrimaryKey"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutScheduleAt"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongPrimaryKeyType"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongScheduleAtType"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
-            new();
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestUniqueNotEquatable"
+                )
+            );
     }
 }
 #endif

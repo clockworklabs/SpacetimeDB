@@ -10,8 +10,10 @@ public sealed class Local : LocalBase
 {
     public Local() { }
 
+#if !SPACETIMEDB_WASM_RUNTIME
     internal Local(Internal.DatabaseAccess access)
         : base(access) { }
+#endif
 }
 
 public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
@@ -29,10 +31,13 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
         get
         {
-            if (Db.Access is not { } access)
-                return Internal.IReducerContext.GetDatabaseIdentity();
+#if SPACETIMEDB_WASM_RUNTIME
+            return Internal.IReducerContext.GetDatabaseIdentity();
+#else
+            var access = Internal.DatabaseAccess.Require(Db.Access);
             access.CheckActive();
             return access.Backend.DatabaseIdentity;
+#endif
         }
     }
 
@@ -124,7 +129,21 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     }
 }
 
-public readonly struct QueryBuilder { }
+public readonly struct QueryBuilder
+{
+#if !SPACETIMEDB_WASM_RUNTIME
+    private readonly Internal.DatabaseAccess? access;
+
+    internal QueryBuilder(Internal.LocalReadOnly db) => access = db.Access;
+
+    public SqlTableName ResolveTableName(string assemblyIdentity, string table)
+    {
+        var access = Internal.DatabaseAccess.Require(this.access);
+        access.CheckActive();
+        return access.Backend.Namespaces.ResolveSqlName(assemblyIdentity, table);
+    }
+#endif
+}
 
 public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
 {
@@ -266,7 +285,12 @@ public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.I
     public DatabaseEnvironment Env => default;
     public Identity Sender { get; }
 
-    public QueryBuilder From => default;
+    public QueryBuilder From =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db);
+#endif
 
     internal ViewContext(Identity sender, Internal.LocalReadOnly db)
         : base(db)
@@ -280,7 +304,12 @@ public sealed record AnonymousViewContext
         Internal.IAnonymousViewContext
 {
     public DatabaseEnvironment Env => default;
-    public QueryBuilder From => default;
+    public QueryBuilder From =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db);
+#endif
 
     internal AnonymousViewContext(Internal.LocalReadOnly db)
         : base(db) { }

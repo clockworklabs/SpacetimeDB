@@ -111,7 +111,7 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
 
 public abstract class LocalBase : Internal.Local
 {
-#if NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
     protected LocalBase() { }
 
     internal LocalBase(Internal.DatabaseAccess access)

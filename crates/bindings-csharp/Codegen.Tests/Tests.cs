@@ -290,6 +290,46 @@ public static class GeneratorSnapshotTests
 
 #if NET10_0_OR_GREATER
     [Fact]
+    public static async Task WasmHandlesDoNotCarryManagedRouting()
+    {
+        var fixture = await Fixture.Compile("server");
+        var options = fixture.ParseOptions.WithPreprocessorSymbols(
+            fixture.ParseOptions.PreprocessorSymbolNames.Append("SPACETIMEDB_WASM_AOT")
+        );
+        var input = fixture
+            .SampleCompilation.RemoveAllSyntaxTrees()
+            .AddSyntaxTrees(
+                fixture.SampleCompilation.SyntaxTrees.Select(tree =>
+                    CSharpSyntaxTree.ParseText(tree.GetText(), options)
+                )
+            );
+        CSharpGeneratorDriver
+            .Create(
+                [
+                    new Type().AsSourceGenerator(),
+                    new Module().AsSourceGenerator(),
+                    new EnvironmentGenerator().AsSourceGenerator(),
+                ],
+                parseOptions: options
+            )
+            .RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(GetCompilationErrors(output));
+
+        // Inspect active syntax, excluding managed-only preprocessor branches.
+        var generated = string.Join(
+            " ",
+            output
+                .SyntaxTrees.Skip(input.SyntaxTrees.Length)
+                .SelectMany(tree => tree.GetRoot().DescendantTokens())
+                .Select(token => token.Text)
+        );
+        Assert.DoesNotContain("TableAccessor", generated);
+        Assert.DoesNotContain("__access", generated);
+        Assert.DoesNotContain("__owner", generated);
+    }
+
+    [Fact]
     public static async Task NamespaceDeclarationsParseAndValidate()
     {
         var fixture = await Fixture.Compile("server");
@@ -497,6 +537,8 @@ public static class GeneratorSnapshotTests
                 ("Tables", "public uint Id;", "Tables"),
                 ("ReadOnlyTables", "public uint Id;", "ReadOnlyTables"),
                 ("Queries", "public uint Id;", "Queries"),
+                ("__owner", "public uint Id;", "__owner"),
+                ("User", "[SpacetimeDB.Unique] public uint access;", "__access"),
                 ("GetType", "public uint Id;", "GetType"),
             }
         )
@@ -536,6 +578,8 @@ public static class GeneratorSnapshotTests
             """
             [SpacetimeDB.Table(Accessor = "First")]
             [SpacetimeDB.Table(Accessor = "Second")]
+            [SpacetimeDB.Table(Accessor = "db")]
+            [SpacetimeDB.Table(Accessor = "from")]
             public partial struct Row { [SpacetimeDB.Unique] public uint @class; }
             """
         );

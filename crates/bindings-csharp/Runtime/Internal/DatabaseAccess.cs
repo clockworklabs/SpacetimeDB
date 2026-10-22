@@ -1,7 +1,6 @@
-#if NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
 namespace SpacetimeDB.Internal;
 
-// Ownership only. Database operations are added when generated handles are routed.
 internal interface IDatabaseBackend : IDisposable
 {
     NamespaceRegistry Namespaces { get; }
@@ -16,10 +15,19 @@ internal interface IDatabaseTransaction : IDisposable
     void CheckActive();
     void Commit();
     void Rollback();
+    ulong Count(string assemblyIdentity, string table);
+    byte[] Insert(string assemblyIdentity, string table, byte[] row);
+    byte[] Scan(string assemblyIdentity, string table);
 }
 
 internal sealed class DatabaseAccess
 {
+    internal static DatabaseAccess Require(DatabaseAccess? access) =>
+        access
+        ?? throw new InvalidOperationException(
+            "Managed database access requires a bound testing backend."
+        );
+
     internal IDatabaseBackend Backend { get; }
     internal IDatabaseTransaction? Transaction { get; }
 

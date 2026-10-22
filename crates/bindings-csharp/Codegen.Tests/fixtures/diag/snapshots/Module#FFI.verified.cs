@@ -1056,6 +1056,17 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
         public readonly struct Tables
         {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.Internal.Local? __owner { get; }
+
+            public Tables(global::SpacetimeDB.Internal.Local? db)
+            {
+                __owner = db;
+            }
+#else
+            public Tables(global::SpacetimeDB.Internal.Local? db) { }
+#endif
+
             public global::SpacetimeDB.Internal.TableHandles.Player Player => new();
             public global::SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
                 new();
@@ -1081,6 +1092,17 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
         public readonly struct ReadOnlyTables
         {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.Internal.LocalReadOnly? __owner { get; }
+
+            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
+            {
+                __owner = db;
+            }
+#else
+            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db) { }
+#endif
+
             public global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly Player => new();
             public global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
                 new();
@@ -1104,7 +1126,19 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 new();
         }
 
-        public readonly partial struct Queries { }
+        public readonly partial struct Queries
+        {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.QueryBuilder __owner { get; }
+
+            public Queries(global::SpacetimeDB.QueryBuilder from)
+            {
+                __owner = from;
+            }
+#else
+            public Queries(global::SpacetimeDB.QueryBuilder from) { }
+#endif
+        }
     }
 
     public static class LocalTableExtensions
@@ -1180,6 +1214,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestDuplicateTableNameSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1191,6 +1226,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestDuplicateTableNameSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1218,7 +1254,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::InAnotherNamespace.TestDuplicateTableName,
                 TestDuplicateTableNameCols,
                 TestDuplicateTableNameIxCols
-            > TestDuplicateTableName() => new AssemblyDescriptor.Queries().TestDuplicateTableName();
+            > TestDuplicateTableName() =>
+                new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
         }
     }
 
@@ -1242,6 +1279,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class PlayerSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1253,6 +1291,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static PlayerSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1269,7 +1308,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
         extension(global::SpacetimeDB.QueryBuilder from)
         {
             public global::SpacetimeDB.Table<global::Player, PlayerCols, PlayerIxCols> Player() =>
-                new AssemblyDescriptor.Queries().Player();
+                new AssemblyDescriptor.Queries(from).Player();
         }
     }
 
@@ -1301,6 +1340,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestAutoIncNotIntegerSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1312,6 +1352,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestAutoIncNotIntegerSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1339,7 +1380,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestAutoIncNotInteger,
                 TestAutoIncNotIntegerCols,
                 TestAutoIncNotIntegerIxCols
-            > TestAutoIncNotInteger() => new AssemblyDescriptor.Queries().TestAutoIncNotInteger();
+            > TestAutoIncNotInteger() =>
+                new AssemblyDescriptor.Queries(from).TestAutoIncNotInteger();
         }
     }
 
@@ -1449,6 +1491,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestDefaultFieldValuesSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1460,6 +1503,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestDefaultFieldValuesSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1487,7 +1531,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestDefaultFieldValues,
                 TestDefaultFieldValuesCols,
                 TestDefaultFieldValuesIxCols
-            > TestDefaultFieldValues() => new AssemblyDescriptor.Queries().TestDefaultFieldValues();
+            > TestDefaultFieldValues() =>
+                new AssemblyDescriptor.Queries(from).TestDefaultFieldValues();
         }
     }
 
@@ -1503,6 +1548,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestDuplicateTableNameSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1514,6 +1560,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestDuplicateTableNameSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1541,7 +1588,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestDuplicateTableName,
                 TestDuplicateTableNameCols,
                 TestDuplicateTableNameIxCols
-            > TestDuplicateTableName() => new AssemblyDescriptor.Queries().TestDuplicateTableName();
+            > TestDuplicateTableName() =>
+                new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
         }
     }
 
@@ -1589,6 +1637,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestIndexIssuesSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1600,6 +1649,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestIndexIssuesSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1627,7 +1677,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestIndexIssues,
                 TestIndexIssuesCols,
                 TestIndexIssuesIxCols
-            > TestIndexIssues() => new AssemblyDescriptor.Queries().TestIndexIssues();
+            > TestIndexIssues() => new AssemblyDescriptor.Queries(from).TestIndexIssues();
         }
     }
 
@@ -1672,6 +1722,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithoutPrimaryKeySqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1683,6 +1734,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithoutPrimaryKeySqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1711,7 +1763,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithoutPrimaryKeyCols,
                 TestScheduleWithoutPrimaryKeyIxCols
             > TestScheduleWithoutPrimaryKey() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithoutPrimaryKey();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithoutPrimaryKey();
         }
     }
 
@@ -1766,6 +1818,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithWrongPrimaryKeyTypeSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1777,6 +1830,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithWrongPrimaryKeyTypeSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1805,7 +1859,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithWrongPrimaryKeyTypeCols,
                 TestScheduleWithWrongPrimaryKeyTypeIxCols
             > TestScheduleWithWrongPrimaryKeyType() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithWrongPrimaryKeyType();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithWrongPrimaryKeyType();
         }
     }
 
@@ -1858,6 +1912,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithoutScheduleAtSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1869,6 +1924,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithoutScheduleAtSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1897,7 +1953,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithoutScheduleAtCols,
                 TestScheduleWithoutScheduleAtIxCols
             > TestScheduleWithoutScheduleAt() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithoutScheduleAt();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithoutScheduleAt();
         }
     }
 
@@ -1952,6 +2008,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithWrongScheduleAtTypeSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -1963,6 +2020,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithWrongScheduleAtTypeSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -1991,7 +2049,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithWrongScheduleAtTypeCols,
                 TestScheduleWithWrongScheduleAtTypeIxCols
             > TestScheduleWithWrongScheduleAtType() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithWrongScheduleAtType();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithWrongScheduleAtType();
         }
     }
 
@@ -2040,6 +2098,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestScheduleWithMissingScheduleAtFieldSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -2051,6 +2110,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestScheduleWithMissingScheduleAtFieldSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -2079,7 +2139,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestScheduleWithMissingScheduleAtFieldCols,
                 TestScheduleWithMissingScheduleAtFieldIxCols
             > TestScheduleWithMissingScheduleAtField() =>
-                new AssemblyDescriptor.Queries().TestScheduleWithMissingScheduleAtField();
+                new AssemblyDescriptor.Queries(from).TestScheduleWithMissingScheduleAtField();
         }
     }
 
@@ -2122,6 +2182,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static class TestUniqueNotEquatableSqlNameCache
         {
             internal static readonly global::SpacetimeDB.SqlTableName Name =
@@ -2133,6 +2194,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
             // Prevent eager initialization before the root installs namespace placements.
             static TestUniqueNotEquatableSqlNameCache() { }
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -2160,7 +2222,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 global::TestUniqueNotEquatable,
                 TestUniqueNotEquatableCols,
                 TestUniqueNotEquatableIxCols
-            > TestUniqueNotEquatable() => new AssemblyDescriptor.Queries().TestUniqueNotEquatable();
+            > TestUniqueNotEquatable() =>
+                new AssemblyDescriptor.Queries(from).TestUniqueNotEquatable();
         }
     }
 }

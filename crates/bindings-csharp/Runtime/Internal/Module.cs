@@ -443,8 +443,8 @@ public static class Module
 /// </summary>
 public partial class Local
 {
-#if NET10_0_OR_GREATER
-    // Null retains the host path without allocating a managed backend or scope.
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    // Default construction is unbound; database operations require an explicit backend.
     internal DatabaseAccess? Access { get; }
 
     public Local() { }
@@ -460,7 +460,7 @@ public partial class Local
 /// </summary>
 public sealed partial class LocalReadOnly
 {
-#if NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
     internal DatabaseAccess? Access { get; }
 
     public LocalReadOnly() { }

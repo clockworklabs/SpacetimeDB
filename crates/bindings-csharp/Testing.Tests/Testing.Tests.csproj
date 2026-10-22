@@ -12,6 +12,8 @@
     <Using Include="Xunit" />
     <ProjectReference Include="../Testing/Testing.csproj" />
     <ProjectReference Include="Module/Module.csproj" />
+    <ProjectReference Include="../Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <CompilerVisibleProperty Include="IsTestProject" />
     <Compile Remove="Module/**/*.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(NativeTestLibrary)' != ''">

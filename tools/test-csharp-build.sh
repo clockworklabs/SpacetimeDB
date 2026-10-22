@@ -64,6 +64,10 @@ EOF
             "$module/obj/project.assets.json"
         if [ "$phase" = before-wasm ]; then
             "$cli" build --module-path "$module"
+            # Publishing must select the host-only Runtime, not its managed testing implementation.
+            jq -e --arg package "SpacetimeDB.Runtime/$version" \
+                '.targets["net10.0/wasi-wasm"][$package].runtime | has("runtimes/wasi-wasm/lib/net10.0/SpacetimeDB.Runtime.dll")' \
+                "$module/obj/project.assets.json"
         fi
     done
 done

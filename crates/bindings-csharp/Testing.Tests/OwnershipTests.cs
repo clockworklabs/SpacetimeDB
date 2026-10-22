@@ -50,12 +50,13 @@ public class OwnershipTests
     }
 
     [Fact]
-    public void DefaultContextsRetainHostOwnership()
+    public void DefaultContextsAreUnbound()
     {
         Assert.Null(new SpacetimeDB.Local().Access);
         Assert.Null(new LocalReadOnly().Access);
         var context = new ReducerContext(default, null, new Random(0), default);
         Assert.Null(context.Db.Access);
         Assert.True(context.SenderAuth.IsInternal);
+        Assert.Throws<InvalidOperationException>(() => context.DatabaseIdentity);
     }
 }
