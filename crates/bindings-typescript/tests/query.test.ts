@@ -395,6 +395,13 @@ describe('TableScan.toSql', () => {
       `SELECT * FROM "renamed_columns" WHERE ("renamed_columns"."display_name" = 'Alice') AND ("renamed_columns"."age_years" > 30)`
     );
   });
+
+  it('keeps sourceName as a deprecated alias of tableName', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    expect(qb.renamedColumns.tableName).toBe('renamed_columns');
+    expect(qb.renamedColumns.sourceName).toBe('renamed_columns');
+    expect(schemaDef.tables.renamedColumns.sourceName).toBe('renamed_columns');
+  });
 });
 
 describe('makeFromBuilder', () => {
@@ -415,7 +422,7 @@ describe('makeFromBuilder', () => {
       orders: {
         ...schemaDef.tables.orders,
         accessorName: 'lib.orders',
-        sourceName: 'lib.orders',
+        tableName: 'lib.orders',
       },
     };
     const from = makeFromBuilder(namespacedTables) as any;
@@ -431,7 +438,7 @@ describe('makeFromBuilder', () => {
       orders: {
         ...schemaDef.tables.orders,
         accessorName: 'lib.orders',
-        sourceName: 'lib.orders',
+        tableName: 'lib.orders',
       },
     };
     const from = makeFromBuilder(namespacedTables) as any;

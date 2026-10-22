@@ -568,15 +568,15 @@ class ModuleHooksImpl implements ModuleHooks {
   }
 
   /** Query builder scoped to the submodule's own tables, with namespace-prefixed
-   *  source names so generated SQL targets the mounted table names. */
+   *  table names so generated SQL targets the mounted tables. */
   #getSubmoduleQueryBuilder(submoduleIdx: number): QueryBuilder<any> {
     const m = this.#flatSubmodules[submoduleIdx];
     return (m.queryBuilder_ ??= makeQueryBuilder({
       tables: Object.fromEntries(
-        Object.entries(m.schemaTables).map(([key, def]) => [
-          key,
-          { ...def, sourceName: m.namePrefix + def.sourceName },
-        ])
+        Object.entries(m.schemaTables).map(([key, def]) => {
+          const tableName = m.namePrefix + def.tableName;
+          return [key, { ...def, tableName, sourceName: tableName }];
+        })
       ),
     }));
   }

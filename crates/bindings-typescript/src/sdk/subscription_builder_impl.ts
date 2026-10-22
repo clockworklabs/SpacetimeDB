@@ -154,8 +154,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
     const viewsWithArgs = new Set(remoteModule.viewsWithArgs);
     const queries = Object.values(remoteModule.tables)
-      .filter(table => !viewsWithArgs.has(table.sourceName))
-      .map(table => `SELECT * FROM ${table.sourceName}`);
+      .filter(table => !viewsWithArgs.has(table.tableName))
+      .map(table => `SELECT * FROM ${table.tableName}`);
     this.subscribe(queries);
   }
 }

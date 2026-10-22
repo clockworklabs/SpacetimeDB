@@ -115,7 +115,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
     readonly filterQuery: FromBuilder<any>,
     readonly joinCondition: BooleanExpr<any>
   ) {
-    if (sourceQuery.table.sourceName === filterQuery.table.sourceName) {
+    if (sourceQuery.table.tableName === filterQuery.table.tableName) {
       // TODO: Handle aliasing properly instead of just forbidding it.
       throw new Error('Cannot semijoin a table to itself');
     }
@@ -139,8 +139,8 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   toSql(): string {
     const left = this.filterQuery;
     const right = this.sourceQuery;
-    const leftTable = quoteIdentifier(left.table.sourceName);
-    const rightTable = quoteIdentifier(right.table.sourceName);
+    const leftTable = quoteIdentifier(left.table.tableName);
+    const rightTable = quoteIdentifier(right.table.tableName);
     let sql = `SELECT ${rightTable}.* FROM ${leftTable} JOIN ${rightTable} ON ${booleanExprToSql(this.joinCondition)}`;
 
     const clauses: string[] = [];
@@ -238,7 +238,7 @@ class ViewCallImpl<TableDef extends TypedTableDef>
 {
   readonly [QueryBrand] = true;
   constructor(
-    readonly sourceName: string,
+    readonly tableName: string,
     readonly accessorName: string,
     readonly args: readonly unknown[]
   ) {
@@ -247,7 +247,7 @@ class ViewCallImpl<TableDef extends TypedTableDef>
 
   toSql(): string {
     const args = this.args.map(literalValueToSql).join(', ');
-    return `SELECT * FROM ${quoteIdentifier(this.sourceName)}(${args})`;
+    return `SELECT * FROM ${quoteIdentifier(this.tableName)}(${args})`;
   }
 }
 
@@ -285,7 +285,9 @@ export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
  */
 export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   type: 'table';
-  sourceName: TableDef['sourceName'];
+  tableName: TableDef['tableName'];
+  /** @deprecated Use `tableName`. */
+  sourceName: TableDef['tableName'];
   accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
@@ -302,7 +304,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
 {
   readonly [QueryBrand] = true;
   readonly type = 'table' as const;
-  sourceName: string;
+  tableName: string;
   accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
@@ -320,8 +322,12 @@ class TableRefImpl<TableDef extends TypedTableDef>
   get constraints() {
     return (this.tableDef as any).constraints;
   }
+  /** @deprecated Use `tableName`. */
+  get sourceName() {
+    return this.tableName;
+  }
   constructor(tableDef: TableDef) {
-    this.sourceName = tableDef.sourceName;
+    this.tableName = tableDef.tableName;
     this.accessorName = tableDef.accessorName;
     this.cols = createRowExpr(tableDef);
     // this.indexedCols = createIndexedRowExpr(tableDef, this.cols);
@@ -387,7 +393,7 @@ function createViewCaller(
   const names = Object.keys(params);
   return args =>
     new ViewCallImpl(
-      tableDef.sourceName,
+      tableDef.tableName,
       tableDef.accessorName,
       names.map(name => args[name])
     );
@@ -458,7 +464,7 @@ function createRowExpr<TableDef extends TypedTableDef>(
   >) {
     const columnBuilder = tableDef.columns[columnName];
     const column = new ColumnExpression<TableDef, typeof columnName>(
-      tableDef.sourceName,
+      tableDef.tableName,
       columnName,
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
         TableDef,
@@ -476,7 +482,7 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   where?: BooleanExpr<Table>,
   extraClauses: readonly string[] = []
 ): string {
-  const quotedTable = quoteIdentifier(table.sourceName);
+  const quotedTable = quoteIdentifier(table.tableName);
   const sql = `SELECT * FROM ${quotedTable}`;
   const clauses: string[] = [];
   if (where) clauses.push(booleanExprToSql(where));
@@ -494,7 +500,7 @@ export type TypedTableDef<
     ColumnBuilder<any, any, ColumnMetadata<any>>
   > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
 > = {
-  sourceName: string;
+  tableName: string;
   accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
@@ -558,13 +564,13 @@ export class ColumnExpression<
   readonly column: ColumnName;
   // The name of the column in the database.
   readonly columnName: string;
-  readonly table: TableDef['sourceName'];
+  readonly table: TableDef['tableName'];
   // phantom: actual runtime value is undefined
   readonly tsValueType?: RowType<TableDef>[ColumnName];
   readonly spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>;
 
   constructor(
-    table: TableDef['sourceName'],
+    table: TableDef['tableName'],
     column: ColumnName,
     spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>,
     columnName?: string

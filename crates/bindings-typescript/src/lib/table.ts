@@ -113,13 +113,14 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  */
 export type UntypedTableDef = {
   /**
-   * The name SQL uses for the table, from `tableName`, which is the `name` option.
-   * Despite the name, this is not `RawTableDefV10.sourceName`, which is the accessor name.
+   * The name SQL uses for the table: the `name` option if there is one, else the accessor name.
    *
    * In client bindings this is always the table's canonical name.
-   * In a module it is the explicit `name` if there is one, else the accessor name,
+   * In a module without an explicit `name` it is the accessor name,
    * which the database also accepts for the table.
    */
+  tableName: string;
+  /** @deprecated Use `tableName`. */
   sourceName: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
