@@ -5,6 +5,7 @@ use crate::{
         BlobError, BlobReadSet, BlobSet, DeleteRowError, PageBorrow, PageError, PageEvictionPolicy, PageHandle,
         PageManager, PageRef, PageSet, PreparedCommit, ReservedPage,
     },
+    var_len::VarLenMembers as _,
 };
 
 use super::{
@@ -1722,13 +1723,57 @@ impl Table {
 
     /// Clears this table, removing all present rows from it.
     pub fn clear(&mut self, blobs: &BlobSet) -> Result<u64, TableError> {
-        let ptrs = self.scan_all_row_ptrs()?;
-        let len = ptrs.len() as u64;
-        for ptr in ptrs {
-            // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
-            unsafe { self.delete_unchecked(blobs, ptr) }?;
+        // Collect blob references before mutating anything: a later page fault
+        // must not leave a partially cleared table during replay or a live tx.
+        // We only need hashes, not blob contents, and can release each page
+        // between reads rather than pinning the entire table in memory.
+        let mut blob_refs = Vec::new();
+        if !self.inner.row_layout.layout().fixed {
+            for index in 0..self.inner.pages.num_pages() {
+                let Some(page) = self.inner.pages.get_page(PageIndex(index as _))? else {
+                    continue;
+                };
+                page.with_page(|page| {
+                    for offset in page.iter_fixed_len(self.row_size()) {
+                        let row = page.get_row_data(offset, self.row_size());
+                        // SAFETY: The iterator yields live rows of this table,
+                        // whose layout matches the table's visitor program.
+                        for var_len in unsafe { self.inner.visitor_prog.visit_var_len(row) }
+                            .filter(|var_len| var_len.is_large_blob())
+                        {
+                            // SAFETY: A live large-blob reference points to a
+                            // valid granule containing its content hash.
+                            let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
+                                .next()
+                                .expect("large blob has a hash granule");
+                            blob_refs.push(granule.blob_hash().into());
+                        }
+                    }
+                });
+            }
         }
-        Ok(len)
+
+        // No fallible storage operations remain. Each reference belongs to a
+        // live row, so it must exist in the catalog even if its blob is evicted.
+        for hash in blob_refs {
+            blobs.free_ref(hash).expect("live row has a valid blob reference");
+        }
+        // Free all pages, marking them as absent.
+        self.inner.pages.clear();
+        // Clear indexes.
+        for index in self.indexes.values_mut() {
+            *index = index.clone_structure();
+        }
+        // Empty pointer map.
+        if let Some(pointer_map) = &mut self.pointer_map {
+            *pointer_map = PointerMap::default();
+        }
+        // Update metadata.
+        let row_count = self.row_count;
+        self.row_count = 0;
+        self.blob_store_bytes = BlobNumBytes::default();
+
+        Ok(row_count)
     }
 
     /// Returns the row type for rows in this table.
@@ -4258,5 +4303,142 @@ pub(crate) mod test {
             assert_eq!(blobs.num_blobs(), 0);
             assert_eq!(blobs.bytes_used_by_blobs(), 0);
         }
+    }
+
+    #[test]
+    fn clear_releases_evicted_blobs_without_reading_them() {
+        use std::sync::atomic::Ordering;
+
+        // Clearing all rows should need blob hashes, not blob contents. Check
+        // both set-semantic lookup structures: an ordinary index plus pointer
+        // map, and a unique index with no pointer map.
+        for unique_index in [false, true] {
+            // Use an unlimited memory budget so the only possible injected
+            // failure is a storage read, not page or blob budget exhaustion.
+            let (storage, fail_reads) = TieredStorage::with_failing_reads_for_test();
+            let storage = Arc::new(storage);
+            let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+            let manager = Arc::new(PageManager::new(
+                resident.clone(),
+                PagePool::new_for_test(),
+                storage.clone(),
+            ));
+            let blobs = BlobSet::new(resident, storage);
+            let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+            let mut table = Table::new(
+                schema.into(),
+                SquashedOffset::COMMITTED_STATE,
+                manager,
+                PageEvictionPolicy::Evictable,
+            );
+            // Keep an index in both cases: clearing must discard its entries,
+            // whether set semantics are provided by it or by a pointer map.
+            let index_id = IndexId(1);
+            let index = table
+                .new_index(&BTreeAlgorithm { columns: 0.into() }.into(), unique_index)
+                .unwrap();
+            // SAFETY: The index was constructed for this table's row layout.
+            unsafe { table.insert_index(&blobs, index_id, index) }.unwrap().unwrap();
+            // Put the inline row first: the old row-by-row clear removed it
+            // successfully before encountering the second row's evicted blob.
+            table.insert(&blobs, &product![0_u64, "small"]).unwrap();
+            let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+            table.insert(&blobs, &product![1_u64, large.clone()]).unwrap();
+            // Another owner still references the same blob, so clear must
+            // decrement the reference count rather than remove it outright.
+            let other_use = blobs.insert(large.as_bytes()).unwrap();
+            let hash = other_use.hash();
+            // Drop the residency pin, but retain the logical reference created
+            // by insert. Eviction can now move the bytes out of memory.
+            drop(other_use);
+            blobs.evict().unwrap();
+
+            // Pages remain resident; only the blob would require a storage read.
+            // Previously clear deleted the small row, then failed on the blob.
+            fail_reads.store(true, Ordering::Relaxed);
+            assert_eq!(table.clear(&blobs).unwrap(), 2);
+            fail_reads.store(false, Ordering::Relaxed);
+            // Rows, pages, index entries, and table statistics must all be
+            // cleared while preserving the table's original index definitions.
+            assert_eq!(table.num_rows(), 0);
+            assert_eq!(table.page_bytes(), 0);
+            assert_eq!(table.blob_store_bytes, BlobNumBytes::default());
+            assert_eq!(table.has_pointer_map(), !unique_index);
+            // The table's reference is gone, but the other owner's reference
+            // remains. Freeing that last reference must empty the catalog.
+            assert_eq!(blobs.num_blobs(), 1);
+            assert_eq!(blobs.bytes_used_by_blobs(), large.len() as u64);
+            let index = table.get_index_by_id(index_id).unwrap();
+            let key = AlgebraicValue::U64(0);
+            assert!(index.seek_point(&index.key_from_algebraic_value(&key)).next().is_none());
+            blobs.free_ref(hash).unwrap();
+            assert_eq!(blobs.num_blobs(), 0);
+            // The empty index and page set must remain usable after clear.
+            table.insert(&blobs, &product![0_u64, "new"]).unwrap();
+            assert_eq!(table.num_rows(), 1);
+        }
+    }
+
+    #[test]
+    fn clear_page_fault_preserves_rows_and_blob_references() {
+        use std::sync::atomic::Ordering;
+
+        // Unlike an evicted blob, an evicted page must be read to discover its
+        // blob hashes. A failure on a later page must leave earlier pages and
+        // their blob references untouched, even though they were already read.
+        let (storage, fail_reads) = TieredStorage::with_failing_reads_for_test();
+        let storage = Arc::new(storage);
+        let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+        let manager = Arc::new(PageManager::new(
+            resident.clone(),
+            PagePool::new_for_test(),
+            storage.clone(),
+        ));
+        let blobs = BlobSet::new(resident, storage);
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+        let mut table = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        // Distinct IDs make every row unique; the shared string gives one blob
+        // many references. Fill two pages so the failure occurs after some work.
+        let mut count = 0_u64;
+        while table.inner.pages.num_pages() < 2 {
+            table.insert(&blobs, &product![count, large.clone()]).unwrap();
+            count += 1;
+        }
+        let blob_bytes_before = blobs.bytes_used_by_blobs();
+        table.inner.pages.evict().unwrap();
+        // Keep the first page resident so clear collects its blob references
+        // before hitting the injected read failure on the second page.
+        let first_page = table.inner.pages.get_page(PageIndex(0)).unwrap().unwrap();
+        let first_pin = match first_page {
+            PageRef::Tiered(handle) => handle,
+            PageRef::Resident(_) => unreachable!("test uses evictable pages"),
+        };
+        fail_reads.store(true, Ordering::Relaxed);
+        assert!(matches!(table.clear(&blobs), Err(TableError::Page(error))
+            if matches!(*error, PageError::Storage(_))));
+        fail_reads.store(false, Ordering::Relaxed);
+        drop(first_pin);
+
+        // Restore storage reads before examining data, so a new read failure
+        // cannot conceal rows or references accidentally lost by clear.
+        // No catalog references, row slots, statistics, or pointer-map entries
+        // may be removed until all page reads have succeeded.
+        assert_eq!(table.num_rows(), count);
+        assert_eq!(table.scan_all_row_ptrs().unwrap().len() as u64, count);
+        assert_eq!(blobs.bytes_used_by_blobs(), blob_bytes_before);
+        for (id, row) in table.scan_rows(&blobs).enumerate() {
+            assert_eq!(row.unwrap().read_col::<u64>(0).unwrap(), id as u64);
+        }
+        // A duplicate remains detectable through the original pointer map.
+        assert!(matches!(
+            table.insert(&blobs, &product![0_u64, large]),
+            Err(InsertError::Duplicate(_))
+        ));
     }
 }
