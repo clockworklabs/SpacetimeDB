@@ -1637,6 +1637,21 @@ impl UpdateDatabaseResult {
     }
 }
 
+/// What committing an uploaded file's record did.
+pub enum UploadedFileRecorded {
+    /// The record committed.
+    Inserted {
+        /// The transaction offset of the commit.
+        tx_offset: TransactionOffset,
+        /// The durable transaction offset of the database.
+        /// `None` if the database is in-memory only.
+        durable_offset: Option<DurableOffset>,
+    },
+    /// Another attempt with the same idempotency key completed first, creating this file.
+    /// Nothing was committed.
+    KeyAlreadyCompleted { file_id: spacetimedb_lib::FileId },
+}
+
 #[derive(Debug)]
 pub enum UpdateEnvironmentResult {
     NoUpdateNeeded,
@@ -2836,6 +2851,46 @@ impl ModuleHost {
         res
     }
 
+    /// Whether the module defines an `#[reducer(allow_upload)]` lifecycle reducer.
+    /// Without one, it accepts no uploads.
+    pub fn accepts_uploads(&self) -> bool {
+        self.info.module_def.lifecycle_reducer(Lifecycle::AllowUpload).is_some()
+    }
+
+    /// Asks the module's `#[reducer(allow_upload)]` lifecycle reducer whether to accept an upload.
+    ///
+    /// Returns `Ok(None)` if the module defines none, which means uploads are disabled.
+    /// Clients can't call it themselves, as with any lifecycle reducer.
+    /// The reducer runs like any other, so its writes commit even if the upload later fails.
+    /// The uploader must be connected as `caller_connection_id`, as for a reducer called over HTTP,
+    /// so that the reducer can read its JWT.
+    pub async fn call_allow_upload(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        request: &spacetimedb_lib::UploadRequest,
+    ) -> Result<Option<ReducerCallResult>, ReducerCallError> {
+        let module_def = &self.info.module_def;
+        // Only the root module may declare lifecycle reducers.
+        let Some((reducer_id, reducer_def)) = module_def.lifecycle_reducer(Lifecycle::AllowUpload) else {
+            return Ok(None);
+        };
+        let owning_def = module_def;
+        let args = spacetimedb_lib::bsatn::to_vec(request).expect("an upload request always serializes");
+        let params = Self::call_reducer_params(
+            owning_def,
+            caller_identity,
+            Some(caller_connection_id),
+            None,
+            None,
+            None,
+            reducer_id,
+            reducer_def,
+            FunctionArgs::Bsatn(args.into()),
+        )?;
+        self.call_reducer_with_params(&reducer_def.name, params).await.map(Some)
+    }
+
     pub async fn call_reducer(
         &self,
         caller_identity: Identity,
@@ -3826,6 +3881,23 @@ impl ModuleHost {
             environment,
             |environment, inst| inst.update_environment(environment),
             |environment, inst| inst.update_environment(environment).await,
+        )?
+    }
+
+    /// Commits the `st_file` row of a file `uploader` uploaded, and its idempotency record if it has one,
+    /// re-evaluating the views that read files.
+    pub async fn insert_uploaded_file(
+        &self,
+        row: spacetimedb_datastore::system_tables::StFileRow,
+        upload: Option<spacetimedb_datastore::system_tables::StUploadRow>,
+        uploader: Identity,
+    ) -> Result<UploadedFileRecorded, anyhow::Error> {
+        call_instance!(
+            self,
+            "<insert_uploaded_file>",
+            (row, upload, uploader),
+            |(row, upload, uploader), inst| inst.insert_uploaded_file(row, upload, uploader),
+            |(row, upload, uploader), inst| inst.insert_uploaded_file(row, upload, uploader).await,
         )?
     }
 

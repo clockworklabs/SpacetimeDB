@@ -23,6 +23,9 @@ pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
 /// The tag used inside the special `UUID` product type.
 pub const UUID_TAG: &str = "__uuid__";
 
+/// The tag used inside the special `FileRef` product type.
+pub const FILE_REF_TAG: &str = "__file_ref__";
+
 /// A structural product type  of the factors given by `elements`.
 ///
 /// This is also known as `struct` and `tuple` in many languages,
@@ -170,8 +173,18 @@ impl ProductType {
         self.is_newtype_of(UUID_TAG, AlgebraicType::U128)
     }
 
+    /// Returns whether this is the special tag of a file reference.
+    pub fn is_file_ref_tag(tag_name: &str) -> bool {
+        tag_name == FILE_REF_TAG
+    }
+
+    /// Returns whether this is the special case of a file reference: a file's ID and read secret.
+    pub fn is_file_ref(&self) -> bool {
+        self.is_newtype_of(FILE_REF_TAG, AlgebraicType::U256)
+    }
+
     /// Returns whether this is a special known `tag`,
-    /// currently `Address`, `Identity`, `Timestamp`, `TimeDuration`, `ConnectionId` or `UUID`.
+    /// currently `Address`, `Identity`, `Timestamp`, `TimeDuration`, `ConnectionId`, `UUID` or `FileRef`.
     pub fn is_special_tag(tag_name: &str) -> bool {
         [
             IDENTITY_TAG,
@@ -179,12 +192,13 @@ impl ProductType {
             TIMESTAMP_TAG,
             TIME_DURATION_TAG,
             UUID_TAG,
+            FILE_REF_TAG,
         ]
         .contains(&tag_name)
     }
 
     /// Returns whether this is a special known type,
-    /// currently `Identity`, `Timestamp`, `TimeDuration`, `ConnectionId` or `UUID`.
+    /// currently `Identity`, `Timestamp`, `TimeDuration`, `ConnectionId`, `UUID` or `FileRef`.
     /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
         self.is_identity()
@@ -192,6 +206,7 @@ impl ProductType {
             || self.is_timestamp()
             || self.is_time_duration()
             || self.is_uuid()
+            || self.is_file_ref()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.

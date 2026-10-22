@@ -1,0 +1,557 @@
+//! File Storage, end to end: uploads, downloads, files created in reducers, deletion, and restart.
+
+use regex::Regex;
+use reqwest::blocking::Client;
+use reqwest::StatusCode;
+use spacetimedb_smoketests::{require_local_server, Smoketest};
+
+const MODULE_CODE: &str = r#"
+use spacetimedb::{FileId, FileRef, Identity, ReducerContext, Table, UploadRequest};
+
+/// Every upload `allow_upload` accepted, by the ID the file will have.
+#[spacetimedb::table(accessor = upload_log, public)]
+pub struct UploadLog {
+    #[primary_key]
+    file: FileId,
+    size: u64,
+    sender: Identity,
+    /// Whether `allow_upload` had a JWT for its sender.
+    sender_jwt: bool,
+}
+
+#[spacetimedb::table(accessor = attachment, public)]
+pub struct Attachment {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    file: FileRef,
+    name: String,
+}
+
+#[spacetimedb::reducer(allow_upload)]
+pub fn check_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
+    // The uploader is the sender, and the database never uploads.
+    if ctx.sender_auth().is_internal() {
+        return Err("an upload is never internal".into());
+    }
+    if upload.token.as_deref().is_some_and(|token| token != "letmein") {
+        return Err("wrong token".into());
+    }
+    if upload.size > 1024 * 1024 {
+        return Err("too large".into());
+    }
+    if upload.content_type.as_deref() == Some("application/x-forbidden") {
+        return Err("forbidden content type".into());
+    }
+    let sender_jwt = ctx.sender_auth().jwt().is_some_and(|jwt| jwt.identity() == ctx.sender());
+    ctx.db.upload_log().insert(UploadLog { file: upload.file_id, size: upload.size, sender: ctx.sender(), sender_jwt });
+    Ok(())
+}
+
+/// Attaches every upload that hasn't been attached yet.
+#[spacetimedb::reducer]
+pub fn attach_uploads(ctx: &ReducerContext) {
+    for upload in ctx.db.upload_log().iter() {
+        if let Some(file) = ctx.files().reference(upload.file) {
+            if ctx.db.attachment().iter().all(|a| a.file != file) {
+                let name = format!("upload-{}", upload.size);
+                ctx.db.attachment().insert(Attachment { id: 0, file, name });
+            }
+        }
+    }
+}
+
+/// Attaches a file whose reference the caller holds.
+#[spacetimedb::reducer]
+pub fn attach(ctx: &ReducerContext, file: FileRef, name: String) -> Result<(), String> {
+    ctx.files().id(file).ok_or("no such file")?;
+    ctx.db.attachment().insert(Attachment { id: 0, file, name });
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn create_note(ctx: &ReducerContext, text: String) -> Result<(), String> {
+    let size = text.len() as u64;
+    let id = ctx.files().create(text.into_bytes(), Some("text/plain".into())).map_err(|e| e.to_string())?;
+    let meta = ctx.files().metadata(id).ok_or("a new file has metadata")?;
+    if meta.size() != size {
+        return Err("wrong size".into());
+    }
+    let file = meta.file_ref();
+    ctx.db.attachment().insert(Attachment { id: 0, file, name: "note".into() });
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn copy_note(ctx: &ReducerContext) -> Result<(), String> {
+    let note = ctx.db.attachment().iter().find(|a| a.name == "note").ok_or("no note")?;
+    // The note came from this module's own table, so its ID needs no check.
+    let id = ctx.files().copy(note.file.id_unchecked()).map_err(|e| e.to_string())?;
+    let file = ctx.files().reference(id).ok_or("the copy exists")?;
+    ctx.db.attachment().insert(Attachment { id: 0, file, name: "copy".into() });
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn delete_named(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    let row = ctx.db.attachment().iter().find(|a| a.name == name).ok_or("no such attachment")?;
+    if !ctx.files().delete(row.file.id_unchecked()).map_err(|e| e.to_string())? {
+        return Err("the file was already gone".into());
+    }
+    ctx.db.attachment().id().delete(row.id);
+    Ok(())
+}
+"#;
+
+struct Files<'a> {
+    test: &'a Smoketest,
+    client: Client,
+}
+
+impl<'a> Files<'a> {
+    fn new(test: &'a Smoketest) -> Self {
+        Self {
+            test,
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap(),
+        }
+    }
+
+    fn url(&self, rest: &str) -> String {
+        let db = self.test.database_identity.as_ref().expect("published");
+        format!(
+            "{}/v1/database/{db}/files{rest}",
+            self.test.server_url.trim_end_matches('/')
+        )
+    }
+
+    fn upload(&self, body: &[u8], content_type: &str, authorized: bool) -> reqwest::blocking::Response {
+        let mut request = self
+            .client
+            .post(self.url(""))
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body.to_vec());
+        if authorized {
+            request = request.bearer_auth(self.test.read_token().unwrap());
+        }
+        request.send().unwrap()
+    }
+
+    /// Uploads with the query string `query` and no `Authorization` header.
+    fn upload_with_query(&self, body: &[u8], query: &str) -> reqwest::blocking::Response {
+        self.client
+            .post(self.url(&format!("?{query}")))
+            .header(reqwest::header::CONTENT_TYPE, "text/plain")
+            .body(body.to_vec())
+            .send()
+            .unwrap()
+    }
+
+    /// Downloads without credentials: the reference in the URL is the authorization.
+    fn download(&self, file_ref: &str, range: Option<&str>) -> reqwest::blocking::Response {
+        let mut request = self.client.get(self.url(&format!("/{file_ref}")));
+        if let Some(range) = range {
+            request = request.header(reqwest::header::RANGE, range);
+        }
+        request.send().unwrap()
+    }
+
+    fn upload_keyed(&self, body: &[u8], key: &str, authorized: bool) -> reqwest::blocking::Response {
+        let mut request = self
+            .client
+            .post(self.url(""))
+            .header(reqwest::header::CONTENT_TYPE, "text/plain")
+            .header("Idempotency-Key", key)
+            .body(body.to_vec());
+        if authorized {
+            request = request.bearer_auth(self.test.read_token().unwrap());
+        }
+        request.send().unwrap()
+    }
+
+    fn upload_digested(&self, body: &[u8], digest: &str) -> reqwest::blocking::Response {
+        self.client
+            .post(self.url(""))
+            .bearer_auth(self.test.read_token().unwrap())
+            .header("Content-Digest", digest)
+            .body(body.to_vec())
+            .send()
+            .unwrap()
+    }
+
+    fn completed_upload(&self, key: &str, authorized: bool) -> reqwest::blocking::Response {
+        let mut request = self.client.get(self.url(&format!("/uploads/{key}")));
+        if authorized {
+            request = request.bearer_auth(self.test.read_token().unwrap());
+        }
+        request.send().unwrap()
+    }
+
+    fn metadata(&self, file_ref: &str) -> reqwest::blocking::Response {
+        self.client
+            .get(self.url(&format!("/{file_ref}/metadata")))
+            .send()
+            .unwrap()
+    }
+}
+
+/// The file reference of the attachment called `name`, read with SQL.
+///
+/// SQL prints a `FileRef` in hex after `0x`, like an `Identity`, so without the `0x` it is the same
+/// text the upload API returns.
+fn attachment_key(test: &Smoketest, name: &str) -> String {
+    let output = test
+        .sql_confirmed(&format!("SELECT file FROM attachment WHERE name = '{name}'"))
+        .unwrap();
+    let key = Regex::new("0x([0-9a-f]{64})").unwrap();
+    key.captures(&output)
+        .unwrap_or_else(|| panic!("no attachment {name}: {output}"))[1]
+        .to_owned()
+}
+
+/// The identity in a query's output.
+fn identity_in(output: &str) -> String {
+    let identity = Regex::new("0x[0-9a-f]{64}").unwrap().find(output);
+    identity
+        .unwrap_or_else(|| panic!("no identity in {output}"))
+        .as_str()
+        .to_owned()
+}
+
+fn forge(file_ref: &str) -> String {
+    // Flip the first hex digit, which is in the read secret.
+    let (first, rest) = file_ref.split_at(1);
+    let flipped = if first == "0" { "1" } else { "0" };
+    format!("{flipped}{rest}")
+}
+
+#[test]
+fn test_file_storage() {
+    require_local_server!();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let files = Files::new(&test);
+
+    // Uploads need an identity or a token, and allow_upload's approval.
+    assert_eq!(
+        files.upload(b"hello", "text/plain", false).status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let rejected = files.upload(b"nope", "application/x-forbidden", true);
+    assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+    assert!(rejected.text().unwrap().contains("forbidden content type"));
+
+    let response = files.upload(b"hello, files", "text/plain", true);
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let header_ref = response.headers()["spacetime-file-ref"].to_str().unwrap().to_owned();
+    let json: serde_json::Value = response.json().unwrap();
+    let uploaded = json["file_ref"].as_str().unwrap().to_owned();
+    assert_eq!(header_ref, uploaded);
+    assert_eq!(json["size"], 12);
+
+    // allow_upload's write committed, and only for the accepted upload.
+    let log = test.sql("SELECT size FROM upload_log").unwrap();
+    assert!(log.contains("12") && !log.contains("4"), "{log}");
+
+    // allow_upload runs as the uploader, with the uploader's JWT.
+    let authorized = test
+        .sql("SELECT sender, sender_jwt FROM upload_log WHERE size = 12")
+        .unwrap();
+    assert!(authorized.contains("true"), "{authorized}");
+    let uploader = identity_in(&authorized);
+
+    // An identity token in the query string authenticates the uploader, as on every route, and
+    // isn't passed to allow_upload as an upload token.
+    let identity_query = format!("token={}", test.read_token().unwrap());
+    assert_eq!(
+        files
+            .upload_with_query(b"identity in the query", &identity_query)
+            .status(),
+        StatusCode::CREATED
+    );
+    let queried = test
+        .sql("SELECT sender, sender_jwt FROM upload_log WHERE size = 21")
+        .unwrap();
+    assert!(queried.contains("true"), "{queried}");
+    assert_eq!(identity_in(&queried), uploader);
+
+    // An upload authorized only by an upload token gets a new identity and a JWT for it, as a client
+    // that connects without an identity token does, rather than the zero identity.
+    assert_eq!(
+        files.upload_with_query(b"wrong token", "upload_token=nope").status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        files.upload_with_query(b"token only", "upload_token=letmein").status(),
+        StatusCode::CREATED
+    );
+    let anonymous = test
+        .sql("SELECT sender, sender_jwt FROM upload_log WHERE size = 10")
+        .unwrap();
+    assert!(anonymous.contains("true"), "{anonymous}");
+    let anonymous = identity_in(&anonymous);
+    assert_ne!(anonymous, uploader);
+    assert_ne!(anonymous, format!("0x{}", "0".repeat(64)));
+
+    // Anyone with the reference can download, including byte ranges.
+    let download = files.download(&uploaded, None);
+    assert_eq!(download.status(), StatusCode::OK);
+    assert_eq!(download.headers()[reqwest::header::CONTENT_TYPE], "text/plain");
+    assert_eq!(download.headers()[reqwest::header::CONTENT_SECURITY_POLICY], "sandbox");
+    assert_eq!(download.bytes().unwrap().as_ref(), b"hello, files");
+    let partial = files.download(&uploaded, Some("bytes=7-11"));
+    assert_eq!(partial.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(partial.headers()[reqwest::header::CONTENT_RANGE], "bytes 7-11/12");
+    assert_eq!(partial.bytes().unwrap().as_ref(), b"files");
+    assert_eq!(
+        files.download(&uploaded, Some("bytes=12-")).status(),
+        StatusCode::RANGE_NOT_SATISFIABLE
+    );
+
+    // A reference with the wrong secret finds nothing.
+    assert_eq!(files.download(&forge(&uploaded), None).status(), StatusCode::NOT_FOUND);
+    assert_eq!(files.metadata(&forge(&uploaded)).status(), StatusCode::NOT_FOUND);
+
+    let metadata: serde_json::Value = files.metadata(&uploaded).json().unwrap();
+    assert_eq!(metadata["size"], 12);
+    assert_eq!(metadata["content_type"], "text/plain");
+
+    // Retrying an upload with its Idempotency-Key returns the same file, without asking
+    // allow_upload again or creating another file.
+    let first = files.upload_keyed(b"keyed", "retry-me", true);
+    assert_eq!(first.status(), StatusCode::CREATED);
+    assert!(first.headers().get("spacetime-idempotent-replay").is_none());
+    let keyed: serde_json::Value = first.json().unwrap();
+    let retry = files.upload_keyed(b"keyed", "retry-me", true);
+    assert_eq!(retry.status(), StatusCode::CREATED);
+    assert_eq!(retry.headers()["spacetime-idempotent-replay"], "true");
+    let retried: serde_json::Value = retry.json().unwrap();
+    assert_eq!(retried["file_ref"], keyed["file_ref"]);
+    let logged = test.sql("SELECT size FROM upload_log WHERE size = 5").unwrap();
+    assert_eq!(logged.matches(" 5").count(), 1, "allow_upload ran once: {logged}");
+    // A client that lost the response can look it up.
+    let lookup = files.completed_upload("retry-me", true);
+    assert_eq!(lookup.status(), StatusCode::OK);
+    let looked_up: serde_json::Value = lookup.json().unwrap();
+    assert_eq!(looked_up["file_ref"], keyed["file_ref"]);
+    assert_eq!(
+        files.completed_upload("retry-me", false).status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        files.completed_upload("never-used", true).status(),
+        StatusCode::NOT_FOUND
+    );
+    // Keys are scoped to their sender, so they need an identity.
+    assert_eq!(
+        files.upload_keyed(b"keyed", "anonymous", false).status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    // A Content-Digest is verified before the file is stored.
+    let digest = "sha-256=:YvK0py0bXVbMrC7qZpmJw64HutwnwwIpEPWp+pwhmrI=:";
+    assert_eq!(files.upload_digested(b"digested", digest).status(), StatusCode::CREATED);
+    assert_eq!(
+        files.upload_digested(b"tampered", digest).status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // A module can resolve an uploaded file's ID, which allow_upload recorded, to its reference.
+    test.call("attach_uploads", &[]).unwrap();
+    assert_eq!(attachment_key(&test, "upload-12"), uploaded);
+
+    // A client passes a reducer the reference the upload API returned, as it is.
+    test.call("attach", &[&uploaded, "\"pasted\""]).unwrap();
+    assert_eq!(attachment_key(&test, "pasted"), uploaded);
+    assert!(test.call("attach", &[&forge(&uploaded), "\"forged\""]).is_err());
+
+    // Clients can't call the allow_upload lifecycle reducer themselves.
+    assert!(test.call("check_upload", &[]).is_err());
+
+    // A reducer creates a file. Confirmed reads see it only once its bytes are persisted,
+    // so it is downloadable as soon as the confirmed query returns it.
+    test.call("create_note", &["\"a note from a reducer\""]).unwrap();
+    let note = attachment_key(&test, "note");
+    let download = files.download(&note, None);
+    assert_eq!(download.status(), StatusCode::OK);
+    assert_eq!(download.bytes().unwrap().as_ref(), b"a note from a reducer");
+
+    // A copy shares the bytes but has its own reference.
+    test.call("copy_note", &[]).unwrap();
+    let copy = attachment_key(&test, "copy");
+    assert_ne!(copy, note);
+    assert_eq!(
+        files.download(&copy, None).bytes().unwrap().as_ref(),
+        b"a note from a reducer"
+    );
+
+    // Deleting the note ends its record for modules and metadata, and leaves the copy. Its bytes
+    // stay downloadable while history retains them, since reverting to before the deletion restores it.
+    test.call("delete_named", &["\"note\""]).unwrap();
+    test.sql_confirmed("SELECT * FROM attachment").unwrap();
+    assert_eq!(files.metadata(&note).status(), StatusCode::NOT_FOUND);
+    assert_eq!(files.download(&note, None).status(), StatusCode::OK);
+    assert_eq!(files.download(&copy, None).status(), StatusCode::OK);
+    assert!(
+        test.call("delete_named", &["\"note\""]).is_err(),
+        "the note is already deleted"
+    );
+
+    // The files' records are private.
+    let private = test.sql("SELECT * FROM st_file");
+    assert!(private.is_ok(), "the owner can read st_file: {private:?}");
+    assert!(test.sql("DELETE FROM st_file").is_err());
+
+    // Everything survives a restart.
+    test.restart_server();
+    let files = Files::new(&test);
+    assert_eq!(
+        files.download(&uploaded, None).bytes().unwrap().as_ref(),
+        b"hello, files"
+    );
+    assert_eq!(
+        files.download(&copy, None).bytes().unwrap().as_ref(),
+        b"a note from a reducer"
+    );
+    assert_eq!(files.metadata(&note).status(), StatusCode::NOT_FOUND);
+    assert_eq!(files.download(&note, None).status(), StatusCode::OK);
+    // The staged bytes of the reducer's file were cleaned up once persisted.
+    let staged = test.sql("SELECT content_hash FROM st_file_staged").unwrap();
+    assert!(!Regex::new("[0-9]{10,}").unwrap().is_match(&staged), "{staged}");
+}
+
+/// A body whose first half is sent at once, and whose second half waits until the test releases it.
+struct HeldBody {
+    first: Option<Vec<u8>>,
+    rest: Option<Vec<u8>>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+impl std::io::Read for HeldBody {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let chunk = match self.first.take() {
+            Some(first) => first,
+            None => match self.rest.take() {
+                Some(rest) => {
+                    let _ = self.release.recv();
+                    rest
+                }
+                None => return Ok(0),
+            },
+        };
+        buf[..chunk.len()].copy_from_slice(&chunk);
+        Ok(chunk.len())
+    }
+}
+
+/// Resetting a database while an upload's bytes arrive must not leave the new database waiting for
+/// bytes that went to the old one's store.
+#[test]
+fn test_file_storage_upload_across_a_reset() {
+    require_local_server!();
+    let mut test = Smoketest::builder().module_code(MODULE_CODE).build();
+    let (url, token) = (Files::new(&test).url(""), test.read_token().unwrap());
+
+    let (release, held) = std::sync::mpsc::channel();
+    let body = HeldBody {
+        first: Some(b"held ".to_vec()),
+        rest: Some(b"upload".to_vec()),
+        release: held,
+    };
+    let upload = std::thread::spawn(move || {
+        // Without a timeout, a record the new database can never confirm would hang the test.
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap()
+            .post(url)
+            .bearer_auth(token)
+            .header(reqwest::header::CONTENT_TYPE, "text/plain")
+            .body(reqwest::blocking::Body::sized(body, 11))
+            .send()
+            .map(|response| response.status())
+    });
+
+    // `allow_upload` runs before the body is read, so once it has logged the upload, the route is
+    // waiting for the second half.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !test.sql("SELECT size FROM upload_log").unwrap().contains("11") {
+        assert!(std::time::Instant::now() < deadline, "allow_upload never ran");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let database = test.database_identity.clone().expect("published");
+    test.publish().name(&database).clear(true).run().unwrap();
+    release.send(()).unwrap();
+
+    let status = upload.join().unwrap().expect("the server answers");
+    assert!(
+        status.is_server_error(),
+        "an upload spanning a reset must fail, got {status}"
+    );
+    // The new database still confirms transactions, and accepts uploads.
+    test.call("create_note", &["\"after the reset\""]).unwrap();
+    attachment_key(&test, "note");
+    let files = Files::new(&test);
+    assert_eq!(files.upload(b"new", "text/plain", true).status(), StatusCode::CREATED);
+}
+
+const VIEW_MODULE_CODE: &str = r#"
+use spacetimedb::{AnonymousViewContext, FileId, ReducerContext, SpacetimeType, Table, UploadRequest};
+
+#[spacetimedb::table(accessor = upload_log, public)]
+pub struct UploadLog {
+    #[primary_key]
+    file: FileId,
+    /// Always 0, so views can scan the table through an index.
+    #[index(btree)]
+    kind: u8,
+}
+
+#[derive(SpacetimeType)]
+pub struct UploadedFile {
+    size: u64,
+    content_type: Option<String>,
+}
+
+#[spacetimedb::reducer(allow_upload)]
+pub fn check_upload(ctx: &ReducerContext, upload: UploadRequest) -> Result<(), String> {
+    ctx.db.upload_log().insert(UploadLog { file: upload.file_id, kind: 0 });
+    Ok(())
+}
+
+/// Completed uploads, read from each file's metadata. `allow_upload` logs a file before its
+/// bytes arrive, so a file appears here only once its upload has committed.
+#[spacetimedb::view(accessor = uploaded_file, public)]
+pub fn uploaded_file(ctx: &AnonymousViewContext) -> Vec<UploadedFile> {
+    ctx.db
+        .upload_log()
+        .kind()
+        .filter(0u8)
+        .filter_map(|upload| ctx.files().metadata(upload.file))
+        .map(|meta| UploadedFile { size: meta.size(), content_type: meta.content_type() })
+        .collect()
+}
+"#;
+
+#[test]
+fn test_file_storage_views_follow_uploads() {
+    require_local_server!();
+    let test = Smoketest::builder().module_code(VIEW_MODULE_CODE).build();
+    let files = Files::new(&test);
+
+    let sub = test
+        .subscribe(&["SELECT * FROM uploaded_file"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    let response = files.upload(b"hello, views", "text/plain", true);
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // The view's only change is the completed upload, which arrives with the file's record.
+    let events = sub.collect().unwrap();
+    assert_eq!(events.len(), 1, "{events:?}");
+    let inserts = &events[0]["uploaded_file"]["inserts"];
+    assert_eq!(inserts.as_array().map(Vec::len), Some(1), "{events:?}");
+    assert_eq!(inserts[0]["size"], 12, "{events:?}");
+}

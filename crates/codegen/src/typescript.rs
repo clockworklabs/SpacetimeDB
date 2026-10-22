@@ -1299,6 +1299,7 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
         AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
         AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
+        AlgebraicTypeUse::FileRef => write_type_builder(module, out, &crate::util::FILE_REF_REPR)?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__t.option(")?;
             write_type_builder(module, out, inner_ty)?;
@@ -1600,6 +1601,7 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
         | AlgebraicTypeUse::Uuid
+        | AlgebraicTypeUse::FileRef
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
@@ -1627,6 +1629,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Timestamp => write!(out, "__Infer<typeof __t.timestamp()>")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__Infer<typeof __t.timeDuration()>")?,
         AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
+        AlgebraicTypeUse::FileRef => write_type(module, out, &crate::util::FILE_REF_REPR, ref_prefix, ref_suffix)?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: __Infer<typeof __t.timeDuration()> }} | {{ tag: \"Time\", value: __Infer<typeof __t.timestamp()> }}"

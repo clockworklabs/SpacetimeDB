@@ -563,6 +563,9 @@ pub enum Lifecycle {
     OnConnect,
     /// The reducer will be invoked when a client disconnects.
     OnDisconnect,
+    /// The reducer decides whether to accept a file upload, before any bytes arrive.
+    /// It takes one [`crate::UploadRequest`], and clients can't call it.
+    AllowUpload,
 }
 
 /// A procedure definition.

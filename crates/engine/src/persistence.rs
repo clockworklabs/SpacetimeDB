@@ -15,6 +15,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_runtime::Handle;
 
 use super::{
+    files::DatabaseFiles,
     relational_db::{self, Txdata},
     snapshot::{self, SnapshotDatabaseState, SnapshotWorker},
 };
@@ -39,6 +40,83 @@ pub struct CommitlogConfig {
     pub offset_index_require_segment_fsync: Option<bool>,
     pub preallocate_segments: Option<bool>,
     pub write_buffer_size: Option<NonZeroUsize>,
+}
+
+/// Where a database keeps the bytes of its files, exposed through server config as `[file-store]`.
+///
+/// By default they live in the replica directory. With `[file-store.s3]`, they live in an
+/// S3-compatible bucket instead, under `{prefix}{database identity}/`.
+#[derive(Clone, Debug, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct FileStoreConfig {
+    pub s3: Option<S3FileStoreConfig>,
+}
+
+/// An S3-compatible bucket for file bytes.
+#[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct S3FileStoreConfig {
+    pub endpoint: String,
+    #[serde(default = "default_region")]
+    pub region: String,
+    pub bucket: String,
+    #[serde(default)]
+    pub prefix: String,
+    /// Static credentials. Omit both to take credentials from the environment, as other AWS clients
+    /// do: `AWS_*` variables, a web identity token, or the instance's role.
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+    /// Send unsigned requests, for a local server that accepts them.
+    #[serde(default)]
+    pub unsigned: bool,
+}
+
+fn default_region() -> String {
+    "us-east-1".into()
+}
+
+/// Opens the store for the files of the database `database_identity`, as `config` says:
+/// in `files_dir`, or in the configured bucket under `{prefix}{database identity}/`.
+///
+/// Uploads to a bucket are spooled and hashed in `files_dir` first.
+pub async fn open_database_files(
+    config: &FileStoreConfig,
+    files_dir: spacetimedb_paths::server::FileStoreDir,
+    database_identity: Identity,
+    runtime: &Handle,
+) -> anyhow::Result<Arc<DatabaseFiles>> {
+    let store: Arc<dyn spacetimedb_file_store::FileStore> = match config.s3.clone() {
+        None => Arc::new(
+            asyncify(runtime, move || {
+                spacetimedb_file_store::LocalFileStore::open(files_dir.0)
+            })
+            .await?,
+        ),
+        Some(s3) => {
+            let config = spacetimedb_file_store::S3Config {
+                endpoint: s3.endpoint,
+                region: s3.region,
+                bucket: s3.bucket,
+                prefix: format!("{}{}/", s3.prefix, database_identity.to_hex()),
+                credentials: match (s3.access_key_id, s3.secret_access_key) {
+                    (Some(access_key_id), Some(secret_access_key)) => spacetimedb_file_store::S3Credentials::Static {
+                        access_key_id,
+                        secret_access_key,
+                    },
+                    _ if s3.unsigned => spacetimedb_file_store::S3Credentials::Unsigned,
+                    _ => spacetimedb_file_store::S3Credentials::FromEnvironment,
+                },
+            };
+            let spools = files_dir.0.join("spools");
+            Arc::new(
+                asyncify(runtime, move || {
+                    spacetimedb_file_store::S3FileStore::open(config, spools)
+                })
+                .await?,
+            )
+        }
+    };
+    Ok(DatabaseFiles::new(store, runtime.clone()))
 }
 
 impl DurabilityConfig {
@@ -109,6 +187,11 @@ pub struct Persistence {
     pub snapshots: Option<SnapshotWorker>,
     /// Runtime onto which durability-related tasks shall be spawned.
     pub runtime: Handle,
+    /// Where the database keeps the bytes of its files, if it supports File Storage.
+    ///
+    /// When set, the database wraps [`Self::durability`] in a [`crate::files::FileGatedDurability`],
+    /// so that a transaction is reported durable only once its files are persisted.
+    pub files: Option<Arc<DatabaseFiles>>,
 }
 
 impl Persistence {
@@ -133,7 +216,14 @@ impl Persistence {
             disk_size: Arc::new(disk_size),
             snapshots,
             runtime,
+            files: None,
         }
+    }
+
+    /// Enables File Storage, keeping file bytes in `files`.
+    pub fn with_files(mut self, files: Arc<DatabaseFiles>) -> Self {
+        self.files = Some(files);
+        self
     }
 
     /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
@@ -158,8 +248,9 @@ impl Persistence {
 
     /// Convenience to deconstruct an [Option<Self>] into parts.
     ///
-    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>, Some(runtime))`
-    /// if `this` is `Some`, and `(None, None, None, None)` if `this` is `None`.
+    /// Returns `(Some(durability), Some(disk_size), Option<SnapshotWorker>, Some(runtime), Option<DatabaseFiles>)`
+    /// if `this` is `Some`, and `(None, None, None, None, None)` if `this` is `None`.
+    #[allow(clippy::type_complexity)]
     pub(super) fn unzip(
         this: Option<Self>,
     ) -> (
@@ -167,6 +258,7 @@ impl Persistence {
         Option<DiskSizeFn>,
         Option<SnapshotWorker>,
         Option<Handle>,
+        Option<Arc<DatabaseFiles>>,
     ) {
         this.map(
             |Self {
@@ -174,7 +266,8 @@ impl Persistence {
                  disk_size,
                  snapshots,
                  runtime,
-             }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
+                 files,
+             }| (Some(durability), Some(disk_size), snapshots, Some(runtime), files),
         )
         .unwrap_or_default()
     }
@@ -204,6 +297,7 @@ pub trait PersistenceProvider: Send + Sync {
 pub struct LocalPersistenceProvider {
     data_dir: Arc<ServerDataDir>,
     durability: DurabilityConfig,
+    file_store: FileStoreConfig,
 }
 
 impl LocalPersistenceProvider {
@@ -211,7 +305,13 @@ impl LocalPersistenceProvider {
         Self {
             data_dir: data_dir.into(),
             durability: DurabilityConfig::default(),
+            file_store: FileStoreConfig::default(),
         }
+    }
+
+    pub fn with_file_store_config(mut self, file_store: FileStoreConfig) -> Self {
+        self.file_store = file_store;
+        self
     }
 
     pub fn with_durability_config(mut self, durability: DurabilityConfig) -> Self {
@@ -225,6 +325,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
     async fn persistence(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence> {
         let database_identity = database.database_identity;
         let replica_dir = self.data_dir.replica(replica_id);
+        let replica_dir_for_files = replica_dir.clone();
         let snapshot_dir = replica_dir.snapshots();
         let runtime = Handle::tokio_current();
 
@@ -249,11 +350,20 @@ impl PersistenceProvider for LocalPersistenceProvider {
             runtime.clone(),
         ));
 
+        let files = open_database_files(
+            &self.file_store,
+            replica_dir_for_files.files(),
+            database_identity,
+            &runtime,
+        )
+        .await?;
+
         Ok(Persistence {
             durability,
             disk_size,
             snapshots: Some(snapshot_worker),
             runtime,
+            files: Some(files),
         })
     }
 }

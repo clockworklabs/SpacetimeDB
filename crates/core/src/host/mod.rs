@@ -204,6 +204,11 @@ pub enum AbiCall {
     JwtLength,
     GetJwt,
     EnvGet,
+    FileCreate,
+    FileCopy,
+    FileDelete,
+    FileMetadata,
+    FileReference,
 
     VolatileNonatomicScheduleImmediate,
 

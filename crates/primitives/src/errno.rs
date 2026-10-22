@@ -35,6 +35,10 @@ macro_rules! errnos {
                 "ABI call can only be made while within a read-only transaction"
             ),
             HTTP_ERROR(21, "The HTTP request failed"),
+            NO_SUCH_FILE(22, "No file matches the provided reference"),
+            FILE_TOO_LARGE(23, "The file is too large to create in a transaction"),
+            FILES_UNAVAILABLE(24, "This database doesn't support File Storage"),
+            INVALID_CONTENT_TYPE(25, "The content type can't be served as an HTTP header"),
         );
     };
 }

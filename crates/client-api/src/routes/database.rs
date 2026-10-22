@@ -1083,7 +1083,7 @@ pub struct SqlQueryParams {
 /// The lifecycle is detached from the request task, so once `client_connected`
 /// succeeds, `client_disconnected` still runs if the handler is dropped or
 /// `fut` returns an error.
-async fn with_connection<F, Fut, R>(
+pub(crate) async fn with_connection<F, Fut, R>(
     module: ModuleHost,
     caller_auth: ConnectionAuthCtx,
     caller_identity: Identity,
@@ -1920,6 +1920,14 @@ pub struct DatabaseRoutes<S> {
     pub http_route_root_slash: MethodRouter<S>,
     /// ANY: /database/:name_or_identity/route/*path
     pub http_route: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/files
+    pub files_post: MethodRouter<S>,
+    /// GET, HEAD: /database/:name_or_identity/files/:file_ref
+    pub file_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/files/:file_ref/metadata
+    pub file_metadata_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/files/uploads/:key
+    pub file_upload_get: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1955,6 +1963,10 @@ where
             http_route_root: any(handle_http_route_root::<S>),
             http_route_root_slash: any(handle_http_route_root_slash::<S>),
             http_route: any(handle_http_route::<S>),
+            files_post: post(super::files::upload::<S>),
+            file_get: get(super::files::download::<S>),
+            file_metadata_get: get(super::files::metadata::<S>),
+            file_upload_get: get(super::files::completed_upload::<S>),
         }
     }
 }
@@ -2039,6 +2051,14 @@ where
             .route("/:name_or_identity/route", self.http_route_root)
             .route("/:name_or_identity/route/", self.http_route_root_slash)
             .route("/:name_or_identity/route/*path", self.http_route)
+            .route_layer(resolving_egress_metrics_middleware.clone());
+        // File routes authorize themselves: downloads by the `FileRef` in the URL,
+        // and uploads by an optional `Authorization` header or `?token=`.
+        let files_router = axum::Router::<S>::new()
+            .route("/:name_or_identity/files", self.files_post)
+            .route("/:name_or_identity/files/:file_ref", self.file_get)
+            .route("/:name_or_identity/files/:file_ref/metadata", self.file_metadata_get)
+            .route("/:name_or_identity/files/uploads/:key", self.file_upload_get)
             .route_layer(resolving_egress_metrics_middleware);
 
         axum::Router::new()
@@ -2046,6 +2066,7 @@ where
             .merge(authed_named_router)
             .merge(idc_router)
             .merge(http_route_router)
+            .merge(files_router)
     }
 }
 

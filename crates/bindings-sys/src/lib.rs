@@ -894,6 +894,63 @@ pub mod raw {
         pub fn env_get(key: *const u8, key_len: usize, out: *mut BytesSource) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.7")]
+    unsafe extern "C" {
+        /// Creates a file from `bytes[..bytes_len]` in the current transaction,
+        /// and writes its `FileId`, as a 16-byte little-endian `u128`, to `out`.
+        ///
+        /// `content_type[..content_type_len]` is the file's UTF-8 content type,
+        /// or there is none if `content_type` is NULL.
+        ///
+        /// # Errors
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `FILE_TOO_LARGE`, when the file exceeds the size allowed for files created in a transaction.
+        /// - `FILES_UNAVAILABLE`, when the database doesn't support File Storage.
+        pub fn file_create(
+            bytes: *const u8,
+            bytes_len: usize,
+            content_type: *const u8,
+            content_type_len: usize,
+            out: *mut [u8; 16],
+        ) -> u16;
+
+        /// Creates a new file that shares the bytes of the live file whose `FileId` is the
+        /// little-endian `u128` at `source`, and writes the new file's `FileId` to `out`.
+        ///
+        /// # Errors
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_FILE`, when `source` isn't a live file.
+        /// - `FILES_UNAVAILABLE`, when the database doesn't support File Storage.
+        pub fn file_copy(source: *const [u8; 16], out: *mut [u8; 16]) -> u16;
+
+        /// Deletes the live file whose `FileId` is the little-endian `u128` at `file_id`,
+        /// writing 1 to `out` if there was one and 0 otherwise.
+        ///
+        /// # Errors
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        pub fn file_delete(file_id: *const [u8; 16], out: *mut u8) -> u16;
+
+        /// Writes to `out` a source of the BSATN-encoded `FileMetadata` of the live file whose
+        /// `FileId` is the little-endian `u128` at `file_id`, or `BytesSource::INVALID` if there is none.
+        ///
+        /// # Errors
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        pub fn file_metadata(file_id: *const [u8; 16], out: *mut BytesSource) -> u16;
+
+        /// Writes to `out` the `FileRef` of the live file whose `FileId` is the
+        /// little-endian `u128` at `file_id`.
+        ///
+        /// # Errors
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_FILE`, when there is no such file.
+        pub fn file_reference(file_id: *const [u8; 16], out: *mut [u8; 32]) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1209,6 +1266,42 @@ mod native_link_stubs {
             // BytesSource output slot when non-null.
             unsafe { bytes_source_id.write(BytesSource::INVALID) };
         }
+        NOT_IN_TRANSACTION
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn file_create(
+        _bytes: *const u8,
+        _bytes_len: usize,
+        _content_type: *const u8,
+        _content_type_len: usize,
+        _out: *mut [u8; 16],
+    ) -> u16 {
+        NOT_IN_TRANSACTION
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn file_copy(_source: *const [u8; 16], _out: *mut [u8; 16]) -> u16 {
+        NOT_IN_TRANSACTION
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn file_delete(_file_id: *const [u8; 16], _out: *mut u8) -> u16 {
+        NOT_IN_TRANSACTION
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn file_metadata(_file_id: *const [u8; 16], out: *mut BytesSource) -> u16 {
+        if !out.is_null() {
+            // SAFETY: The pointer is provided by the safe wrapper and points to a
+            // BytesSource output slot when non-null.
+            unsafe { out.write(BytesSource::INVALID) };
+        }
+        NOT_IN_TRANSACTION
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn file_reference(_file_id: *const [u8; 16], _out: *mut [u8; 32]) -> u16 {
         NOT_IN_TRANSACTION
     }
 
@@ -1789,6 +1882,39 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
     } else {
         Some(source)
     }
+}
+
+/// Creates a file from `bytes` in the current transaction, returning its `FileId`
+/// as a 16-byte little-endian `u128`.
+#[inline]
+pub fn file_create(bytes: &[u8], content_type: Option<&str>) -> Result<[u8; 16]> {
+    let (content_type, content_type_len) = content_type.map_or((ptr::null(), 0), |ty| (ty.as_ptr(), ty.len()));
+    unsafe { call(|out| raw::file_create(bytes.as_ptr(), bytes.len(), content_type, content_type_len, out)) }
+}
+
+/// Creates a new file that shares the bytes of the live file `source`, returning the new file's `FileId`.
+#[inline]
+pub fn file_copy(source: [u8; 16]) -> Result<[u8; 16]> {
+    unsafe { call(|out| raw::file_copy(&source, out)) }
+}
+
+/// Deletes the live file `file_id`. Returns whether there was one.
+#[inline]
+pub fn file_delete(file_id: [u8; 16]) -> Result<bool> {
+    unsafe { call(|out| raw::file_delete(&file_id, out)) }.map(|deleted: u8| deleted != 0)
+}
+
+/// Returns a source of the BSATN-encoded `FileMetadata` of the live file `file_id`, if any.
+#[inline]
+pub fn file_metadata(file_id: [u8; 16]) -> Result<Option<raw::BytesSource>> {
+    let source = unsafe { call(|out| raw::file_metadata(&file_id, out))? };
+    Ok((source != raw::BytesSource::INVALID).then_some(source))
+}
+
+/// Returns the `FileRef` of the live file whose `FileId` is the little-endian `file_id`.
+#[inline]
+pub fn file_reference(file_id: [u8; 16]) -> Result<[u8; 32]> {
+    unsafe { call(|out| raw::file_reference(&file_id, out)) }
 }
 
 /// Read a database environment value without exposing the system table.

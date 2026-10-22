@@ -1,4 +1,4 @@
-use crate::{ConnectionId, Identity, Timestamp, Uuid};
+use crate::{ConnectionId, FileId, FileRef, Identity, Timestamp, Uuid};
 use core::ops;
 use spacetimedb_sats::bsatn;
 use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
@@ -50,7 +50,7 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
     label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash`, `FileId`, `FileRef` and no-payload enums which derive `SpacetimeType`,"
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
@@ -110,6 +110,8 @@ impl_filterable_value! {
     Timestamp: Copy,
     ConnectionId: Copy,
     Hash: Copy,
+    FileId: Copy,
+    FileRef: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
     // as they have trivial portable equality and ordering,

@@ -17,15 +17,20 @@ enum LifecycleReducer {
     ClientConnected(Span),
     ClientDisconnected(Span),
     Update(Span),
+    AllowUpload(Span),
 }
 impl LifecycleReducer {
     fn to_lifecycle_value(&self) -> Option<TokenStream> {
-        let (Self::Init(span) | Self::ClientConnected(span) | Self::ClientDisconnected(span) | Self::Update(span)) =
-            *self;
+        let (Self::Init(span)
+        | Self::ClientConnected(span)
+        | Self::ClientDisconnected(span)
+        | Self::Update(span)
+        | Self::AllowUpload(span)) = *self;
         let name = match self {
             Self::Init(_) => "Init",
             Self::ClientConnected(_) => "OnConnect",
             Self::ClientDisconnected(_) => "OnDisconnect",
+            Self::AllowUpload(_) => "AllowUpload",
             Self::Update(_) => return None,
         };
         let ident = Ident::new(name, span);
@@ -47,6 +52,7 @@ impl ReducerArgs {
                 sym::client_connected => set_lifecycle(LifecycleReducer::ClientConnected)?,
                 sym::client_disconnected => set_lifecycle(LifecycleReducer::ClientDisconnected)?,
                 sym::update => set_lifecycle(LifecycleReducer::Update)?,
+                sym::allow_upload => set_lifecycle(LifecycleReducer::AllowUpload)?,
                 sym::name => {
                     check_duplicate(&args.name, &meta)?;
                     args.name = Some(meta.value()?.parse()?);

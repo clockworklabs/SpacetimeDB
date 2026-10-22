@@ -990,6 +990,7 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
         AlgebraicTypeUse::Timestamp => write!(out, "__sdk::Timestamp")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__sdk::TimeDuration")?,
         AlgebraicTypeUse::Uuid => write!(out, "__sdk::Uuid")?,
+        AlgebraicTypeUse::FileRef => write!(out, "__sdk::FileRef")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "Option::<")?;
@@ -1901,6 +1902,11 @@ impl DbConnection {{
         __sdk::DbConnectionBuilder::new()
     }}
 
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {{
+        self.imp.files()
+    }}
+
     /// If any WebSocket messages are waiting, process one of them.
     ///
     /// Returns `true` if a message was processed, or `false` if the queue is empty.
@@ -2221,6 +2227,13 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
 }}
 
 impl __sdk::{struct_and_trait_name} for {struct_and_trait_name} {{}}
+
+impl {struct_and_trait_name} {{
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {{
+        self.imp.files()
+    }}
+}}
 "
     );
 }

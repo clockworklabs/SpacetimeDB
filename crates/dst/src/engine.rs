@@ -85,6 +85,7 @@ impl EngineTarget {
             disk_size,
             snapshots: None,
             runtime: runtime_handle,
+            files: None,
         }
     }
 

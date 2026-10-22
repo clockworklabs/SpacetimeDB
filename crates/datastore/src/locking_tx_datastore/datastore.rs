@@ -293,10 +293,37 @@ impl Locking {
             tx_offset,
         );
 
+        let files = Self::snapshot_file_entries(&committed_state)?;
         let (mut tables, blob_store) = committed_state.persistent_tables_and_blob_store();
-        let unflushed_snapshot = repo.create_snapshot(&mut tables, blob_store, tx_offset)?;
+        let unflushed_snapshot = repo.create_snapshot(&mut tables, blob_store, &files, tx_offset)?;
 
         Ok(Some((tx_offset, unflushed_snapshot)))
+    }
+
+    /// The distinct files that `st_file` references, sorted by hash so that equal states
+    /// produce equal manifests.
+    ///
+    /// A database restored from a snapshot taken before `st_file` existed has no such table
+    /// until `migrate_system_tables` runs, and so references no files.
+    #[cfg(feature = "durability")]
+    fn snapshot_file_entries(committed_state: &CommittedState) -> Result<Vec<spacetimedb_snapshot::FileEntry>> {
+        use crate::error::{DatastoreError, TableError};
+        use crate::system_tables::{StFileRow, ST_FILE_ID};
+
+        let rows = match committed_state.iter(ST_FILE_ID) {
+            Ok(rows) => rows,
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        let mut files = std::collections::BTreeMap::new();
+        for row in rows {
+            let row = StFileRow::try_from(row)?;
+            files.insert(row.content_hash, row.size);
+        }
+        Ok(files
+            .into_iter()
+            .map(|(hash, size)| spacetimedb_snapshot::FileEntry { hash, size })
+            .collect())
     }
 
     /// Returns a list over all the currently connected clients,
@@ -1127,9 +1154,9 @@ pub(crate) mod tests {
         ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
     use crate::system_tables::{
-        ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
-        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME, ST_OUTBOX_ID,
-        ST_OUTBOX_NAME,
+        ST_ENV_ID, ST_ENV_NAME, ST_FILE_ID, ST_FILE_NAME, ST_FILE_STAGED_ID, ST_FILE_STAGED_NAME, ST_INBOUND_MSG_ID,
+        ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME,
+        ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME, ST_OUTBOX_ID, ST_OUTBOX_NAME, ST_UPLOAD_ID, ST_UPLOAD_NAME,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1600,6 +1627,9 @@ pub(crate) mod tests {
             TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_FILE_ID.into(), name: ST_FILE_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_FILE_STAGED_ID.into(), name: ST_FILE_STAGED_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_UPLOAD_ID.into(), name: ST_UPLOAD_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
 
         ]));
         #[rustfmt::skip]
@@ -1730,6 +1760,19 @@ pub(crate) mod tests {
             ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
+            ColRow { table: ST_FILE_ID.into(), pos: 0, name: "file_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_FILE_ID.into(), pos: 1, name: "read_secret", ty: AlgebraicType::U128 },
+            ColRow { table: ST_FILE_ID.into(), pos: 2, name: "content_hash", ty: AlgebraicType::U256 },
+            ColRow { table: ST_FILE_ID.into(), pos: 3, name: "size", ty: AlgebraicType::U64 },
+            ColRow { table: ST_FILE_ID.into(), pos: 4, name: "created_at", ty: AlgebraicType::I64 },
+            ColRow { table: ST_FILE_ID.into(), pos: 5, name: "content_type", ty: AlgebraicType::option(AlgebraicType::String) },
+            ColRow { table: ST_FILE_ID.into(), pos: 6, name: "deleted_at_offset", ty: AlgebraicType::option(AlgebraicType::U64) },
+            ColRow { table: ST_FILE_STAGED_ID.into(), pos: 0, name: "content_hash", ty: AlgebraicType::U256 },
+            ColRow { table: ST_FILE_STAGED_ID.into(), pos: 1, name: "bytes", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 0, name: "sender", ty: AlgebraicType::U256 },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 1, name: "idempotency_key", ty: AlgebraicType::String },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 2, name: "file_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_UPLOAD_ID.into(), pos: 3, name: "completed_at", ty: AlgebraicType::I64 },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1770,6 +1813,10 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_FILE_ID.into(), col: col_list![0], name: "st_file_file_id_idx_btree", },
+            IndexRow { id: 39, table: ST_FILE_ID.into(), col: col_list![2], name: "st_file_content_hash_idx_btree", },
+            IndexRow { id: 40, table: ST_FILE_STAGED_ID.into(), col: col_list![0], name: "st_file_staged_content_hash_idx_btree", },
+            IndexRow { id: 41, table: ST_UPLOAD_ID.into(), col: col_list![0, 1], name: "st_upload_sender_idempotency_key_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1824,6 +1871,9 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
             ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
+            ConstraintRow { constraint_id: 34, table_id: ST_FILE_ID.into(), unique_columns: col_list![0], constraint_name: "st_file_file_id_key", },
+            ConstraintRow { constraint_id: 35, table_id: ST_FILE_STAGED_ID.into(), unique_columns: col_list![0], constraint_name: "st_file_staged_content_hash_key", },
+            ConstraintRow { constraint_id: 36, table_id: ST_UPLOAD_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_upload_sender_idempotency_key_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2333,6 +2383,10 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_FILE_ID.into(), col: col_list![0], name: "st_file_file_id_idx_btree", },
+            IndexRow { id: 39, table: ST_FILE_ID.into(), col: col_list![2], name: "st_file_content_hash_idx_btree", },
+            IndexRow { id: 40, table: ST_FILE_STAGED_ID.into(), col: col_list![0], name: "st_file_staged_content_hash_idx_btree", },
+            IndexRow { id: 41, table: ST_UPLOAD_ID.into(), col: col_list![0, 1], name: "st_upload_sender_idempotency_key_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },

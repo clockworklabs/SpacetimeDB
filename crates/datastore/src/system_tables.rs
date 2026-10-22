@@ -189,7 +189,10 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
         | ST_OUTBOUND_STREAM_ID
         | ST_OUTBOUND_MSG_ID
         | ST_INBOUND_STREAM_ID
-        | ST_INBOUND_MSG_ID => false,
+        | ST_INBOUND_MSG_ID
+        | ST_FILE_ID
+        | ST_FILE_STAGED_ID
+        | ST_UPLOAD_ID => false,
         ST_OUTBOX_ID => {
             let row: StOutboxRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
@@ -219,7 +222,7 @@ pub enum SystemTable {
     st_outbox = ST_OUTBOX_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 26] {
+pub fn system_tables() -> [TableSchema; 29] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -248,6 +251,9 @@ pub fn system_tables() -> [TableSchema; 26] {
         st_inbound_stream_schema(),
         st_inbound_msg_schema(),
         st_outbox_schema(),
+        st_file_schema(),
+        st_file_staged_schema(),
+        st_upload_schema(),
     ]
 }
 
@@ -367,6 +373,9 @@ pub(crate) const ST_OUTBOUND_MSG_IDX: usize = 22;
 pub(crate) const ST_INBOUND_STREAM_IDX: usize = 23;
 pub(crate) const ST_INBOUND_MSG_IDX: usize = 24;
 pub(crate) const ST_OUTBOX_IDX: usize = 25;
+pub(crate) const ST_FILE_IDX: usize = 26;
+pub(crate) const ST_FILE_STAGED_IDX: usize = 27;
+pub(crate) const ST_UPLOAD_IDX: usize = 28;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -403,8 +412,10 @@ macro_rules! st_fields_enum {
 }
 
 mod environment;
+mod file;
 mod idc;
 pub use environment::*;
+pub use file::*;
 pub use idc::*;
 
 // WARNING: For a stable schema, don't change the field names and discriminants.
@@ -766,6 +777,7 @@ fn system_module_def() -> ModuleDef {
 
     environment::register_table(&mut builder);
     idc::register_tables(&mut builder);
+    file::register_tables(&mut builder);
 
     let result = builder
         .finish()
@@ -798,6 +810,9 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StInboundStreamFields>(&result, ST_INBOUND_STREAM_NAME);
     validate_system_table::<StInboundMsgFields>(&result, ST_INBOUND_MSG_NAME);
     validate_system_table::<StOutboxFields>(&result, ST_OUTBOX_NAME);
+    validate_system_table::<StFileFields>(&result, ST_FILE_NAME);
+    validate_system_table::<StFileStagedFields>(&result, ST_FILE_STAGED_NAME);
+    validate_system_table::<StUploadFields>(&result, ST_UPLOAD_NAME);
 
     result
 }
@@ -854,6 +869,9 @@ lazy_static::lazy_static! {
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_key", ConstraintId(31));
         m.insert("st_outbound_msg_stream_id_msg_id_key", ConstraintId(32));
         m.insert("st_outbox_table_id_key", ConstraintId(33));
+        m.insert("st_file_file_id_key", ConstraintId(34));
+        m.insert("st_file_staged_content_hash_key", ConstraintId(35));
+        m.insert("st_upload_sender_idempotency_key_key", ConstraintId(36));
         m
     };
 }
@@ -900,6 +918,10 @@ lazy_static::lazy_static! {
         m.insert("st_inbound_msg_sender_identity_stream_id_seq_idx_btree", IndexId(35));
         m.insert("st_outbound_msg_stream_id_msg_id_idx_btree", IndexId(36));
         m.insert("st_outbox_table_id_idx_btree", IndexId(37));
+        m.insert("st_file_file_id_idx_btree", IndexId(38));
+        m.insert("st_file_content_hash_idx_btree", IndexId(39));
+        m.insert("st_file_staged_content_hash_idx_btree", IndexId(40));
+        m.insert("st_upload_sender_idempotency_key_idx_btree", IndexId(41));
         m
     };
 }
@@ -1097,6 +1119,9 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_INBOUND_STREAM_ID => Some(st_inbound_stream_schema()),
         ST_INBOUND_MSG_ID => Some(st_inbound_msg_schema()),
         ST_OUTBOX_ID => Some(st_outbox_schema()),
+        ST_FILE_ID => Some(st_file_schema()),
+        ST_FILE_STAGED_ID => Some(st_file_staged_schema()),
+        ST_UPLOAD_ID => Some(st_upload_schema()),
         _ => None,
     }
 }

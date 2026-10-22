@@ -162,6 +162,8 @@ pub enum SnapshotError {
     },
     #[error("Refusing to reconstruct incomplete snapshot {tx_offset}: lockfile {lockfile:?} exists")]
     Incomplete { tx_offset: TxOffset, lockfile: PathBuf },
+    #[error("Snapshot {path:?} is being written or compressed, so the files it references aren't known yet")]
+    Locked { path: PathBuf },
     #[error("Refusing to reconstruct snapshot {tx_offset} with bad magic number {magic:x?}")]
     BadMagic { tx_offset: TxOffset, magic: [u8; 4] },
     #[error("Refusing to reconstruct snapshot {tx_offset} with unsupported version {version}")]
@@ -218,6 +220,18 @@ struct BlobEntry {
 struct TableEntry {
     table_id: TableId,
     pages: Vec<blake3::Hash>,
+}
+
+/// A file whose bytes a snapshot needs, as recorded by a row of `st_file`.
+///
+/// File bytes live in the database's file store, not in the snapshot's object repository,
+/// so these entries are references rather than objects. Reclamation treats every hash listed
+/// by a retained snapshot as live, which is what lets a rollback to that snapshot restore its files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEntry {
+    /// The BLAKE3 hash of the file's contents.
+    pub hash: spacetimedb_lib::Hash,
+    pub size: u64,
 }
 
 /// A non-durable snapshot created via [SnapshotRepository::create_snapshot].
@@ -357,6 +371,78 @@ pub struct Snapshot {
     /// It's necessary to store the table ID rather than relying on order
     /// because table IDs may be sparse (and will be, once we reserve a bunch of system table ids).
     tables: Vec<TableEntry>,
+
+    /// The distinct files that rows of `st_file` reference in this snapshot.
+    ///
+    /// This field was appended to version 0 of the format without bumping the version.
+    /// Older binaries ignore the trailing bytes, and [`Snapshot::read_from_file`] reads
+    /// manifests written before it existed as having no files.
+    file_hashes: Vec<FileEntry>,
+}
+
+/// The layout of [`Snapshot`] before it gained `file_hashes`.
+#[derive(Serialize, Deserialize)]
+struct SnapshotWithoutFiles {
+    magic: [u8; 4],
+    version: u8,
+    database_identity: Identity,
+    replica_id: u64,
+    module_abi_version: [u16; 2],
+    tx_offset: TxOffset,
+    blobs: Vec<BlobEntry>,
+    tables: Vec<TableEntry>,
+}
+
+impl From<SnapshotWithoutFiles> for Snapshot {
+    fn from(old: SnapshotWithoutFiles) -> Self {
+        let SnapshotWithoutFiles {
+            magic,
+            version,
+            database_identity,
+            replica_id,
+            module_abi_version,
+            tx_offset,
+            blobs,
+            tables,
+        } = old;
+        Snapshot {
+            magic,
+            version,
+            database_identity,
+            replica_id,
+            module_abi_version,
+            tx_offset,
+            blobs,
+            tables,
+            file_hashes: Vec::new(),
+        }
+    }
+}
+
+impl Snapshot {
+    /// The files this snapshot references, whose bytes live in the database's file store.
+    pub fn file_hashes(&self) -> &[FileEntry] {
+        &self.file_hashes
+    }
+
+    /// Decodes a manifest, including one written before `file_hashes` existed.
+    ///
+    /// Use this rather than decoding a [`Snapshot`] directly, which fails on those older manifests.
+    /// A manifest that ends where `file_hashes` would begin has no files; a malformed file list is
+    /// an error. Bytes after the file list are ignored, as older binaries ignore the file list.
+    pub fn from_bsatn(bytes: &[u8]) -> Result<Self, bsatn::DecodeError> {
+        let mut reader = bytes;
+        let prefix: SnapshotWithoutFiles = bsatn::from_reader(&mut reader)?;
+        let file_hashes = if reader.is_empty() {
+            Vec::new()
+        } else {
+            bsatn::from_reader(&mut reader)?
+        };
+        Ok(Snapshot {
+            file_hashes,
+            ..prefix.into()
+        })
+    }
 }
 
 impl Snapshot {
@@ -534,7 +620,7 @@ impl Snapshot {
             });
         }
 
-        let snapshot = bsatn::from_slice::<Snapshot>(&snapshot_bsatn).map_err(|cause| SnapshotError::Deserialize {
+        let snapshot = Snapshot::from_bsatn(&snapshot_bsatn).map_err(|cause| SnapshotError::Deserialize {
             ty: ObjectType::Snapshot,
             source_repo: path.0.clone(),
             cause,
@@ -883,6 +969,7 @@ impl SnapshotRepository {
         &self,
         tables: impl Iterator<Item = &'db mut Table>,
         blobs: &'db dyn BlobStore,
+        files: &[FileEntry],
         tx_offset: TxOffset,
     ) -> Result<UnflushedSnapshot, SnapshotError> {
         // Invalidate equal to or newer than `tx_offset`.
@@ -933,6 +1020,8 @@ impl SnapshotRepository {
         // with all the blobs and pages.
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
         snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
+        // File bytes stay in the file store; the snapshot only records which ones it needs.
+        snapshot.file_hashes = files.to_vec();
 
         log::info!(
             "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
@@ -995,6 +1084,7 @@ impl SnapshotRepository {
             tx_offset,
             blobs: vec![],
             tables: vec![],
+            file_hashes: vec![],
         }
     }
 
@@ -1124,9 +1214,35 @@ impl SnapshotRepository {
             module_abi_version: snapshot.module_abi_version,
             blob_store,
             tables,
+            file_hashes: snapshot.file_hashes,
             compress_type,
             read_metrics,
         })
+    }
+
+    /// The hashes of the files that any snapshot in this repository references.
+    ///
+    /// Reclamation must keep these files, since restoring any of these snapshots restores
+    /// the `st_file` rows that name them. Snapshots that have been archived elsewhere are
+    /// not included.
+    ///
+    /// Fails with [`SnapshotError::Locked`] while any snapshot is being written or compressed.
+    /// Such a snapshot's manifest may be missing or partly written, and [`Self::all_snapshots`]
+    /// skips it, so its files can't be listed yet. The caller should try again later rather
+    /// than reclaim without them.
+    pub fn retained_file_hashes(&self) -> Result<std::collections::HashSet<spacetimedb_lib::Hash>, SnapshotError> {
+        for entry in self.root.read_dir()? {
+            let path = entry?.path();
+            if path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)) && Lockfile::lock_path(&path).try_exists()? {
+                return Err(SnapshotError::Locked { path });
+            }
+        }
+        let mut hashes = std::collections::HashSet::new();
+        for tx_offset in self.all_snapshots()? {
+            let (snapshot, _) = Snapshot::read_from_file(&self.snapshot_dir_path(tx_offset).snapshot_file(tx_offset))?;
+            hashes.extend(snapshot.file_hashes.iter().map(|file| file.hash));
+        }
+        Ok(hashes)
     }
 
     /// Read the [`Snapshot`] metadata at `tx_offset` and verify the integrity
@@ -1503,16 +1619,21 @@ pub trait SnapshotRepo: Send + Sync {
     /// Return the database identity associated with this snapshot backend.
     fn database_identity(&self) -> Identity;
 
-    /// Start creating a snapshot at `tx_offset` from the provided tables and blob store.
+    /// Start creating a snapshot at `tx_offset` from the provided tables and blob store,
+    /// recording `files` as the files it references.
     fn create_snapshot<'db>(
         &self,
         tables: &mut dyn Iterator<Item = &'db mut Table>,
         blobs: &'db dyn BlobStore,
+        files: &[FileEntry],
         tx_offset: TxOffset,
     ) -> Result<Self::Pending, SnapshotError>;
 
     /// Reconstruct the snapshot at `tx_offset` using the supplied page pool.
     fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError>;
+
+    /// The hashes of the files that any snapshot in this repository references.
+    fn retained_file_hashes(&self) -> Result<std::collections::HashSet<spacetimedb_lib::Hash>, SnapshotError>;
 
     /// Return the latest snapshot at or before `upper_bound`, if one exists.
     fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError>;
@@ -1549,15 +1670,20 @@ impl SnapshotRepo for SnapshotRepository {
         &self,
         tables: &mut dyn Iterator<Item = &'db mut Table>,
         blobs: &'db dyn BlobStore,
+        files: &[FileEntry],
         tx_offset: TxOffset,
     ) -> Result<Self::Pending, SnapshotError> {
         Ok(Box::new(SnapshotRepository::create_snapshot(
-            self, tables, blobs, tx_offset,
+            self, tables, blobs, files, tx_offset,
         )?))
     }
 
     fn read_snapshot(&self, tx_offset: TxOffset, page_pool: &PagePool) -> Result<ReconstructedSnapshot, SnapshotError> {
         SnapshotRepository::read_snapshot(self, tx_offset, page_pool)
+    }
+
+    fn retained_file_hashes(&self) -> Result<std::collections::HashSet<spacetimedb_lib::Hash>, SnapshotError> {
+        SnapshotRepository::retained_file_hashes(self)
     }
 
     fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
@@ -1600,6 +1726,8 @@ pub struct ReconstructedSnapshot {
     /// so the schema of user-defined tables can be recovered
     /// given knowledge of the schema of `st_table` and `st_column`.
     pub tables: BTreeMap<TableId, TablePages>,
+    /// The files that rows of `st_file` reference in the snapshotted state.
+    pub file_hashes: Vec<FileEntry>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
     /// Metrics collected while reading this snapshot from disk.
@@ -1704,6 +1832,90 @@ mod tests {
         snapshots.sort();
         assert_eq!(vec![0, 1, 2, 3, 4, 6, 7, 8, 9], snapshots);
 
+        Ok(())
+    }
+
+    fn file_entry(contents: &[u8]) -> FileEntry {
+        FileEntry {
+            hash: spacetimedb_lib::file::content_hash(contents),
+            size: contents.len() as u64,
+        }
+    }
+
+    #[test]
+    fn manifest_file_hashes_round_trip() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+        let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
+        let mut snapshot = repo.empty_snapshot(7);
+        snapshot.file_hashes = vec![file_entry(b"a"), file_entry(b"bb")];
+
+        let decoded = Snapshot::from_bsatn(&bsatn::to_vec(&snapshot)?)?;
+        assert_eq!(decoded.tx_offset, 7);
+        assert_eq!(decoded.file_hashes(), snapshot.file_hashes());
+        Ok(())
+    }
+
+    #[test]
+    fn manifests_written_before_file_hashes_decode_with_no_files() -> anyhow::Result<()> {
+        let old = SnapshotWithoutFiles {
+            magic: MAGIC,
+            version: CURRENT_SNAPSHOT_VERSION,
+            database_identity: Identity::ZERO,
+            replica_id: 42,
+            module_abi_version: CURRENT_MODULE_ABI_VERSION,
+            tx_offset: 9,
+            blobs: vec![],
+            tables: vec![],
+        };
+        let decoded = Snapshot::from_bsatn(&bsatn::to_vec(&old)?)?;
+        assert_eq!(decoded.tx_offset, 9);
+        assert!(decoded.file_hashes().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn older_readers_ignore_file_hashes() -> anyhow::Result<()> {
+        // A binary from before `file_hashes` decodes manifests with plain `from_slice`,
+        // which ignores trailing bytes. Rolling back must not make new snapshots unreadable.
+        let tmp = tempdir()?;
+        let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
+        let mut snapshot = repo.empty_snapshot(11);
+        snapshot.file_hashes = vec![file_entry(b"a")];
+        let old: SnapshotWithoutFiles = bsatn::from_slice(&bsatn::to_vec(&snapshot)?)?;
+        assert_eq!(old.tx_offset, 11);
+        Ok(())
+    }
+
+    #[test]
+    fn retained_file_hashes_covers_every_snapshot() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+        let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
+        let files = [
+            vec![file_entry(b"a"), file_entry(b"b")],
+            vec![file_entry(b"b"), file_entry(b"c")],
+        ];
+        for (tx_offset, files) in files.into_iter().enumerate() {
+            let tx_offset = tx_offset as TxOffset;
+            let dir = repo.snapshot_dir_path(tx_offset);
+            dir.create()?;
+            let mut snapshot = repo.empty_snapshot(tx_offset);
+            snapshot.file_hashes = files;
+            repo.write_snapshot_file(&dir, snapshot)?;
+        }
+        let expected = [b"a", b"b", b"c"].map(|contents| file_entry(contents).hash).into();
+        assert_eq!(repo.retained_file_hashes()?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn a_malformed_file_list_is_an_error() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+        let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
+        let mut bytes = bsatn::to_vec(&repo.empty_snapshot(3))?;
+        // Claim one more file than the manifest holds.
+        let len = bytes.len();
+        bytes[len - 4..].copy_from_slice(&1u32.to_le_bytes());
+        assert!(Snapshot::from_bsatn(&bytes).is_err());
         Ok(())
     }
 }

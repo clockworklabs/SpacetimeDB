@@ -328,6 +328,11 @@ impl DbConnection {
         __sdk::DbConnectionBuilder::new()
     }
 
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {
+        self.imp.files()
+    }
+
     /// If any WebSocket messages are waiting, process one of them.
     ///
     /// Returns `true` if a message was processed, or `false` if the queue is empty.
@@ -546,6 +551,13 @@ impl __sdk::DbContext for EventContext {
 
 impl __sdk::EventContext for EventContext {}
 
+impl EventContext {
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {
+        self.imp.files()
+    }
+}
+
 /// An [`__sdk::DbContext`] augmented with a [`__sdk::ReducerEvent`],
 /// passed to on-reducer callbacks.
 pub struct ReducerEventContext {
@@ -622,6 +634,13 @@ impl __sdk::DbContext for ReducerEventContext {
 
 impl __sdk::ReducerEventContext for ReducerEventContext {}
 
+impl ReducerEventContext {
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {
+        self.imp.files()
+    }
+}
+
 /// An [`__sdk::DbContext`] passed to procedure callbacks.
 pub struct ProcedureEventContext {
     /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
@@ -694,6 +713,13 @@ impl __sdk::DbContext for ProcedureEventContext {
 
 impl __sdk::ProcedureEventContext for ProcedureEventContext {}
 
+impl ProcedureEventContext {
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {
+        self.imp.files()
+    }
+}
+
 /// An [`__sdk::DbContext`] passed to [`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks.
 pub struct SubscriptionEventContext {
     /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
@@ -765,6 +791,13 @@ impl __sdk::DbContext for SubscriptionEventContext {
 }
 
 impl __sdk::SubscriptionEventContext for SubscriptionEventContext {}
+
+impl SubscriptionEventContext {
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {
+        self.imp.files()
+    }
+}
 
 /// An [`__sdk::DbContext`] augmented with a [`__sdk::Error`],
 /// passed to [`__sdk::DbConnectionBuilder::on_disconnect`], [`__sdk::DbConnectionBuilder::on_connect_error`] and [`__sdk::SubscriptionBuilder::on_error`] callbacks.
@@ -841,6 +874,13 @@ impl __sdk::DbContext for ErrorContext {
 }
 
 impl __sdk::ErrorContext for ErrorContext {}
+
+impl ErrorContext {
+    /// Uploads and downloads the database's files over HTTP.
+    pub fn files(&self) -> __sdk::Files {
+        self.imp.files()
+    }
+}
 
 impl __sdk::SpacetimeModule for RemoteModule {
     type DbConnection = DbConnection;

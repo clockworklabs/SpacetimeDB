@@ -306,7 +306,7 @@ mod tests {
     use spacetimedb_lib::sats::time_duration::TimeDuration;
     use spacetimedb_lib::sats::timestamp::Timestamp;
     use spacetimedb_lib::sats::{product, GroundSpacetimeType, ProductType};
-    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, Identity, Uuid};
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, FileId, FileRef, Identity, Uuid};
 
     fn make_row(row: &[AlgebraicValue]) -> Result<Box<RawValue>, serde_json::Error> {
         let json = serde_json::json!(row);
@@ -523,6 +523,20 @@ Roundtrip time: 1.00ms"#,
         let mut table = table.split('\n').map(|x| x.trim_end()).join("\n");
         table.insert(0, '\n');
         assert_eq!(expected, table);
+    }
+
+    // A `FileRef` prints like an `Identity`, so after its `0x` is the text the upload API returns.
+    #[test]
+    fn output_file_ref() {
+        let file_ref = FileRef::new(FileId(1), 2);
+        let kind: ProductType = [("file", AlgebraicType::file_ref())].into();
+        let row = product![product![file_ref.to_u256()]];
+        for client in [PsqlClient::SpacetimeDB, PsqlClient::Postgres] {
+            let table = build_table(client, &kind, std::iter::once(Ok::<_, ()>(row.clone())))
+                .unwrap()
+                .to_string();
+            assert!(table.contains(&format!("0x{file_ref}")), "{table}");
+        }
     }
 
     // Verify the output of `sql` matches the inputs that return true for [`AlgebraicType::is_special()`]

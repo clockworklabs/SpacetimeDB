@@ -241,6 +241,7 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
             disk_size: Arc::new(|| Ok(<_>::default())),
             snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone())),
             runtime: rt,
+            files: None,
         };
         let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();

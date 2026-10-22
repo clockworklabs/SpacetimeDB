@@ -287,6 +287,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                     check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
                 attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
+                check_allow_upload_signature(&reducers, &typespace)?;
 
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
@@ -1156,6 +1157,54 @@ fn attach_lifecycles_to_reducers(
     }
 
     Ok(())
+}
+
+/// The host calls the `allow_upload` reducer with one `UploadRequest`, so it must take exactly that.
+///
+/// Compares the shapes of the types, ignoring names, which case conversion may have changed.
+fn check_allow_upload_signature(reducers: &IndexMap<Identifier, ReducerDef>, typespace: &Typespace) -> Result<()> {
+    let Some(reducer) = reducers
+        .values()
+        .find(|reducer| reducer.lifecycle == Some(Lifecycle::AllowUpload))
+    else {
+        return Ok(());
+    };
+    let mut builder = spacetimedb_lib::ModuleDefBuilder::default();
+    let expected = <spacetimedb_lib::UploadRequest as spacetimedb_lib::SpacetimeType>::make_type(&mut builder);
+    let expected = builder.typespace().with_type(&expected).resolve_refs();
+    let actual = match &reducer.params.elements[..] {
+        [param] => Some(typespace.with_type(&param.algebraic_type).resolve_refs()),
+        _ => None,
+    };
+    match (expected, actual) {
+        (Ok(expected), Some(Ok(actual))) if same_shape(&expected, &actual) => Ok(()),
+        _ => Err(ValidationError::AllowUploadSignature {
+            reducer: reducer.name.clone().into(),
+        }
+        .into()),
+    }
+}
+
+/// Whether two resolved types have the same structure, ignoring field and variant names.
+fn same_shape(a: &AlgebraicType, b: &AlgebraicType) -> bool {
+    match (a, b) {
+        (AlgebraicType::Product(a), AlgebraicType::Product(b)) => {
+            a.elements.len() == b.elements.len()
+                && a.elements
+                    .iter()
+                    .zip(b.elements.iter())
+                    .all(|(a, b)| same_shape(&a.algebraic_type, &b.algebraic_type))
+        }
+        (AlgebraicType::Sum(a), AlgebraicType::Sum(b)) => {
+            a.variants.len() == b.variants.len()
+                && a.variants
+                    .iter()
+                    .zip(b.variants.iter())
+                    .all(|(a, b)| same_shape(&a.algebraic_type, &b.algebraic_type))
+        }
+        (AlgebraicType::Array(a), AlgebraicType::Array(b)) => same_shape(&a.elem_ty, &b.elem_ty),
+        (a, b) => a == b,
+    }
 }
 
 fn attach_schedules_to_tables(
@@ -2504,6 +2553,32 @@ mod tests {
             &def[..] == "Bananas" &&
             column == &44.into()
         });
+    }
+
+    #[test]
+    fn allow_upload_takes_one_upload_request() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let upload_request = builder.add_type::<spacetimedb_lib::UploadRequest>();
+        builder.add_lifecycle_reducer(
+            Lifecycle::AllowUpload,
+            "check_upload",
+            ProductType::from([("upload", upload_request)]),
+        );
+        let def: ModuleDef = builder.finish().try_into().expect("a valid allow_upload reducer");
+        let (_, reducer) = def.lifecycle_reducer(Lifecycle::AllowUpload).expect("it is registered");
+        assert_eq!(&*reducer.name, "check_upload");
+    }
+
+    #[test]
+    fn allow_upload_with_the_wrong_parameters_is_rejected() {
+        for params in [ProductType::unit(), ProductType::from([("size", AlgebraicType::U64)])] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.add_lifecycle_reducer(Lifecycle::AllowUpload, "check_upload", params);
+            let result: Result<ModuleDef> = builder.finish().try_into();
+            expect_error_matching!(result, ValidationError::AllowUploadSignature { reducer } => {
+                &reducer[..] == "check_upload"
+            });
+        }
     }
 
     #[test]

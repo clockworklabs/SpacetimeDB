@@ -5877,6 +5877,7 @@ fn get_type_name_for_result(module_prefix: &str, module: &ModuleDef, ty: &Algebr
         AlgebraicTypeUse::TimeDuration => "TimeDuration".to_string(),
         AlgebraicTypeUse::ScheduleAt => "ScheduleAt".to_string(),
         AlgebraicTypeUse::Uuid => "Uuid".to_string(),
+        AlgebraicTypeUse::FileRef => get_type_name_for_result(module_prefix, module, &crate::util::FILE_REF_REPR),
         AlgebraicTypeUse::Unit => "Unit".to_string(),
         AlgebraicTypeUse::Array(elem) => {
             // Generate specific array types based on element type
@@ -6274,6 +6275,7 @@ fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) 
         AlgebraicTypeUse::Timestamp => false,    // FSpacetimeDBTimestamp is a USTRUCT
         AlgebraicTypeUse::TimeDuration => false, // FSpacetimeDBTimeDuration is a USTRUCT
         AlgebraicTypeUse::Uuid => false,         // FSpacetimeDBUuid is a USTRUCT
+        AlgebraicTypeUse::FileRef => should_pass_by_value_in_delegate(_module, &crate::util::FILE_REF_REPR),
         // Custom structs/enums use const references
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
@@ -6317,6 +6319,7 @@ fn is_blueprintable(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
         AlgebraicTypeUse::Uuid => true,
+        AlgebraicTypeUse::FileRef => is_blueprintable(module, &crate::util::FILE_REF_REPR),
         AlgebraicTypeUse::ScheduleAt => true, // ScheduleAt is blueprintable as a property (TObjectPtr)
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -6356,6 +6359,7 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
         AlgebraicTypeUse::Uuid => true,
+        AlgebraicTypeUse::FileRef => is_type_blueprintable_for_delegates(module, &crate::util::FILE_REF_REPR),
         AlgebraicTypeUse::ScheduleAt => true,
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -6786,6 +6790,11 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Timestamp => f.write_str("FSpacetimeDBTimestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("FSpacetimeDBTimeDuration"),
         AlgebraicTypeUse::Uuid => f.write_str("FSpacetimeDBUuid"),
+        AlgebraicTypeUse::FileRef => write!(
+            f,
+            "{}",
+            cpp_ty_fmt_impl(module_prefix, module, &crate::util::FILE_REF_REPR, module_name)
+        ),
         AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
         AlgebraicTypeUse::Unit => f.write_str("FSpacetimeDBUnit"),
 
@@ -6855,6 +6864,7 @@ fn cpp_ty_init_fmt_impl(module_prefix: &str, module: &ModuleDef, ty: &AlgebraicT
         AlgebraicTypeUse::TimeDuration => String::new(),
         AlgebraicTypeUse::ScheduleAt => String::new(),
         AlgebraicTypeUse::Uuid => String::new(),
+        AlgebraicTypeUse::FileRef => cpp_ty_init_fmt_impl(module_prefix, module, &crate::util::FILE_REF_REPR),
         AlgebraicTypeUse::Unit => String::new(),
         // --------- references to user-defined types ---------
         AlgebraicTypeUse::Ref(r) => {
@@ -6924,7 +6934,7 @@ fn collect_includes_for_type(
             collect_includes_for_type(module_prefix, module, inner, out, module_name);
         }
         // Builtin types that require Builtins.h (also includes LargeIntegers.h)
-        Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt | Uuid => {
+        Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt | Uuid | FileRef => {
             out.insert("Types/Builtins.h".to_string());
         }
         // Large integer primitives also need Builtins.h (for LargeIntegers.h)

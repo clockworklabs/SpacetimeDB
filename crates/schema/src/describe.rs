@@ -76,6 +76,7 @@ impl fmt::Display for TypeName<'_> {
             AlgebraicTypeUse::Timestamp => f.write_str("Timestamp"),
             AlgebraicTypeUse::TimeDuration => f.write_str("TimeDuration"),
             AlgebraicTypeUse::Uuid => f.write_str("Uuid"),
+            AlgebraicTypeUse::FileRef => f.write_str("FileRef"),
             AlgebraicTypeUse::Unit => f.write_str("()"),
             AlgebraicTypeUse::Never => f.write_str("Never"),
             AlgebraicTypeUse::String => f.write_str("String"),
@@ -905,6 +906,7 @@ fn reachable_types<'a>(
             | AlgebraicTypeUse::Timestamp
             | AlgebraicTypeUse::TimeDuration
             | AlgebraicTypeUse::Uuid
+            | AlgebraicTypeUse::FileRef
             | AlgebraicTypeUse::Unit
             | AlgebraicTypeUse::Never
             | AlgebraicTypeUse::String
@@ -1073,6 +1075,7 @@ mod tests {
             (AlgebraicTypeUse::Timestamp, "Timestamp"),
             (AlgebraicTypeUse::TimeDuration, "TimeDuration"),
             (AlgebraicTypeUse::Uuid, "Uuid"),
+            (AlgebraicTypeUse::FileRef, "FileRef"),
         ];
         for (ty, expected) in cases {
             assert_eq!(name_of(&def, &ty), expected);

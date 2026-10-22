@@ -128,6 +128,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
                     _ => argument.to_string(),
                 }
             }
+            // Accept a `FileRef`'s text form, with or without `0x`, as an Identity's is accepted.
+            AlgebraicType::Product(p) if p.is_file_ref() => {
+                let argument = argument.trim_matches('"');
+                match argument.as_bytes() {
+                    [b'0', b'x', ..] => format!("[\"{argument}\"]"),
+                    hex if hex.len() == 64 && hex.iter().all(u8::is_ascii_hexdigit) => format!("[\"0x{argument}\"]"),
+                    _ => argument.to_string(),
+                }
+            }
             AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
                 format!("\"{argument}\"")
             }
@@ -344,6 +353,7 @@ mod write_type {
         match ty {
             p if p.is_identity() => write!(out, "Identity")?,
             p if p.is_connection_id() => write!(out, "ConnectionId")?,
+            p if p.is_file_ref() => write!(out, "FileRef")?,
             p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
             AlgebraicType::Sum(sum_type) => {
                 if let Some(inner_ty) = sum_type.as_option() {
