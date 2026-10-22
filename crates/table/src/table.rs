@@ -1912,12 +1912,23 @@ impl Table {
     ///
     /// If no unique indices remain after this, rebuilds and restores the pointer map.
     pub fn make_index_non_unique(&mut self, index_id: IndexId, blobs: &BlobSet) -> Result<(), TableError> {
+        // If the index is the only unique index, we'll need to rebuild the
+        // pointer map.
+        let needs_pointer_map = self.indexes.get(&index_id).is_some_and(TableIndex::is_unique)
+            && self.indexes.values().filter(|idx| idx.is_unique()).count() == 1;
+        let pointer_map = needs_pointer_map
+            .then(|| {
+                assert!(self.pointer_map.is_none());
+                self.rebuild_pointer_map(blobs)
+            })
+            .transpose()?;
+
+        // Commit changes after potential pointer map rebuild succeeded.
         if let Some(idx) = self.indexes.get_mut(&index_id) {
             idx.make_non_unique();
         }
-        if !self.has_unique_index() && self.pointer_map.is_none() {
-            let pm = self.rebuild_pointer_map(blobs)?;
-            self.restore_pointer_map(pm);
+        if let Some(pointer_map) = pointer_map {
+            self.restore_pointer_map(pointer_map);
         }
 
         Ok(())
@@ -3821,6 +3832,70 @@ pub(crate) mod test {
         drop(blocker);
         assert!(table.delete_index(&blobs, index_id, None).unwrap().is_some());
         assert!(!table.has_unique_index());
+        assert!(table.has_pointer_map());
+    }
+
+    #[test]
+    fn make_index_non_unique_failure_preserves_old_index() {
+        // Allow only one resident page so we can force rebuilding the pointer
+        // map to fail while faulting this table's page back in.
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: PAGE_SIZE as u64,
+            hard_limit_bytes: PAGE_SIZE as u64,
+        })
+        .unwrap();
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        ));
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64]));
+        let mut table = Table::new(
+            schema.clone().into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager.clone(),
+            PageEvictionPolicy::Evictable,
+        );
+        let blobs = BlobSet::new_for_test();
+        let index_id = IndexId(1);
+        // Create a unique index.
+        let index = table
+            .new_index(
+                &BTreeAlgorithm {
+                    columns: ColList::new(0.into()),
+                }
+                .into(),
+                true,
+            )
+            .unwrap();
+        unsafe { table.insert_index(&blobs, index_id, index) }.unwrap().unwrap();
+        table.insert(&blobs, &product![0_u64]).unwrap();
+        table.inner.pages.evict().unwrap();
+
+        // Occupy and pin the entire resident-page budget with another table.
+        // The target table's evicted page therefore cannot be faulted in.
+        let mut blocker = Table::new(
+            schema.into(),
+            SquashedOffset::TX_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        let (_, blocker_pin) = blocker.insert(&blobs, &product![1_u64]).unwrap();
+
+        // Rebuilding the pointer map fails. The unique index must remain in
+        // place so the table never loses both forms of set-semantic lookup.
+        let error = table.make_index_non_unique(index_id, &blobs).unwrap_err();
+        assert!(matches!(error, TableError::Page(_)));
+        assert!(table.indexes[&index_id].is_unique());
+        assert!(!table.has_pointer_map());
+
+        // Once the budget is available, the same transition succeeds: the
+        // index is non-unique and the replacement pointer map is present.
+        drop(blocker_pin);
+        drop(blocker);
+        table.make_index_non_unique(index_id, &blobs).unwrap();
+        assert!(!table.indexes[&index_id].is_unique());
         assert!(table.has_pointer_map());
     }
 }
