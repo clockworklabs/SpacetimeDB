@@ -655,6 +655,10 @@ fn auto_migrate_database<'def>(
                 .ok_or_else(|| anyhow::anyhow!("AddTable: table `{table_name}` not found in new module def"))?;
             log!(logger, "Creating table `{table_name}`");
             create_table_from_def_with_prefix(stdb, tx, owning_def, table_def, namespace)?;
+
+            // Continue the old table's sequences, so new rows don't reuse ids.
+            let new_table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+            stdb.copy_sequence_allocations(tx, table_id, new_table_id)?;
         }
     }
 
@@ -802,10 +806,10 @@ mod test {
     use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
     use spacetimedb_lib::{
         db::raw_def::{
-            v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
+            v10::{ExplicitNames, RawMigrationDefV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
             v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
         },
-        Identity,
+        hash_value, Identity,
     };
     use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType};
     use spacetimedb_schema::auto_migrate::ponder_migrate;
@@ -1772,6 +1776,101 @@ mod test {
                 "expected id 4 after reopen, got {ids:?}"
             );
         }
+
+        Ok(())
+    }
+
+    /// Verifies that a table recreated by a manual migration continues the old table's
+    /// `autoinc` sequence, both during the migration and after replay.
+    #[test]
+    fn auto_inc_sequence_survives_manual_migration() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let seq_t = |value_ty: AlgebraicType| {
+            let mut b = RawModuleDefV10Builder::new();
+            b.build_table_with_new_type(
+                "seq_t",
+                ProductType::from([("id", AlgebraicType::I64), ("value", value_ty)]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(btree(0), "seq_t_id_idx_btree")
+            .with_access(TableAccess::Public)
+            .finish();
+            b
+        };
+        let module_v1: ModuleDef = seq_t(AlgebraicType::U8).finish().try_into()?;
+        // Changing the type of `value` needs a manual migration, keyed on v1's hash.
+        let module_v2: ModuleDef = {
+            let mut b = seq_t(AlgebraicType::U64);
+            b.add_migration(RawMigrationDefV10 {
+                schema_hash: hash_value(&module_v1),
+                name: "migrate".into(),
+                dropped: seq_t(AlgebraicType::U8).finish(),
+            });
+            b.finish().try_into()?
+        };
+
+        let collect_ids = |stdb: &TestDB, tx: &MutTxId| -> anyhow::Result<Vec<i64>> {
+            let table_id = stdb.table_id_from_name_mut(tx, "seq_t")?.expect("seq_t should exist");
+            let mut ids = stdb
+                .iter_mut(tx, table_id)?
+                .map(|r| r.read_col::<i64>(0))
+                .collect::<Result<Vec<_>, _>>()?;
+            ids.sort();
+            Ok(ids)
+        };
+
+        // Insert two rows into v1, which get ids 1 and 2.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+            insert(&stdb, &mut tx, table_id, &product![0i64, 7u8])?;
+            insert(&stdb, &mut tx, table_id, &product![0i64, 8u8])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        // Run the migration, copying the old rows over the way a module would,
+        // then insert a fresh row from within the migration.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let UpdateStep::RunManual(migration) = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)? else {
+                panic!("expected a manual migration");
+            };
+
+            let old_id = stdb
+                .table_id_from_name_mut(&tx, "dropped.seq_t")?
+                .expect("dropped.seq_t should exist");
+            let new_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+            let rows = stdb
+                .iter_mut(&tx, old_id)?
+                .map(|r| Ok((r.read_col::<i64>(0)?, r.read_col::<u8>(1)?)))
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            for (id, value) in rows {
+                insert(&stdb, &mut tx, new_id, &product![id, value as u64])?;
+            }
+            insert(&stdb, &mut tx, new_id, &product![0i64, 9u64])?;
+
+            assert_matches!(
+                migration.finish(&stdb, &mut tx, &TestLogger)?,
+                UpdateResult::Success | UpdateResult::RequiresClientDisconnect
+            );
+            assert_eq!(collect_ids(&stdb, &tx)?, [1, 2, 3]);
+            stdb.commit_tx(tx)?;
+        }
+
+        // After replay, the sequence still continues past the old ids.
+        let stdb = stdb.reopen()?;
+        let mut tx = begin_mut_tx(&stdb);
+        let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+        insert(&stdb, &mut tx, table_id, &product![0i64, 10u64])?;
+        assert_eq!(collect_ids(&stdb, &tx)?, [1, 2, 3, 4]);
+        stdb.commit_tx(tx)?;
 
         Ok(())
     }

@@ -1745,6 +1745,37 @@ impl MutTxId {
         Ok(table_id)
     }
 
+    /// Copy the sequence state of `from_table` onto `to_table`, which recreates it
+    /// (for example in a manual migration).
+    ///
+    /// Each sequence of `to_table` takes the `allocated` value of the sequence of
+    /// `from_table` with the same name, so it keeps handing out values the old table hasn't.
+    /// Sequences with no counterpart in `from_table` keep their start value.
+    pub fn copy_sequence_allocations(&mut self, from_table: TableId, to_table: TableId) -> Result<()> {
+        let from_schema = self.schema_for_table(from_table)?;
+        let to_schema = self.schema_for_table(to_table)?;
+        for to_seq in to_schema.sequences.iter() {
+            let Some(from_seq) = from_schema
+                .sequences
+                .iter()
+                .find(|seq| seq.sequence_name == to_seq.sequence_name)
+            else {
+                continue;
+            };
+            let allocated = self
+                .iter_by_col_eq(
+                    ST_SEQUENCE_ID,
+                    StSequenceFields::SequenceId,
+                    &from_seq.sequence_id.into(),
+                )?
+                .last()
+                .ok_or(SequenceError::NotFound(from_seq.sequence_id))?
+                .read_col(StSequenceFields::Allocated)?;
+            self.update_st_sequence_row(to_seq.sequence_id, |st| st.allocated = allocated)?;
+        }
+        Ok(())
+    }
+
     /// Create an index.
     ///
     /// Requires:

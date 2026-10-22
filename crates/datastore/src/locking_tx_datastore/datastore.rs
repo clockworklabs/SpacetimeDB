@@ -343,6 +343,15 @@ impl Locking {
     ) -> Result<TableId> {
         tx.add_columns_to_table(table_id, column_schemas, defaults)
     }
+
+    pub fn copy_sequence_allocations_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        from_table: TableId,
+        to_table: TableId,
+    ) -> Result<()> {
+        tx.copy_sequence_allocations(from_table, to_table)
+    }
 }
 
 impl DataRow for Locking {

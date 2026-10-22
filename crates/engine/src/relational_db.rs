@@ -1380,6 +1380,17 @@ impl RelationalDB {
         Ok(self.inner.rename_table_mut_tx(tx, table_id, new_name)?)
     }
 
+    /// Gives each sequence of `to_table` the state of the same-named sequence of `from_table`.
+    /// See [`MutTxId::copy_sequence_allocations`].
+    pub fn copy_sequence_allocations(
+        &self,
+        tx: &mut MutTx,
+        from_table: TableId,
+        to_table: TableId,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.copy_sequence_allocations_mut_tx(tx, from_table, to_table)?)
+    }
+
     pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewId>, DBError> {
         Ok(self.inner.view_id_from_name_mut_tx(tx, view_name)?)
     }
