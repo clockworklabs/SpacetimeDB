@@ -627,7 +627,15 @@ impl CsharpScope<'_> {
                 "new global::SpacetimeDB.SqlTableName({namespace:?}, {:?})",
                 name.deref()
             ),
-            _ => panic!("Nested namespaces are not supported by C# bindings"),
+            namespaces => format!(
+                "new global::SpacetimeDB.SqlTableName(new string[] {{ {} }}, {:?})",
+                namespaces
+                    .iter()
+                    .map(|segment| format!("{segment:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                name.deref()
+            ),
         }
     }
 
