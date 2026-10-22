@@ -270,25 +270,43 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
   > as Tbl['accessorName']]: QueryBuilderEntry<Tbl>;
 } & {};
 
+// Generated client bindings give a submodule's tables dotted accessor names, e.g. `lib.items`.
+type NamespaceOf<AccessorName> = AccessorName extends `${infer NS}.${string}`
+  ? NS
+  : never;
+
 /**
- * Like `QueryBuilder`, but with declared namespaces also exposed as sub-objects.
+ * Like `QueryBuilder`, but with namespaces exposed as sub-objects.
  * This is the type of the `tables` argument in a `subscribe` query-builder callback.
  *
  * Root-level tables appear as direct properties (same as `QueryBuilder`).
  * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
  * namespace's schema, so `tables.<namespace>.<table>` is fully typed.
  *
- * When `SchemaDef['namespaces']` is absent or `{}`, no namespace properties appear —
- * accessing an undeclared namespace is a compile error.
+ * A table with a dotted accessor name is instead grouped under its namespace,
+ * as `makeFromBuilder` does at runtime. Its key there is the rest of its `sourceName`,
+ * which the types don't record, so such a namespace is untyped.
+ *
+ * When `SchemaDef['namespaces']` is absent or `{}` and no accessor name is dotted,
+ * no namespace properties appear, so accessing an undeclared namespace is a compile error.
  */
-export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
-  QueryBuilder<SchemaDef> & {
-    readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
-      SchemaDef['namespaces']
-    >[NS] extends UntypedSchemaDef
-      ? QueryBuilder<NonNullable<SchemaDef['namespaces']>[NS]>
-      : never;
-  };
+export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> = {
+  readonly [Tbl in Values<
+    SchemaDef['tables']
+  > as Tbl['accessorName'] extends `${string}.${string}`
+    ? never
+    : Tbl['accessorName']]: QueryBuilderEntry<Tbl>;
+} & {
+  readonly [NS in NamespaceOf<
+    Values<SchemaDef['tables']>['accessorName']
+  >]: QueryBuilder<UntypedSchemaDef>;
+} & {
+  readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
+    SchemaDef['namespaces']
+  >[NS] extends UntypedSchemaDef
+    ? QueryBuilder<NonNullable<SchemaDef['namespaces']>[NS]>
+    : never;
+};
 
 /**
  * A runtime reference to a table. This materializes the RowExpr for us.
