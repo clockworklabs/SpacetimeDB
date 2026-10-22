@@ -166,8 +166,14 @@ void UDbConnectionBase::Disconnect()
 
 bool UDbConnectionBase::IsActive() const
 {
+	return !bEnded && !bReconnecting && WebSocket && WebSocket->IsConnected();
+}
+
+bool UDbConnectionBase::CanSendCalls() const
+{
 	// Matches C#/TS: with reconnect, calls wait for InitialConnection, so none can be lost to an initial failure.
-	return !bEnded && !bReconnecting && (!bAutomaticReconnect || bEstablished) && WebSocket && WebSocket->IsConnected();
+	// Kept out of IsActive, which callers use to decide whether to FrameTick, which is what processes InitialConnection.
+	return IsActive() && (!bAutomaticReconnect || bEstablished);
 }
 
 bool UDbConnectionBase::TryGetIdentity(FSpacetimeDBIdentity& OutIdentity) const
@@ -853,7 +859,7 @@ void UDbConnectionBase::UnsubscribeInternal(USubscriptionHandleBase* Handle)
 
 uint32 UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uint8> Args)
 {
-	if (!IsActive())
+	if (!CanSendCalls())
 	{
 		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call reducer, not connected to server!"));
 		if (bAutomaticReconnect)
@@ -895,7 +901,7 @@ uint32 UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uin
 void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args,
                                               const FOnProcedureCompleteDelegate& Callback)
 {
-	if (!IsActive())
+	if (!CanSendCalls())
 	{
 		FProcedureEvent Event;
 		Event.Status = FProcedureStatusType::InternalError(TEXT("Disconnected"));

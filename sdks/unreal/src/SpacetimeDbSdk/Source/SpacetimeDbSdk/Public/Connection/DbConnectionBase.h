@@ -384,6 +384,7 @@ protected:
 	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> TokenValidation;
 	void AdvanceReconnect();
 	bool TokenNeedsRefresh() const;
+	bool CanSendCalls() const;
 	void ReplaySubscriptions();
 	void ApplyReplay(const FSubscribeBatchAppliedType& Batch);
 	void EndSubscription(USubscriptionHandleBase* Handle);
