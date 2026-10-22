@@ -204,11 +204,11 @@ Views can also accept arguments (2.13+), after the context:
 
 ```csharp
 [SpacetimeDB.View(Accessor = "EntityById", Public = true)]
-public static Entity? EntityById(AnonymousViewContext ctx, Identity identity) =>
-    ctx.Db.Entity.Identity.Find(identity);
+public static Entity? EntityById(AnonymousViewContext ctx, ulong id) =>
+    ctx.Db.Entity.Id.Find(id);
 ```
 
-Views with arguments are queried as `SELECT * FROM view_name(literal_args)`, using SQL literals of the declared argument types. Currently they cannot be filtered, joined, or queried with a column projection; floating-point arguments and primary keys on these views are rejected. Subscribe-all skips them, so clients must subscribe explicitly. TypeScript and C# clients currently use raw SQL for these calls; Rust clients also have a typed query builder.
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
 
 ## Client Visibility Filters
 
@@ -253,7 +253,7 @@ C# assembly composition requires SpacetimeDB/Runtime 2.13+, .NET 10, and C# 14 i
 
 The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. Pass the caller's context directly to a library helper: there is no TypeScript-style `ctx.as`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
 
-`Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace re-creates tables; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
+`Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace drops its tables and their data; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
 
 Only the root chooses placement. An assembly can be mounted once; nested mounts and cross-language composition are unsupported. Named dependencies cannot declare lifecycle reducers, nonempty environments, or RLS filters. Define RLS in the root with canonical qualified table names. Named-submodule routes are ignored; root handlers may delegate to library helpers. Dependencies in `public` can contribute lifecycle reducers (subject to uniqueness), environment declarations, and routes.
 
@@ -275,7 +275,7 @@ public partial struct EnvironmentSchema
 
 Enable nullable annotations for optional `string?` fields. One `[SpacetimeDB.Env]` struct declares the environment; `[EnvValues(...)]` restricts allowed strings. Colliding accessor names remain available through `Get("KEY")`.
 
-Environment keys are exact, case-sensitive strings. Declare every key module code reads; undeclared reads fail even if a value is stored. Values are read-only strings supplied at publish time, not process environment variables. Required declarations must have values before initialization or migration; optional declarations permit absence. Reads inside a transaction share its snapshot. Host-dispatched entry points in named submodules cannot read the root environment, but ordinary helper calls retain the caller's access. Do not return or log secret values.
+See the concepts skill for shared environment and secret-handling rules.
 
 ## Scheduled Tables
 
@@ -343,7 +343,7 @@ ctx.WithTx(tx =>
 });
 ```
 
-`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). Use `tx.Db` for transactional table access. On .NET 10, procedure/handler contexts have shared runtime types; do not rely on the older per-module generated-context shape.
+`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). In procedures and handlers, access tables only via `tx.Db`, never `ctx.Db`.
 
 For non-GET requests, construct and send an `HttpRequest` directly:
 

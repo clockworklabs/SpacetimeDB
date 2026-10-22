@@ -155,7 +155,7 @@ For views with arguments (2.13+), use a raw SQL subscription; TypeScript has no 
 conn.subscriptionBuilder().subscribe('SELECT * FROM by_id(42)');
 ```
 
-Subscribe-all skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported: no outer `WHERE`, projections, or joins. Floating-point arguments and primary keys on these views are rejected. SQL literals are not SDK reducer-argument objects; validate/encode dynamic values for their SQL type instead of concatenating untrusted input. In React, raw SQL subscriptions need explicit lifetime management and cleanup; `useTable` does not supply an argument-bearing view builder.
+Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. In React, raw SQL subscriptions need explicit lifetime management and cleanup; `useTable` does not supply an argument-bearing view builder.
 
 ## Automatic Reconnect and Token Refresh
 

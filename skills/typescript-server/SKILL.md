@@ -275,7 +275,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 ```
 
-`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace re-creates its tables. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported, but the same module cannot be registered twice. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
+`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported, but the same module cannot be registered twice. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
 
 Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
 
@@ -294,7 +294,7 @@ const spacetimedb = schema({ scoreRecord }, {
 // ctx.env.get('LOG_LEVEL'): string | null
 ```
 
-Environment keys are exact, case-sensitive strings. Declare every key module code reads; undeclared reads fail even if a value is stored. Values are read-only strings supplied at publish time, not process environment variables. Required declarations must have values before initialization or migration; optional declarations permit absence. Reads inside a transaction share its snapshot. Host-dispatched entry points in named submodules cannot read the root environment, but ordinary helper calls retain the caller's access. Do not return or log secret values.
+See the concepts skill for shared environment and secret-handling rules.
 
 ## Custom Types
 
@@ -374,7 +374,7 @@ export const entityById = spacetimedb.anonymousView(
 );
 ```
 
-Views with arguments are queried as `SELECT * FROM view_name(literal_args)`, using SQL literals of the declared argument types. Currently they cannot be filtered, joined, or queried with a column projection; floating-point arguments and primary keys on these views are rejected. Subscribe-all skips them, so clients must subscribe explicitly. TypeScript and C# clients currently use raw SQL for these calls; Rust clients also have a typed query builder.
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
 
 ## Client Visibility Filters
 

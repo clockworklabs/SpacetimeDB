@@ -112,7 +112,7 @@ conn.SubscriptionBuilder()
 // Procedures: conn.Procedures.MyAuth.CountUsers((ctx, result) => { ... })
 ```
 
-The query builder and calls encode canonical names automatically. Raw SQL/HTTP/CLI calls use canonical qualified names, such as `auth_data.auth_users` for a namespace explicitly named `auth_data`. All namespaces share the connection and cache.
+The query builder and calls encode canonical names automatically. Raw SQL/HTTP/CLI calls use canonical qualified names, such as `auth_data.<table>` for a namespace explicitly named `auth_data`. All namespaces share the connection and cache.
 
 For views with arguments (2.13+), use raw SQL; C# has no typed argument-bearing view query builder yet:
 
@@ -120,7 +120,7 @@ For views with arguments (2.13+), use raw SQL; C# has no typed argument-bearing 
 conn.SubscriptionBuilder().Subscribe(new[] { "SELECT * FROM by_id(42)" });
 ```
 
-Subscribe-all skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported: no outer filters, projections, or joins. Floating-point arguments and primary keys on these views are rejected. Validate/encode dynamic SQL values for their type rather than concatenating untrusted input. Keep calling `FrameTick()` to process subscription updates.
+Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. Keep calling `FrameTick()` to process subscription updates.
 
 ## Row Callbacks
 

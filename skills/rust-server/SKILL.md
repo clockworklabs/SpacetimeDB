@@ -199,12 +199,12 @@ Views can also accept arguments (2.13+), after the context:
 
 ```rust
 #[spacetimedb::view(accessor = entity_by_id, public)]
-pub fn entity_by_id(ctx: &spacetimedb::AnonymousViewContext, identity: Identity) -> Option<Entity> {
-    ctx.db.entity().identity().find(identity)
+pub fn entity_by_id(ctx: &spacetimedb::AnonymousViewContext, id: u64) -> Option<Entity> {
+    ctx.db.entity().id().find(id)
 }
 ```
 
-Views with arguments are queried as `SELECT * FROM view_name(literal_args)`, using SQL literals of the declared argument types. Currently they cannot be filtered, joined, or queried with a column projection; floating-point arguments and primary keys on these views are rejected. Subscribe-all skips them, so clients must subscribe explicitly. TypeScript and C# clients currently use raw SQL for these calls; Rust clients also have a typed query builder.
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
 
 ## Client Visibility Filters
 
@@ -258,7 +258,7 @@ pub struct Env {
 
 For constrained values, derive `spacetimedb::EnvironmentValue` on a payload-free enum and use it as a field type (or `Option<Enum>`). `#[env(value = "production")]` on a variant supplies its exact accepted string; without it, the Rust variant name is used. `#[env(values("info", "debug"))]` also constrains `String`/`Option<String>` fields.
 
-Environment keys are exact, case-sensitive strings. Declare every key module code reads; undeclared reads fail even if a value is stored. Values are read-only strings supplied at publish time, not process environment variables. Required declarations must have values before initialization or migration; optional declarations permit absence. Reads inside a transaction share its snapshot. Host-dispatched entry points in named submodules cannot read the root environment, but ordinary helper calls retain the caller's access. Do not return or log secret values.
+See the concepts skill for shared environment and secret-handling rules.
 
 ## Scheduled Tables
 
@@ -419,10 +419,11 @@ The native in-memory harness is available in 2.12+. Keep the same `spacetimedb` 
 
 ```toml
 [dependencies]
-spacetimedb = "2.13.0"
+spacetimedb = { version = "2.13.0", features = ["unstable"] }
 
 [dev-dependencies]
 spacetimedb = { version = "2.13.0", features = ["test-utils"] }
+icu_calendar = ">=2.1, <2.2" # temporal_rs requires icu_calendar 2.1.x
 ```
 
 Run `cargo test` natively, not with a WebAssembly target. For the `create_entity` reducer above:
@@ -445,6 +446,6 @@ mod tests {
 }
 ```
 
-`with_reducer_tx` commits on `Ok` and rolls back on `Err` or panic unwinding; propagate reducer errors with `?` when the reducer returns `Result`. Create a new `TestContext` for each test: cloning shares the database. Use `TestAuth::from_jwt_payload(payload, connection_id)` for client calls and `TestAuth::internal()` for the database itself. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or timers. Invoke lifecycle/scheduled reducers explicitly and retain integration tests for host behavior.
+`with_reducer_tx` commits on `Ok` and rolls back on `Err` or panic unwinding; propagate reducer errors with `?` when the reducer returns `Result`. Create a new `TestContext` for each test: cloning shares the database. Use `TestAuth::from_jwt_payload(payload, connection_id)?` for client calls and `TestAuth::internal()` for the database itself. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or timers. Invoke lifecycle/scheduled reducers explicitly and retain integration tests for host behavior.
 
-For the 2.12 dependency graph, if `temporal_rs` fails to import `AnyCalendarDifferenceError`, constrain `icu_calendar` to `>=2.1, <2.2` in dev-dependencies. See https://spacetimedb.com/docs/how-to/unit-testing for test setup, HTTP mocking, and current limitations.
+See https://spacetimedb.com/docs/how-to/unit-testing for test setup, HTTP mocking, and current limitations.
