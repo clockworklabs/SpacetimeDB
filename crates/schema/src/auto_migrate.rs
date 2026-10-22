@@ -2028,6 +2028,59 @@ mod tests {
     }
 
     #[test]
+    fn print_manual_migration() {
+        let old_def = create_module_def(|builder| {
+            let kind_ty = AlgebraicType::sum([("Red", AlgebraicType::unit()), ("Green", AlgebraicType::U8)]);
+            let kind = builder.add_algebraic_type([], "Kind", kind_ty, true);
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([
+                        ("id", AlgebraicType::U64),
+                        ("name", AlgebraicType::String),
+                        ("kind", kind.into()),
+                    ]),
+                    true,
+                )
+                .finish();
+            builder
+                .build_table_with_new_type("Pears", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+        });
+        let new_def = create_module_def(|builder| {
+            let green_ty = AlgebraicType::product([("shade", AlgebraicType::U8)]);
+            let green = builder.add_algebraic_type([], "Green", green_ty, true);
+            let kind_ty = AlgebraicType::sum([("Red", AlgebraicType::unit()), ("Green", green.into())]);
+            let kind = builder.add_algebraic_type([], "Kind", kind_ty, true);
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([
+                        ("id", AlgebraicType::U32),
+                        ("count", AlgebraicType::U32),
+                        ("kind", kind.into()),
+                    ]),
+                    true,
+                )
+                .finish();
+        });
+        let migration = MigrationDef {
+            name: Identifier::for_test("migrate"),
+            namespace: NamespacePath::root(),
+            dropped: old_def.clone(),
+        };
+        let hash = hash_value(&old_def);
+
+        let plan = _ponder_migrate(&old_def, &new_def, Some((0, &hash, &migration))).expect("manual migration plan");
+
+        insta::assert_snapshot!(
+            "manual migration pretty print",
+            plan.pretty_print(PrettyPrintStyle::NoColor)
+                .expect("should pretty print")
+        );
+    }
+
+    #[test]
     fn print_empty_to_populated_schema_migration() {
         // Start with completely empty schema
         let old_builder = RawModuleDefV9Builder::new();

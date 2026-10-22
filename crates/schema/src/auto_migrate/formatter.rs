@@ -2,7 +2,7 @@
 
 use std::io;
 
-use super::MigratePlan;
+use super::{ManualMigrateData, MigratePlan};
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{
@@ -14,12 +14,18 @@ use crate::{
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
 use spacetimedb_primitives::ColId;
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
 
 pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &MigratePlan) -> Result<(), FormattingErrors> {
     f.format_header()?;
+
+    if let Some(manual) = &plan.manual {
+        let manual_info = extract_manual_migration_info(manual, plan)?;
+        f.format_manual_migration(&manual_info)?;
+    }
 
     for step in &plan.steps {
         format_step(f, step, plan)?;
@@ -207,6 +213,7 @@ pub trait MigrationFormatter {
     // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
     // so for now we're just printing the table name.
     fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
+    fn format_manual_migration(&mut self, manual_info: &ManualMigrationInfo) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -305,11 +312,28 @@ pub enum ColumnChange {
         old_name: Identifier,
         new_name: Identifier,
     },
+    /// `name` is a column, or a path into one, like `contents.Variant.field`.
     TypeChanged {
-        name: Identifier,
+        name: String,
         old_type: AlgebraicType,
         new_type: AlgebraicType,
     },
+    Added {
+        name: String,
+        type_name: AlgebraicType,
+    },
+    Removed {
+        name: String,
+        type_name: AlgebraicType,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManualMigrationInfo {
+    /// The hash of the old schema, which selected this migration.
+    pub schema_hash: Hash,
+    /// The tables the migration recreates, with how their columns change.
+    pub changed_tables: Vec<ColumnChanges>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -629,7 +653,7 @@ fn extract_column_changes(
                     .resolve_refs()
                     .map_err(|_| FormattingErrors::TypeResolution)?;
                 changes.push(ColumnChange::TypeChanged {
-                    name: new_col.name.clone(),
+                    name: new_col.name.to_string(),
                     old_type,
                     new_type,
                 });
@@ -678,4 +702,129 @@ fn extract_new_columns(
         table_name: joined(key),
         columns: new_columns,
     })
+}
+
+fn extract_manual_migration_info(
+    manual: &ManualMigrateData<'_>,
+    plan: &super::MigratePlan,
+) -> Result<ManualMigrationInfo, FormattingErrors> {
+    let changed_tables = manual
+        .changed_tables
+        .iter()
+        .map(|&table| extract_recreated_columns(table, plan))
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    Ok(ManualMigrationInfo {
+        schema_hash: manual.hash,
+        changed_tables,
+    })
+}
+
+/// Unlike `extract_column_changes`, this matches columns by name,
+/// since a recreated table may reorder, add or remove them.
+fn extract_recreated_columns(
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
+) -> Result<ColumnChanges, FormattingErrors> {
+    let not_found = || FormattingErrors::TableNotFound {
+        table: (&*joined(key)).into(),
+    };
+    let (old_owning, old_table) = plan.old.find_table(key).ok_or_else(not_found)?;
+    let (new_owning, new_table) = plan.new.find_table(key).ok_or_else(not_found)?;
+    let resolve = |owning: &ModuleDef, ty: &AlgebraicType| {
+        WithTypespace::new(owning.typespace(), ty)
+            .resolve_refs()
+            .map_err(|_| FormattingErrors::TypeResolution)
+    };
+    let old_columns = old_table
+        .columns
+        .iter()
+        .map(|c| Ok((c.name.to_string(), resolve(old_owning, &c.ty)?)))
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+    let new_columns = new_table
+        .columns
+        .iter()
+        .map(|c| Ok((c.name.to_string(), resolve(new_owning, &c.ty)?)))
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    let mut changes = Vec::new();
+    diff_members("", &old_columns, &new_columns, &mut changes);
+
+    Ok(ColumnChanges {
+        table_name: joined(key),
+        changes,
+    })
+}
+
+/// Pushes the changes between two lists of named members (columns, fields or variants),
+/// matching members by name.
+fn diff_members(
+    prefix: &str,
+    old: &[(String, AlgebraicType)],
+    new: &[(String, AlgebraicType)],
+    changes: &mut Vec<ColumnChange>,
+) {
+    for (name, new_ty) in new {
+        let path = format!("{prefix}{name}");
+        match old.iter().find(|(old_name, _)| old_name == name) {
+            Some((_, old_ty)) => diff_types(path, old_ty, new_ty, changes),
+            None => changes.push(ColumnChange::Added {
+                name: path,
+                type_name: new_ty.clone(),
+            }),
+        }
+    }
+    for (name, old_ty) in old {
+        if !new.iter().any(|(new_name, _)| new_name == name) {
+            changes.push(ColumnChange::Removed {
+                name: format!("{prefix}{name}"),
+                type_name: old_ty.clone(),
+            });
+        }
+    }
+}
+
+/// Pushes the innermost changes between two resolved types,
+/// so a change deep inside a large type doesn't print the whole type.
+fn diff_types(path: String, old: &AlgebraicType, new: &AlgebraicType, changes: &mut Vec<ColumnChange>) {
+    if old == new {
+        return;
+    }
+    let found = changes.len();
+    match (old, new) {
+        (AlgebraicType::Product(old_ty), AlgebraicType::Product(new_ty)) => {
+            let members = |ty: &spacetimedb_sats::ProductType| {
+                let elements = ty.elements.iter().enumerate();
+                elements
+                    .map(|(i, e)| (member_name(e.name.as_deref(), i), e.algebraic_type.clone()))
+                    .collect::<Vec<_>>()
+            };
+            diff_members(&format!("{path}."), &members(old_ty), &members(new_ty), changes);
+        }
+        (AlgebraicType::Sum(old_ty), AlgebraicType::Sum(new_ty)) => {
+            let members = |ty: &spacetimedb_sats::SumType| {
+                let variants = ty.variants.iter().enumerate();
+                variants
+                    .map(|(i, v)| (member_name(v.name.as_deref(), i), v.algebraic_type.clone()))
+                    .collect::<Vec<_>>()
+            };
+            diff_members(&format!("{path}."), &members(old_ty), &members(new_ty), changes);
+        }
+        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => {
+            diff_types(format!("{path}[]"), &old_ty.elem_ty, &new_ty.elem_ty, changes);
+        }
+        _ => {}
+    }
+    // Nothing differed member by member, e.g. members were reordered, so report the whole type.
+    if changes.len() == found {
+        changes.push(ColumnChange::TypeChanged {
+            name: path,
+            old_type: old.clone(),
+            new_type: new.clone(),
+        });
+    }
+}
+
+fn member_name(name: Option<&str>, index: usize) -> String {
+    name.map_or_else(|| index.to_string(), str::to_owned)
 }

@@ -9,8 +9,8 @@ use crate::auto_migrate::PrettyPrintStyle;
 use crate::styled_writer::StyledWriter;
 
 use super::formatter::{
-    AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
-    RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
+    AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, ManualMigrationInfo,
+    MigrationFormatter, NewColumns, RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
 };
 use crate::identifier::NamespacedIdentifier;
 
@@ -49,6 +49,41 @@ impl TermColorFormatter {
     fn write_type_name(&mut self, ty: &AlgebraicType) -> io::Result<()> {
         let s = self.format_type_name(ty);
         self.out.write_colored(&s, Some(self.out.colors().column_type), false)
+    }
+
+    fn write_column_changes(&mut self, changes: &[ColumnChange]) -> io::Result<()> {
+        self.out.indent();
+        for ch in changes {
+            self.out.write_indent()?;
+            match ch {
+                ColumnChange::Renamed { old_name, new_name } => {
+                    self.out.write_plain(&format!("~ Renamed: {old_name} → {new_name}\n"))?;
+                }
+                ColumnChange::TypeChanged {
+                    name,
+                    old_type,
+                    new_type,
+                } => {
+                    self.out.write_plain(&format!("~ Modified: {name} ("))?;
+                    self.write_type_name(old_type)?;
+                    self.out.write_plain(" → ")?;
+                    self.write_type_name(new_type)?;
+                    self.out.write_plain(")\n")?;
+                }
+                ColumnChange::Added { name, type_name } => {
+                    self.out.write_plain(&format!("+ {name}: "))?;
+                    self.write_type_name(type_name)?;
+                    self.out.write_plain("\n")?;
+                }
+                ColumnChange::Removed { name, type_name } => {
+                    self.out.write_plain(&format!("- {name}: "))?;
+                    self.write_type_name(type_name)?;
+                    self.out.write_plain("\n")?;
+                }
+            }
+        }
+        self.out.dedent();
+        Ok(())
     }
 
     fn format_access(&self, access: TableAccess) -> &'static str {
@@ -297,28 +332,7 @@ impl MigrationFormatter for TermColorFormatter {
             .write_colored(&cs.table_name, Some(self.out.colors().table_name), true)?;
         self.out.write_plain("\n")?;
 
-        self.out.indent();
-        for ch in &cs.changes {
-            self.out.write_indent()?;
-            match ch {
-                ColumnChange::Renamed { old_name, new_name } => {
-                    self.out.write_plain(&format!("~ Renamed: {old_name} → {new_name}\n"))?;
-                }
-                ColumnChange::TypeChanged {
-                    name,
-                    old_type,
-                    new_type,
-                } => {
-                    self.out.write_plain(&format!("~ Modified: {name} ("))?;
-                    self.write_type_name(old_type)?;
-                    self.out.write_plain(" → ")?;
-                    self.write_type_name(new_type)?;
-                    self.out.write_plain(")\n")?;
-                }
-            }
-        }
-        self.out.dedent();
-        Ok(())
+        self.write_column_changes(&cs.changes)
     }
 
     fn format_add_columns(&mut self, nc: &NewColumns) -> io::Result<()> {
@@ -389,6 +403,39 @@ impl MigrationFormatter for TermColorFormatter {
         self.out.write_plain("\n")?;
 
         Ok(())
+    }
+
+    fn format_manual_migration(&mut self, m: &ManualMigrationInfo) -> io::Result<()> {
+        self.out.write_indent()?;
+        self.out.write_plain("▸ ")?;
+        self.out
+            .write_colored("Manual migration", Some(self.out.colors().section_header), true)?;
+        self.out
+            .write_plain(&format!(" from schema 0x{}\n", m.schema_hash.to_hex()))?;
+
+        self.out.indent();
+        for table in &m.changed_tables {
+            self.write_action_prefix(&Action::Changed)?;
+            self.out.write_plain(" table ")?;
+            self.out
+                .write_colored(&table.table_name, Some(self.out.colors().table_name), true)?;
+            self.out.write_plain(" (recreated; old rows in ")?;
+            let dropped = dropped_name(&table.table_name);
+            self.out
+                .write_colored(&dropped, Some(self.out.colors().table_name), true)?;
+            self.out.write_plain(")\n")?;
+            self.write_column_changes(&table.changes)?;
+        }
+        self.out.dedent();
+        self.out.write_line("")
+    }
+}
+
+/// The name a table is renamed to while a manual migration runs.
+fn dropped_name(table_name: &NamespacedIdentifier) -> String {
+    match table_name.rsplit_once('.') {
+        Some((namespace, local)) => format!("{namespace}.dropped.{local}"),
+        None => format!("dropped.{table_name}"),
     }
 }
 
