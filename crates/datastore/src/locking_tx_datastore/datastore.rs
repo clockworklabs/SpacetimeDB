@@ -4792,4 +4792,79 @@ pub(crate) mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_drop_index_blob_fault_restores_transaction_index() -> ResultTest<()> {
+        use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
+
+        // drop_index updates two Table instances for the same logical table.
+        // Force the first removal (tx state) to succeed and the second removal
+        // (committed state) to fail; the first removal must then be undone.
+        // Bootstrap with ample memory and introduce pressure only after setup.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(
+            vec![IndexSchema::for_test("Foo_id_idx", BTreeAlgorithm::from(0))],
+            vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)],
+        );
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        // This is the only unique index. Removing it requires a pointer map,
+        // which hashes whole rows and therefore reads this large string even
+        // though the index itself only covers the integer ID column.
+        insert(
+            &datastore,
+            &mut tx,
+            table_id,
+            &u32_str_u32(1, &"x".repeat(1024 * 1024), 30),
+        )?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // The tx table's row has no external blob, so its pointer-map rebuild
+        // can finish under the budget that will block the committed rebuild.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        let index_id = tx.index_id_from_name("Foo_id_idx")?.unwrap();
+        let schema_before = tx.committed_state_write_lock.tables[&table_id].get_schema().clone();
+        // Removing the last unique index builds a pointer map. This succeeds
+        // for the small tx row, but faults the committed row's evicted blob.
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+        // Leave 256 KiB for page work, but not enough for the evicted 1 MiB
+        // blob. Match that specific error to rule out an earlier failure.
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = tx.drop_index(index_id).unwrap_err();
+        assert!(matches!(error,
+            crate::error::DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+            if matches!(*error, BlobError::MemoryLimitExceeded(_))));
+
+        // Check before rollback: it discards the tx table and would conceal an
+        // index left missing there after committed-table removal failed.
+        // Both schemas still describe the index, so both physical indices must
+        // exist too, with no replacement pointer map alongside a unique index.
+        for table in [
+            &tx.committed_state_write_lock.tables[&table_id],
+            &tx.tx_state.insert_tables[&table_id],
+        ] {
+            assert!(table.get_index_by_id(index_id).unwrap().is_unique());
+            assert!(!table.has_pointer_map());
+            assert_eq!(table.get_schema(), &schema_before);
+        }
+        drop(reservation);
+        // The failed drop must not disable uniqueness for subsequent tx inserts.
+        assert!(insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Duplicate", 20)).is_err());
+        let _ = datastore.rollback_mut_tx(tx);
+        // Rollback must also undo the earlier st_index metadata deletion.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.index_id_from_name("Foo_id_idx")?, Some(index_id));
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
 }
