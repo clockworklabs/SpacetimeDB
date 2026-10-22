@@ -120,6 +120,13 @@ Console.WriteLine("Managed module reference works");
     cmd!(cli, "build", "--module-path", &module)
         .run()
         .context("WASM build failed")?;
+    let assets: serde_json::Value = serde_json::from_reader(File::open(module.join("obj/project.assets.json"))?)?;
+    ensure!(
+        assets["targets"]["net10.0/wasi-wasm"][format!("SpacetimeDB.Runtime/{version}")]["runtime"]
+            .get("runtimes/wasi-wasm/lib/net10.0/SpacetimeDB.Runtime.dll")
+            .is_some(),
+        "WASM publish did not select the host-only Runtime"
+    );
     check_managed(&module, &consumer).context("Managed build after WASM failed")?;
     Ok(())
 }

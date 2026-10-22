@@ -461,9 +461,9 @@ public static class Module
     }
 
 #if NET10_0_OR_GREATER
-    public static int GetInstanceId(Local db) => db.InstanceId;
+    public static int GetInstanceId(Local? db) => db?.InstanceId ?? 0;
 
-    public static int GetInstanceId(LocalReadOnly db) => db.InstanceId;
+    public static int GetInstanceId(LocalReadOnly? db) => db?.InstanceId ?? 0;
 
     public static int GetInstanceId(QueryBuilder from) => from.InstanceId;
 
@@ -556,9 +556,9 @@ public partial class Local
 {
 #if NET10_0_OR_GREATER
     internal int InstanceId { get; init; }
-
-    // Null retains the host path without allocating a managed backend or scope.
-    internal DatabaseAccess? Access { get; }
+#endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal DatabaseAccess? Access { get; init; }
 
     public Local() { }
 
@@ -582,8 +582,9 @@ public sealed partial class LocalReadOnly
 
     internal static LocalReadOnly ForInstance(int instanceId) =>
         instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
-
-    internal DatabaseAccess? Access { get; }
+#endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal DatabaseAccess? Access { get; init; }
 
     public LocalReadOnly() { }
 

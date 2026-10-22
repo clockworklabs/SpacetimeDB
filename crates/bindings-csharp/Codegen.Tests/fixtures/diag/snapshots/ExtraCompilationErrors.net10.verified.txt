@@ -253,52 +253,6 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-        {
-            var names = TestDuplicateTableNameSqlNames;
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            if (names[contextInstance] is { } name)
-*/
-    Message: Ambiguity between 'AssemblyDescriptor.TestDuplicateTableNameSqlNames' and 'AssemblyDescriptor.TestDuplicateTableNameSqlNames',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0229,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0229),
-      MessageFormat: Ambiguity between '{0}' and '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-        {
-            var names = TestDuplicateTableNameSqlNames;
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            if (names[contextInstance] is { } name)
-*/
-    Message: Ambiguity between 'AssemblyDescriptor.TestDuplicateTableNameSqlNames' and 'AssemblyDescriptor.TestDuplicateTableNameSqlNames',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0229,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0229),
-      MessageFormat: Ambiguity between '{0}' and '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
         try {
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -392,11 +346,11 @@ public partial struct TestDefaultFieldValues
   },
   {/*
         {
-            public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() => new AssemblyDescriptor.Queries(global::SpacetimeDB.Internal.Module.GetInstanceId(from)).TestDuplicateTableName();
-                                                                                                                                                                                                                                                                              ^^^^^^^^^^^^^^^^^^^^^^
+            public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() => new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
+                                                                                                                                                                                                                           ^^^^^^^^^^^^^^^^^^^^^^
         }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(842)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1092)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(881)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1139)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -415,11 +369,11 @@ public partial struct TestDefaultFieldValues
   },
   {/*
         {
-            public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() => new AssemblyDescriptor.Queries(global::SpacetimeDB.Internal.Module.GetInstanceId(from)).TestDuplicateTableName();
-                                                                                                                                                                                                                                                           ^^^^^^^^^^^^^^^^^^^^^^
+            public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() => new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
+                                                                                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^
         }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(842)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1092)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(881)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1139)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -437,58 +391,12 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-            {
-                var tableName = TestDuplicateTableNameSqlName(__instanceId);
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                return new(tableName, new TestDuplicateTableNameCols(tableName), new TestDuplicateTableNameIxCols(tableName));
-*/
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.TestDuplicateTableNameSqlName(int) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(827)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.TestDuplicateTableNameSqlName(int) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1077)]',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0121,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
-      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-            {
-                var tableName = TestDuplicateTableNameSqlName(__instanceId);
-                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                return new(tableName, new TestDuplicateTableNameCols(tableName), new TestDuplicateTableNameIxCols(tableName));
-*/
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.TestDuplicateTableNameSqlName(int) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(827)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.TestDuplicateTableNameSqlName(int) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1077)]',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0121,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
-      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-                var tableName = TestDuplicateTableNameSqlName(__instanceId);
+                var tableName = __owner.ResolveTableName("diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null", "TestDuplicateTableName");
                 return new(tableName, new TestDuplicateTableNameCols(tableName), new TestDuplicateTableNameIxCols(tableName));
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(807)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1057)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(844)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1102)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -506,12 +414,12 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-                var tableName = TestDuplicateTableNameSqlName(__instanceId);
+                var tableName = __owner.ResolveTableName("diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null", "TestDuplicateTableName");
                 return new(tableName, new TestDuplicateTableNameCols(tableName), new TestDuplicateTableNameIxCols(tableName));
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(807)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1057)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(844)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1102)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -529,12 +437,12 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-                var tableName = TestDuplicateTableNameSqlName(__instanceId);
+                var tableName = __owner.ResolveTableName("diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null", "TestDuplicateTableName");
                 return new(tableName, new TestDuplicateTableNameCols(tableName), new TestDuplicateTableNameIxCols(tableName));
                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(817)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1067)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(854)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1112)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -552,12 +460,12 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-                var tableName = TestDuplicateTableNameSqlName(__instanceId);
+                var tableName = __owner.ResolveTableName("diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null", "TestDuplicateTableName");
                 return new(tableName, new TestDuplicateTableNameCols(tableName), new TestDuplicateTableNameIxCols(tableName));
                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(817)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1067)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(854)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1112)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -610,29 +518,6 @@ public partial struct TestDefaultFieldValues
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0101),
       MessageFormat: The namespace '{1}' already contains a definition for '{0}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-    {
-        private static global::SpacetimeDB.SqlTableName?[] TestDuplicateTableNameSqlNames => field ??= new global::SpacetimeDB.SqlTableName?[global::SpacetimeDB.Internal.Module.InstanceCount];
-                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-*/
-    Message: The type 'AssemblyDescriptor' already contains a definition for 'TestDuplicateTableNameSqlNames',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0102,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0102),
-      MessageFormat: The type '{0}' already contains a definition for '{1}',
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -759,31 +644,8 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-
-        private static global::SpacetimeDB.SqlTableName TestDuplicateTableNameSqlName(int contextInstance)
-                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         {
-*/
-    Message: Type 'AssemblyDescriptor' already defines a member called 'TestDuplicateTableNameSqlName' with the same parameter types,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0111,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
-      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-        {
-            public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() => new AssemblyDescriptor.Queries(global::SpacetimeDB.Internal.Module.GetInstanceId(from)).TestDuplicateTableName();
+            public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() => new AssemblyDescriptor.Queries(from).TestDuplicateTableName();
                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^
         }
 */

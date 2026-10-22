@@ -448,15 +448,68 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
         public readonly struct Tables
         {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.Internal.Local? __owner { get; }
+
+            public Tables(global::SpacetimeDB.Internal.Local? db)
+            {
+                __owner = db;
+            }
+
             public global::SpacetimeDB.Internal.TableHandles.DemoTable DemoTable => new();
+#else
+            private readonly int __instanceId;
+
+            public Tables(global::SpacetimeDB.Internal.Local? db)
+            {
+                __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(db);
+            }
+
+            public global::SpacetimeDB.Internal.TableHandles.DemoTable DemoTable => new();
+#endif
         }
 
         public readonly struct ReadOnlyTables
         {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.Internal.LocalReadOnly? __owner { get; }
+
+            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
+            {
+                __owner = db;
+            }
+
             public global::SpacetimeDB.Internal.ViewHandles.DemoTableReadOnly DemoTable => new();
+#else
+            private readonly int __instanceId;
+
+            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
+            {
+                __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(db);
+            }
+
+            public global::SpacetimeDB.Internal.ViewHandles.DemoTableReadOnly DemoTable => new();
+#endif
         }
 
-        public readonly partial struct Queries { }
+        public readonly partial struct Queries
+        {
+#if !SPACETIMEDB_WASM_AOT
+            private global::SpacetimeDB.QueryBuilder __owner { get; }
+
+            public Queries(global::SpacetimeDB.QueryBuilder from)
+            {
+                __owner = from;
+            }
+#else
+            private readonly int __instanceId;
+
+            public Queries(global::SpacetimeDB.QueryBuilder from)
+            {
+                __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(from);
+            }
+#endif
+        }
     }
 
     public static class LocalTableExtensions
@@ -504,6 +557,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
     public static partial class AssemblyDescriptor
     {
+#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] DemoTableSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -525,6 +579,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
+#endif
 
         public readonly partial struct Queries
         {
@@ -548,10 +603,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 global::DemoTable,
                 DemoTableCols,
                 DemoTableIxCols
-            > DemoTable() =>
-                new AssemblyDescriptor.Queries(
-                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
-                ).DemoTable();
+            > DemoTable() => new AssemblyDescriptor.Queries(from).DemoTable();
         }
     }
 }

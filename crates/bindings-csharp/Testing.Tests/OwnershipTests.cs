@@ -57,7 +57,7 @@ public class OwnershipTests
     }
 
     [Fact]
-    public void DefaultContextsRetainHostOwnership()
+    public void DefaultContextsAreUnbound()
     {
         Assert.Null(new SpacetimeDB.Local().Access);
         Assert.Null(new LocalReadOnly().Access);
@@ -65,5 +65,6 @@ public class OwnershipTests
         Assert.Null(context.Db.Access);
         // Authentication is created lazily; IsInternal requires the WASM host identity.
         Assert.NotNull(context.SenderAuth);
+        Assert.Throws<InvalidOperationException>(() => context.DatabaseIdentity);
     }
 }

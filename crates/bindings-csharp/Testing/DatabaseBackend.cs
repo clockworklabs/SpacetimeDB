@@ -5,6 +5,7 @@ using SpacetimeDB.Internal;
 internal sealed class DatabaseBackend : IDatabaseBackend
 {
     private readonly NativeDatastore datastore;
+    private readonly Dictionary<(string Assembly, string Table), uint> tableIds = [];
 
     public NamespaceRegistry Namespaces { get; }
     public Identity DatabaseIdentity => default;
@@ -34,6 +35,44 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         private bool finished;
 
         public IDatabaseBackend Backend => backend;
+
+        private uint TableId(string assemblyIdentity, string table)
+        {
+            var key = (assemblyIdentity, table);
+            if (!backend.tableIds.TryGetValue(key, out var id))
+            {
+                id = transaction.TableId(backend.Namespaces.Resolve(assemblyIdentity, table));
+                backend.tableIds.Add(key, id);
+            }
+            return id;
+        }
+
+        public ulong Count(string assemblyIdentity, string table)
+        {
+            lock (backend.datastore.Sync)
+            {
+                CheckActive();
+                return transaction.Count(TableId(assemblyIdentity, table));
+            }
+        }
+
+        public byte[] Insert(string assemblyIdentity, string table, byte[] row)
+        {
+            lock (backend.datastore.Sync)
+            {
+                CheckActive();
+                return transaction.Insert(TableId(assemblyIdentity, table), row);
+            }
+        }
+
+        public byte[] Scan(string assemblyIdentity, string table)
+        {
+            lock (backend.datastore.Sync)
+            {
+                CheckActive();
+                return transaction.Scan(TableId(assemblyIdentity, table));
+            }
+        }
 
         public void CheckActive()
         {
