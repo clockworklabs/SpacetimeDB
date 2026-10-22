@@ -2170,6 +2170,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_large_blob_changes_post_rollback() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_table()?;
+        datastore.commit_mut_tx(tx)?;
+
+        let original_blob = "x".repeat(2048);
+        let replacement_blob = "y".repeat(2048);
+
+        // A rolled-back insertion must release its transaction-local page and
+        // blob references, including the sequence value it generated.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &original_blob, 18))?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(all_rows(&datastore, &tx, table_id).is_empty());
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &original_blob, 18))?;
+        datastore.commit_mut_tx(tx)?;
+
+        // Roll back a transaction which removes a committed blob reference and
+        // creates a different transaction-local one.
+        let original_row = u32_str_u32(1, &original_blob, 18);
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            datastore.delete_by_rel_mut_tx(&mut tx, table_id, [original_row.clone()]),
+            1
+        );
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &replacement_blob, 19))?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![original_row]);
+        Ok(())
+    }
+
+    #[test]
     fn test_insert_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
