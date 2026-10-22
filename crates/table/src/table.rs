@@ -1593,37 +1593,77 @@ impl Table {
     ///
     /// This operation works by temporarily inserting the `row` into `self`,
     /// checking `find_same_row` on the newly-inserted row,
-    /// deleting the matching row if it exists,
-    /// then deleting the temporary insertion.
+    /// preparing a deletion [PreparedCommit] of the matching row if it exists,
+    /// removing the temporary insertion,
+    /// and then applying the prepared deletion.
+    ///
+    /// This method is used during replay, not regular transaction processing.
     pub fn delete_equal_row(&mut self, blobs: &BlobSet, row: &ProductValue) -> Result<Option<RowPointer>, Error> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
-        let (temp_row, _) = self.insert_physically_pv(blobs, row, None)?;
-        let temp_ptr = temp_row.into_pointer();
-
-        // Find the row equal to the passed-in `row`.
-        // This uses one of two approaches.
-        // Either there is a pointer map, so we use that,
-        // or, here is at least one unique index, so we use one of them.
         //
-        // SAFETY:
-        // - `self` trivially has the same `row_layout` as `self`.
-        // - We just inserted `temp_ptr`, so it's valid.
-        let (_, existing_row_ptr) = unsafe { Self::find_same_row(self, self, blobs, temp_ptr, None) }?;
+        // Write without constructing a RowRef: pinning all the row's blobs can
+        // fail after serialization succeeds, and that must also run cleanup.
+        //
+        // SAFETY: The page set, visitor, and row layout belong to this table.
+        let (temp_ptr, _) = unsafe {
+            write_row_to_pages(
+                &mut self.inner.pages,
+                None,
+                &self.inner.visitor_prog,
+                blobs,
+                &self.inner.row_layout,
+                row,
+                self.squashed_offset,
+            )
+        }?;
+        // The just-written page is resident. Retain its pin so lookup and
+        // preparation cannot evict it and make cleanup depend on storage I/O.
+        let temp_page = match self
+            .inner
+            .pages
+            .get_page(temp_ptr.page_index())
+            .expect("just written page is resident")
+            .expect("just written page exists")
+        {
+            PageRef::Resident(_) => None,
+            PageRef::Tiered(page_handle) => Some(page_handle),
+        };
 
-        // If an equal row was present, delete it.
-        if let Some(existing_row_ptr) = existing_row_ptr {
-            // SAFETY: `find_same_row` ensures that the pointer is valid.
-            unsafe { self.delete_unchecked(blobs, existing_row_ptr)? };
-        }
+        let result = (|| {
+            // Find the row equal to the passed-in `row`.
+            // This uses one of two approaches.
+            // Either there is a pointer map, so we use that,
+            // or, we have at least one unique index, so use one of them.
+            //
+            // SAFETY:
+            // - `self` trivially has the same `row_layout` as `self`.
+            // - We just inserted `temp_ptr`, so it's valid.
+            let (_, existing_row_ptr) = unsafe { Self::find_same_row(self, self, blobs, temp_ptr, None) }?;
+
+            // Fault and pin everything the deletion needs before changing any
+            // indices, pointer-map entries, physical rows, or statistics.
+            let prepared = existing_row_ptr
+                .map(|ptr| self.prepare_commit(blobs, [ptr], std::iter::empty()))
+                .transpose()?;
+            Ok::<_, TableError>((existing_row_ptr, prepared))
+        })();
 
         // Remove the temporary row we inserted in the beginning.
-        // Avoid the pointer map, since we don't want to delete it twice.
-        // SAFETY: `ptr` is valid as we just inserted it.
-        unsafe {
-            self.delete_internal_skip_pointer_map(blobs, temp_ptr)
-                .map_err(TableError::from)?;
+        // It was never added to the poiner map or statistics. Its page is still
+        // pinned, and freeing blob refs only touches the catalog, so cleanup
+        // cannot fault or perform storage I/O, even for non-resident blobs.
+        //
+        // SAFETY: `temp_ptr` is valid as we just inserted it.
+        unsafe { self.delete_internal_skip_pointer_map(blobs, temp_ptr) }
+            .expect("temporary row is resident and its blob references are valid");
+        drop(temp_page);
+
+        // Commit the changes.
+        let (existing_row_ptr, prepared) = result?;
+        if let Some(prepared) = prepared {
+            prepared.apply(self, blobs);
         }
 
         Ok(existing_row_ptr)
@@ -3921,5 +3961,199 @@ pub(crate) mod test {
         assert_eq!(table.clear(&blobs).unwrap(), 1);
         assert_eq!(table.num_rows(), 0);
         assert_eq!(blobs.num_blobs(), 0);
+    }
+
+    #[test]
+    fn delete_equal_row_failure_removes_temporary_row() {
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: PAGE_SIZE as u64,
+            hard_limit_bytes: PAGE_SIZE as u64,
+        })
+        .unwrap();
+        let manager = PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        );
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64]));
+        let mut table = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            Arc::new(manager),
+            PageEvictionPolicy::Evictable,
+        );
+        let blobs = BlobSet::new_for_test();
+
+        let mut value = 0_u64;
+        loop {
+            table.insert(&blobs, &product![value]).unwrap();
+            value += 1;
+            let page = table.inner.pages.get_page(PageIndex(0)).unwrap().unwrap();
+            if page.read().is_full(table.row_size()) {
+                break;
+            }
+        }
+        assert_eq!(table.inner.pages.num_pages(), 1);
+        assert_eq!(table.num_rows(), value);
+        table.inner.pages.evict().unwrap();
+
+        let error = table.delete_equal_row(&blobs, &product![0_u64]).unwrap_err();
+        assert!(matches!(error, Error::Table(TableError::Page(_))));
+        assert_eq!(table.scan_rows(&blobs).count() as u64, table.num_rows());
+    }
+
+    #[test]
+    fn delete_equal_row_storage_failure_preserves_rows_and_blob_references() {
+        use std::sync::atomic::Ordering;
+
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        // One page plus the single deduplicated blob. Lookup cannot have both
+        // the original full page and the temporary row's new page resident.
+        let hard_limit_bytes = PAGE_SIZE as u64 + large.len() as u64;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: hard_limit_bytes,
+            hard_limit_bytes,
+        })
+        .unwrap();
+        let resident = Arc::new(ResidentObjects::new(budget));
+        let (storage, fail_reads) = TieredStorage::with_failing_reads_for_test();
+        let storage = Arc::new(storage);
+        let blobs = BlobSet::new(resident.clone(), storage.clone());
+        let manager = Arc::new(PageManager::new(resident, PagePool::new_for_test(), storage));
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+        let mut table = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        let mut expected = Vec::new();
+        loop {
+            let row = product![expected.len() as u64, large.clone()];
+            table.insert(&blobs, &row).unwrap();
+            expected.push(row);
+            let page = table.inner.pages.get_page(PageIndex(0)).unwrap().unwrap();
+            if !page.read().has_space_for_row(table.row_size(), 1) {
+                break;
+            }
+        }
+        assert_eq!(table.inner.pages.num_pages(), 1);
+        let blob_bytes_before = blobs.bytes_used_by_blobs();
+        table.inner.pages.evict().unwrap();
+
+        // Without the temporary-row pin, trying to load the original page
+        // evicts the temporary page. A failed read then leaves cleanup needing
+        // another read, which also fails and leaks the temporary row and blob ref.
+        fail_reads.store(true, Ordering::Relaxed);
+        assert!(table.delete_equal_row(&blobs, &expected[0]).is_err());
+        fail_reads.store(false, Ordering::Relaxed);
+
+        let actual = table
+            .scan_rows(&blobs)
+            .map(|row| row.unwrap().to_product_value())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        assert_eq!(table.num_rows(), expected.len() as u64);
+        assert_eq!(blobs.num_blobs(), 1);
+        assert_eq!(blobs.bytes_used_by_blobs(), blob_bytes_before);
+        table.inner.pages.assert_non_full_pages_consistent(table.row_size());
+    }
+
+    #[test]
+    fn delete_equal_row_blob_pin_failure_removes_temporary_row() {
+        let first = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let second = "y".repeat(first.len());
+        let hard_limit_bytes = PAGE_SIZE as u64 + first.len() as u64;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: hard_limit_bytes,
+            hard_limit_bytes,
+        })
+        .unwrap();
+        let resident = Arc::new(ResidentObjects::new(budget));
+        let storage = Arc::new(TieredStorage::new_for_test());
+        let blobs = BlobSet::new(resident.clone(), storage.clone());
+        let manager = Arc::new(PageManager::new(resident, PagePool::new_for_test(), storage));
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::String, AlgebraicType::String]));
+        let mut table = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+
+        // The two blobs can be written one at a time, evicting the previous one,
+        // but constructing a RowRef cannot keep both pinned within this budget.
+        // Even this error, before lookup completes, must remove the physical row
+        // and both catalog references from the otherwise empty table.
+        let error = table.delete_equal_row(&blobs, &product![first, second]).unwrap_err();
+        assert!(matches!(error, Error::Table(TableError::Blob(error))
+            if matches!(*error, BlobError::MemoryLimitExceeded(_))));
+        assert_eq!(table.num_rows(), 0);
+        assert!(table.scan_all_row_ptrs().unwrap().is_empty());
+        assert_eq!(blobs.num_blobs(), 0);
+        assert_eq!(blobs.bytes_used_by_blobs(), 0);
+    }
+
+    #[test]
+    fn delete_equal_row_prepared_deletion_updates_indices_and_statistics() {
+        // Exercise both lookup paths, with blobs shared by distinct rows so
+        // deleting the temporary and matching rows must preserve the other use.
+        for unique_index in [false, true] {
+            let blobs = BlobSet::new_for_test();
+            let mut table = table(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+            let index_id = IndexId(1);
+            if unique_index {
+                let index = table
+                    .new_index(
+                        &BTreeAlgorithm {
+                            columns: ColList::new(0.into()),
+                        }
+                        .into(),
+                        true,
+                    )
+                    .unwrap();
+                // SAFETY: The index was constructed for this table's row layout.
+                unsafe { table.insert_index(&blobs, index_id, index) }.unwrap().unwrap();
+            }
+            let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+            let row = product![0_u64, large.clone()];
+            let survivor = product![1_u64, large.clone()];
+            let (_, inserted) = table.insert(&blobs, &row).unwrap();
+            let original_ptr = inserted.pointer();
+            table.insert(&blobs, &survivor).unwrap();
+            let blob_bytes_before = blobs.bytes_used_by_blobs();
+
+            // Sharing a unique key alone is not enough to match the whole row.
+            assert_eq!(
+                table.delete_equal_row(&blobs, &product![0_u64, "different"]).unwrap(),
+                None
+            );
+            assert_eq!(table.num_rows(), 2);
+            assert_eq!(blobs.bytes_used_by_blobs(), blob_bytes_before);
+
+            assert_eq!(table.delete_equal_row(&blobs, &row).unwrap(), Some(original_ptr));
+            assert!(!table.is_row_present(original_ptr).unwrap());
+            assert_eq!(table.num_rows(), 1);
+            assert_eq!(blobs.num_blobs(), 1);
+            assert_eq!(blobs.bytes_used_by_blobs(), large.len() as u64);
+            let remaining = table
+                .scan_rows(&blobs)
+                .map(|row| row.unwrap().to_product_value())
+                .collect::<Vec<_>>();
+            assert_eq!(remaining, [survivor]);
+            if unique_index {
+                let index = &table.indexes[&index_id];
+                let key = AlgebraicValue::U64(0);
+                assert!(index.seek_point(&index.key_from_algebraic_value(&key)).next().is_none());
+            }
+
+            // A repeated delete must be a no-op, including blob refcounts.
+            assert_eq!(table.delete_equal_row(&blobs, &row).unwrap(), None);
+            assert_eq!(table.num_rows(), 1);
+            assert_eq!(blobs.bytes_used_by_blobs(), large.len() as u64);
+        }
     }
 }
