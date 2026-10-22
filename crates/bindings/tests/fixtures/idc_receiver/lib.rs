@@ -28,10 +28,6 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {
     }
 }
 
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct RemoteModule;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ReceivePingArgs {

@@ -1417,8 +1417,6 @@ fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
     out.newline();
     print_module_binding_identity(out);
     out.newline();
-    print_module_binding_remote_module(out);
-    out.newline();
     for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
         print_module_binding_reducer_handle(module, out, reducer);
         out.newline();
@@ -1499,18 +1497,6 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {{
         <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
     }}
 }}
-"
-    );
-}
-
-fn print_module_binding_remote_module(out: &mut Indenter) {
-    writeln!(
-        out,
-        "
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct RemoteModule;
-
 "
     );
 }
