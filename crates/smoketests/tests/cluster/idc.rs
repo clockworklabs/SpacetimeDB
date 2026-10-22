@@ -122,7 +122,7 @@ impl IdcTest {
             );
             delivered.sort_by_key(|row| row[0].as_u64().unwrap());
             callbacks.sort_by_key(|row| row[0].as_u64().unwrap());
-            let pending = self.rows(&self.sender, "SELECT id FROM outbound_ping");
+            let pending = self.rows(&self.sender, "SELECT message_number FROM outbound_ping");
             assert!(delivered.len() <= expected.len(), "duplicate deliveries: {delivered:?}");
             assert!(callbacks.len() <= expected.len(), "duplicate callbacks: {callbacks:?}");
             if delivered.len() == expected.len() && callbacks.len() == expected.len() && pending.is_empty() {
@@ -159,7 +159,7 @@ impl IdcTest {
                 &self.sender,
                 &format!("SELECT succeeded FROM ping_result WHERE body = '{body}'"),
             );
-            let pending = self.rows(&self.sender, "SELECT id FROM outbound_ping");
+            let pending = self.rows(&self.sender, "SELECT message_number FROM outbound_ping");
             if !callbacks.is_empty() && pending.is_empty() {
                 assert_eq!(callbacks, vec![serde_json::json!([true])]);
                 assert_eq!(
@@ -217,7 +217,7 @@ impl IdcTest {
 
     fn edit_module(&self, module: &str, from: &str, to: &str) {
         let path = self.test.project_dir.path().join(module).join("src/lib.rs");
-        let source = std::fs::read_to_string(&path).unwrap();
+        let source = std::fs::read_to_string(&path).unwrap().replace("\r\n", "\n");
         assert!(source.contains(from), "missing source in {module}: {from}");
         std::fs::write(&path, source.replace(from, to)).unwrap();
     }
@@ -351,7 +351,7 @@ fn idc_outboxes_deliver_in_both_directions_concurrently() {
         loop {
             let mut delivered = suite.rows(database, "SELECT id, body FROM ping_log");
             let mut callbacks = suite.rows(database, "SELECT callback_order, body, succeeded FROM ping_result");
-            let pending = suite.rows(database, "SELECT id FROM outbound_ping");
+            let pending = suite.rows(database, "SELECT message_number FROM outbound_ping");
             assert!(delivered.len() <= incoming.len(), "duplicate deliveries: {delivered:?}");
             assert!(callbacks.len() <= outgoing.len(), "duplicate callbacks: {callbacks:?}");
             if delivered.len() == incoming.len() && callbacks.len() == outgoing.len() && pending.is_empty() {

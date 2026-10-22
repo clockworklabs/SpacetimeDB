@@ -31,50 +31,8 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ReceivePingArgs {
-    pub target: Identity,
     pub body: String,
 }
-
-#[doc(hidden)]
-macro_rules! __spacetimedb_typecheck_outbox_receive_ping_target_reject_duplicate {
-    ($module:ident;) => {};
-    ($module:ident; ($index:literal, $field:ident : $ty:ty as target), $($rest:tt)*) => {
-        compile_error!(concat!(
-            "outbox has multiple columns matching remote reducer parameter `",
-            stringify!(target),
-            "`"
-        ));
-    };
-    ($module:ident; ($index:literal, $field:ident : $ty:ty as $other:ident), $($rest:tt)*) => {
-        $module::__spacetimedb_typecheck_outbox_receive_ping_target_reject_duplicate!($module; $($rest)*);
-    };
-}
-
-#[doc(hidden)]
-pub(crate) use __spacetimedb_typecheck_outbox_receive_ping_target_reject_duplicate;
-
-#[doc(hidden)]
-macro_rules! __spacetimedb_typecheck_outbox_receive_ping_target {
-    ($module:ident;) => {{
-        compile_error!(concat!(
-            "outbox has no column matching remote reducer parameter `",
-            stringify!(target),
-            "`"
-        ));
-        0u16
-    }};
-    ($module:ident; ($index:literal, $field:ident : $ty:ty as target), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: $module::Identity = x; };
-        $module::__spacetimedb_typecheck_outbox_receive_ping_target_reject_duplicate!($module; $($rest)*);
-        $index
-    }};
-    ($module:ident; ($index:literal, $field:ident : $ty:ty as $other:ident), $($rest:tt)*) => {
-        $module::__spacetimedb_typecheck_outbox_receive_ping_target!($module; $($rest)*)
-    };
-}
-
-#[doc(hidden)]
-pub(crate) use __spacetimedb_typecheck_outbox_receive_ping_target;
 
 #[doc(hidden)]
 macro_rules! __spacetimedb_typecheck_outbox_receive_ping_body_reject_duplicate {
@@ -122,8 +80,7 @@ macro_rules! __spacetimedb_typecheck_outbox_receive_ping {
     ($module:path, { $($columns:tt)* }) => {{
         #[allow(unused_imports)]
         use $module as __outbox_receiver;
-        &[__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_target!(__outbox_receiver; $($columns)*),
-            __outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body!(__outbox_receiver; $($columns)*)]
+        &[__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body!(__outbox_receiver; $($columns)*)]
     }};
 }
 
@@ -135,7 +92,7 @@ pub struct receive_ping;
 
 impl spacetimedb::rt::RemoteReducer for receive_ping {
     const NAME: &'static str = "wire_ping";
-    const SIGNATURE_HASH: &'static str = "4777c169dd9a541d8cb96223475813723a22cbaed4adf8376ff58151aac62795";
+    const SIGNATURE_HASH: &'static str = "386957a94632958d5ae8343e258f3a6f9dce9d7dafc46831050894baa7a4e4e1";
     type Args = ReceivePingArgs;
 }
 

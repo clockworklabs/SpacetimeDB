@@ -14,7 +14,7 @@ pub struct OutboundPing {
     #[param(name = body)]
     payload: String,
     #[target]
-    target: receiver::Identity,
+    destination: receiver::Identity,
 }
 
 mod outboxes {
@@ -54,8 +54,9 @@ fn main() {
 
     assert_eq!(on_ping_result::ON_RESULT_OUTBOX, Some("outbound_ping"));
     assert_eq!(callbacks::on_plain_result::ON_RESULT_OUTBOX, Some("plain_ping"));
-    assert_eq!(outbound_ping__TableHandle::OUTBOX.unwrap().arg_columns, &[3, 2]);
-    assert_eq!(outboxes::plain_ping__TableHandle::OUTBOX.unwrap().arg_columns, &[1, 2]);
+    assert_eq!(outbound_ping__TableHandle::OUTBOX.unwrap().arg_columns, &[2]);
+    assert_eq!(outbound_ping__TableHandle::OUTBOX.unwrap().target_column, 3);
+    assert_eq!(outboxes::plain_ping__TableHandle::OUTBOX.unwrap().arg_columns, &[2]);
     assert!(empty_ping__TableHandle::OUTBOX.unwrap().arg_columns.is_empty());
     assert_eq!(
         outboxes::plain_ping__TableHandle::OUTBOX.unwrap().remote_reducer_name,

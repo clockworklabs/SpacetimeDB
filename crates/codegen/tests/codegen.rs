@@ -101,10 +101,7 @@ fn test_codegen_rust_outbox_fixture() {
 
     let mut builder = RawModuleDefV10Builder::new();
     builder.set_case_conversion_policy(CaseConversionPolicy::SnakeCase);
-    builder.add_reducer(
-        "receivePing",
-        ProductType::from([("Target", AlgebraicType::identity()), ("Body", AlgebraicType::String)]),
-    );
+    builder.add_reducer("receivePing", ProductType::from([("Body", AlgebraicType::String)]));
     // Noop uses case conversion; receivePing uses its explicit wire name.
     builder.add_reducer("Noop", ProductType::unit());
     let mut names = ExplicitNames::default();

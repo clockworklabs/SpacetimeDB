@@ -27,9 +27,9 @@ pub fn receive_ping(ctx: &spacetimedb::ReducerContext, body: String) {
 pub struct OutboundPing {
     #[primary_key]
     #[auto_inc]
-    id: u64,
+    message_number: u64,
     #[target]
-    target: game_world::Identity,
+    destination: game_world::Identity,
     #[param(name = body)]
     bodypo: String,
 }
@@ -37,8 +37,8 @@ pub struct OutboundPing {
 #[spacetimedb::reducer]
 pub fn enqueue_ping(ctx: &spacetimedb::ReducerContext, target: game_world::Identity, body: String) {
     ctx.db.outbound_ping().insert(OutboundPing {
-        id: 0,
-        target,
+        message_number: 0,
+        destination: target,
         bodypo: body,
     });
 }
@@ -65,7 +65,7 @@ pub struct PingResult {
 #[spacetimedb::reducer(on_result(self::outbound_ping))]
 pub fn on_ping_result(ctx: &spacetimedb::ReducerContext, row: OutboundPing, result: Result<(), String>) {
     ctx.db.ping_result().insert(PingResult {
-        id: row.id,
+        id: row.message_number,
         callback_order: 0,
         module_version: MODULE_VERSION,
         body: row.bodypo,
