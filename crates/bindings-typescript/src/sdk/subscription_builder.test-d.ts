@@ -71,7 +71,7 @@ sub.subscribe(tables => tables.peopleBy.build());
 sub.subscribe(tables => tables.lib.lineItems.where(row => row.id.eq(1)));
 // @ts-expect-error `name` is not a column of `lib.lineItems`.
 sub.subscribe(tables => tables.lib.lineItems.where(row => row.name.eq('x')));
-// @ts-expect-error it isn't keyed by its source name.
+// @ts-expect-error it isn't keyed by its canonical name.
 sub.subscribe(tables => tables.lib.line_items.build());
 // @ts-expect-error nor by its dotted accessor name at the root.
 sub.subscribe(tables => tables['lib.lineItems'].build());
@@ -80,5 +80,5 @@ sub.subscribe(tables => tables['lib.lineItems'].build());
 sub.subscribe(tables => tables.lib.peopleBy({ minId: 2 }));
 // @ts-expect-error `minId` is a number.
 sub.subscribe(tables => tables.lib.peopleBy({ minId: 'two' }));
-// @ts-expect-error it isn't keyed by its source name.
+// @ts-expect-error it isn't keyed by its canonical name.
 sub.subscribe(tables => tables.lib.people_by({ minId: 2 }));
