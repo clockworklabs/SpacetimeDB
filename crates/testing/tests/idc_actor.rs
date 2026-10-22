@@ -230,11 +230,8 @@ fn outbox_schema(name: &str) -> TableSchema {
             ColumnSchema::for_test(1, "msg_id", AlgebraicType::U64),
             ColumnSchema::for_test(2, "value", AlgebraicType::U32),
         ],
-        vec![IndexSchema::for_test(
-            &format!("{name}_msg_id"),
-            BTreeAlgorithm::from(1),
-        )],
-        vec![ConstraintSchema::unique_for_test(&format!("{name}_msg_id_unique"), 1)],
+        vec![IndexSchema::for_test(format!("{name}_msg_id"), BTreeAlgorithm::from(1))],
+        vec![ConstraintSchema::unique_for_test(format!("{name}_msg_id_unique"), 1)],
         vec![SequenceSchema {
             sequence_id: SequenceId::SENTINEL,
             sequence_name: format!("{name}_msg_id_seq").into(),
