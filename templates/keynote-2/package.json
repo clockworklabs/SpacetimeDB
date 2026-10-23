@@ -39,6 +39,6 @@
     "hdr-histogram-js": "^3.0.1",
     "spacetimedb": "workspace:^",
     "sql.js": "^1.13.0",
-    "undici": "^6.19.2"
+    "undici": "^6.29.1"
   }
 }

@@ -219,7 +219,7 @@
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
     "solid-js": "^1.6.0",
     "svelte": "^4.0.0 || ^5.0.0",
-    "undici": "^6.19.2",
+    "undici": "^6.29.1",
     "vue": "^3.3.0"
   },
   "peerDependenciesMeta": {
@@ -246,8 +246,8 @@
     }
   },
   "devDependencies": {
-    "@angular/compiler": "^21.2.12",
-    "@angular/core": "^21.2.12",
+    "@angular/compiler": "^21.2.25",
+    "@angular/core": "^21.2.25",
     "@eslint/js": "^9.17.0",
     "@size-limit/file": "^11.2.0",
     "@tanstack/react-query": "^5.90.19",
@@ -258,7 +258,7 @@
     "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "^4.1.12",
     "brotli-size-cli": "^1.0.0",
     "eslint": "^9.33.0",
     "eslint-plugin-jsdoc": "^61.5.0",
@@ -273,6 +273,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.2",
     "vite": "^7.1.5",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.12",
+    "react": "^18.3.1"
   }
 }

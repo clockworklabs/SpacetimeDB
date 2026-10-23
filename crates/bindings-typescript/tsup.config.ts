@@ -1,3 +1,5 @@
+// esbuild is used only to bundle local sources here, never to serve HTTP.
+// Its development-server file-read issues do not apply to this build path.
 // tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
 

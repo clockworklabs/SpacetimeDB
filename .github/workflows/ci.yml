@@ -411,7 +411,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
 
@@ -2105,7 +2105,7 @@ jobs:
         with:
           global-json-file: global.json
           # Keep the .NET 8 SDK and workload set below in sync.
-          dotnet-version: '8.0.416'
+          dotnet-version: '8.0.426'
 
       - name: Install .NET workloads
         run: |
@@ -2116,11 +2116,11 @@ jobs:
           # overwriting the repository's .NET 10 global.json, which later C# harness
           # tests rely on for SDK selection.
           workload_dir="$(mktemp -d)"
-          echo '{"sdk":{"version":"8.0.416","rollForward":"disable"}}' > "$workload_dir/global.json"
+          echo '{"sdk":{"version":"8.0.426","rollForward":"disable"}}' > "$workload_dir/global.json"
           (
             cd "$workload_dir"
             # Pin a coordinated workload set instead of updating individual manifests.
-            dotnet workload install wasi-experimental --version 8.0.416
+            dotnet workload install wasi-experimental --version 8.0.426
           )
 
       - name: Override NuGet packages

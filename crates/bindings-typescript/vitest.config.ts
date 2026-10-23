@@ -19,6 +19,8 @@ export default defineConfig({
       { find: 'spacetime:sys@2.2', replacement: sysMock },
     ],
   },
+  // Node tests only: no browser/UI server, and worker options come from this
+  // trusted configuration, not from client requests or module data.
   test: {
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],

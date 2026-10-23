@@ -102,6 +102,7 @@ v8.workspace = true
 wasmtime.workspace = true
 wasmtime-internal-fiber.workspace = true
 async_cache = "0.3.1"
+# No rkyv feature: strings are not deserialized from rkyv archives.
 faststr = "0.2.23"
 core_affinity = "0.8"
 
