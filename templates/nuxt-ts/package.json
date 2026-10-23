@@ -12,6 +12,14 @@
     "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
     "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
   },
+  "dependencyNotes": {
+    "nuxt": [
+      "GHSA-xfq5-w38q-pc2x: server islands can render unsanitized useHeadSafe input as HTML. This template uses neither feature.",
+      "GHSA-jjm6-p2m9-9w4x: crafted javascript: URLs can execute through NuxtLink when pages is disabled. This template has no NuxtLink or user-supplied link URLs.",
+      "GHSA-vjh5-4x84-xrqp: case-variant paths bypass server routeRules. This template defines no routeRules and does not use them for access control.",
+      "Reassess these exclusions if the template adds those features."
+    ]
+  },
   "dependencies": {
     "spacetimedb": "workspace:*",
     "nuxt": "~3.21.11",

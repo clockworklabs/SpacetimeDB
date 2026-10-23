@@ -28,6 +28,12 @@
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
+  "dependencyNotes": {
+    "drizzle-orm": [
+      "GHSA-gpj5-g38j-94v9: unescaped quotes in SQL identifiers allow SQL injection if a request controls a table, column, or alias name.",
+      "src/drizzle/schema.ts, src/rpc-servers/*-rpc-server.ts, and bun/bun-server.ts use fixed schema names. Request values are parameters, never identifiers passed to sql.identifier(), .as(), or table constructors."
+    ]
+  },
   "dependencies": {
     "@convex-dev/sharded-counter": "^0.2.0",
     "@supabase/supabase-js": "^2.80.0",

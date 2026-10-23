@@ -245,6 +245,18 @@
       "optional": true
     }
   },
+  "devDependencyNotes": {
+    "tsup": [
+      "Introduces esbuild. GHSA-67mh-4wv8-2f99 allows cross-origin dev-server reads; GHSA-g7r4-m6w7-qqqr allows Windows dev-server file reads.",
+      "Our tsup.config.ts only bundles SDK source files and never calls esbuild.serve(), so neither vulnerable HTTP endpoint exists."
+    ],
+    "vitest": [
+      "GHSA-5xrq-8626-4rwp requires a listening Vitest UI server for file read/RCE; GHSA-82fw-gwwq-j7x9 requires a dev-server redirect-mock endpoint for file reads.",
+      "Our vitest run Node tests expose neither UI/browser mode nor mockerPlugin.",
+      "Tinypool GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr require prototype-polluted worker options to execute code.",
+      "Worker options come from checked-in test code; client requests and uploaded module data cannot supply them."
+    ]
+  },
   "devDependencies": {
     "@angular/compiler": "^21.2.25",
     "@angular/core": "^21.2.25",

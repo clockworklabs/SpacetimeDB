@@ -1,8 +1,3 @@
-// esbuild GHSA-67mh-4wv8-2f99 allows cross-origin reads from its dev server;
-// GHSA-g7r4-m6w7-qqqr allows arbitrary file reads from that server on Windows.
-// This SDK build only bundles source files and never calls esbuild.serve(),
-// so neither advisory's HTTP endpoint exists in this build path.
-// tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
 
 function commonEsbuildTweaks(): NonNullable<Options['esbuildOptions']> {

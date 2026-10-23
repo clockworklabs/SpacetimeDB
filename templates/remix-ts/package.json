@@ -12,6 +12,18 @@
     "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
     "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
   },
+  "dependencyNotes": {
+    "@remix-run/react": [
+      "Introduces React Router. GHSA-wrjc-x8rr-h8h6 and GHSA-jjmj-jmhj-qwj2 allow crafted link/redirect destinations to escape the origin or execute script.",
+      "This template has no Link/useNavigate calls or redirects fed by user-supplied destinations.",
+      "GHSA-337j-9hxr-rhxg can invoke unintended browser constructors when SSR error properties are attacker-controlled.",
+      "Our loader catches fetch errors and returns an empty list; it never copies request data into serialized error properties."
+    ],
+    "@remix-run/node": [
+      "Introduces turbo-stream 2. GHSA-rxv8-25v2-qmq8 allows crafted loader data to exhaust CPU during single-fetch serialization.",
+      "vite.config.ts keeps v3_singleFetch false, so this template does not use that vulnerable transport."
+    ]
+  },
   "dependencies": {
     "@remix-run/node": "^2.17.5",
     "@remix-run/react": "^2.17.5",
@@ -20,6 +32,13 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "spacetimedb": "workspace:*"
+  },
+  "devDependencyNotes": {
+    "@remix-run/dev": [
+      "Introduces remark-mdx-frontmatter -> toml and estree-util-value-to-estree.",
+      "toml GHSA-v5mp-jgw5-2x6j and estree-util-value-to-estree GHSA-f7f6-9jq7-3rqj require crafted frontmatter to cause prototype pollution.",
+      "Frontmatter is compiled from repository files, not visitor requests. This excludes a visitor-triggered path, not malicious build inputs."
+    ]
   },
   "devDependencies": {
     "@remix-run/dev": "^2.17.5",
