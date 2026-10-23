@@ -7,6 +7,7 @@ import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
 import * as AlgebraicTypeVariants from './algebraic_type_variants';
 import { hasOwn } from './util';
+import { canCompileFunctions } from './runtime_codegen';
 
 type TypespaceType = {
   types: AlgebraicTypeType[];
@@ -448,6 +449,10 @@ export const ProductType = {
     let serializer = SERIALIZERS.get(ty);
     if (serializer != null) return serializer;
 
+    if (!canCompileFunctions()) {
+      return makeProductSerializerWithClosures(ty, typespace);
+    }
+
     if (isFixedSizeProduct(ty)) {
       const size = productSize(ty);
       const body = `\
@@ -526,6 +531,10 @@ writer.offset += ${primitiveSizes[tag]};`
 
     let deserializer = DESERIALIZERS.get(ty);
     if (deserializer != null) return deserializer;
+
+    if (!canCompileFunctions()) {
+      return makeProductDeserializerWithClosures(ty, typespace);
+    }
 
     if (isFixedSizeProduct(ty)) {
       const body = `\
@@ -678,6 +687,10 @@ export const SumType = {
       let serializer = SERIALIZERS.get(ty);
       if (serializer != null) return serializer;
 
+      if (!canCompileFunctions()) {
+        return makeSumSerializerWithClosures(ty, typespace);
+      }
+
       const serializers: Record<string, Serializer<any>> = {};
 
       const body = `\
@@ -782,6 +795,11 @@ ${ty.variants
     } else {
       let deserializer = DESERIALIZERS.get(ty);
       if (deserializer != null) return deserializer;
+
+      if (!canCompileFunctions()) {
+        return makeSumDeserializerWithClosures(ty, typespace);
+      }
+
       const deserializers: Record<string, Deserializer<any>> = {};
       deserializer = Function(
         'reader',
@@ -815,5 +833,98 @@ ${ty.variants
     return SumType.makeDeserializer(ty, typespace)(reader);
   },
 };
+
+// Closure-based (de)serializers, used when `Function` is unavailable
+// (see `canCompileFunctions`). They must produce the same bytes and values as
+// the `Function`-based ones in `ProductType` and `SumType`.
+//
+// Like those, each one is cached *before* the (de)serializers of its fields or
+// variants are built, so that a recursive type has an exit condition.
+
+function makeProductSerializerWithClosures(
+  ty: ProductTypeType,
+  typespace?: TypespaceType
+): Serializer<any> {
+  const names = ty.elements.map(({ name }) => name!);
+  const serializers: Serializer<any>[] = [];
+  const serializer: Serializer<any> = (writer, value) => {
+    for (let i = 0; i < names.length; i++) {
+      serializers[i](writer, value[names[i]]);
+    }
+  };
+  SERIALIZERS.set(ty, serializer);
+  for (const { algebraicType } of ty.elements) {
+    serializers.push(AlgebraicType.makeSerializer(algebraicType, typespace));
+  }
+  return serializer;
+}
+
+function makeProductDeserializerWithClosures(
+  ty: ProductTypeType,
+  typespace?: TypespaceType
+): Deserializer<any> {
+  const names = ty.elements.map(({ name }) => name!);
+  const deserializers: Deserializer<any>[] = [];
+  const deserializer: Deserializer<any> = reader => {
+    // Fields are always added in the same order, so V8 gives every result the
+    // same hidden class, as it does for the object literal in the fast path.
+    const result: Record<string, any> = {};
+    for (let i = 0; i < names.length; i++) {
+      result[names[i]] = deserializers[i](reader);
+    }
+    return result;
+  };
+  DESERIALIZERS.set(ty, deserializer);
+  for (const { algebraicType } of ty.elements) {
+    deserializers.push(
+      AlgebraicType.makeDeserializer(algebraicType, typespace)
+    );
+  }
+  return deserializer;
+}
+
+function makeSumSerializerWithClosures(
+  ty: SumTypeType,
+  typespace?: TypespaceType
+): Serializer<any> {
+  const tags = new Map(ty.variants.map(({ name }, i) => [name!, i]));
+  const serializers: Serializer<any>[] = [];
+  const serializer: Serializer<any> = (writer, value) => {
+    const tag = tags.get(value.tag);
+    if (tag === undefined) {
+      throw new TypeError(
+        `Could not serialize sum type; unknown tag ${value.tag}`
+      );
+    }
+    writer.writeByte(tag);
+    serializers[tag](writer, value.value);
+  };
+  SERIALIZERS.set(ty, serializer);
+  for (const { algebraicType } of ty.variants) {
+    serializers.push(AlgebraicType.makeSerializer(algebraicType, typespace));
+  }
+  return serializer;
+}
+
+function makeSumDeserializerWithClosures(
+  ty: SumTypeType,
+  typespace?: TypespaceType
+): Deserializer<any> {
+  const names = ty.variants.map(({ name }) => name!);
+  const deserializers: Deserializer<any>[] = [];
+  const deserializer: Deserializer<any> = reader => {
+    const tag = reader.readU8();
+    // An unknown tag yields `undefined`, like the `switch` in the fast path.
+    if (tag >= names.length) return undefined;
+    return { tag: names[tag], value: deserializers[tag](reader) };
+  };
+  DESERIALIZERS.set(ty, deserializer);
+  for (const { algebraicType } of ty.variants) {
+    deserializers.push(
+      AlgebraicType.makeDeserializer(algebraicType, typespace)
+    );
+  }
+  return deserializer;
+}
 
 export type ComparablePrimitive = number | string | boolean | bigint;
