@@ -8,6 +8,8 @@ import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
 You need a module and a client connected to it, and an API key from the provider of the AI model you want to use. If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+
+There's no C++ version of this guide yet.
 :::
 
 In this guide, you'll let clients ask an AI model, such as a large language model (LLM), to generate text, for example a reply from a character in your game. The request goes through your module, so your provider API key never reaches the client. You'll use a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md) to make the HTTP request, an [environment variable](../../00200-core-concepts/00100-databases/00700-environment-variables.md) to store the API key, and a private table to limit how often each player can call the model.
@@ -809,6 +811,8 @@ You now have a module that generates text with an AI model on behalf of its clie
 - A `call_model` function holds the only provider-specific code, so switching providers means replacing one function.
 - The API key lives in an environment variable on the database, never on the client.
 - The `generate_text` procedure rejects oversized prompts and players who call it too often, calls the model outside any transaction, and returns errors as values that every client can read.
+
+To allow each player a number of calls per time window, such as 10 per minute, instead of one call every 5 seconds, use the [Rate Limit submodule](https://spacetimedb.com/submodules/rate-limit) in a TypeScript module. It's a package you add to your module.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md) and [Access Permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
 

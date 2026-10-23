@@ -424,7 +424,7 @@ function onMessageBoxChanged(text: string) {
     return;
   }
   lastSignal = now;
-  conn.reducers.startTyping({});
+  conn.reducers.startTyping({}).catch(console.error);
 }
 
 async function sendMessage(text: string) {

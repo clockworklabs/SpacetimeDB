@@ -8,6 +8,8 @@ import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
 You need a module and a client connected to it, [Node.js](https://nodejs.org/) to run the sidecar, and an API key from the provider of the AI model you want to use. If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+
+There's no C++ version of this guide yet.
 :::
 
 In this guide, you'll let players ask an AI model for a reply, and have a sidecar answer them. A sidecar is a separate program that runs next to your database: it connects to it like any client, picks up the requests players make, calls the model, and writes the replies back.

@@ -8,6 +8,8 @@ import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
 You need a module and a client connected to it, and an API key from an email provider. This guide uses [Resend](https://resend.com). If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+
+There's no C++ version of this guide yet.
 :::
 
 In this guide, you'll send emails to players from your module, such as a welcome email when a player adds their address. Your module calls your email provider's HTTP API, so the provider's API key never reaches the client. You'll queue each email in a [schedule table](../../00200-core-concepts/00300-tables/00500-schedule-tables.md), send it from a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md), and store the API key in an [environment variable](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
@@ -664,6 +666,8 @@ To adapt it to your app:
 - **Duplicate emails.** If the provider accepts an email but its reply is lost, `send_email` sends it again. To avoid that, store an id with each email that stays the same across attempts, and send it in Resend's `Idempotency-Key` header.
 - **HTML emails.** Send an `html` field along with `text`. Keep `text` for email apps that don't show HTML.
 - **Unsubscribe.** Add a reducer that deletes the caller's `player_email` row, and tell players about it in each email.
+- **Track delivery.** In a TypeScript module, the [Resend submodule](https://spacetimedb.com/submodules/resend), a package you add to your module, sends email through Resend and stores whether each email was delivered, delayed or bounced, from Resend's webhooks.
+- **Wait longer between attempts.** In a TypeScript module, the [Retry submodule](https://spacetimedb.com/submodules/retry) retries background tasks with a limit on attempts, and waits twice as long before each new attempt.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) and [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
 

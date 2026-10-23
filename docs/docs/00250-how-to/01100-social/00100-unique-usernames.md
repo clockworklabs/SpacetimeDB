@@ -8,6 +8,8 @@ import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
 You need a module and a client connected to it, and an [OpenAI API key](https://platform.openai.com/api-keys). If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+
+There's no C++ version of this guide yet.
 :::
 
 In this guide, you'll let players pick a username that no one else has, ignoring case, and reject names that are offensive. You'll use a [unique column](../../00200-core-concepts/00300-tables/00240-constraints.md#unique-columns) to keep names unique, a profanity library to catch swear words, and OpenAI's [moderation API](https://developers.openai.com/api/docs/guides/moderation) to catch hateful or harassing names. The API is called from a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md), with an API key stored in an [environment variable](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
@@ -954,6 +956,8 @@ You now have usernames that are unique and checked before anyone sees them:
 - Only players with a name have a `player` row, so reducers that need one start with `require_player`.
 
 To learn more about the features used here, see [Constraints](../../00200-core-concepts/00300-tables/00240-constraints.md), [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) and [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
+
+To allow each player a number of name requests per time window, such as 5 per minute, instead of one request every 5 seconds, use the [Rate Limit submodule](https://spacetimedb.com/submodules/rate-limit) in a TypeScript module. It's a package you add to your module.
 
 To call other web services from your module the same way, see [Call an AI model from your module](../01200-common-app-patterns/00550-call-ai-model.md).
 

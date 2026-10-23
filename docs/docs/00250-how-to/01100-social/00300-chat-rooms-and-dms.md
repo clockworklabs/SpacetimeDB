@@ -495,6 +495,14 @@ std::string trim(const std::string& text) {
     return text.substr(start, end - start + 1);
 }
 
+// Rejects players who don't have a `player` row yet.
+Outcome<void> require_player(ReducerContext& ctx) {
+    if (!ctx.db[player_identity].find(ctx.sender())) {
+        return Err("Pick a name first");
+    }
+    return Ok();
+}
+
 // Returns the row that records `member` being in the room, if there is one.
 std::optional<RoomMember> find_membership(ReducerContext& ctx, uint64_t room_id, Identity member) {
     for (const auto& row : ctx.db[room_member_member].filter(member)) {
@@ -506,8 +514,9 @@ std::optional<RoomMember> find_membership(ReducerContext& ctx, uint64_t room_id,
 }
 
 SPACETIMEDB_REDUCER(create_room, ReducerContext ctx, std::string name) {
-    if (!ctx.db[player_identity].find(ctx.sender())) {
-        return Err("Pick a name first");
+    auto allowed = require_player(ctx);
+    if (allowed.is_err()) {
+        return allowed;
     }
     auto trimmed = trim(name);
     if (trimmed.empty() || trimmed.size() > MAX_ROOM_NAME_LENGTH) {
@@ -519,8 +528,9 @@ SPACETIMEDB_REDUCER(create_room, ReducerContext ctx, std::string name) {
 }
 
 SPACETIMEDB_REDUCER(join_room, ReducerContext ctx, uint64_t room_id) {
-    if (!ctx.db[player_identity].find(ctx.sender())) {
-        return Err("Pick a name first");
+    auto allowed = require_player(ctx);
+    if (allowed.is_err()) {
+        return allowed;
     }
     if (!ctx.db[chat_room_id].find(room_id)) {
         return Err("Room not found");
@@ -740,8 +750,9 @@ SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, uint64_t room_id, std::str
 }
 
 SPACETIMEDB_REDUCER(send_direct_message, ReducerContext ctx, Identity recipient, std::string text) {
-    if (!ctx.db[player_identity].find(ctx.sender())) {
-        return Err("Pick a name first");
+    auto allowed = require_player(ctx);
+    if (allowed.is_err()) {
+        return allowed;
     }
     if (recipient == ctx.sender()) {
         return Err("You can't message yourself");

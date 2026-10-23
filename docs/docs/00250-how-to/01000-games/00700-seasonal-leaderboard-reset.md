@@ -914,7 +914,7 @@ You now have a leaderboard that starts over every 4 weeks, and remembers each se
 To adapt it to your game:
 
 - **Give out rewards.** `end_season` already knows the season's best players: grant their rewards in the same reducer, for example by inserting rows into a table of badges.
-- **End seasons on calendar dates.** To end each season on the first day of the month, compute the next end date in `end_season` instead of adding a fixed length.
+- **End seasons on calendar dates.** To end each season on the first day of the month, compute the next end date in `end_season` instead of adding a fixed length. In a TypeScript module, the [Cron submodule](https://spacetimedb.com/submodules/cron), a package you add to your module, can run `end_season` on a calendar schedule instead, in the time zone you choose.
 - **Clean up old scores.** Rows from players who stopped playing stay in `player_score`. If that matters, delete the rows of old seasons from another scheduled reducer, a few at a time.
 - **Reset ratings too.** If you use [skill-based matchmaking](./00350-skill-based-matchmaking.md), you can also reset players' ratings in `end_season`, so that everyone starts the new season on equal terms.
 

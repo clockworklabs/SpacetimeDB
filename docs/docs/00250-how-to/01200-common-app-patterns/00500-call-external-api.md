@@ -8,6 +8,8 @@ import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
 You need a module and a client connected to it. If you don't have them yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first. This guide uses [Open-Meteo](https://open-meteo.com), a weather API you can call without an API key. Its free API is for non-commercial use, so check its terms before you ship.
+
+There's no C++ version of this guide yet.
 :::
 
 In this guide, you'll show live weather in your game world, from a weather API. Your module fetches the weather on a schedule and stores it in a public table, so every client gets it through a subscription, and you make one request per refresh, however many players are connected. You'll make the request from a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md), call it with a [schedule table](../../00200-core-concepts/00300-tables/00500-schedule-tables.md), and start it from the `init` [lifecycle reducer](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md).
@@ -524,7 +526,7 @@ To adapt it to your app:
 - **APIs that need a key.** Store the key in an environment variable, as in [Call an AI model from your module](./00550-call-ai-model.md#store-the-api-key), and send it in a header.
 - **Several locations.** Give `weather` one row per location, with its latitude and longitude. Open-Meteo accepts several comma-separated coordinates in one request, and returns a list, so one request still refreshes them all.
 - **Rate limits.** Check the API's limits, and refresh no more often than its data changes. Each refresh is one request, however many players are connected.
-- **Refresh on demand.** A reducer can't make the request, but it can insert a row into `weather_refresh` that runs right away. Limit how often players can do it, as the [usernames guide](../01100-social/00100-unique-usernames.md) does for name requests.
+- **Refresh on demand.** A reducer can't make the request, but it can insert a row into `weather_refresh` that runs right away. Limit how often players can do it, as the [usernames guide](../01100-social/00100-unique-usernames.md) does for name requests. In a TypeScript module, the [Rate Limit submodule](https://spacetimedb.com/submodules/rate-limit), a package you add to your module, can do it for you.
 - **APIs that send you data.** Some APIs call your server when something changes, instead of waiting for you to ask. To receive those calls, add an [HTTP handler](../../00200-core-concepts/00200-functions/00600-HTTP-handlers.md) to your module.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) and [Lifecycle Reducers](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md).

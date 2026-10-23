@@ -53,6 +53,8 @@ cargo add skillratings
 </TabItem>
 <TabItem value="cpp" label="C++">
 
+<CppModuleVersionNotice />
+
 There's no OpenSkill library for C++ yet. Instead, you'll write the rating update yourself: it's a short function, shown in [Update ratings when a match ends](#update-ratings-when-a-match-ends).
 
 </TabItem>
@@ -267,8 +269,6 @@ pub struct MatchmakingTimer {
 
 </TabItem>
 <TabItem value="cpp" label="C++">
-
-<CppModuleVersionNotice />
 
 ```cpp
 #include <spacetimedb.h>
@@ -495,7 +495,7 @@ SPACETIMEDB_REDUCER(join_queue, ReducerContext ctx) {
 - If the gap between the group's strongest and weakest player is small enough, it creates a match with them and moves past them.
 - Otherwise, it moves on by one player.
 
-The allowed gap starts at `STARTING_GAP` and grows with the time the group's longest-waiting player has waited. A player whose skill is far from everyone else's still gets a match, after waiting longer.
+The allowed gap starts at `STARTING_GAP` (`StartingGap` in C#) and grows with the time the group's longest-waiting player has waited. A player whose skill is far from everyone else's still gets a match, after waiting longer.
 
 To create a match, it deals the players to the two teams in the order A, B, B, A, A, B, B, A, and so on. Because the players are sorted by skill, this gives both teams a similar total skill. In a 1v1 match, it simply puts one player on each team.
 
@@ -664,7 +664,7 @@ SPACETIMEDB_REDUCER(match_players, ReducerContext ctx, MatchmakingTimer timer) {
 `match_players` sorts the whole queue every second, which stays fast with thousands of waiting players. It's a scheduled reducer, so clients can't call it.
 
 :::tip Larger teams
-The same code works for any team size: set `TEAM_SIZE` to 5 for 5v5 matches. The more players a match needs, the wider their skill gap tends to be, so players wait longer for a match. Raise `STARTING_GAP` or `GAP_GROWTH_PER_SECOND` to keep waits short.
+The same code works for any team size: set `TEAM_SIZE` (`TeamSize` in C#) to 5 for 5v5 matches. The more players a match needs, the wider their skill gap tends to be, so players wait longer for a match. Raise `STARTING_GAP` or `GAP_GROWTH_PER_SECOND` (`StartingGap` or `GapGrowthPerSecond` in C#) to keep waits short.
 :::
 
 ## Update ratings when a match ends
@@ -1011,7 +1011,7 @@ You now have matchmaking that puts players of similar skill together, and learns
 
 - `player_rating` stores each player's OpenSkill rating, and `finish_match` updates it when a match ends, from your game logic only.
 - `match_players` runs every second, matches neighbours in skill, and widens the allowed gap the longer players wait.
-- `TEAM_SIZE` switches between 1v1 and team matches, and teams are dealt so their total skill is similar.
+- `TEAM_SIZE` (`TeamSize` in C#) switches between 1v1 and team matches, and teams are dealt so their total skill is similar.
 - Clients show a cautious rating, `mu - 3 * sigma`, and a rank based on it.
 
 To support several game modes, such as 1v1 and 5v5, give each mode its own queue and its own ratings: a player's skill in one mode says little about the other.
