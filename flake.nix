@@ -20,7 +20,14 @@
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [(import rust-overlay)];
+          overlays = [
+            (import rust-overlay)
+            (final: prev: {
+              cacert = prev.cacert.override {
+                blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
+              };
+            })
+          ];
         };
 
         inherit (pkgs) lib;
@@ -183,6 +190,8 @@
             #                   from include/jemalloc/internal/jemalloc_preamble.h:5,
             #                   from src/pac.c:1:
             CFLAGS = "-O";
+            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
 
             packages = [
               rustStable
