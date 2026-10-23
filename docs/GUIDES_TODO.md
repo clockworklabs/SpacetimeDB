@@ -32,7 +32,7 @@ Each guide will also get a short-format video (done later, once the written guid
 
 - [x] Paginate or infinite-scroll a large table
 - [x] Admin and moderator roles
-- [ ] Send an email from your module
+- [x] Send an email from your module
 - [ ] Call an external API from your module
 - [x] Call an AI model from your module
 - [x] Call an AI model from a sidecar
