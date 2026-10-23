@@ -37,3 +37,4 @@ Each guide will also get a short-format video (done later, once the written guid
 - [x] Call an AI model from your module
 - [x] Call an AI model from a sidecar
 - [x] Seed initial data on first publish
+- [x] Store files in S3

@@ -396,4 +396,4 @@ To adapt it to your app:
 
 To learn more about the features used here, see [Lifecycle Reducers](../../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) and [Access Permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
 
-Next, you can [keep usernames unique and block offensive ones](../01100-social/00100-unique-usernames.md).
+Next, you can [store files in S3](./00700-store-files-in-s3.md).
