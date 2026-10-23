@@ -18,18 +18,10 @@ use crate::{
         blob_set::BlobHandle,
         mem::{PageEvictionCandidate, PageId},
         page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
-        BlobError, BlobSet, BudgetPermit, PageError, PageRead, PageRef,
+        BlobSet, BudgetPermit, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
-
-#[derive(Debug, thiserror::Error)]
-pub enum DeleteRowError {
-    #[error(transparent)]
-    Page(#[from] PageError),
-    #[error(transparent)]
-    Blob(#[from] BlobError),
-}
 
 /// The set of pages of a [Table].
 #[derive(Debug)]
@@ -566,7 +558,7 @@ impl PageSet {
         fixed_row_size: Size,
         row_ptr: RowPointer,
         blobs: &BlobSet,
-    ) -> Result<BlobNumBytes, DeleteRowError> {
+    ) -> Result<BlobNumBytes, PageError> {
         let page_index = row_ptr.page_index();
         let (blob_bytes_deleted, is_empty, available_granules) =
             self.with_page_mut(page_index, fixed_row_size, |page| {
@@ -577,14 +569,14 @@ impl PageSet {
                 // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
                 //   The size is also conistent with `var_len_visitor`.
                 let blob_bytes_deleted =
-                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blobs) }?;
+                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blobs) };
 
-                Ok::<_, BlobError>((
+                (
                     blob_bytes_deleted,
                     page.num_rows() == 0,
                     page.available_var_len_granules(),
-                ))
-            })??;
+                )
+            })?;
 
         if is_empty {
             if let Some(resident) = self.storage.resident_mut() {

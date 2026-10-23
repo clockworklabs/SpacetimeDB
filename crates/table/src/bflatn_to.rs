@@ -626,7 +626,7 @@ pub mod test {
         // The failed row's page allocations must also be reusable.
         drop(first_pin);
         let (offset, _) = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap();
-        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs) }.unwrap();
+        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs) };
         assert_eq!(page.num_rows(), 0);
         assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
     }
