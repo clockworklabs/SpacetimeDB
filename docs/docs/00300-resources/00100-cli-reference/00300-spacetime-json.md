@@ -86,8 +86,10 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 
 `spacetime generate` produces two kinds of bindings:
 
-- **Client bindings** (`--bindings client`, the default) are used by an external application to connect to a database, subscribe to data, and call its reducers.
-- **Module bindings** (`--bindings module`), also called **receiver bindings**, are used inside one database module to make asynchronous inter-database communication (IDC) calls to another database's reducers. Rust and TypeScript modules support these bindings; C# and C++ module bindings are not implemented yet.
+- **Client bindings** are used by clients to connect to a database, subscribe to data, and call its reducers.
+- **Module bindings**, also called **receiver bindings**, are used inside one database module to make asynchronous inter-database communication (IDC) calls to another database's reducers. Rust and TypeScript modules support these bindings; C# and C++ module bindings are not implemented yet.
+
+With `spacetime.json`, regular `generate` entries default to `"bindings": "client"`; set `"bindings": "module"` in an entry to select module bindings explicitly. Entries synthesized from `dependencies` automatically use module bindings, so no `--bindings` CLI flag is needed for receiver dependencies.
 
 The **calling database** contains the code making the inter-database call. The **receiving database** contains the reducers being called. In the examples below, `lobby` is the calling database and `game-world` is the receiving database. Declare receiver binding inputs in the calling database's `dependencies` array.
 
@@ -141,7 +143,7 @@ A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`
 
 ### Explicit module-binding request
 
-The equivalent CLI mode can be selected explicitly. Here `--module-path` identifies the **receiving module**, while `--out-dir` explicitly places output in the **calling module** project:
+Without configuration, select the binding kind with `--bindings client` (the default) or `--bindings module`. When using `spacetime.json`, `--bindings` can override the binding kind only if a single generation entry is selected; it is rejected when multiple entries are selected. Prefer the config fields described above for configured generation. Here `--module-path` identifies the **receiving module**, while `--out-dir` explicitly places output in the **calling module** project:
 
 ```bash
 spacetime generate --no-config --bindings module --lang rust \
