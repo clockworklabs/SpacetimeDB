@@ -372,10 +372,10 @@ uuid = { version = "1.18.1", default-features = false }
 # See librusty_v8.nix for more details.
 # When updating the V8 crate, either update the version and hashes in that file,
 # or ping phoebe @gefjon to do so.
-v8 = "=145.0.0"
+v8 = "=152.2.0"
 # This version is kept in sync with the version of ICU required by v8.
 # When that changes, the `v8::icu::set_common_data_XX()` function is renamed.
-deno_core_icudata = "0.77"
+deno_core_icudata = "0.78"
 
 walkdir = "2.2.5"
 wasmbin = "0.6"
@@ -385,6 +385,8 @@ xdg = "2.5"
 xmltree = "0.11"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
+# Profiling uses inferno/quick-xml to write SVG flamegraphs, not to parse XML;
+# the quick-xml namespace/attribute parsing issues do not affect this path.
 jemalloc_pprof = { version = "0.8", features = ["symbolize", "flamegraph"] }
 zstd-framed = { version = "0.1.1", features = ["tokio"] }
 

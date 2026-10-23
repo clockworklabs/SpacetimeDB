@@ -186,9 +186,9 @@ jobs:
           if [[ "${OPENSSL_RUST_USE_NASM:-}" == "1" ]]; then
             openssl_suffix="-nasm"
           fi
-          echo "v8-release-key=rusty-v8-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
-          echo "v8-debug-key=rusty-v8-debug-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
-          echo "openssl-key=openssl-v1-300.5.3+3.5.4-${target}${openssl_suffix}" >>"$GITHUB_OUTPUT"
+          echo "v8-release-key=rusty-v8-v1-152.2.0-${target}" >>"$GITHUB_OUTPUT"
+          echo "v8-debug-key=rusty-v8-debug-v1-152.2.0-${target}" >>"$GITHUB_OUTPUT"
+          echo "openssl-key=openssl-v1-400.0.2+4.0.3-${target}${openssl_suffix}" >>"$GITHUB_OUTPUT"
 
       - &cache-rusty-v8
         name: Cache rusty_v8

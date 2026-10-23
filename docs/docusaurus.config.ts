@@ -24,6 +24,8 @@ import { InkeepConfig } from '@inkeep/cxkit-docusaurus';
 import { redirects } from './redirects';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+// MDX/frontmatter parsing and build-cache serialization consume repository files
+// and trusted build configuration, not requests to the static documentation site.
 
 const shikiTheme = {
   ...ogTheme,

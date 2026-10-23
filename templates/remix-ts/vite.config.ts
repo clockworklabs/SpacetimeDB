@@ -1,6 +1,9 @@
 import { vitePlugin as remix } from '@remix-run/dev';
 import { defineConfig } from 'vite';
 
+// This template has no user-controlled Link/redirect destinations and does not
+// copy request data into error properties used by SSR hydration. Reassess the
+// React Router advisories if either behavior is added.
 export default defineConfig({
   plugins: [
     remix({

@@ -20,6 +20,8 @@ ensureSqliteDirExistsSync(SQLITE_FILE, mode);
 const dbFile = new Database(mode === 'fastest' ? ':memory:' : SQLITE_FILE);
 applySqlitePragmas(dbFile, mode);
 
+// SQL identifiers are fixed by this schema, never derived from requests;
+// the Drizzle identifier-escaping issue does not affect these queries.
 const accounts = sqliteTable('accounts', {
   id: integer('id').primaryKey(),
   balance: integer('balance').notNull(),

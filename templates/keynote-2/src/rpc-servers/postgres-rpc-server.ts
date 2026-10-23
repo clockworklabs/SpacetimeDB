@@ -14,6 +14,8 @@ if (!PG_URL) {
 
 const { poolMax } = getSharedRuntimeDefaults();
 
+// SQL identifiers are fixed by this schema, never derived from requests;
+// the Drizzle identifier-escaping issue does not affect these queries.
 const accounts = pgTable('accounts', {
   id: integer('id').primaryKey(),
   balance: pgBigint('balance', { mode: 'bigint' }).notNull(),
