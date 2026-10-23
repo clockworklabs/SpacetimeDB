@@ -104,7 +104,7 @@ Your database will be available at `https://maincloud.spacetimedb.com`.
 
 For inter-database calls, the **calling database** needs module bindings for the **receiving database** whose reducers it calls. These are distinct from the client bindings used by clients. Rust and TypeScript modules support receiver bindings.
 
-When the root database in `spacetime.json` declares `dependencies`, `dev` generates those receiver bindings **before** building the calling module, including on rebuilds. It watches receiver sources as well as published module sources, even when the receivers are outside the calling module directory. Child targets may provide receiver source settings, but their own dependency arrays are not processed by `dev`.
+When the root database in `spacetime.json` declares `dependencies`, `dev` generates those receiver bindings **before** building the calling module, including on rebuilds. It watches receiving module source paths as well as published module sources, even when the receiving modules are outside the calling module directory. Child targets may provide receiving module source settings, but their own dependency arrays are not processed by `dev`.
 
 `--skip-generate` skips both receiver and client binding generation and removes receiver-only watch paths; it does not supply missing bindings. `--skip-publish` does not skip generation. See the [receiver dependency reference](/cli-reference/spacetime-json#receiver-dependencies) for configuration and language support.
 
