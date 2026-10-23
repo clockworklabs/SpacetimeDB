@@ -90,12 +90,12 @@ impl Locking {
 
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_identity: Identity, config: TieredStorageConfig) -> Result<Self> {
+    pub fn bootstrap(database_identity: Identity, storage_config: TieredStorageConfig) -> Result<Self> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Self::new(database_identity, TieredDatabaseStorage::new(config));
+        let datastore = Self::new(database_identity, TieredDatabaseStorage::empty(storage_config)?);
         let mut commit_state = datastore.committed_state.write_arc();
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -183,7 +183,16 @@ impl Locking {
             ..
         } = snapshot;
 
-        let datastore = Self::new(database_identity, TieredDatabaseStorage::with_blobs(config, blob_store));
+        let datastore = Self::new(
+            database_identity,
+            TieredDatabaseStorage::from_snapshot(
+                config,
+                blob_store,
+                tables
+                    .values()
+                    .flat_map(|pages| pages.iter().filter_map(|p| p.as_deref())),
+            )?,
+        );
         let mut committed_state = datastore.committed_state.write_arc();
 
         // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.

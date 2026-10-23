@@ -32,6 +32,12 @@ impl From<&mut Page> for PageHash {
     }
 }
 
+impl From<&Page> for PageHash {
+    fn from(page: &Page) -> Self {
+        Self(page.content_hash())
+    }
+}
+
 impl ValidAsIdentityHash for PageHash {}
 
 /// Wrapper around a [crate::blob_store::BlobHash] that allows it to be used as
@@ -49,6 +55,10 @@ impl BlobHashWrapper {
 
     pub fn hash_from_bytes(bytes: &[u8]) -> Self {
         Self(BlobHash::hash_from_bytes(bytes))
+    }
+
+    pub fn into_object_key(self) -> ObjectKey {
+        ObjectKey::Blob(self)
     }
 }
 

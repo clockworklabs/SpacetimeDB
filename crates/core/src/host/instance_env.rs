@@ -1533,6 +1533,7 @@ pub(super) mod test {
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
+    use spacetimedb_table::tiered::TieredStorageConfig;
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
     fn temp_logger() -> DatabaseLogger {
@@ -1604,15 +1605,16 @@ pub(super) mod test {
 
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
         let (durable, rx) = tokio::sync::watch::channel(None);
-        let persistence = Persistence::new(
-            PendingDurability(rx),
-            || Ok(Default::default()),
+        let persistence = Persistence::persistent(
+            Arc::new(PendingDurability(rx)),
+            Arc::new(|| Ok(Default::default())),
             None,
+            TieredStorageConfig::new_for_test(),
             spacetimedb_runtime::Handle::tokio(runtime.handle().clone()),
         );
         let db = Arc::new(TestDB::open_db(
             spacetimedb_durability::EmptyHistory::new(),
-            Some(persistence),
+            persistence,
             None,
             0,
         )?);

@@ -561,11 +561,15 @@ impl BlobMap {
         debug_assert_eq!(hash, &BlobHash::hash_from_bytes(&blob));
         self.inner.insert((*hash).into(), BlobMapEntry { uses, blob });
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&BlobHashWrapper, &BlobMapEntry)> {
+        self.inner.iter()
+    }
 }
 
-struct BlobMapEntry {
-    uses: NonZeroUsize,
-    blob: Box<[u8]>,
+pub struct BlobMapEntry {
+    pub uses: NonZeroUsize,
+    pub blob: Box<[u8]>,
 }
 
 #[cfg(test)]
