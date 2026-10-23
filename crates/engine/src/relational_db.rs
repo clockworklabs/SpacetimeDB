@@ -1567,7 +1567,7 @@ impl RelationalDB {
     ) -> Result<impl Iterator<Item = Result<StOutboundStreamRow, DBError>> + 'a, DBError> {
         Ok(self
             .iter(tx, ST_OUTBOUND_STREAM_ID)?
-            .map(|row| StOutboundStreamRow::try_from(row).map_err(DBError::from)))
+            .map(|row| StOutboundStreamRow::try_from(row?).map_err(DBError::from)))
     }
 
     /// Find a sender stream by its durable id.
@@ -1600,10 +1600,10 @@ impl RelationalDB {
         let msg_column = schema
             .primary_key
             .ok_or_else(|| anyhow!("outbox table {table_id} has no primary key"))?;
-        Ok(tx
-            .iter_by_col_eq(table_id, msg_column, &msg_id.into())?
+        tx.iter_by_col_eq(table_id, msg_column, &msg_id.into())?
             .next()
-            .map(|row| row.to_product_value()))
+            .map(|row| Ok(row?.to_product_value()))
+            .transpose()
     }
 
     /// Returns an iterator,

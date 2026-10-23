@@ -2,8 +2,8 @@ use crate::{
     bflatn_to::required_var_len_granules_for_row,
     page,
     tiered::{
-        BlobError, BlobReadSet, BlobSet, DeleteRowError, PageBorrow, PageError, PageEvictionPolicy, PageHandle,
-        PageManager, PageRef, PageSet, PreparedCommit, ReservedPage,
+        BlobError, BlobReadSet, BlobSet, PageBorrow, PageError, PageEvictionPolicy, PageHandle, PageManager, PageRef,
+        PageSet, PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
 };
@@ -98,15 +98,6 @@ impl From<PageError> for TableError {
 impl From<BlobError> for TableError {
     fn from(error: BlobError) -> Self {
         Self::Blob(Box::new(error))
-    }
-}
-
-impl From<DeleteRowError> for TableError {
-    fn from(e: DeleteRowError) -> Self {
-        match e {
-            DeleteRowError::Blob(e) => e.into(),
-            DeleteRowError::Page(e) => e.into(),
-        }
     }
 }
 
@@ -766,9 +757,10 @@ impl Table {
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_pin, blob_bytes) }?;
+        let (hash, ..) = unsafe { self.confirm_insertion::<true>(blobs, row_pin.clone(), blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row_ptr) }?;
+        let row_ref = unsafe { self.get_row_ref_from_pinned_unchecked(row_pin) };
+
         Ok((hash, row_ref))
     }
 
@@ -793,9 +785,9 @@ impl Table {
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_pin, blob_bytes) }?;
+        let (hash, ..) = unsafe { self.confirm_insertion::<true>(blobs, row_pin.clone(), blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row_ptr) }?;
+        let row_ref = unsafe { self.get_row_ref_from_pinned_unchecked(row_pin) };
 
         Ok((hash, row_ref))
     }
@@ -960,26 +952,23 @@ impl Table {
             PageRef::Resident(_) => None,
             PageRef::Tiered(handle) => Some(handle),
         };
-        let row_blobs = match row_blobs {
-            Ok(row_blobs) => row_blobs,
-            Err(error) => {
-                // `page` still pins the newly written page. Blob refcount
-                // removal only touches the catalog, even for evicted blobs.
-                // SAFETY: `ptr` was just inserted and is still live.
-                unsafe { self.delete_internal_skip_pointer_map(blobs, ptr) }
-                    .expect("new row is resident and its blob references are valid");
-                return Err(TableError::from(error).into());
+        match row_blobs {
+            Ok(blobs) => {
+                let row_ref = RowRef {
+                    table: &self.inner,
+                    pointer: ptr,
+                    page,
+                    blobs,
+                };
+                Ok((row_ref, blob_bytes))
             }
-        };
-        Ok((
-            RowRef {
-                table: &self.inner,
-                pointer: ptr,
-                page,
-                blobs: row_blobs,
-            },
-            blob_bytes,
-        ))
+            Err(e) => {
+                let row = PinnedRow::new(ptr, page, BlobReadSet::empty());
+                // SAFETY: `ptr` was just inserted and is still live.
+                unsafe { self.delete_internal_skip_pointer_map(blobs, row) };
+                Err(TableError::from(e).into())
+            }
+        }
     }
 
     /// Returns all the columns with sequences that need generation for this `row`.
@@ -987,18 +976,14 @@ impl Table {
     /// # Safety
     ///
     /// `self.is_row_present(row)` must hold.
-    pub unsafe fn sequence_triggers_for<'a>(
-        &'a self,
-        blobs: &'a BlobSet,
-        row: RowPointer,
-    ) -> Result<(ColList, SeqIdList), Error> {
+    pub unsafe fn sequence_triggers_for(&self, row: PinnedRow) -> (ColList, SeqIdList) {
         let sequences = &*self.get_schema().sequences;
         let row_ty = self.row_layout().product();
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row) }?;
+        let row_ref = unsafe { self.get_row_ref_from_pinned_unchecked(row) };
 
-        Ok(sequences
+        sequences
             .iter()
             // Find all the sequences that are triggered by this row.
             .filter(|seq| {
@@ -1012,10 +997,10 @@ impl Table {
                 val.is_numeric_zero()
             })
             .map(|seq| (seq.col_pos, seq.sequence_id))
-            .unzip())
+            .unzip()
     }
 
-    /// Writes `seq_val` to the column at `col_id` in the row identified by `ptr`.
+    /// Writes `seq_val` to the column at `col_id` in `row`.
     ///
     /// Truncates the `seq_val` to fit the type of the column.
     ///
@@ -1023,12 +1008,7 @@ impl Table {
     ///
     /// - `self.is_row_present(row)` must hold.
     /// - `col_id` must be a valid column, with a primitive integer type, of the row type.
-    pub unsafe fn write_gen_val_to_col(
-        &mut self,
-        col_id: ColId,
-        ptr: RowPointer,
-        seq_val: i128,
-    ) -> Result<(), PageError> {
+    pub unsafe fn write_gen_val_to_col(&mut self, col_id: ColId, row: &PinnedRow, seq_val: i128) {
         let row_ty = self.inner.row_layout.product();
         // SAFETY: Caller promised that `col_id` was a valid column.
         let elem_ty = unsafe { row_ty.elements.get_unchecked(col_id.idx()) };
@@ -1042,6 +1022,7 @@ impl Table {
             dst[offset..offset + N].copy_from_slice(&bytes);
         }
 
+        let ptr = row.pointer();
         let fixed_row_size = self.inner.row_layout.size();
         self.inner
             .pages
@@ -1065,8 +1046,8 @@ impl Table {
                     // SAFETY: Columns with sequences must be integer types.
                     PrimitiveType::Bool | PrimitiveType::F32 | PrimitiveType::F64 => unsafe { unreachable_unchecked() },
                 }
-            })?;
-        Ok(())
+            })
+            .expect("pinned row's page is resident")
     }
 
     /// Performs all the checks necessary after having fully decided on a rows contents.
@@ -1120,7 +1101,6 @@ impl Table {
         blob_bytes_added: BlobNumBytes,
     ) -> Result<RowPointer, InsertError> {
         let new_ptr = new.pointer();
-        let old_ptr = old.pointer();
 
         // (1) Remove old row from indices.
         // SAFETY: Caller promised that `self.is_row_present(old)` holds.
@@ -1138,8 +1118,7 @@ impl Table {
 
         // Remove the old row physically.
         // SAFETY: The physical `old_ptr` still exists.
-        let blob_bytes_removed =
-            unsafe { self.delete_internal_skip_pointer_map(blobs, old_ptr) }.map_err(TableError::from)?;
+        let blob_bytes_removed = unsafe { self.delete_internal_skip_pointer_map(blobs, old) };
         self.update_statistics_deleted_row(blob_bytes_removed);
 
         // Update statistics.
@@ -1212,11 +1191,11 @@ impl Table {
             // Do this before the actual deletion, as `index.delete` needs a `RowRef`
             // so it can extract the appropriate value.
             // SAFETY: We just inserted `new`, so it must be present.
-            unsafe { self.delete_from_indices_until(blobs, new.pointer(), index_id)? };
+            unsafe { self.delete_from_indices_until(new.clone(), index_id) };
 
             // Cleanup, undo the row insertion of `new`s.
             // SAFETY: We just inserted `new`, so it must be present.
-            unsafe { self.delete_internal(blobs, new)? };
+            unsafe { self.delete_internal(blobs, new) };
 
             return Err(error);
         }
@@ -1517,10 +1496,28 @@ impl Table {
         unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }
     }
 
+    /// Convert a [PinnedRow] into a [RowRef].
+    ///
+    /// # Safety
+    ///
+    /// `self.is_row_present(pinned_row.pointer())` must hold.
+    /// That is, `pinned_row` must refer to a row within `self`
+    /// which was previously inserted and has not been deleted since.
+    ///
+    /// See also the safety requirements for [Self::get_row_ref_unchecked].
     pub unsafe fn get_row_ref_from_pinned_unchecked<'a>(&'a self, pinned_row: PinnedRow) -> RowRef<'a> {
         unsafe { self.inner.get_row_ref_from_pinned_unchecked(pinned_row) }
     }
 
+    /// Pin the row referenced by `ptr`.
+    ///
+    /// # Safety
+    ///
+    /// `self.is_row_present(ptr)` must hold.
+    /// That is, `ptr` must refer to a row within `self`
+    /// which was previously inserted and has not been deleted since.
+    ///
+    /// See also the safety requirements for [Self::get_row_ref_unchecked].
     pub unsafe fn pin_row_unchecked(&self, blobs: &BlobSet, ptr: RowPointer) -> Result<PinnedRow, TableError> {
         let row_ref = unsafe { self.get_row_ref_unchecked(blobs, ptr) }?;
         Ok(row_ref.into_pinned_row())
@@ -1531,19 +1528,15 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// `ptr` must point to a valid, live row in this table.
-    pub unsafe fn delete_internal_skip_pointer_map(
-        &mut self,
-        blobs: &BlobSet,
-        ptr: RowPointer,
-    ) -> Result<BlobNumBytes, DeleteRowError> {
-        debug_assert!(self.is_row_present(ptr).unwrap());
+    /// `row` must point to a valid, live row in this table.
+    pub unsafe fn delete_internal_skip_pointer_map(&mut self, blobs: &BlobSet, row: PinnedRow) -> BlobNumBytes {
+        debug_assert!(self.is_row_present(row.pointer()).unwrap());
         if self.inner.row_layout.layout().fixed
             // SAFETY: The caller proves the row is live; the layout check proves
             // that deleting it needs no variable-length or blob operations.
-            && unsafe { self.inner.pages.delete_fixed_resident_row(ptr, self.inner.row_layout.size()) }
+            && unsafe { self.inner.pages.delete_fixed_resident_row(row.pointer(), self.inner.row_layout.size()) }
         {
-            return Ok(BlobNumBytes::default());
+            return BlobNumBytes::default();
         }
         // Delete the physical row.
         //
@@ -1554,8 +1547,9 @@ impl Table {
         unsafe {
             self.inner
                 .pages
-                .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blobs)
+                .delete_row(&self.inner.visitor_prog, self.row_size(), row.pointer(), blobs)
         }
+        .expect("pinned row can't fault")
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -1566,7 +1560,7 @@ impl Table {
     /// Use `delete_unchecked` or `delete` to delete a row with index updating.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_internal(&mut self, blobs: &BlobSet, row: PinnedRow) -> Result<BlobNumBytes, TableError> {
+    unsafe fn delete_internal(&mut self, blobs: &BlobSet, row: PinnedRow) -> BlobNumBytes {
         // Remove the set semantic association.
         if let Some(pointer_map) = &mut self.pointer_map {
             // SAFETY: `self.is_row_present(row)` holds.
@@ -1577,8 +1571,8 @@ impl Table {
         }
 
         // Delete the physical row.
-        // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
-        unsafe { self.delete_internal_skip_pointer_map(blobs, row.pointer()) }.map_err(Into::into)
+        // SAFETY: `row` points to a valid row in this table as `self.is_row_present(row)` holds.
+        unsafe { self.delete_internal_skip_pointer_map(blobs, row) }
     }
 
     /// Deletes `row` from the table.
@@ -1586,7 +1580,7 @@ impl Table {
     /// This method does update statistics.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, row: PinnedRow) -> Result<(), TableError> {
+    unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, row: PinnedRow) {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
@@ -1594,32 +1588,23 @@ impl Table {
         unsafe { self.delete_from_indices(row.clone()) };
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let blob_bytes_deleted = unsafe { self.delete_internal(blobs, row)? };
+        let blob_bytes_deleted = unsafe { self.delete_internal(blobs, row) };
 
         self.update_statistics_deleted_row(blob_bytes_deleted);
-
-        Ok(())
     }
 
-    /// Delete `row_ref` from all the indices of this table until `index_id` is reached.
+    /// Delete `row` from all the indices of this table until `index_id` is reached.
     /// The range is exclusive of `index_id`.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_from_indices_until(
-        &mut self,
-        blobs: &BlobSet,
-        ptr: RowPointer,
-        index_id: IndexId,
-    ) -> Result<(), TableError> {
+    unsafe fn delete_from_indices_until(&mut self, row: PinnedRow, index_id: IndexId) {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_from_pinned_unchecked(row) };
 
         for (_, index) in self.indexes.range_mut(..index_id) {
             // SAFETY: any index in this table was constructed with the same row type as this table.
             unsafe { index.delete(&row_ref) };
         }
-
-        Ok(())
     }
 
     /// Delete `row` from all the indices of this table.
@@ -1660,7 +1645,26 @@ impl Table {
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        unsafe { self.delete_unchecked(blobs, row_pin) }?;
+        unsafe { self.delete_unchecked(blobs, row_pin) };
+
+        Ok(Some(ret))
+    }
+
+    pub fn delete_pinned<R>(
+        &mut self,
+        blobs: &BlobSet,
+        row: PinnedRow,
+        before: impl for<'b> FnOnce(RowRef<'b>) -> R,
+    ) -> Result<Option<R>, TableError> {
+        if !self.is_row_present(row.pointer())? {
+            return Ok(None);
+        }
+
+        // SAFETY: We only call `get_row_ref_from_pinned_unchecked` when `is_row_present` holds.
+        let ret = before(unsafe { self.get_row_ref_from_pinned_unchecked(row.clone()) });
+
+        // SAFETY: We've checked above that `self.is_row_present(ptr)`.
+        unsafe { self.delete_unchecked(blobs, row) };
 
         Ok(Some(ret))
     }
@@ -1729,8 +1733,9 @@ impl Table {
                 self.squashed_offset,
             )
         }?;
-        // The just-written page is resident. Retain its pin so lookup and
-        // preparation cannot evict it and make cleanup depend on storage I/O.
+        // The just written page is resident.
+        // Pin it with an empty blob read set, as we don't need resident blobs
+        // for deletion after applying `with`.
         let temp_page = match self
             .inner
             .pages
@@ -1741,6 +1746,7 @@ impl Table {
             PageRef::Resident(_) => None,
             PageRef::Tiered(page_handle) => Some(page_handle),
         };
+        let temp_pin = PinnedRow::new(temp_ptr, temp_page, BlobReadSet::empty());
 
         let result = with(self, temp_ptr);
 
@@ -1750,9 +1756,7 @@ impl Table {
         // cannot fault or perform storage I/O, even for non-resident blobs.
         //
         // SAFETY: `temp_ptr` is valid as we just inserted it.
-        unsafe { self.delete_internal_skip_pointer_map(blobs, temp_ptr) }
-            .expect("temporary row is resident and its blob references are valid");
-        drop(temp_page);
+        unsafe { self.delete_internal_skip_pointer_map(blobs, temp_pin) };
 
         result
     }
@@ -2728,6 +2732,9 @@ impl Hash for RowRef<'_> {
 pub struct PinnedRow {
     pointer: RowPointer,
     page: Option<PageHandle>,
+    // TODO(disk-tables): We don't always need the blobs pinned, e.g. if the
+    // only operation is to delete the row. We can't make a valid row ref
+    // without the blob read set, though.
     blobs: BlobReadSet,
 }
 
