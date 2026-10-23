@@ -4,17 +4,20 @@ use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
-use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
-use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema};
+use spacetimedb_schema::{
+    identifier::{Identifier, NamespacedIdentifier},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema},
+};
 use spacetimedb_table::{
-    blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     pointer_map::PointerMap,
     static_assert_size,
-    table::{RowRef, Table, TableAndIndex},
+    table::{RowRef, Table, TableAndIndex, TableError},
     table_index::TableIndex,
+    tiered::{BlobSet, TieredDatabaseStorage},
 };
 use std::collections::{btree_map, BTreeMap};
+use std::iter::Peekable;
 use thin_vec::ThinVec;
 
 /// A mapping to find the actual index given an `IndexId`.
@@ -46,7 +49,6 @@ pub(super) type IndexIdMap = IntMap<IndexId, TableId>;
 ///   - any row in `insert_tables` must not be in the associated `CommittedState`
 ///   - any row in `delete_tables` must be in the associated `CommittedState`
 ///   - any row cannot be in both `insert_tables` and `delete_tables`
-#[derive(Default)]
 pub(super) struct TxState {
     //NOTE: Need to preserve order to correctly restore the db after reopen
     /// For any `TableId` that has had a row inserted into it in this TX
@@ -70,7 +72,7 @@ pub(super) struct TxState {
     /// - Maintain the set of newly-referenced blob hashes in the `TxState`,
     ///   and free each of them during rollback.
     /// - Traverse all rows in the `insert_tables` and free each of their blobs during rollback.
-    pub(super) blob_store: HashMapBlobStore,
+    pub(super) blob_store: BlobSet,
 
     /// All of the immediately applied schema changes to the committed state during this transaction.
     ///
@@ -78,7 +80,7 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 96);
+static_assert_size!(TxState, 144);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {
@@ -104,7 +106,8 @@ impl MemoryUsage for TxState {
 /// The places that do need to care about changes are those that make them, and merge/rollback.
 /// Architecting this way should benefit performance both during transactions and merge.
 /// On rollback, it should be fairly cheap to e.g., just re-add an index or drop it on the floor.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum PendingSchemaChange {
     /// The [`TableIndex`] / [`IndexSchema`] with `IndexId`
     /// was removed from the table with [`TableId`].
@@ -249,7 +252,7 @@ impl TxState {
     // with `table_id`
     // and has not been passed to `self.delete`
     // is sufficient to demonstrate that a call to `self.get` is safe.
-    pub(super) fn get(&self, table_id: TableId, row_ptr: RowPointer) -> RowRef<'_> {
+    pub(super) fn get(&self, table_id: TableId, row_ptr: RowPointer) -> Result<RowRef<'_>, TableError> {
         debug_assert!(
             row_ptr.squashed_offset().is_tx_state(),
             "Cannot get COMMITTED_STATE row_ptr from TxState.",
@@ -260,7 +263,9 @@ impl TxState {
             .expect("Attempt to get TX_STATE row from table not present in insert_tables.");
 
         // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
-        table.get_row_ref(&self.blob_store, row_ptr).unwrap()
+        Ok(table
+            .get_row_ref(&self.blob_store, row_ptr)?
+            .expect("row pointer to be present"))
     }
 
     pub(super) fn is_deleted(&self, table_id: TableId, row_ptr: RowPointer) -> bool {
@@ -284,7 +289,7 @@ impl TxState {
         get_delete_table_mut(&mut self.delete_tables, table_id, commit_table)
     }
 
-    pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
+    pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut BlobSet)> {
         let table = self.insert_tables.get_mut(&table_id)?;
         let blob_store = &mut self.blob_store;
         Some((table, blob_store))
@@ -314,7 +319,7 @@ impl TxState {
     ///
     /// The insert and delete tables must exist.
     pub unsafe fn assume_present_get_mut_table(&mut self, table_id: TableId) -> TxTableForInsertion<'_> {
-        let tx_blob_store: &mut dyn BlobStore = &mut self.blob_store;
+        let tx_blob_store = &mut self.blob_store;
         let tx_table = self.insert_tables.get_mut(&table_id);
         // SAFETY: we successfully got a `tx_table` before and haven't removed it since.
         let tx_table = unsafe { tx_table.unwrap_unchecked() };
@@ -323,9 +328,95 @@ impl TxState {
         let delete_table = unsafe { delete_table.unwrap_unchecked() };
         (tx_table, tx_blob_store, delete_table)
     }
+
+    /// Iterate over the insert and delete tables in this transaction, grouped
+    /// by table.
+    pub(super) fn tx_tables<'a>(&'a self) -> TxTables<'a> {
+        TxTables {
+            deletes: self.delete_tables.iter().peekable(),
+            inserts: self.insert_tables.iter().peekable(),
+        }
+    }
+
+    pub(super) fn new(storage: &TieredDatabaseStorage) -> Self {
+        Self {
+            insert_tables: <_>::default(),
+            delete_tables: <_>::default(),
+            blob_store: storage.new_empty_blob_set(),
+            pending_schema_changes: <_>::default(),
+        }
+    }
 }
 
-pub(super) type TxTableForInsertion<'a> = (&'a mut Table, &'a mut dyn BlobStore, &'a mut DeleteTable);
+/// Deletes and inserts for a table.
+pub struct TxTable<'a> {
+    pub id: TableId,
+    pub deletes: Option<&'a DeleteTable>,
+    pub inserts: Option<&'a Table>,
+}
+
+/// Iterator created by [TxState::tx_tables()].
+pub struct TxTables<'a> {
+    deletes: Peekable<btree_map::Iter<'a, TableId, DeleteTable>>,
+    inserts: Peekable<btree_map::Iter<'a, TableId, Table>>,
+}
+
+impl<'a> Iterator for TxTables<'a> {
+    type Item = TxTable<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use std::cmp::Ordering::*;
+
+        match (self.deletes.peek(), self.inserts.peek()) {
+            (None, None) => None,
+            (None, Some(_insert)) => {
+                let (&id, inserts) = self.inserts.next().unwrap();
+                Some(TxTable {
+                    id,
+                    deletes: None,
+                    inserts: Some(inserts),
+                })
+            }
+            (Some(_delete), None) => {
+                let (&id, deletes) = self.deletes.next().unwrap();
+                Some(TxTable {
+                    id,
+                    deletes: Some(deletes),
+                    inserts: None,
+                })
+            }
+            (Some(&(&delete_table_id, _)), Some(&(insert_table_id, _))) => match delete_table_id.cmp(insert_table_id) {
+                Less => {
+                    let (_, deletes) = self.deletes.next().unwrap();
+                    Some(TxTable {
+                        id: delete_table_id,
+                        deletes: Some(deletes),
+                        inserts: None,
+                    })
+                }
+                Greater => {
+                    let (_, inserts) = self.inserts.next().unwrap();
+                    Some(TxTable {
+                        id: *insert_table_id,
+                        deletes: None,
+                        inserts: Some(inserts),
+                    })
+                }
+                Equal => {
+                    let (_, deletes) = self.deletes.next().unwrap();
+                    let (_, inserts) = self.inserts.next().unwrap();
+                    Some(TxTable {
+                        id: delete_table_id,
+                        deletes: Some(deletes),
+                        inserts: Some(inserts),
+                    })
+                }
+            },
+        }
+    }
+}
+
+pub(super) type TxTableForInsertion<'a> = (&'a mut Table, &'a mut BlobSet, &'a mut DeleteTable);
 
 fn get_delete_table_mut<'a>(
     delete_tables: &'a mut BTreeMap<TableId, DeleteTable>,

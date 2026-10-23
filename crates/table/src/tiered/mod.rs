@@ -10,6 +10,7 @@ mod error;
 mod map;
 mod mem;
 mod page_manager;
+mod page_ref;
 mod page_set;
 mod storage;
 
@@ -19,7 +20,8 @@ pub use self::{
     error::{BlobError, ObjectStoreError, PageError},
     mem::ResidentObjects,
     page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
-    page_set::{DeleteRowError, PageSet, PreparedCommit},
+    page_ref::{PageBorrow, PageRead, PageRef},
+    page_set::{PageSet, PreparedCommit},
     storage::{MemoryObjectStore, ObjectStore, TieredStorage},
 };
 
@@ -98,12 +100,8 @@ impl TieredDatabaseStorage {
         &self.blobs
     }
 
-    pub fn physical_bytes_used_by_blobs(&self) -> u64 {
-        self.blobs.physical_bytes_used_by_blobs()
-    }
-
-    pub fn merge_blobs_from(&self, blobs: &BlobSet) -> Result<Box<[BlobHandle]>, BlobError> {
-        self.blobs.extend_from(blobs)
+    pub fn resident_bytes_used_by_blobs(&self) -> u64 {
+        self.blobs.resident_bytes_used_by_blobs()
     }
 
     pub fn new_empty_blob_set(&self) -> BlobSet {

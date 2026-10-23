@@ -2,12 +2,16 @@
 //! and [`write_row_to_page(page, blob_store, visitor, ty, val)`]
 //! which write `val: ProductValue` typed at `ty` to `page` and `pages` respectively.
 
+use crate::{
+    blob_store::BlobHash,
+    indexes::PageIndex,
+    table::TableError,
+    tiered::{BlobError, BlobSet, PageError, PageSet, ReservedPage},
+};
+
 use super::{
-    blob_store::BlobStore,
     indexes::{Bytes, PageOffset, RowPointer, SquashedOffset},
     page::{GranuleOffsetIter, Page, VarView},
-    page_pool::PagePool,
-    pages::Pages,
     table::BlobNumBytes,
     util::range_move,
     var_len::{VarLenGranule, VarLenMembers, VarLenRef},
@@ -24,16 +28,20 @@ use spacetimedb_sats::{
 };
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum Error {
     #[error(transparent)]
     Decode(#[from] DecodeError),
     #[error("Expected a value of type {0:?}, but found {1:?}")]
     WrongType(AlgebraicType, AlgebraicValue),
     #[error(transparent)]
-    PageError(#[from] super::page::Error),
+    Page(#[from] super::page::Error),
     #[error(transparent)]
-    PagesError(#[from] super::pages::Error),
+    Pages(#[from] PageError),
+    #[error(transparent)]
+    Blobs(#[from] BlobError),
+    #[error(transparent)]
+    Table(#[from] TableError),
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -48,16 +56,15 @@ pub enum Error {
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages_bsatn(
-    pool: &PagePool,
-    pages: &mut Pages,
+    pages: &mut PageSet,
     visitor: &impl VarLenMembers,
-    blob_store: &mut dyn BlobStore,
+    blobs: &mut BlobSet,
     ty: &RowTypeLayout,
     mut bytes: &[u8],
     squashed_offset: SquashedOffset,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
-    unsafe { write_row_to_pages(pool, pages, visitor, blob_store, ty, &val, squashed_offset) }
+    unsafe { write_row_to_pages(pages, None, visitor, blobs, ty, &val, squashed_offset) }
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -72,10 +79,10 @@ pub unsafe fn write_row_to_pages_bsatn(
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
 pub unsafe fn write_row_to_pages(
-    pool: &PagePool,
-    pages: &mut Pages,
+    pages: &mut PageSet,
+    reservation: Option<(PageIndex, ReservedPage)>,
     visitor: &impl VarLenMembers,
-    blob_store: &mut dyn BlobStore,
+    blobs: &BlobSet,
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
@@ -88,14 +95,14 @@ pub unsafe fn write_row_to_pages(
         required_var_len_granules_for_row(val)
     };
 
-    match pages.with_page_to_insert_row(pool, ty.size(), num_granules, |page| {
+    match pages.with_page_to_insert_row(ty.size(), num_granules, reservation, |page| {
         // SAFETY:
         // - Caller promised that `pages` is suitable for storing instances of `ty`
         //   so `page` is also suitable.
         // - Caller promised that `visitor` is prepared to visit for `ty`
         //   and in the same order as a `VarLenVisitorProgram` for `ty` would.
         // - `visitor` came from `pages` which we can trust to visit in the right order.
-        unsafe { write_row_to_page(page, blob_store, visitor, ty, val) }
+        unsafe { write_row_to_page(page, blobs, visitor, ty, val) }
     })? {
         (page, Ok((offset, blob_inserted))) => {
             Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
@@ -121,7 +128,7 @@ pub unsafe fn write_row_to_pages(
 /// - `page` must use a var-len visitor which visits the same var-len members in the same order.
 pub unsafe fn write_row_to_page(
     page: &mut Page,
-    blob_store: &mut dyn BlobStore,
+    blobs: &BlobSet,
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
@@ -141,24 +148,29 @@ pub unsafe fn write_row_to_page(
         large_blob_insertions: Vec::new(),
     };
 
-    // Write the row to the page. Roll back on any failure.
-    if let Err(e) = serialized.write_product(ty.product(), val) {
-        // SAFETY: The `visitor` is proper for the row type per caller requirements.
-        unsafe { serialized.roll_back_var_len_allocations(visitor) };
-        // SAFETY:
-        // - `fixed_offset` came from `alloc_fixed_len` so it is in bounds of `page`.
-        // - `RowTypeLayout::size()` ensures `fixed_offset` is properly aligned for `FreeCellRef`.
-        unsafe { fixed.free(fixed_offset, fixed_row_size) };
-        return Err(e);
-    }
-
-    let blob_store_inserted_bytes = if ty.layout.fixed {
+    // Write the row to the page.
+    // Ensure to not short-circuit errors, so we can roll back below.
+    let inserted = match serialized.write_product(ty.product(), val) {
         // The layout is fixed, so there are no large blobs to write.
-        <_>::default()
-    } else {
-        // Haven't stored large blobs or init those granules with blob hashes yet,
-        // so do it now.
-        serialized.write_large_blobs(blob_store)
+        Ok(()) if ty.layout.fixed => Ok(<_>::default()),
+        // Now write blobs.
+        Ok(()) => serialized.write_large_blobs(blobs).map_err(Into::into),
+        Err(e) => Err(e),
+    };
+
+    let blob_store_inserted_bytes = match inserted {
+        Ok(blob_store_inserted_bytes) => blob_store_inserted_bytes,
+        // Undo the insertion.
+        Err(e) => {
+            // SAFETY: The `visitor` is proper for the row type per caller requirements.
+            unsafe { serialized.roll_back_var_len_allocations(visitor) };
+            // SAFETY:
+            // - `fixed_offset` came from `alloc_fixed_len` so it is in bounds of `page`.
+            // - `RowTypeLayout::size()` ensures `fixed_offset` is properly aligned for `FreeCellRef`.
+            unsafe { fixed.free(fixed_offset, fixed_row_size) };
+
+            return Err(e);
+        }
     };
 
     Ok((fixed_offset, blob_store_inserted_bytes))
@@ -211,18 +223,32 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
     #[cold]
     #[inline(never)]
-    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+    fn write_large_blobs(&mut self, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
         let mut blob_store_inserted_bytes = BlobNumBytes::default();
-        for (vlr, value) in self.large_blob_insertions {
+        for (i, (vlr, value)) in self.large_blob_insertions.iter().enumerate() {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
             // However, as it was added to `self.large_blob_insertions`,
             // we have not yet written the hash to that granule.
-            unsafe {
-                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
+            let inserted_bytes = unsafe { self.var_view.write_large_blob_hash_to_granule(blobs, value, *vlr) };
+            match inserted_bytes {
+                Ok(inserted_bytes) => {
+                    blob_store_inserted_bytes += inserted_bytes;
+                }
+                // Decrement the refcounts for all blobs written so far.
+                Err(e) => {
+                    for (_, value) in self.large_blob_insertions[..i].iter().rev() {
+                        let hash = BlobHash::hash_from_bytes(value);
+                        blobs
+                            .free_ref(hash.into())
+                            .expect("blob was inserted by this operation");
+                    }
+                    return Err(e);
+                }
             }
         }
-        blob_store_inserted_bytes
+
+        Ok(blob_store_inserted_bytes)
     }
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
@@ -515,7 +541,7 @@ impl BflatnSerializedRowBuffer<'_> {
 }
 
 /// Counts the number of [`VarLenGranule`] allocations required to store `val` in a page.
-fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
+pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
     fn traverse_av(val: &AlgebraicValue, count: &mut usize) {
         match val {
             AlgebraicValue::Product(val) => traverse_product(val, count),
@@ -552,14 +578,58 @@ fn bsatn_len(val: &AlgebraicValue) -> usize {
 
 #[cfg(test)]
 pub mod test {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
     use crate::{
-        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, page::tests::hash_unmodified_save_get,
-        row_type_visitor::row_type_visitor,
+        bflatn_from::serialize_row_from_page, page::tests::hash_unmodified_save_get,
+        row_type_visitor::row_type_visitor, tiered::BlobReadSet,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
+    use spacetimedb_lib::ProductType;
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
     use spacetimedb_sats::proptest::generate_typed_row;
+
+    #[test]
+    fn failed_blob_write_rolls_back_page_and_prior_blob_references() {
+        let blob_size = VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1;
+        let first = "a".repeat(blob_size);
+        let second = "b".repeat(blob_size);
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: blob_size as u64,
+            hard_limit_bytes: blob_size as u64,
+        })
+        .unwrap();
+        let blobs = BlobSet::new(
+            Arc::new(ResidentObjects::new(budget)),
+            Arc::new(TieredStorage::new_for_test()),
+        );
+
+        // Pin the first blob so inserting the second cannot evict it. Writing
+        // the row will therefore succeed for the first field and fail for the
+        // second, exercising rollback after a partial blob-set mutation.
+        let first_pin = blobs.insert(first.as_bytes()).unwrap();
+        let first_hash = first_pin.hash();
+        let ty: RowTypeLayout = ProductType::from([AlgebraicType::String, AlgebraicType::String]).into();
+        let visitor = row_type_visitor(&ty);
+        let row = spacetimedb_sats::product![first.clone(), second.clone()];
+        let mut page = Page::new(ty.size());
+
+        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap_err();
+        assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
+        assert_eq!(page.num_rows(), 0);
+        assert_eq!(blobs.num_blobs(), 1);
+        assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+
+        // The failed row's page allocations must also be reusable.
+        drop(first_pin);
+        let (offset, _) = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap();
+        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs) };
+        assert_eq!(page.num_rows(), 0);
+        assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
@@ -568,16 +638,23 @@ pub mod test {
             let ty: RowTypeLayout = ty.into();
             let mut page = Page::new(ty.size());
             let visitor = row_type_visitor(&ty);
-            let blob_store = &mut HashMapBlobStore::default();
+            let blobs = &mut BlobSet::new_for_test();
 
             let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
-            let (offset, _) = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blobs, &visitor, &ty, &val).unwrap() };
 
             let hash_pre_ser = hash_unmodified_save_get(&mut page);
             assert_ne!(hash_pre_ins, hash_pre_ser);
 
-            let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, blob_store, offset, &ty) }
+            let blobs = BlobReadSet::new(
+                &visitor,
+                &page,
+                blobs,
+                &ty,
+                offset
+            ).unwrap();
+            let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, &blobs, offset, &ty) }
                 .unwrap().into_product().unwrap();
 
             prop_assert_eq!(val, read_val);

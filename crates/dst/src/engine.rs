@@ -12,7 +12,7 @@ use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
 use spacetimedb_runtime::Handle;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
-use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::tiered::TieredStorageConfig;
 
 mod model;
 mod properties;
@@ -66,7 +66,7 @@ impl EngineTarget {
             history,
             Some(persistence),
             None,
-            PagePool::new_for_test(),
+            TieredStorageConfig::new_for_test(),
         )?;
         anyhow::ensure!(connected_clients.is_empty(), "replay produced connected clients");
         Ok(db)
