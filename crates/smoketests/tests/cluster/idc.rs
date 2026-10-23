@@ -422,3 +422,62 @@ fn idc_outbox_uses_regenerated_bindings_after_argument_reordering() {
 
     suite.send_detailed_ping("after-update");
 }
+
+#[test]
+fn idc_self_outbox_uses_none_case_policy() {
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let database = format!("idc-self-{}", random_string());
+    let module_dir = test.project_dir.path().join("self_outbox");
+    copy_module_fixture("idc-self-outbox", &module_dir).expect("failed to copy self-outbox fixture");
+    patch_module_cargo_to_local_bindings(&module_dir).expect("failed to patch module Cargo.toml");
+
+    let output = test
+        .spacetime(&[
+            "publish",
+            "--no-config",
+            "--server",
+            &test.server_url,
+            "--module-path",
+            module_dir.to_str().unwrap(),
+            "--yes=all",
+            &database,
+        ])
+        .expect("failed to publish self-outbox module");
+    let identity = parse_identity_from_publish_output(&output).expect("publish output should contain an identity");
+    test.database_identity = Some(identity.clone());
+    test.call(
+        "enqueuePing",
+        &[&serde_json::to_string(&identity).unwrap(), "\"self-message\""],
+    )
+    .expect("failed to enqueue self-referential message");
+
+    let rows = |sql: &str| {
+        let output = test
+            .spacetime(&[
+                "sql",
+                "--no-config",
+                "--server",
+                &test.server_url,
+                "--format",
+                "json",
+                &database,
+                sql,
+            ])
+            .expect("failed to query self-outbox module");
+        let result: serde_json::Value = serde_json::from_str(&output).expect("invalid SQL JSON output");
+        result[0]["rows"].as_array().unwrap().clone()
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let delivered = rows("SELECT body FROM delivered_ping");
+        let pending = rows("SELECT id FROM outbound_ping");
+        if delivered == vec![serde_json::json!(["self-message"])] && pending.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "self IDC did not finish: delivered={delivered:?}, pending={pending:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}

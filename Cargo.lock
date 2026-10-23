@@ -8130,6 +8130,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-query-builder",
+ "spacetimedb-schema",
  "spacetimedb-test-datastore",
  "trybuild",
 ]

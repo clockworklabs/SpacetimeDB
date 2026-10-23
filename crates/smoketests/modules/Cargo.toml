@@ -119,6 +119,7 @@ members = [
     # Misc tests
     "idc-receiver",
     "idc-sender",
+    "idc-self-outbox",
     "namespaces",
     "new-user-flow",
     "module-nested-op",

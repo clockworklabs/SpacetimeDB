@@ -26,6 +26,7 @@ spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-query-builder.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 bytemuck.workspace = true
@@ -51,6 +52,10 @@ spacetimedb-lib = { path = "../lib", features = ["test"] }
 
 [[test]]
 name = "test_utils"
+required-features = ["test-utils"]
+
+[[test]]
+name = "local_outbox"
 required-features = ["test-utils"]
 
 [lints]
