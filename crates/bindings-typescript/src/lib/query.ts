@@ -1,6 +1,7 @@
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
+import type { ParamsObj } from './reducers';
 import type { UntypedSchemaDef } from './schema';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
@@ -8,6 +9,7 @@ import { Timestamp } from './timestamp';
 import type {
   ColumnBuilder,
   ColumnMetadata,
+  InferTypeOfRow,
   RowBuilder,
   TypeBuilder,
 } from './type_builders';
@@ -218,10 +220,55 @@ class FromBuilder<TableDef extends TypedTableDef>
   }
 }
 
+/**
+ * A call to a view with args, e.g. `tables.playersFrom({ minId: 2 })`.
+ * It can only be queried as a whole: no `where` or joins yet.
+ */
+export type ViewCall<TableDef extends TypedTableDef> = RowTypedQuery<
+  RowType<TableDef>,
+  TableDef['rowType']
+> &
+  Readonly<{
+    toSql(): string;
+  }>;
+
+class ViewCallImpl<TableDef extends TypedTableDef>
+  implements ViewCall<TableDef>, TableTypedQuery<TableDef>
+{
+  readonly [QueryBrand] = true;
+  constructor(
+    readonly sourceName: string,
+    readonly accessorName: string,
+    readonly args: readonly unknown[]
+  ) {
+    Object.freeze(this);
+  }
+
+  toSql(): string {
+    const args = this.args.map(literalValueToSql).join(', ');
+    return `SELECT * FROM ${quoteIdentifier(this.sourceName)}(${args})`;
+  }
+}
+
+// The params of a view with args, or `never` for a table or a view without params.
+// Every table has the general `ParamsObj`, so only a type with specific keys is a view's params.
+type ViewParamsOf<TableDef> = TableDef extends { viewParams?: infer Params }
+  ? ParamsObj extends Params
+    ? never
+    : Params
+  : never;
+
+// A view with args is queried by calling it; anything else is a table reference.
+type QueryBuilderEntry<TableDef extends TypedTableDef> = [
+  ViewParamsOf<TableDef>,
+] extends [never]
+  ? TableRef<TableDef> & From<TableDef>
+  : (args: InferTypeOfRow<ViewParamsOf<TableDef>>) => ViewCall<TableDef>;
+
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in Values<
     SchemaDef['tables']
-  > as Tbl['accessorName']]: TableRef<Tbl> & From<Tbl>;
+  > as Tbl['accessorName']]: QueryBuilderEntry<Tbl>;
 } & {};
 
 /**
@@ -343,15 +390,36 @@ export function createTableRefFromDef<TableDef extends TypedTableDef>(
   return new TableRefImpl<TableDef>(tableDef);
 }
 
+// A view with args is queried by calling it with an object of its args,
+// which are rendered in the order of its params.
+function createViewCaller(
+  tableDef: UntypedTableDef,
+  params: ParamsObj
+): (args: Record<string, unknown>) => ViewCall<UntypedTableDef> {
+  const names = Object.keys(params);
+  return args =>
+    new ViewCallImpl(
+      tableDef.sourceName,
+      tableDef.accessorName,
+      names.map(name => args[name])
+    );
+}
+
+// `viewParams` is set by `withViewParams` in generated client bindings.
+function createQueryBuilderEntry(
+  tableDef: UntypedTableDef & { viewParams?: ParamsObj }
+): TableRef<UntypedTableDef> | ReturnType<typeof createViewCaller> {
+  return tableDef.viewParams
+    ? createViewCaller(tableDef, tableDef.viewParams)
+    : createTableRefFromDef(tableDef);
+}
+
 export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
   schema: SchemaDef
 ): QueryBuilder<SchemaDef> {
-  const qb = Object.create(null) as QueryBuilder<SchemaDef>;
+  const qb: Record<string, unknown> = Object.create(null);
   for (const table of Object.values(schema.tables)) {
-    const ref = createTableRefFromDef(
-      table as TableDefByName<SchemaDef, TableNames<SchemaDef>>
-    );
-    (qb as Record<string, TableRef<any>>)[table.accessorName] = ref;
+    qb[table.accessorName] = createQueryBuilderEntry(table);
   }
   return Object.freeze(qb) as QueryBuilder<SchemaDef>;
 }
@@ -375,13 +443,12 @@ export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
   for (const table of Object.values(tables) as UntypedTableDef[]) {
     const dotIdx = table.sourceName.indexOf('.');
     if (dotIdx === -1) {
-      result[table.accessorName] = createTableRefFromDef(table as any);
+      result[table.accessorName] = createQueryBuilderEntry(table);
     } else {
       const ns = table.sourceName.slice(0, dotIdx);
       const key = table.sourceName.slice(dotIdx + 1);
-      (namespaces[ns] ??= Object.create(null))[key] = createTableRefFromDef(
-        table as any
-      );
+      (namespaces[ns] ??= Object.create(null))[key] =
+        createQueryBuilderEntry(table);
     }
   }
 
@@ -920,6 +987,10 @@ function literalValueToSql(value: unknown): string {
   }
   if (value instanceof Timestamp) {
     return `'${value.toISOString()}'`;
+  }
+  if (value instanceof Uint8Array) {
+    const hex = Array.from(value, byte => byte.toString(16).padStart(2, '0'));
+    return `0x${hex.join('')}`;
   }
   switch (typeof value) {
     case 'number':
