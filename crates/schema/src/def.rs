@@ -1108,7 +1108,11 @@ impl From<ModuleDef> for RawModuleDefV10 {
             environment,
         } = val;
 
-        let mut sections = Vec::new();
+        // Names are already canonicalized. Disable further case conversion so revalidation
+        // preserves them.
+        let mut sections = vec![RawModuleDefV10Section::CaseConversionPolicy(
+            raw_def::v10::CaseConversionPolicy::None,
+        )];
         if let Some(environment) = environment {
             sections.push(RawModuleDefV10Section::Environment(
                 environment.into_declarations().into_iter().map(|x| x.into()).collect(),
@@ -2342,6 +2346,7 @@ impl From<ViewDef> for RawViewDefV10 {
             is_anonymous,
             is_public,
             params,
+            params_for_generate,
             return_type,
             fn_ptr,
             ..
@@ -2351,7 +2356,7 @@ impl From<ViewDef> for RawViewDefV10 {
             index: fn_ptr.into(),
             is_public,
             is_anonymous,
-            params,
+            params: canonical_params(params, &params_for_generate),
             return_type,
         }
     }
@@ -2443,12 +2448,16 @@ pub struct ReducerDef {
 impl ReducerDef {
     /// Parameter types with schema names.
     pub fn params(&self) -> ProductType {
-        let mut params = self.params.clone();
-        for (param, (name, _)) in params.elements.iter_mut().zip(self.params_for_generate.elements.iter()) {
-            param.name = Some(name.clone().into());
-        }
-        params
+        canonical_params(self.params.clone(), &self.params_for_generate)
     }
+}
+
+fn canonical_params(mut params: ProductType, params_for_generate: &ProductTypeDef) -> ProductType {
+    assert_eq!(params.elements.len(), params_for_generate.elements.len());
+    for (param, (name, _)) in params.elements.iter_mut().zip(params_for_generate.elements.iter()) {
+        param.name = Some(name.clone().into());
+    }
+    params
 }
 
 const REDUCER_SIGNATURE_HASH_DOMAIN: &[u8] = b"spacetimedb:idc:reducer-signature:v1\0";
@@ -2536,7 +2545,7 @@ impl From<ReducerDef> for RawReducerDefV10 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV10 {
             source_name: val.accessor_name.into(),
-            params: val.params,
+            params: canonical_params(val.params, &val.params_for_generate),
             visibility: val.visibility.into(),
             ok_return_type: val.ok_return_type,
             err_return_type: val.err_return_type,
@@ -2624,7 +2633,7 @@ impl From<ProcedureDef> for RawProcedureDefV10 {
     fn from(val: ProcedureDef) -> Self {
         RawProcedureDefV10 {
             source_name: val.accessor_name.into(),
-            params: val.params,
+            params: canonical_params(val.params, &val.params_for_generate),
             return_type: val.return_type,
             visibility: val.visibility.into(),
         }
@@ -2878,6 +2887,60 @@ mod tests {
                 ..
             } => *table == apples.clone().into()
         );
+    }
+
+    #[test]
+    fn v10_roundtrip_preserves_reducer_signature_casing() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+
+        for policy in [CaseConversionPolicy::None, CaseConversionPolicy::SnakeCase] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.set_case_conversion_policy(policy);
+            let item_ref = builder.add_algebraic_type(
+                [],
+                "Message",
+                AlgebraicType::product([("Item", AlgebraicType::U64)]),
+                false,
+            );
+            builder.add_reducer(
+                "receive",
+                ProductType::from([("MessageBody", AlgebraicType::Ref(item_ref))]),
+            );
+            builder.add_procedure(
+                "read_message",
+                ProductType::from([("MessageBody", AlgebraicType::Ref(item_ref))]),
+                AlgebraicType::Ref(item_ref),
+            );
+            builder.add_view(
+                "messages",
+                0,
+                true,
+                true,
+                ProductType::from([("MessageBody", AlgebraicType::Ref(item_ref))]),
+                AlgebraicType::array(AlgebraicType::Ref(item_ref)),
+            );
+            let original: ModuleDef = builder.finish().try_into().expect("valid module");
+            let roundtrip =
+                ModuleDef::try_from(RawModuleDefV10::from(original.clone())).expect("valid roundtripped module");
+            let signature = |module: &ModuleDef| {
+                let (_, reducer) = module.reducer_by_name("receive").expect("receiver exists");
+                reducer_signature_hash(
+                    &reducer.params(),
+                    &reducer.ok_return_type,
+                    &reducer.err_return_type,
+                    module.typespace(),
+                )
+            };
+
+            assert_eq!(original.typespace(), roundtrip.typespace());
+            assert_eq!(signature(&original), signature(&roundtrip));
+            for (original, roundtrip) in original.procedures().zip(roundtrip.procedures()) {
+                assert_eq!(original.params_for_generate, roundtrip.params_for_generate);
+            }
+            for (original, roundtrip) in original.views().zip(roundtrip.views()) {
+                assert_eq!(original.params_for_generate, roundtrip.params_for_generate);
+            }
+        }
     }
 
     #[test]
