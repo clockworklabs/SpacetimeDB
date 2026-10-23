@@ -785,10 +785,12 @@ impl<'cs> ReplayCommittedState<'cs> {
             Err(InsertError::Table(e)) => return Err(e.into()),
         };
 
-        // `row_ref` is treated as having a mutable borrow on `self`
-        // because it derives from `self.get_table_and_blob_store_or_create`,
-        // so we have to downgrade it to a pointer and then re-upgrade it again as an immutable row pointer later.
-        let row_ptr = row_ref.into_pointer();
+        // `row_ref` is treated as having a mutable borrow on `self` because it
+        // derives from `self.get_table_and_blob_store_or_create`, so we have to
+        // downgrade it to a pinned row and then re-upgrade it again as an
+        // immutable row pointer later.
+        let row_pin = row_ref.into_pinned_row();
+        let row_ptr = row_pin.pointer();
 
         if table_id == ST_TABLE_ID {
             // For `st_table` inserts, we need to check if this is a new table or an update to an existing table.
@@ -797,11 +799,11 @@ impl<'cs> ReplayCommittedState<'cs> {
             // but for updates to existing tables we need additional bookkeeping.
 
             // Upgrade `row_ptr` back again, to break the mutable borrow.
-            let (table, blob_store, _) = self.get_table_and_blob_store(ST_TABLE_ID)?;
+            let (table, ..) = self.get_table_and_blob_store(ST_TABLE_ID)?;
 
-            // Safety: We got `row_ptr` from a valid `RowRef` just above, and haven't done any mutations since,
+            // Safety: We got `row_pin` from a valid `RowRef` just above, and haven't done any mutations since,
             // so it must still be valid.
-            let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, row_ptr)? };
+            let row_ref = unsafe { table.get_row_ref_from_pinned_unchecked(row_pin) };
 
             if self.replay_does_table_already_exist(&row_ref)? {
                 // We've inserted a new `st_table` row for an existing table.

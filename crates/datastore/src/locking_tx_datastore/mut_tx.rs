@@ -79,12 +79,11 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     static_assert_size,
     table::{
-        BlobNumBytes, DuplicateError, IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table,
+        BlobNumBytes, DuplicateError, IndexScanPointIter, IndexScanRangeIter, InsertError, PinnedRow, RowRef, Table,
         TableAndIndex, UniqueConstraintViolation,
     },
     table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
-    tiered::BlobSet,
-    tiered::PageEvictionPolicy,
+    tiered::{BlobSet, PageEvictionPolicy},
 };
 use std::{marker::PhantomData, sync::Arc, time::Duration};
 
@@ -2438,7 +2437,7 @@ impl MutTxId {
             .transpose()?
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
         let table_id = st_sequence_ref.read_col(StSequenceFields::TableId)?;
-        let pointer = st_sequence_ref.into_pointer();
+        let pointer = st_sequence_ref.pointer();
 
         // Delete from system tables.
         self.delete(ST_SEQUENCE_ID, pointer)?;
@@ -2880,7 +2879,7 @@ impl MutTxId {
             .next()
             .transpose()?
             .ok_or(TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql))?;
-        let pointer = st_rls_ref.into_pointer();
+        let pointer = st_rls_ref.pointer();
         self.delete(ST_ROW_LEVEL_SECURITY_ID, pointer)?;
 
         Ok(())
@@ -3703,7 +3702,7 @@ impl MutTxId {
                 ],
                 start..=end,
             )?
-            .map(|row| Ok(row?.into_pointer()))
+            .map(|row| Ok(row?.pointer()))
             .collect::<Result<Vec<_>>>()?;
         for row in rows {
             self.delete(ST_INBOUND_MSG_ID, row)?;
@@ -3963,7 +3962,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     table_id: TableId,
     row: &[u8],
 ) -> Result<(
-    RowPointer,
+    PinnedRow,
     ColList,
     BlobNumBytes,
     TxTableForInsertion<'a>,
@@ -3977,12 +3976,13 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
 
     // 1. Insert the physical row.
     let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
-    let tx_row_ptr = tx_row_ref.into_pointer();
+    let tx_pinned_row = tx_row_ref.into_pinned_row();
     // 2. Optionally: Detect, generate, write sequence values.
     let (tx_parts, gen_cols) = if GENERATE {
         // When `GENERATE` is enabled, we're instructed to deal with sequence value generation.
         // Collect all the columns with sequences that need generation.
-        let (cols_to_gen, seqs_to_use) = unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_row_ptr) }?;
+        let (cols_to_gen, seqs_to_use) =
+            unsafe { tx_table.sequence_triggers_for(tx_blob_store, tx_pinned_row.pointer()) }?;
 
         // Generate a value for every column in the row that needs it.
         let mut seq_vals: SmallVec<[i128; 1]> = <_>::default();
@@ -3998,7 +3998,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
             // SAFETY:
             // - `self.is_row_present(row)` holds as we haven't deleted the row.
             // - `col_id` is a valid column, and has a sequence, so it must have a primitive type.
-            unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) }?;
+            unsafe { tx_table.write_gen_val_to_col(col_id, tx_pinned_row.pointer(), seq_val) }?;
         }
 
         ((tx_table, tx_blob_store, delete_table), cols_to_gen)
@@ -4011,7 +4011,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     };
 
     let commit_parts = committed_state.get_table_and_blob_store(table_id)?;
-    Ok((tx_row_ptr, gen_cols, blob_bytes, tx_parts, commit_parts))
+    Ok((tx_pinned_row, gen_cols, blob_bytes, tx_parts, commit_parts))
 }
 
 /// Insert a row, encoded in BSATN, into a table.
@@ -4036,7 +4036,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
     row: &[u8],
 ) -> Result<(ColList, RowRefInsertion<'a>, InsertFlags)> {
     let (
-        tx_row_ptr,
+        tx_pinned_row,
         gen_cols,
         blob_bytes,
         (tx_table, tx_blob_store, delete_table),
@@ -4052,7 +4052,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
     // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
     // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
     // in particular, the `write_gen_val_to_col` call does not remove the row.
-    let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
+    let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_pinned_row.clone(), blob_bytes) };
 
     match res {
         Ok((tx_row_hash, tx_row_ptr)) => {
@@ -4066,9 +4066,15 @@ pub(super) fn insert<'a, const GENERATE: bool>(
             // - `commit_table` and `tx_table` use the same schema
             //   because `tx_table` is derived from `commit_table`.
             // - `tx_row_ptr` is correct per post-condition of `tx_table.confirm_insertion(...)`.
-            if let (_, Some(commit_ptr)) =
-                unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, tx_row_ptr, tx_row_hash) }?
-            {
+            if let (_, Some(commit_ptr)) = unsafe {
+                Table::find_same_row(
+                    commit_table,
+                    tx_table,
+                    tx_blob_store,
+                    tx_pinned_row.pointer(),
+                    tx_row_hash,
+                )
+            }? {
                 // (insert_undelete)
                 // -----------------------------------------------------
                 // If `row` was already present in the committed state,
@@ -4179,7 +4185,7 @@ impl MutTxId {
         // we cannot really do an in-place update in the row-was-in-tx-state case.
         // So we will begin instead by inserting the row physically to the tx state and project that.
         let (
-            tx_row_ptr,
+            tx_pinned_row,
             cols_to_gen,
             blob_bytes,
             (tx_table, tx_blob_store, del_table),
@@ -4216,7 +4222,7 @@ impl MutTxId {
             }
 
             // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds as we just inserted it.
-            let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) }?;
+            let tx_row_ref = unsafe { tx_table.get_row_ref_from_pinned_unchecked(tx_pinned_row.clone()) };
 
             // Derive the key of `tx_row_ref` for `commit_index`.
             // SAFETY: `tx_row_ref`'s table is derived from `commit_index`'s table,
@@ -4268,9 +4274,9 @@ impl MutTxId {
                 // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
                 // 2. `old_ptr` was found in an index of `commit_table`, so we know it is valid.
                 // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
-                if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) }? {
+                if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_pinned_row.pointer()) }? {
                     // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds, as noted in 3.
-                    unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) }?;
+                    unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_pinned_row.pointer()) }?;
                     // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
                     let row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) }?;
                     return ok(RowRefInsertion::Existed(row_ref));
@@ -4290,7 +4296,7 @@ impl MutTxId {
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
                 let (_, tx_row_ptr) =
-                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_pinned_row, blob_bytes) }?;
 
                 // Delete the old row.
                 del_table.insert(old_ptr);
@@ -4300,7 +4306,23 @@ impl MutTxId {
                 .and_then(|index| index.seek_point(&index.key_from_algebraic_value(&index_key)).next())
             {
                 // Row was found in the tx state!
-                //
+
+                // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
+                // as we've deleted neither.
+                // In particular, the `write_gen_val_to_col` call does not remove the row.
+                let old_pin = unsafe { tx_table.pin_row_unchecked(tx_blob_store, old_ptr) }.map_err(|e| {
+                    // Acquiring the old row failed before any index changes.
+                    // Remove the unconfirmed replacement, without touching indices
+                    // or statistics.
+                    //
+                    // SAFETY: Physical insertion succeeded, and the new row still pins its
+                    // page.
+                    unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_pinned_row.pointer()) }
+                        .expect("new row is pinned and its blob references are valid");
+
+                    DatastoreError::from(e)
+                })?;
+
                 // Check constraints and confirm the update of the new row.
                 // This ensures that the old row is removed from the indices
                 // before attempting to insert the new row into the indices.
@@ -4308,7 +4330,7 @@ impl MutTxId {
                 // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
                 // as we've deleted neither.
                 // In particular, the `write_gen_val_to_col` call does not remove the row.
-                let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
+                let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_pinned_row, old_pin, blob_bytes) }?;
 
                 if let Some(old_commit_del_ptr) = old_commit_del_ptr {
                     // If we have an identical deleted row in the committed state,
@@ -4352,7 +4374,7 @@ impl MutTxId {
         // When we reach here, we had an error and we need to revert the insertion of `tx_row_ref`.
         // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds,
         // as we still haven't deleted the row physically.
-        unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) }?;
+        unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_pinned_row.pointer()) }?;
         Err(err)
     }
 
