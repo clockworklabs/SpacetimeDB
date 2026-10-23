@@ -30,7 +30,7 @@ pub struct Rust;
 pub(super) fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
     // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
     itertools::chain!(
-        iter_module_binding_types(module).map(|typ| generate_module_binding_type_file(module, typ)),
+        iter_types(module).map(|typ| generate_module_binding_type_file(module, typ)),
         [generate_module_bindings_root_file(module)],
     )
     .collect()
@@ -1429,41 +1429,18 @@ fn generate_module_bindings_root_file(module: &ModuleDef) -> OutputFile {
 }
 
 fn print_module_binding_module_decls(module: &ModuleDef, out: &mut Indenter) {
-    for ty in iter_module_binding_types(module) {
+    for ty in iter_types(module) {
         let mod_name = type_module_name(&ty.accessor_name);
         writeln!(out, "pub mod {mod_name};");
     }
 }
 
 fn print_module_binding_reexports(module: &ModuleDef, out: &mut Indenter) {
-    for ty in iter_module_binding_types(module) {
+    for ty in iter_types(module) {
         let mod_name = type_module_name(&ty.accessor_name);
         let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};");
     }
-}
-
-fn iter_module_binding_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> + '_ {
-    let mut reducer_type_refs = module_binding_reducer_type_refs(module);
-    reducer_type_refs.extend(
-        module
-            .tables()
-            .filter(|table| table.schedule.is_some())
-            .map(|table| table.product_type_ref),
-    );
-    let table_type_refs = module
-        .tables()
-        .map(|table| table.product_type_ref)
-        .collect::<BTreeSet<_>>();
-    iter_types(module).filter(move |typ| !table_type_refs.contains(&typ.ty) || reducer_type_refs.contains(&typ.ty))
-}
-
-fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
-    let mut type_refs = BTreeSet::new();
-    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
-        gen_imports(&mut type_refs, &reducer.params_for_generate.elements);
-    }
-    type_refs
 }
 
 fn print_module_binding_identity(out: &mut Indenter) {

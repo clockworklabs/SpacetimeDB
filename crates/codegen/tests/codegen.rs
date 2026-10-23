@@ -95,6 +95,44 @@ fn test_codegen_rust_module_bindings() {
 }
 
 #[test]
+fn test_codegen_rust_module_bindings_include_all_types() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    let state_ref = builder
+        .build_table_with_new_type("EmpireState", ProductType::from([("id", AlgebraicType::U64)]), true)
+        .finish();
+    builder
+        .build_table_with_new_type("Unrelated", ProductType::from([("id", AlgebraicType::U64)]), true)
+        .finish();
+    let op_ref = builder.add_algebraic_type(
+        [],
+        "EmpireStateOp",
+        AlgebraicType::sum([("Update", AlgebraicType::option(AlgebraicType::Ref(state_ref)))]),
+        false,
+    );
+    builder.add_reducer(
+        "receive",
+        ProductType::from([("ops", AlgebraicType::array(AlgebraicType::Ref(op_ref)))]),
+    );
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust)
+        .unwrap()
+        .into_iter()
+        .map(|file| (file.filename, file.code))
+        .collect::<HashMap<_, _>>();
+
+    assert!(files.contains_key("empire_state_op_type.rs"));
+    assert!(files.contains_key("empire_state_type.rs"));
+    assert!(files.contains_key("unrelated_type.rs"));
+    assert!(files["lib.rs"].contains("pub mod empire_state_type;"));
+    assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
+    assert!(files["lib.rs"].contains("pub mod unrelated_type;"));
+    assert!(files["lib.rs"].contains("pub use unrelated_type::Unrelated;"));
+}
+
+#[test]
 fn test_codegen_rust_outbox_fixture() {
     use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::{AlgebraicType, ProductType};
