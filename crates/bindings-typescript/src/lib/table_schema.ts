@@ -1,6 +1,7 @@
 import type { ProductType } from './algebraic_type';
 import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
 import type { IndexOpts } from './indexes';
+import type { ParamsObj } from './reducers';
 import type { ModuleContext } from './schema';
 import type { ColumnBuilder, RowBuilder } from './type_builders';
 import type { HasExactlyOneKnownKey } from './type_util';
@@ -88,6 +89,9 @@ export type TableSchema<
    * live in a separate module from reducer/procedure definitions.
    */
   readonly schedule?: TableSchedule;
+
+  /** Client bindings only: a view's params, set by `withViewParams`. */
+  readonly viewParams?: ParamsObj;
 };
 
 export type UntypedTableSchema = TableSchema<

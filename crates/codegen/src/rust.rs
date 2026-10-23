@@ -2,9 +2,9 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    is_parameterized_view, is_sql_literal_type, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables,
-    iter_types, iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
-    CodegenVisibility,
+    is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
+    iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
+    view_call_params, CodegenVisibility,
 };
 use crate::CodegenOptions;
 use crate::OutputFile;
@@ -458,8 +458,7 @@ pub(super) fn parse_table_update(
         // If SQL can't express its params, it can't be queried at all, so it gets no accessor.
         match module.view(&table.name) {
             Some(view) if !view.params.elements.is_empty() => {
-                let params = &view.params_for_generate.elements;
-                if params.iter().all(|(_, ty)| is_sql_literal_type(ty)) {
+                if let Some(params) = view_call_params(view) {
                     implement_query_view_call_accessor(module, table, params, out, &row_type)
                         .expect("failed to implement query view call accessor");
                 }

@@ -251,10 +251,11 @@ class ViewCallImpl<TableDef extends TypedTableDef>
 }
 
 // The params of a view with args, or `never` for a table or a view without params.
+// Every table has the general `ParamsObj`, so only a type with specific keys is a view's params.
 type ViewParamsOf<TableDef> = TableDef extends { viewParams?: infer Params }
-  ? Params extends ParamsObj
-    ? Params
-    : never
+  ? ParamsObj extends Params
+    ? never
+    : Params
   : never;
 
 // A view with args is queried by calling it; anything else is a table reference.
@@ -394,7 +395,7 @@ export function createTableRefFromDef<TableDef extends TypedTableDef>(
 function createViewCaller(
   tableDef: UntypedTableDef,
   params: ParamsObj
-): (args: Record<string, unknown>) => ViewCall<any> {
+): (args: Record<string, unknown>) => ViewCall<UntypedTableDef> {
   const names = Object.keys(params);
   return args =>
     new ViewCallImpl(
@@ -416,11 +417,9 @@ function createQueryBuilderEntry(
 export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
   schema: SchemaDef
 ): QueryBuilder<SchemaDef> {
-  const qb = Object.create(null) as QueryBuilder<SchemaDef>;
+  const qb: Record<string, unknown> = Object.create(null);
   for (const table of Object.values(schema.tables)) {
-    (qb as Record<string, ReturnType<typeof createQueryBuilderEntry>>)[
-      table.accessorName
-    ] = createQueryBuilderEntry(table);
+    qb[table.accessorName] = createQueryBuilderEntry(table);
   }
   return Object.freeze(qb) as QueryBuilder<SchemaDef>;
 }

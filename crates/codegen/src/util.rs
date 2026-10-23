@@ -202,7 +202,7 @@ pub(super) fn is_parameterized_view(module: &ModuleDef, name: &Identifier) -> bo
 
 /// Can a SQL literal express a value of this type?
 /// Matches the types the server accepts as view args, which are the types `SqlLiteral` is implemented for.
-pub(super) fn is_sql_literal_type(ty: &AlgebraicTypeUse) -> bool {
+fn is_sql_literal_type(ty: &AlgebraicTypeUse) -> bool {
     match ty {
         AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::String

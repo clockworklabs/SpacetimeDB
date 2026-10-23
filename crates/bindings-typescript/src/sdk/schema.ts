@@ -32,13 +32,16 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
 }
 
 /**
- * Attaches a view's params to its table, so the query builder queries it by
- * calling it with args. Used by generated bindings for views with args.
+ * Marks a table as a view with args, so the query builder exposes it as a
+ * function that takes those args. Used by generated bindings.
  */
 export function withViewParams<
   const T extends UntypedTableSchema,
   const Params extends ParamsObj,
->(table: T, params: Params): T & { readonly viewParams: Params } {
+>(
+  table: T,
+  params: Params
+): Omit<T, 'viewParams'> & { readonly viewParams: Params } {
   return { ...table, viewParams: params };
 }
 
