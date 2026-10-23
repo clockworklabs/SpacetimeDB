@@ -1,6 +1,6 @@
 # Use a base image that supports multi-arch
 FROM rust:bookworm AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN rustup --version && rustup self update && rustup --version
 
 WORKDIR /usr/src/app
@@ -18,11 +18,11 @@ RUN if [ -f .git ]; then \
 RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked
 
 FROM rust:bookworm
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN rustup --version && rustup self update && rustup --version
 
 # Install dependencies
-RUN apt-get update && apt-get install -y --reinstall \
+RUN apt-get update && apt-get install --no-install-recommends -y \
       curl \
       ca-certificates \
       binaryen \
