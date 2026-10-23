@@ -120,6 +120,7 @@ members = [
     "idc-receiver",
     "idc-sender",
     "idc-self-outbox",
+    "idc-two-dependencies",
     "namespaces",
     "new-user-flow",
     "module-nested-op",

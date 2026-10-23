@@ -27,10 +27,10 @@ const INDENT: &str = "    ";
 
 pub struct Rust;
 
-pub(super) fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+pub(super) fn generate_rust_module_bindings(module: &ModuleDef, dependency_name: Option<&str>) -> Vec<OutputFile> {
     // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
     itertools::chain!(
-        iter_types(module).map(|typ| generate_module_binding_type_file(module, typ)),
+        iter_types(module).map(|typ| generate_module_binding_type_file(module, typ, dependency_name)),
         [generate_module_bindings_root_file(module)],
     )
     .collect()
@@ -1345,7 +1345,7 @@ fn define_module_binding_struct_for_product(
     out.newline();
 }
 
-fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> OutputFile {
+fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependency_name: Option<&str>) -> OutputFile {
     let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -1371,6 +1371,10 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> Outpu
     gen_and_print_imports(module, out, members, &[typ.ty]);
     out.newline();
     writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+    if let Some(dependency_name) = dependency_name {
+        let scoped_name = format!("{dependency_name}.{}", typ.accessor_name);
+        writeln!(out, "#[sats(name = {})]", rust_string_literal(&scoped_name));
+    }
     if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {
         print_plain_enum_extra_derives(out);
     }

@@ -50,7 +50,7 @@ declare_tests! {
 #[test]
 fn test_codegen_rust_module_bindings() {
     let module = compiled_module();
-    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust)
+    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust { dependency_name: None })
         .unwrap()
         .into_iter()
         .map(|f| (f.filename, f.code))
@@ -95,6 +95,28 @@ fn test_codegen_rust_module_bindings() {
 }
 
 #[test]
+fn rust_receiver_types_are_scoped_by_dependency_name() {
+    let module = compiled_module();
+    let generate = |name| {
+        generate_receiver_bindings(
+            module,
+            ReceiverLanguage::Rust {
+                dependency_name: Some(name),
+            },
+        )
+        .unwrap()
+        .into_iter()
+        .map(|file| (file.filename, file.code))
+        .collect::<HashMap<_, _>>()
+    };
+    let game_world = generate("game_world");
+    let auth = generate("auth");
+    let type_file = "repeating_test_arg_type.rs";
+    assert!(game_world[type_file].contains("#[sats(name = \"game_world.RepeatingTestArg\")]"));
+    assert!(auth[type_file].contains("#[sats(name = \"auth.RepeatingTestArg\")]"));
+}
+
+#[test]
 fn test_codegen_rust_module_bindings_include_all_types() {
     use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::{AlgebraicType, ProductType};
@@ -117,7 +139,7 @@ fn test_codegen_rust_module_bindings_include_all_types() {
         ProductType::from([("ops", AlgebraicType::array(AlgebraicType::Ref(op_ref)))]),
     );
     let module: ModuleDef = builder.finish().try_into().unwrap();
-    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust)
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust { dependency_name: None })
         .unwrap()
         .into_iter()
         .map(|file| (file.filename, file.code))
@@ -146,7 +168,7 @@ fn test_codegen_rust_outbox_fixture() {
     names.insert_function("receivePing", "wire_ping");
     builder.add_explicit_names(names);
     let module: ModuleDef = builder.finish().try_into().unwrap();
-    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust).unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust { dependency_name: None }).unwrap();
     let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
 
     // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
