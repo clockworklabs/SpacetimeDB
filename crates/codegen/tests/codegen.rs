@@ -1,4 +1,6 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, ImportExtension, Rust, TypeScript};
+use spacetimedb_codegen::{
+    generate, generate_receiver_bindings, CodegenOptions, Csharp, ImportExtension, ReceiverLanguage, Rust, TypeScript,
+};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -43,6 +45,127 @@ declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
     test_codegen_typescript => TypeScript::default(),
     test_codegen_rust => Rust,
+}
+
+#[test]
+fn test_codegen_rust_module_bindings() {
+    let module = compiled_module();
+    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust)
+        .unwrap()
+        .into_iter()
+        .map(|f| (f.filename, f.code))
+        .collect::<HashMap<_, _>>();
+
+    assert!(outfiles.contains_key("repeating_test_arg_type.rs"));
+    assert!(outfiles.contains_key("nonrepeating_test_arg_type.rs"));
+    assert!(!outfiles.keys().any(|filename| filename.ends_with("_reducer.rs")));
+    assert!(!outfiles.keys().any(|filename| filename.ends_with("_procedure.rs")));
+
+    let root = outfiles
+        .get("lib.rs")
+        .expect("rust module bindings should emit a root lib.rs");
+
+    assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
+    assert!(root.contains("pub struct add;"));
+    assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
+    assert!(root.contains("const NAME: &'static str = \"add\";"));
+    assert!(!root.contains("ARG_NAMES"));
+    assert!(root.contains("__spacetimedb_typecheck_outbox_add_name"));
+    let reducer = module
+        .reducers()
+        .find(|reducer| reducer.name.as_ref() == "add")
+        .unwrap();
+    let expected_hash = spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    );
+    assert!(root.contains(&format!(
+        "const SIGNATURE_HASH: &'static str = \"{}\";",
+        expected_hash.to_hex()
+    )));
+    assert!(!root.contains("pub struct init;"));
+    assert!(!root.contains("pub struct client_connected;"));
+    assert!(!root.contains("sleep_one_second"));
+    assert!(!root.contains("RemoteProcedures"));
+    assert!(!root.contains("DbConnection"));
+
+    insta::assert_snapshot!(root);
+}
+
+#[test]
+fn test_codegen_rust_module_bindings_include_all_types() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    let state_ref = builder
+        .build_table_with_new_type("EmpireState", ProductType::from([("id", AlgebraicType::U64)]), true)
+        .finish();
+    builder
+        .build_table_with_new_type("Unrelated", ProductType::from([("id", AlgebraicType::U64)]), true)
+        .finish();
+    let op_ref = builder.add_algebraic_type(
+        [],
+        "EmpireStateOp",
+        AlgebraicType::sum([("Update", AlgebraicType::option(AlgebraicType::Ref(state_ref)))]),
+        false,
+    );
+    builder.add_reducer(
+        "receive",
+        ProductType::from([("ops", AlgebraicType::array(AlgebraicType::Ref(op_ref)))]),
+    );
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust)
+        .unwrap()
+        .into_iter()
+        .map(|file| (file.filename, file.code))
+        .collect::<HashMap<_, _>>();
+
+    assert!(files.contains_key("empire_state_op_type.rs"));
+    assert!(files.contains_key("empire_state_type.rs"));
+    assert!(files.contains_key("unrelated_type.rs"));
+    assert!(files["lib.rs"].contains("pub mod empire_state_type;"));
+    assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
+    assert!(files["lib.rs"].contains("pub mod unrelated_type;"));
+    assert!(files["lib.rs"].contains("pub use unrelated_type::Unrelated;"));
+}
+
+#[test]
+fn test_codegen_rust_outbox_fixture() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(CaseConversionPolicy::SnakeCase);
+    builder.add_reducer("receivePing", ProductType::from([("Body", AlgebraicType::String)]));
+    // Noop uses case conversion; receivePing uses its explicit wire name.
+    builder.add_reducer("Noop", ProductType::unit());
+    let mut names = ExplicitNames::default();
+    names.insert_function("receivePing", "wire_ping");
+    builder.add_explicit_names(names);
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust).unwrap();
+    let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
+
+    // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    fs_err::write(&path, root).unwrap();
+    let status = std::process::Command::new("rustfmt")
+        .arg("--config-path")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.rustfmt.toml"))
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // The bindings UI tests compile this generated fixture and check its column mappings.
+    assert_eq!(
+        fs_err::read_to_string(path).unwrap().trim_end(),
+        include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
+    );
 }
 
 #[test]

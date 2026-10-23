@@ -95,6 +95,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("database").from_clap("name|identity").required())
         .key(Key::new("server"))
         .key(Key::new("env").config_only())
+        .key(Key::new("dependencies").config_only())
         .key(Key::new("module_path").module_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
